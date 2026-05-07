@@ -404,6 +404,20 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		var err error
 		input, err = d.PromptForInput()
 		if err != nil {
+			if err.Error() == "user aborted" {
+				count := atomic.AddInt32(&interruptCount, 1)
+				if count == 1 {
+					fmt.Println("\nPress Ctrl+C again to exit.")
+					go func() {
+						time.Sleep(2 * time.Second)
+						atomic.StoreInt32(&interruptCount, 0)
+					}()
+					input = "" // Continue loop to prompt again
+					continue
+				} else if count >= 2 {
+					return "", true, nil
+				}
+			}
 			return "", false, err
 		}
 	}
