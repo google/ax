@@ -21,7 +21,10 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/google/ax/cmd/ax/internal"
 	"github.com/google/ax/cmd/ax/internal/cliutil"
@@ -65,6 +68,9 @@ func init() {
 
 var (
 	execController *controller.Controller
+	interruptCount int32
+	activeCancel   context.CancelFunc
+	cancelMu       sync.Mutex
 )
 
 func runExec(cmd *cobra.Command, args []string) error {
@@ -78,16 +84,37 @@ func runExec(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal, 1)
+	sigChan := make(chan os.Signal, 2) // Buffer to not miss signals
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		<-sigChan
-		fmt.Println("\nReceived interrupt, shutting down...")
-		if execController != nil {
-			execController.Close()
+		for {
+			<-sigChan
+			count := atomic.AddInt32(&interruptCount, 1)
+
+			cancelMu.Lock()
+			cancelFn := activeCancel
+			cancelMu.Unlock()
+
+			if cancelFn != nil {
+				fmt.Println("\nCanceling current request...")
+				cancelFn()
+			} else {
+				if count == 1 {
+					fmt.Println("\nPress Ctrl+C again to exit.")
+					go func() {
+						time.Sleep(2 * time.Second)
+						atomic.StoreInt32(&interruptCount, 0)
+					}()
+				} else if count >= 2 {
+					fmt.Println("\nExiting...")
+					if execController != nil {
+						execController.Close()
+					}
+					os.Exit(1)
+				}
+			}
 		}
-		cancel()
 	}()
 
 	if execServerAddr == "" {
