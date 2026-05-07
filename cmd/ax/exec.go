@@ -199,6 +199,19 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 			for {
 				approved, err := d.PromptForApproval(conf.Question)
 				if err != nil {
+					if err.Error() == "user aborted" {
+						count := atomic.AddInt32(&interruptCount, 1)
+						if count == 1 {
+							fmt.Println("\nPress Ctrl+C again to exit.")
+							go func() {
+								time.Sleep(2 * time.Second)
+								atomic.StoreInt32(&interruptCount, 0)
+							}()
+							continue
+						} else if count >= 2 {
+							return nil
+						}
+					}
 					return err
 				}
 				var decision []*proto.Message
