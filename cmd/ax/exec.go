@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -166,14 +167,31 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 	}
 
 	for {
-		conf, err := runAutoExec(ctx, d, &proto.ExecRequest{
+		reqCtx, cancelReq := context.WithCancel(ctx)
+		cancelMu.Lock()
+		activeCancel = cancelReq
+		cancelMu.Unlock()
+
+		conf, err := runAutoExec(reqCtx, d, &proto.ExecRequest{
 			ConversationId: id,
 			AgentId:        agentID,
 			Inputs:         inputs,
 			LastSeq:        lastSeq,
 		})
 		lastSeq = 0 // disable resuming from sequence, user sees the seq on the screen
+
+		cancelMu.Lock()
+		activeCancel = nil
+		cancelMu.Unlock()
+		cancelReq()
+
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				fmt.Println("Request canceled.")
+				inputs = nil
+				agentID = ""
+				continue
+			}
 			return err
 		}
 
@@ -214,12 +232,27 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 					}}
 				}
 
-				conf, err = runAutoExec(ctx, d, &proto.ExecRequest{
+				reqCtx, cancelReq := context.WithCancel(ctx)
+				cancelMu.Lock()
+				activeCancel = cancelReq
+				cancelMu.Unlock()
+
+				conf, err = runAutoExec(reqCtx, d, &proto.ExecRequest{
 					ConversationId: id,
 					AgentId:        agentID,
 					Inputs:         decision,
 				})
+
+				cancelMu.Lock()
+				activeCancel = nil
+				cancelMu.Unlock()
+				cancelReq()
+
 				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						fmt.Println("Request canceled.")
+						break
+					}
 					return err
 				}
 				if conf == nil {
