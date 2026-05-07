@@ -46,7 +46,8 @@ var execCmd = &cobra.Command{
 	Short: "Execute a conversation or resume an existing one",
 	Long: `Execute a new conversation or resume an existing one.
 If no conversation ID is provided, a new UUID will be generated.`,
-	RunE: runExec,
+	SilenceUsage: true,
+	RunE:         runExec,
 }
 
 func init() {
