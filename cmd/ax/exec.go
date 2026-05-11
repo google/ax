@@ -90,8 +90,14 @@ func runExec(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		for {
-			<-sigChan
-			count := atomic.AddInt32(&interruptCount, 1)
+			sig := <-sigChan
+			if sig == syscall.SIGTERM {
+				fmt.Println("\nReceived SIGTERM, exiting...")
+				if execController != nil {
+					execController.Close()
+				}
+				os.Exit(1)
+			}
 
 			cancelMu.Lock()
 			cancelFn := activeCancel
@@ -101,6 +107,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 				fmt.Println("\nCanceling current request...")
 				cancelFn()
 			} else {
+				count := atomic.AddInt32(&interruptCount, 1)
 				if count == 1 {
 					fmt.Println("\nPress Ctrl+C again to exit.")
 					go func() {
@@ -199,7 +206,7 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 			for {
 				approved, err := d.PromptForApproval(conf.Question)
 				if err != nil {
-					if err.Error() == "user aborted" {
+					if errors.Is(err, internal.ErrUserAborted) {
 						count := atomic.AddInt32(&interruptCount, 1)
 						if count == 1 {
 							fmt.Println("\nPress Ctrl+C again to exit.")
@@ -417,7 +424,7 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		var err error
 		input, err = d.PromptForInput()
 		if err != nil {
-			if err.Error() == "user aborted" {
+			if errors.Is(err, internal.ErrUserAborted) {
 				count := atomic.AddInt32(&interruptCount, 1)
 				if count == 1 {
 					fmt.Println("\nPress Ctrl+C again to exit.")
