@@ -110,10 +110,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 				count := atomic.AddInt32(&interruptCount, 1)
 				if count == 1 {
 					fmt.Println("\nPress Ctrl+C again to exit.")
-					go func() {
-						time.Sleep(2 * time.Second)
-						atomic.StoreInt32(&interruptCount, 0)
-					}()
+					startInterruptResetTimer()
 				} else if count >= 2 {
 					fmt.Println("\nExiting...")
 					if execController != nil {
@@ -210,10 +207,7 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 						count := atomic.AddInt32(&interruptCount, 1)
 						if count == 1 {
 							fmt.Println("\nPress Ctrl+C again to exit.")
-							go func() {
-								time.Sleep(2 * time.Second)
-								atomic.StoreInt32(&interruptCount, 0)
-							}()
+							startInterruptResetTimer()
 							continue
 						} else if count >= 2 {
 							return nil
@@ -428,10 +422,7 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 				count := atomic.AddInt32(&interruptCount, 1)
 				if count == 1 {
 					fmt.Println("\nPress Ctrl+C again to exit.")
-					go func() {
-						time.Sleep(2 * time.Second)
-						atomic.StoreInt32(&interruptCount, 0)
-					}()
+					startInterruptResetTimer()
 					input = "" // Continue loop to prompt again
 					continue
 				} else if count >= 2 {
@@ -448,4 +439,11 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		return "", true, nil
 	}
 	return input, false, nil
+}
+
+func startInterruptResetTimer() {
+	go func() {
+		time.Sleep(2 * time.Second)
+		atomic.StoreInt32(&interruptCount, 0)
+	}()
 }
