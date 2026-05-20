@@ -26,6 +26,13 @@ Built-in consistency and resumability features:
 - **Event Log**: Durable execution state with automatic recovery
 - **Advanced Resumption**: Support for compute-layer actor resumption on compatible platforms
 
+## Demo
+
+[![Demo](https://i.imgur.com/ADiU1OP.png)](https://www.youtube.com/watch?v=L5Iw1IrZ6Nc)
+
+Watch how AX works and deployed on [Agent Substrate](https://github.com/agent-substrate/substrate) for session
+tenancy, isolation, single writer enforcement, and other capaabilities.
+
 ## Overview
 
 ```mermaid
@@ -81,10 +88,13 @@ You should see the ax CLI usage information.
 
 ### Kubernetes
 
-AX is natively supported on Agent Substrate on Kubernetes
-and it's the recommended deployment option for production
+AX is natively supported on
+[Agent Substrate](https://github.com/agent-substrate/substrate)
+on Kubernetes and it's the recommended deployment option for production
 use. For more details on setup and configuration, see the
 [deployment guide](./manifests/README.md).
+
+Read more about [Agent Substrate](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate?e=48754805).
 
 ## Quick Start
 
