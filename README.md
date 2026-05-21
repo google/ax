@@ -30,8 +30,7 @@ Built-in consistency and resumability features:
 
 [![Demo](https://i.imgur.com/ADiU1OP.png)](https://www.youtube.com/watch?v=L5Iw1IrZ6Nc)
 
-Watch how AX works and deployed on [Agent Substrate](https://github.com/agent-substrate/substrate) for session
-tenancy, isolation, single writer enforcement, and other capaabilities.
+Watch our demo to see AX works when deployed on [Agent Substrate](https://github.com/agent-substrate/substrate).
 
 ## Overview
 
