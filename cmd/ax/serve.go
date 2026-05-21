@@ -21,7 +21,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/google/ax/internal/cliutil"
+	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/server"
 	"github.com/spf13/cobra"
 )

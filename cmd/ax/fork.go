@@ -17,7 +17,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/google/ax/internal/cliutil"
+	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/config"
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"

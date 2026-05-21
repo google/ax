@@ -24,7 +24,7 @@ import (
 	"syscall"
 
 	"github.com/google/ax/cmd/ax/internal"
-	"github.com/google/ax/internal/cliutil"
+	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
