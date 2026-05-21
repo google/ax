@@ -6,7 +6,7 @@
 > Please note that the resumption protocols will undergo major revisions and
 > breaking changes prior to the stable release.
 > Please note that we are in the very early stages and
-> haven't announced this project widely. Please reach out
+> will announce this project widely soon. Please reach out
 > to ax-dev@google.com if you are interested in collobration.
 
 AX, short for Agent eXecutor, is a distributed agent runtime. It provides a
