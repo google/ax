@@ -75,13 +75,13 @@ func TestNewSkillsTool_WithSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	
+
 	skillContent := `---
 name: test-skill
 description: A test skill
 ---
 Instructions go here.`
-	
+
 	err = os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0644)
 	if err != nil {
 		t.Fatal(err)
@@ -113,4 +113,3 @@ func TestNewSkillsTool_NoDir(t *testing.T) {
 		t.Errorf("Expected NoopTool, got %T", tool)
 	}
 }
-

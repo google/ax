@@ -78,8 +78,6 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 		return nil, fmt.Errorf("failed to create event log: %w", err)
 	}
 
-
-
 	return &Controller{
 		registry:       registry,
 		eventLog:       eventLog,
@@ -172,7 +170,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	if err != nil {
 		return fmt.Errorf("failed to create planner: %w", err)
 	}
-	
+
 	registry := maps.Clone(d.registry.Map())
 	registry[plannerAgentID] = planner
 

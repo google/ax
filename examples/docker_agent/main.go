@@ -161,6 +161,7 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AgentMessage, pro
 		},
 	})
 }
+
 // protoToContents converts history to Gemini conversation format.
 func protoToContents(inputs []*proto.Message) []*genai.Content {
 	var contents []*genai.Content

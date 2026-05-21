@@ -31,6 +31,7 @@ import (
 )
 
 type contextKey string
+
 const disallowConfirmationsKey contextKey = "disallowConfirmations"
 
 // AgentRegistry defines the interface needed by the planner to discover agents.
@@ -189,7 +190,7 @@ func (p *geminiPlannerAgent) loop(ctx context.Context, conversationID string, st
 		if state == proto.State_STATE_PENDING {
 			return nil
 		}
-	
+
 	}
 }
 
@@ -352,7 +353,7 @@ func (p *geminiPlannerAgent) handleSubagentCall(ctx context.Context, conversatio
 	}
 
 	subagentStart := &proto.AgentStart{
-		AgentId:  mappedName,
+		AgentId: mappedName,
 		Messages: []*proto.Message{
 			{
 				Role: "user",
@@ -415,7 +416,6 @@ func (p *geminiPlannerAgent) handleSubagentCall(ctx context.Context, conversatio
 		})
 	}
 
-
 	var resultText strings.Builder
 	for _, msg := range subagentOutputs {
 		if msg.Content != nil {
@@ -454,7 +454,6 @@ func (p *geminiPlannerAgent) handleSubagentCall(ctx context.Context, conversatio
 		},
 	})
 }
-
 
 func (p *geminiPlannerAgent) handleConfirmationAnswer(inputs []*proto.Message) (*genai.FunctionCall, bool) {
 	var conf *proto.ConfirmationContent

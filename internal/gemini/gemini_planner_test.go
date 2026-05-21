@@ -225,7 +225,7 @@ func TestAgentsToTools_Parameters(t *testing.T) {
 	if len(required) != 2 {
 		t.Errorf("expected 2 required properties, got %d", len(required))
 	}
-	
+
 	foundHistory := false
 	foundPrompt := false
 	for _, r := range required {
@@ -466,4 +466,3 @@ func TestNewGeminiPlannerAgent_NoSkillsPrompt(t *testing.T) {
 		t.Errorf("expected system prompt to not contain '<available_skills>', got: %s", prompt)
 	}
 }
-

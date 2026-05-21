@@ -81,7 +81,7 @@ func suspendActor(actorID string) {
 
 	log.Printf("Automatically suspending actor %s in 50 milliseconds...", actorID)
 	time.Sleep(50 * time.Millisecond)
-	
+
 	suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
