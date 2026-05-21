@@ -321,13 +321,6 @@ ax trace --conversation 1a6e0b29-87c2-4af0-81ac-0c73bf8fa293
 ax trace --conversation 1a6e0b29-87c2-4af0-81ac-0c73bf8fa293 --addr 0.0.0.0:9090
 ```
 
-
-
-## Event Log Format
-
-Event logs use `ConversationEvent` and `ExecutionEvent` messages available in the proto file
-to keep a log of conversations and executions.
-
 ## Gemini Agent
 
 AX includes a built-in Gemini agent that can be used to generate text based on a given prompt. The agent is registered as `gemini` and can be triggered as a standalone agent or used from custom agent implementations.
