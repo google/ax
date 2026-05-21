@@ -16,7 +16,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 
@@ -75,24 +74,13 @@ func (a *RemoteAgent) Connect(ctx context.Context, conversationID string, execID
 	defer conn.Close()
 
 	client := proto.NewAgentServiceClient(conn)
-	stream, err := client.Connect(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create stream: %w", err)
-	}
-
-	if err := stream.Send(&proto.AgentMessage{
+	stream, err := client.Connect(ctx, &proto.AgentRequest{
 		ConversationId: conversationID,
 		ExecId:         execID,
-		Type: &proto.AgentMessage_Start{
-			Start: start,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to send content: %w", err)
-	}
-
-	// Close the send direction to signal we're done sending
-	if err := stream.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %w", err)
+		Start:          start,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create stream: %w", err)
 	}
 
 	// Receive outputs and call handler for each
@@ -107,9 +95,7 @@ func (a *RemoteAgent) Connect(ctx context.Context, conversationID string, execID
 		}
 
 		switch msg := resp.Type.(type) {
-		case *proto.AgentMessage_Start:
-			return errors.New("starting new executions from remote agents is not supported yet")
-		case *proto.AgentMessage_Outputs:
+		case *proto.AgentResponse_Outputs:
 			if resp.ConversationId != conversationID {
 				return fmt.Errorf("received outputs for different conversation id: %s != %s", resp.ConversationId, conversationID)
 			}
@@ -119,7 +105,7 @@ func (a *RemoteAgent) Connect(ctx context.Context, conversationID string, execID
 			if err := o(msg.Outputs); err != nil {
 				return fmt.Errorf("handler error: %w", err)
 			}
-		case *proto.AgentMessage_End:
+		case *proto.AgentResponse_End:
 			if resp.ConversationId != conversationID {
 				return fmt.Errorf("received end for different conversation id: %s != %s", resp.ConversationId, conversationID)
 			}

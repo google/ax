@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -39,16 +38,8 @@ type server struct {
 	skillsExecutor *skills.Executor
 }
 
-func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AgentMessage, proto.AgentMessage]) error {
-	incoming, err := stream.Recv()
-	if err == io.EOF {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	start := incoming.GetStart()
+func (s *server) Connect(req *proto.AgentRequest, stream grpc.ServerStreamingServer[proto.AgentResponse]) error {
+	start := req.GetStart()
 	if start == nil {
 		return errors.New("missing start message")
 	}
@@ -131,10 +122,10 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AgentMessage, pro
 						},
 					},
 				}
-				if err := stream.Send(&proto.AgentMessage{
-					ConversationId: incoming.ConversationId,
-					ExecId:         incoming.ExecId,
-					Type: &proto.AgentMessage_Outputs{
+				if err := stream.Send(&proto.AgentResponse{
+					ConversationId: req.ConversationId,
+					ExecId:         req.ExecId,
+					Type: &proto.AgentResponse_Outputs{
 						Outputs: &proto.AgentOutputs{
 							Messages: []*proto.Message{responseMsg},
 						},
@@ -153,10 +144,10 @@ func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AgentMessage, pro
 	fmt.Println("DockerAgent finished execution turn.")
 
 	// Send AgentEnd
-	return stream.Send(&proto.AgentMessage{
-		ConversationId: incoming.ConversationId,
-		ExecId:         incoming.ExecId,
-		Type: &proto.AgentMessage_End{
+	return stream.Send(&proto.AgentResponse{
+		ConversationId: req.ConversationId,
+		ExecId:         req.ExecId,
+		Type: &proto.AgentResponse_End{
 			End: &proto.AgentEnd{},
 		},
 	})

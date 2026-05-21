@@ -34,34 +34,28 @@ func main() {
 	defer conn.Close()
 
 	client := proto.NewAgentServiceClient(conn)
-	stream, err := client.Connect(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to open stream: %v", err)
-	}
-
 	fmt.Println("Sending request to write a Dockerfile...")
-	// Send start message
-	err = stream.Send(&proto.AgentMessage{
+	req := &proto.AgentRequest{
 		ConversationId: "test-conversation-id",
 		ExecId:         "test-exec-id",
-		Type: &proto.AgentMessage_Start{
-			Start: &proto.AgentStart{
-				AgentId: "DockerAgent",
-				Messages: []*proto.Message{
-					{
-						Role: "user",
-						Content: &proto.Content{
-							Type: &proto.Content_Text{
-								Text: &proto.TextContent{Text: "Write a Dockerfile for a simple Node.js app."},
-							},
+		Start: &proto.AgentStart{
+			AgentId: "DockerAgent",
+			Messages: []*proto.Message{
+				{
+					Role: "user",
+					Content: &proto.Content{
+						Type: &proto.Content_Text{
+							Text: &proto.TextContent{Text: "Write a Dockerfile for a simple Node.js app."},
 						},
 					},
 				},
 			},
 		},
-	})
+	}
+
+	stream, err := client.Connect(context.Background(), req)
 	if err != nil {
-		log.Fatalf("Failed to send message: %v", err)
+		log.Fatalf("Failed to open stream: %v", err)
 	}
 
 	fmt.Println("Waiting for response...")

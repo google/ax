@@ -36,13 +36,18 @@ message AgentOutputs {
 
 message AgentEnd {}
 
-message AgentMessage {
+message AgentRequest {
+  string conversation_id = 1;
+  string exec_id = 2;
+  AgentStart start = 3;
+}
+
+message AgentResponse {
   string conversation_id = 1;
   string exec_id = 2;
   oneof type {
-    AgentStart start = 3;
-    AgentOutputs outputs = 4;
-    AgentEnd end = 5;
+    AgentOutputs outputs = 3;
+    AgentEnd end = 4;
   }
 }
 
@@ -98,7 +103,7 @@ message HealthCheckResponse {
 // we are solidifying resumption on the wire.
 service AgentService {
   // Connect is used by agents to connect to the controller.
-  rpc Connect(stream AgentMessage) returns (stream AgentMessage);
+  rpc Connect(AgentRequest) returns (stream AgentResponse);
 
   // HealthCheck checks if the agent is healthy and responsive
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);

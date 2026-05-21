@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strings"
@@ -35,73 +34,64 @@ type server struct {
 	proto.UnimplementedAgentServiceServer
 }
 
-// Connect implements bidirectional streaming for agent processing.
-// This RPC is called by the gar controller when a session triggers this agent.
-func (s *server) Connect(stream grpc.BidiStreamingServer[proto.AgentMessage, proto.AgentMessage]) error {
-	for {
-		// Receive input content from gar controller
-		incoming, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		start := incoming.GetStart()
-		if start == nil {
-			continue // optionally wait for start
-		}
-
-		var messages []*proto.Message
-		for _, input := range start.Messages {
-			textContent := input.GetContent().GetText()
-			if textContent == nil {
-				continue
-			}
-			messages = append(messages, input)
-		}
-		if len(messages) == 0 {
-			return errors.New("no text inputs, cannot uppercase")
-		}
-
-		// We don't need to uppercase the whole history.
-		// Only uppercase the last text message.
-		lastMsg := messages[len(messages)-1]
-		responseMsg := &proto.Message{
-			Role: "assistant",
-			Content: &proto.Content{
-				Type: &proto.Content_Text{
-					Text: &proto.TextContent{
-						Text: strings.ToLower(lastMsg.GetContent().GetText().Text),
-					},
-				},
-			},
-		}
-
-		if err := stream.Send(&proto.AgentMessage{
-			ConversationId: incoming.ConversationId,
-			ExecId:         incoming.ExecId,
-			Type: &proto.AgentMessage_Outputs{
-				Outputs: &proto.AgentOutputs{
-					Messages: []*proto.Message{responseMsg},
-				},
-			},
-		}); err != nil {
-			return err
-		}
-
-		// Send AgentEnd to signal end of outputs.
-		if err := stream.Send(&proto.AgentMessage{
-			ConversationId: incoming.ConversationId,
-			ExecId:         incoming.ExecId,
-			Type: &proto.AgentMessage_End{
-				End: &proto.AgentEnd{},
-			},
-		}); err != nil {
-			return err
-		}
+// Connect implements server streaming for agent processing.
+// This RPC is called by the controller when a session triggers this agent.
+func (s *server) Connect(req *proto.AgentRequest, stream grpc.ServerStreamingServer[proto.AgentResponse]) error {
+	start := req.GetStart()
+	if start == nil {
+		return errors.New("start is required")
 	}
+
+	var messages []*proto.Message
+	for _, input := range start.Messages {
+		textContent := input.GetContent().GetText()
+		if textContent == nil {
+			continue
+		}
+		messages = append(messages, input)
+	}
+	if len(messages) == 0 {
+		return errors.New("no text inputs, cannot uppercase")
+	}
+
+	// We don't need to uppercase the whole history.
+	// Only uppercase the last text message.
+	lastMsg := messages[len(messages)-1]
+	responseMsg := &proto.Message{
+		Role: "assistant",
+		Content: &proto.Content{
+			Type: &proto.Content_Text{
+				Text: &proto.TextContent{
+					Text: strings.ToLower(lastMsg.GetContent().GetText().Text),
+				},
+			},
+		},
+	}
+
+	if err := stream.Send(&proto.AgentResponse{
+		ConversationId: req.ConversationId,
+		ExecId:         req.ExecId,
+		Type: &proto.AgentResponse_Outputs{
+			Outputs: &proto.AgentOutputs{
+				Messages: []*proto.Message{responseMsg},
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// Send AgentEnd to signal end of outputs.
+	if err := stream.Send(&proto.AgentResponse{
+		ConversationId: req.ConversationId,
+		ExecId:         req.ExecId,
+		Type: &proto.AgentResponse_End{
+			End: &proto.AgentEnd{},
+		},
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // HealthCheck checks if the agent is healthy.
