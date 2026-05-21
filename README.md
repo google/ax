@@ -49,7 +49,7 @@ graph LR
 
     Client -->|resumable stream| Router
     Router --> Controller
-    Controller <-->|resumable bidi stream| RemoteAgent
+    Controller <-->|resumable stream| RemoteAgent
     Controller --> Env
     Controller --> Tool
 ```
@@ -96,7 +96,8 @@ on Kubernetes and it's the recommended deployment option for production
 use. For more details on setup and configuration, see the
 [deployment guide](./manifests/README.md).
 
-Read more about [Agent Substrate](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate?e=48754805).
+Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
+that provides higher density to agentic workloads on Kubernetes.
 
 ## Quick Start
 
