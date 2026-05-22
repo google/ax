@@ -3,3 +3,4 @@
 * Update HarnessService with the actual protocol.
 * Remove axepp.
 * Remove ate build tag.
+* Remove harnessHandler once Exec RPC is revisited.

@@ -20,23 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/ax/internal/agent"
 	"github.com/google/ax/internal/controller/executor"
-	"github.com/google/ax/internal/gemini"
 	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
-
-const (
-	plannerAgentID = "__planner"
-	geminiAgentID  = "gemini"
-)
-
-var reservedAgentIDs = map[string]struct{}{
-	plannerAgentID: {},
-	geminiAgentID:  {},
-}
 
 type ExecHandler func(resp *proto.ExecResponse) error
 
@@ -45,30 +33,17 @@ type ExecHandler func(resp *proto.ExecResponse) error
 type Controller struct {
 	registry       *Registry
 	eventLog       executor.EventLog
-	plannerBuilder PlannerBuilder
 }
-
-// PlannerBuilder is a function that creates a PlanFunc given a Registry.
-type PlannerBuilder func(ctx context.Context, r *Registry) (agent.Agent, error)
 
 // Config configures the controller.
 type Config struct {
 	EventLogBuilder executor.EventLogBuilder
-	PlannerBuilder  PlannerBuilder
 }
 
 // New creates a new controller instance.
 func New(ctx context.Context, cfg Config) (*Controller, error) {
 	// Initialize agent registry
 	registry := NewRegistry()
-
-	// Determine plan function
-	// If no planner builder is provided, use the default Gemini planner.
-	if cfg.PlannerBuilder == nil {
-		cfg.PlannerBuilder = func(ctx context.Context, r *Registry) (agent.Agent, error) {
-			return gemini.NewGeminiPlannerAgent(ctx, r, gemini.GeminiPlannerConfig{})
-		}
-	}
 
 	if cfg.EventLogBuilder == nil {
 		return nil, fmt.Errorf("event log builder is required")
@@ -81,7 +56,6 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	return &Controller{
 		registry:       registry,
 		eventLog:       eventLog,
-		plannerBuilder: cfg.PlannerBuilder,
 	}, nil
 }
 

@@ -41,9 +41,6 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
 		},
-		PlannerBuilder: func(ctx context.Context, r *Registry) (agent.Agent, error) {
-			return &dummyAgent{}, nil
-		},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -21,6 +21,11 @@ import (
 	"strings"
 )
 
+var reservedAgentIDs = map[string]struct{}{
+	"gemini":    {},
+	"__planner": {},
+}
+
 var validIDRegex = regexp.MustCompile(`^[A-Za-z0-9\-_]+$`)
 
 // validateID checks if an ID contains allowed characters and is not reserved.

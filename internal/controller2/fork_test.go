@@ -18,7 +18,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/ax/internal/agent"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
 	"github.com/google/ax/proto"
@@ -53,9 +52,6 @@ func TestController_Fork(t *testing.T) {
 	c, err := New(ctx, Config{
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
-		},
-		PlannerBuilder: func(ctx context.Context, r *Registry) (agent.Agent, error) {
-			return &dummyAgent{}, nil
 		},
 	})
 	if err != nil {
@@ -132,9 +128,6 @@ func TestController_Fork_SrcSeqNotFound(t *testing.T) {
 	c, err := New(ctx, Config{
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
-		},
-		PlannerBuilder: func(ctx context.Context, r *Registry) (agent.Agent, error) {
-			return &dummyAgent{}, nil
 		},
 	})
 	if err != nil {
