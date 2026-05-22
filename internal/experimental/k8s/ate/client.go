@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package ate provides a client for the Agent Substrate Control API.
 package ate
 
 import (
