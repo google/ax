@@ -2,3 +2,4 @@
 * Remove harnesstest package.
 * Update HarnessService with the actual protocol.
 * Remove axepp.
+* Remove ate build tag.
