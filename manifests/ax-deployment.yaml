@@ -1,0 +1,52 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ax
+---
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: ax-harness-workerpool
+  namespace: ax
+spec:
+  replicas: 5
+  ateomImage: ko://github.com/agent-substrate/substrate/cmd/servers/ateom-gvisor
+---
+apiVersion: ate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: ax-harness-template
+  namespace: ax
+spec:
+  workerPoolRef:
+    name: ax-harness-workerpool
+    namespace: ax
+  runsc:
+    amd64:
+      url: "gs://gvisor/releases/nightly/2026-05-19/x86_64/runsc"
+      sha256Hash: "a397be1abc2420d26bce6c70e6e2ff96c73aaaab929756c56f5e2089ea842b63"
+    arm64:
+      url: "gs://gvisor/releases/nightly/2026-05-19/aarch64/runsc"
+      sha256Hash: "1ba2366ae2efceba166046f51a4104f9261c9cb72c6db8f5b3fe2dc57dea86b9"
+  pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
+  containers:
+    - name: "axharness"
+      image: ko://github.com/google/ax/cmd/axharness
+      ports:
+      - containerPort: 50053
+  snapshotsConfig:
+    location: gs://${BUCKET_NAME}/ax-harness/
