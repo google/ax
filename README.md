@@ -1,13 +1,15 @@
 # Agent Executor (AX)
 
 > [!WARNING]
-> 🚧 This project is in early active development and
-> WILL introduce major changes.
-> Please note that the resumption protocols will undergo major revisions and
-> breaking changes prior to the stable release.
-> Please note that we are in the very early stages and
-> will announce this project widely soon. Please reach out
-> to ax-dev@google.com if you are interested in collobration.
+> 🚧 **AX is in active early development.**
+>
+> We are actively refining our core, resumption protocols,
+> and runtime specifications, which will introduce major breaking
+> changes prior to a stable release.
+>
+> We are in the early stages and will announce this project
+> widely soon. If you are interested in collaborating with us,
+> please reach out to **ax-dev@google.com**!
 
 AX, short for Agent eXecutor, is a distributed agent runtime. It provides a
 runtime that coordinates agentic loops, manages executions with event logging,
