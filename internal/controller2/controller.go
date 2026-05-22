@@ -19,11 +19,11 @@ package controller2
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	"github.com/google/ax/internal/agent"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/gemini"
+	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
@@ -93,22 +93,42 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("conversation_id is required")
 	}
 
-	planner, err := d.plannerBuilder(ctx, d.registry)
+	h := harnesstest.NewHarness()
+	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
-		return fmt.Errorf("failed to create planner: %w", err)
+		return fmt.Errorf("failed to start harness session: %w", err)
+	}
+	defer exec.Close(ctx)
+
+	if err := exec.Queue(ctx, req.Inputs...); err != nil {
+		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 
-	registry := maps.Clone(d.registry.Map())
-	registry[plannerAgentID] = planner
-
-	// TODO(lhuan): consider remove this.
-	registry[geminiAgentID] = gemini.NewGeminiAgent()
-
-	if req.AgentId == "" {
-		req.AgentId = plannerAgentID
+	hhandler := &harnessHandler{
+		execHandler: handler,
+	}
+	if err := exec.Run(ctx, hhandler); err != nil {
+		return fmt.Errorf("harness execution turn failed: %w", err)
 	}
 
-	panic("not implemented")
+	return nil
+}
+
+type harnessHandler struct {
+	execHandler ExecHandler
+}
+
+func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *proto.Message) error {
+	if a.execHandler == nil {
+		return nil
+	}
+	return a.execHandler(&proto.ExecResponse{
+		Outputs: []*proto.Message{msg},
+	})
+}
+
+func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
+	return nil
 }
 
 // Delete deletes all events for a specific conversation ID.
