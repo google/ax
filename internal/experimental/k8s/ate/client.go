@@ -55,10 +55,10 @@ func NewClient(ns, template, target string, opts ...grpc.DialOption) (*Client, e
 }
 
 // CreateActor creates a new actor.
-func (c *Client) CreateActor(ctx context.Context, execID string) (*ateapipb.CreateActorResponse, error) {
+func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.CreateActor(ctx, &ateapipb.CreateActorRequest{
-		ActorId:                execID,
+		ActorId:                id,
 		ActorTemplateNamespace: c.namespace,
 		ActorTemplateName:      c.template,
 	})
@@ -69,10 +69,10 @@ func (c *Client) CreateActor(ctx context.Context, execID string) (*ateapipb.Crea
 }
 
 // SuspendActor suspends the actor.
-func (c *Client) SuspendActor(ctx context.Context, execID string) (*ateapipb.SuspendActorResponse, error) {
+func (c *Client) SuspendActor(ctx context.Context, id string) (*ateapipb.SuspendActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
-		ActorId: execID,
+		ActorId: id,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.SuspendActor: %w", err)
