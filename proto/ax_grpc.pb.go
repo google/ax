@@ -197,6 +197,102 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	HarnessService_Connect_FullMethodName = "/ax.HarnessService/Connect"
+)
+
+// HarnessServiceClient is the client API for HarnessService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type HarnessServiceClient interface {
+	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HarnessMessage, HarnessMessage], error)
+}
+
+type harnessServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewHarnessServiceClient(cc grpc.ClientConnInterface) HarnessServiceClient {
+	return &harnessServiceClient{cc}
+}
+
+func (c *harnessServiceClient) Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HarnessMessage, HarnessMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &HarnessService_ServiceDesc.Streams[0], HarnessService_Connect_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[HarnessMessage, HarnessMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type HarnessService_ConnectClient = grpc.BidiStreamingClient[HarnessMessage, HarnessMessage]
+
+// HarnessServiceServer is the server API for HarnessService service.
+// All implementations must embed UnimplementedHarnessServiceServer
+// for forward compatibility.
+type HarnessServiceServer interface {
+	Connect(grpc.BidiStreamingServer[HarnessMessage, HarnessMessage]) error
+	mustEmbedUnimplementedHarnessServiceServer()
+}
+
+// UnimplementedHarnessServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedHarnessServiceServer struct{}
+
+func (UnimplementedHarnessServiceServer) Connect(grpc.BidiStreamingServer[HarnessMessage, HarnessMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method Connect not implemented")
+}
+func (UnimplementedHarnessServiceServer) mustEmbedUnimplementedHarnessServiceServer() {}
+func (UnimplementedHarnessServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeHarnessServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to HarnessServiceServer will
+// result in compilation errors.
+type UnsafeHarnessServiceServer interface {
+	mustEmbedUnimplementedHarnessServiceServer()
+}
+
+func RegisterHarnessServiceServer(s grpc.ServiceRegistrar, srv HarnessServiceServer) {
+	// If the following call pancis, it indicates UnimplementedHarnessServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&HarnessService_ServiceDesc, srv)
+}
+
+func _HarnessService_Connect_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(HarnessServiceServer).Connect(&grpc.GenericServerStream[HarnessMessage, HarnessMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type HarnessService_ConnectServer = grpc.BidiStreamingServer[HarnessMessage, HarnessMessage]
+
+// HarnessService_ServiceDesc is the grpc.ServiceDesc for HarnessService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var HarnessService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "ax.HarnessService",
+	HandlerType: (*HarnessServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Connect",
+			Handler:       _HarnessService_Connect_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "proto/ax.proto",
+}
+
+const (
 	ControllerService_Exec_FullMethodName = "/ax.ControllerService/Exec"
 )
 

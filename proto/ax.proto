@@ -109,6 +109,16 @@ service AgentService {
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
+message HarnessMessage {
+  // TODO(jbd): This is a placeholder message
+  // and will be replaced with the actual protocol.
+  repeated Message messages = 1;
+}
+
+service HarnessService {
+  rpc Connect(stream HarnessMessage) returns (stream HarnessMessage);
+}
+
 // State represents the state of an execution
 enum State {
   STATE_UNSPECIFIED = 0;  // Unspecified state
