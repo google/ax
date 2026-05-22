@@ -6,8 +6,7 @@
 > We are actively refining our core, resumption protocols,
 > and runtime specifications, which will introduce major breaking
 > changes prior to a stable release.
->
-> We are in the early stages and will announce this project
+> We will announce this project
 > widely soon. If you are interested in collaborating with us,
 > please reach out to **ax-dev@google.com**!
 
