@@ -69,8 +69,12 @@ func init() {
 
 var (
 	execController *controller.Controller
+	// interruptCount tracks consecutive Ctrl+C events to support exiting on double Ctrl+C.
 	interruptCount int32
+	// activeCancel stores the cancellation function for the currently in-flight request,
+	// allowing a single Ctrl+C to cancel the active execution request rather than exiting the process.
 	activeCancel   context.CancelFunc
+	// cancelMu protects activeCancel from concurrent access across goroutines.
 	cancelMu       sync.Mutex
 )
 
