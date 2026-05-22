@@ -27,7 +27,6 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/google/ax/internal/experimental/k8s/ate"
 	"github.com/google/ax/proto"
@@ -128,9 +127,7 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 	e.pending = nil
 	e.mu.Unlock()
 
-	// Append conversation ID to metadata for server tracking
-	streamCtx := metadata.AppendToOutgoingContext(ctx, "ax-conversation-id", e.conversationID)
-	stream, err := e.client.Connect(streamCtx)
+	stream, err := e.client.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open harness service stream: %w", err)
 	}
