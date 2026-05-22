@@ -308,6 +308,11 @@ ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
 ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
         --dest-conversation e5e26e38-53a2-4f22-b1cb-ae867357df83 \
         --src-seq 12
+
+# Same checkpoint using a snapshot (conversation_id:seq)
+ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
+        --dest-conversation e5e26e38-53a2-4f22-b1cb-ae867357df83 \
+        --src-snapshot 38460323-9a78-41cb-8991-022b0ff2c19c:12
 ```
 
 ### Trace

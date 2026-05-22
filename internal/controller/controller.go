@@ -22,6 +22,7 @@ import (
 	"maps"
 
 	"github.com/google/ax/internal/agent"
+	"github.com/google/ax/internal/checkpoint"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/gemini"
 	"github.com/google/ax/proto"
@@ -102,22 +103,16 @@ func (d *Controller) tryResuming(ctx context.Context, req *proto.ExecRequest, el
 	}
 
 	if req.LastSeq != 0 {
-		found := false
-		for _, ev := range events {
-			if ev.Seq == req.LastSeq {
-				found = true
-			}
-			if ev.Seq > req.LastSeq {
-				if err := handler(&proto.ExecResponse{
-					Outputs: ev.Messages,
-					Seq:     ev.Seq,
-				}); err != nil {
-					return nil, false, err
-				}
-			}
-		}
-		if !found {
+		if err := checkpoint.ValidateSeq(events, req.LastSeq); err != nil {
 			return nil, false, fmt.Errorf("last_seq %d not found", req.LastSeq)
+		}
+		for _, ev := range checkpoint.EventsAfter(events, req.LastSeq) {
+			if err := handler(&proto.ExecResponse{
+				Outputs: ev.Messages,
+				Seq:     ev.Seq,
+			}); err != nil {
+				return nil, false, err
+			}
 		}
 	}
 
@@ -284,28 +279,11 @@ func (d *Controller) Fork(ctx context.Context, srcConversationID string, srcSeq 
 		return "", fmt.Errorf("source conversation %s not found or has no events", srcConversationID)
 	}
 
-	// When the caller specifies srcSeq, require that it actually exists in
-	// the source event log. Without this check a typo or stale checkpoint
-	// silently degrades to "fork all events", which is misleading. Walk
-	// the events once: stop as soon as we pass the requested seq, and
-	// truncate the slice on an exact match so the copy loop below doesn't
-	// need to re-check the bound.
-	if srcSeq > 0 {
-		found := false
-		for i, ev := range events {
-			if ev.Seq == srcSeq {
-				events = events[:i+1]
-				found = true
-				break
-			}
-			if ev.Seq > srcSeq {
-				break
-			}
-		}
-		if !found {
-			return "", fmt.Errorf("src_seq %d not found in conversation %s", srcSeq, srcConversationID)
-		}
+	truncated, err := checkpoint.Truncate(events, checkpoint.At(srcConversationID, srcSeq))
+	if err != nil {
+		return "", err
 	}
+	events = truncated
 
 	for _, ev := range events {
 		// Clone the event to update the conversation ID.
