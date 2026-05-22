@@ -93,6 +93,9 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("conversation_id is required")
 	}
 
+	// TODO(jbd): Resume an incomplete execution if there exists one.
+	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
+
 	h := harnesstest.NewHarness()
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
