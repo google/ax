@@ -96,7 +96,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// TODO(jbd): Resume an incomplete execution if there exists one.
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 
-	h := harnesstest.NewHarness()
+	h := harnesstest.New()
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
 		return fmt.Errorf("failed to start harness session: %w", err)

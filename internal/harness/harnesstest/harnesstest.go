@@ -31,8 +31,8 @@ type Harness struct {
 	Active map[string]*Execution
 }
 
-// NewHarness creates a new Harness instance.
-func NewHarness() *Harness {
+// New creates a new Harness instance.
+func New() *Harness {
 	return &Harness{
 		Active: make(map[string]*Execution),
 	}
