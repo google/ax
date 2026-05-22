@@ -50,3 +50,32 @@ spec:
       - containerPort: 50053
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/ax-harness/
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: ax-server
+  namespace: ax
+  labels:
+    app: ax-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ax-server
+  template:
+    metadata:
+      labels:
+        app: ax-server
+    spec:
+      containers:
+        - name: ax-server
+          image: ko://github.com/google/ax/cmd/ax
+          command: ["/ko-app/ax", "serve"]
+          ports:
+            - containerPort: 8494
+          env:
+            - name: GEMINI_API_KEY
+              value: "${GEMINI_API_KEY}"
+            - name: AX_SUBSTRATE
+              value: "1"
