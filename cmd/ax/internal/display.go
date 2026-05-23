@@ -16,10 +16,11 @@ package internal
 
 import (
 	"fmt"
+	"os"
 	"sync/atomic"
 
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 )
 
 const (
@@ -27,8 +28,11 @@ const (
 )
 
 var (
-	purple  = lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#7571F9"}
-	comment = lipgloss.AdaptiveColor{Dark: "#6d6d6d"}
+	isDark    = lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+	lightDark = lipgloss.LightDark(isDark)
+
+	purple  = lightDark(lipgloss.Color("#5A56E0"), lipgloss.Color("#7571F9"))
+	comment = lightDark(lipgloss.Color("#a0a0a0"), lipgloss.Color("#6d6d6d"))
 )
 
 type Display struct {
