@@ -6,6 +6,9 @@
 > We are actively refining our core, resumption protocols,
 > and runtime specifications, which will introduce major breaking
 > changes prior to a stable release.
+>
+> **Temporary Policy:** We are temporarily pausing the acceptance of external Pull Requests while we stabilize the core architecture. We warmly encourage you to open Issues for feedback and feature requests instead.
+>
 > We will announce this project
 > widely soon. If you are interested in collaborating with us,
 > please reach out to **ax-dev@google.com**!
@@ -420,9 +423,8 @@ Below is an overview of our upcoming features and planned changes:
 Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) guide for instructions
 on how to contribute to this project.
 
-We are in the middle of a major refactor for AX, so we're holding off on
-accepting new contributions until the core stabilize.
-However, in the meantime, we encourage you to file bugs and
+We are currently undergoing a significant architectural redesign, and external contributions are temporarily paused.
+However, in the meantime, we warmly encourage you to file bugs and
 send feature requests.
 
 ## Acknowledgements
