@@ -16,12 +16,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/google/ax/cmd/ax/internal"
 	"github.com/google/ax/cmd/ax/internal/cliutil"
@@ -46,7 +50,8 @@ var execCmd = &cobra.Command{
 	Short: "Execute a conversation or resume an existing one",
 	Long: `Execute a new conversation or resume an existing one.
 If no conversation ID is provided, a new UUID will be generated.`,
-	RunE: runExec,
+	SilenceUsage: true,
+	RunE:         runExec,
 }
 
 func init() {
@@ -64,6 +69,13 @@ func init() {
 
 var (
 	execController *controller.Controller
+	// interruptCount tracks consecutive Ctrl+C events to support exiting on double Ctrl+C.
+	interruptCount int32
+	// activeCancel stores the cancellation function for the currently in-flight request,
+	// allowing a single Ctrl+C to cancel the active execution request rather than exiting the process.
+	activeCancel   context.CancelFunc
+	// cancelMu protects activeCancel from concurrent access across goroutines.
+	cancelMu       sync.Mutex
 )
 
 func runExec(cmd *cobra.Command, args []string) error {
@@ -77,16 +89,41 @@ func runExec(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sigChan := make(chan os.Signal, 1)
+	sigChan := make(chan os.Signal, 2) // Buffer to not miss signals
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		<-sigChan
-		fmt.Println("\nReceived interrupt, shutting down...")
-		if execController != nil {
-			execController.Close()
+		for {
+			sig := <-sigChan
+			if sig == syscall.SIGTERM {
+				fmt.Println("\nReceived SIGTERM, exiting...")
+				if execController != nil {
+					execController.Close()
+				}
+				os.Exit(1)
+			}
+
+			cancelMu.Lock()
+			cancelFn := activeCancel
+			cancelMu.Unlock()
+
+			if cancelFn != nil {
+				fmt.Println("\nCanceling current request...")
+				cancelFn()
+			} else {
+				count := atomic.AddInt32(&interruptCount, 1)
+				if count == 1 {
+					fmt.Println("\nPress Ctrl+C again to exit.")
+					startInterruptResetTimer()
+				} else if count >= 2 {
+					fmt.Println("\nExiting...")
+					if execController != nil {
+						execController.Close()
+					}
+					os.Exit(1)
+				}
+			}
 		}
-		cancel()
 	}()
 
 	if execServerAddr == "" {
@@ -138,14 +175,31 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 	}
 
 	for {
-		conf, err := runAutoExec(ctx, d, &proto.ExecRequest{
+		reqCtx, cancelReq := context.WithCancel(ctx)
+		cancelMu.Lock()
+		activeCancel = cancelReq
+		cancelMu.Unlock()
+
+		conf, err := runAutoExec(reqCtx, d, &proto.ExecRequest{
 			ConversationId: id,
 			AgentId:        agentID,
 			Inputs:         inputs,
 			LastSeq:        lastSeq,
 		})
 		lastSeq = 0 // disable resuming from sequence, user sees the seq on the screen
+
+		cancelMu.Lock()
+		activeCancel = nil
+		cancelMu.Unlock()
+		cancelReq()
+
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				fmt.Println("Request canceled.")
+				inputs = nil
+				agentID = ""
+				continue
+			}
 			return err
 		}
 
@@ -153,6 +207,16 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 			for {
 				approved, err := d.PromptForApproval(conf.Question)
 				if err != nil {
+					if errors.Is(err, internal.ErrUserAborted) {
+						count := atomic.AddInt32(&interruptCount, 1)
+						if count == 1 {
+							fmt.Println("\nPress Ctrl+C again to exit.")
+							startInterruptResetTimer()
+							continue
+						} else if count >= 2 {
+							return nil
+						}
+					}
 					return err
 				}
 				var decision []*proto.Message
@@ -186,12 +250,27 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 					}}
 				}
 
-				conf, err = runAutoExec(ctx, d, &proto.ExecRequest{
+				reqCtx, cancelReq := context.WithCancel(ctx)
+				cancelMu.Lock()
+				activeCancel = cancelReq
+				cancelMu.Unlock()
+
+				conf, err = runAutoExec(reqCtx, d, &proto.ExecRequest{
 					ConversationId: id,
 					AgentId:        agentID,
 					Inputs:         decision,
 				})
+
+				cancelMu.Lock()
+				activeCancel = nil
+				cancelMu.Unlock()
+				cancelReq()
+
 				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						fmt.Println("Request canceled.")
+						break
+					}
 					return err
 				}
 				if conf == nil {
@@ -343,6 +422,17 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		var err error
 		input, err = d.PromptForInput()
 		if err != nil {
+			if errors.Is(err, internal.ErrUserAborted) {
+				count := atomic.AddInt32(&interruptCount, 1)
+				if count == 1 {
+					fmt.Println("\nPress Ctrl+C again to exit.")
+					startInterruptResetTimer()
+					input = "" // Continue loop to prompt again
+					continue
+				} else if count >= 2 {
+					return "", true, nil
+				}
+			}
 			return "", false, err
 		}
 	}
@@ -353,4 +443,11 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		return "", true, nil
 	}
 	return input, false, nil
+}
+
+func startInterruptResetTimer() {
+	go func() {
+		time.Sleep(2 * time.Second)
+		atomic.StoreInt32(&interruptCount, 0)
+	}()
 }
