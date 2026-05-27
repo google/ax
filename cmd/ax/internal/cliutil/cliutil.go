@@ -1,3 +1,5 @@
+//go:build !harness
+
 // Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +27,12 @@ import (
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/gemini"
 )
+
+// Controller is the active controller type for this build.
+type Controller = *controller.Controller
+
+// ExecHandler is the handler type accepted by Controller.Exec.
+type ExecHandler = controller.ExecHandler
 
 // NewControllerFromConfig creates a new Controller instance based on the provided configuration.
 func NewControllerFromConfig(ctx context.Context, cfg *config.Config) (*controller.Controller, error) {

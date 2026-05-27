@@ -1,4 +1,4 @@
-//go:build ate
+//go:build !harness && ate
 
 // Copyright 2026 Google LLC
 //
