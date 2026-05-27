@@ -35,6 +35,9 @@ var (
 	comment = lightDark(lipgloss.Color("#a0a0a0"), lipgloss.Color("#6d6d6d"))
 )
 
+// ErrUserAborted is returned when the user aborts a prompt.
+var ErrUserAborted = huh.ErrUserAborted
+
 type Display struct {
 	id string
 
