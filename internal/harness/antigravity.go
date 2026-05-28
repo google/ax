@@ -22,6 +22,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -124,9 +125,12 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 
 	// 4. Stream responses from WebSocket
 	type WSResponse struct {
-		Type    string `json:"type"`
-		Content string `json:"content"`
-		Error   string `json:"error"`
+		Type    string          `json:"type"`
+		Content string          `json:"content"`
+		Error   string          `json:"error"`
+		ID      string          `json:"id"`
+		Name    string          `json:"name"`
+		Args    json.RawMessage `json:"args"`
 	}
 
 	for {
@@ -172,6 +176,37 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 			}
 			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
 				return fmt.Errorf("failed to send thought to handler: %w", err)
+			}
+		case "tool_call":
+			var argsMap map[string]any
+			if len(resp.Args) > 0 {
+				if err := json.Unmarshal(resp.Args, &argsMap); err != nil {
+					return fmt.Errorf("failed to unmarshal tool call args: %w", err)
+				}
+			}
+			structArgs, err := structpb.NewStruct(argsMap)
+			if err != nil {
+				return fmt.Errorf("failed to create structpb from tool call args: %w", err)
+			}
+
+			msg := &proto.Message{
+				Role: "model",
+				Content: &proto.Content{
+					Type: &proto.Content_ToolCall{
+						ToolCall: &proto.ToolCallContent{
+							Id: resp.ID,
+							Type: &proto.ToolCallContent_FunctionCall{
+								FunctionCall: &proto.FunctionCallContent{
+									Name:      resp.Name,
+									Arguments: structArgs,
+								},
+							},
+						},
+					},
+				},
+			}
+			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
+				return fmt.Errorf("failed to send tool call to handler: %w", err)
 			}
 		case "complete":
 			return handler.OnComplete(ctx, e.id)

@@ -26,7 +26,7 @@ import uvicorn
 from google.protobuf.json_format import Parse
 from proto import ax_pb2
 from google.antigravity import Agent, AgentConfig
-from google.antigravity.types import Step, StepType, StepSource, StepTarget, StepStatus, Text, Thought
+from google.antigravity.types import Step, StepType, StepSource, StepTarget, StepStatus, Text, Thought, ToolCall
 
 app = FastAPI()
 
@@ -146,6 +146,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "text", "content": chunk.text})
                 elif isinstance(chunk, Thought):
                     await websocket.send_json({"type": "thought", "content": chunk.text})
+                elif isinstance(chunk, ToolCall):
+                    await websocket.send_json({
+                        "type": "tool_call",
+                        "id": chunk.id or "",
+                        "name": str(chunk.name),
+                        "args": chunk.args
+                    })
                     
         # Send complete frame
         await websocket.send_json({"type": "complete"})

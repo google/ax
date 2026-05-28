@@ -111,6 +111,8 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 		for _, out := range resp.Outputs {
 			if textContent := out.GetContent().GetText().GetText(); textContent != "" {
 				fmt.Printf("Agent Output: %s\n", textContent)
+			} else if toolCall := out.GetContent().GetToolCall(); toolCall != nil {
+				fmt.Printf("Agent Triggered Tool Call: %s (ID: %s)\n", toolCall.GetFunctionCall().Name, toolCall.Id)
 			}
 		}
 		return nil
@@ -121,7 +123,7 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 			Role: "user",
 			Content: &proto.Content{
 				Type: &proto.Content_Text{
-					Text: &proto.TextContent{Text: "Who are you?"},
+					Text: &proto.TextContent{Text: "What is the weather in New York?"},
 				},
 			},
 		},

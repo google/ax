@@ -79,9 +79,10 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 		}
 
 		// 2. Stream response chunks
-		chunks := []map[string]string{
-			{"type": "text", "content": "Hello "},
-			{"type": "text", "content": "world!"},
+		chunks := []map[string]any{
+			{"type": "thought", "content": "Analyzing request"},
+			{"type": "tool_call", "id": "call-123", "name": "get_weather", "args": map[string]any{"city": "Paris"}},
+			{"type": "text", "content": "The weather in Paris is rainy."},
 			{"type": "complete"},
 		}
 
@@ -127,14 +128,29 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 	if !handler.complete {
 		t.Error("expected OnComplete to be called")
 	}
-	if len(handler.messages) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(handler.messages))
+	if len(handler.messages) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(handler.messages))
 	}
-	if handler.messages[0].GetContent().GetText().GetText() != "Hello " {
-		t.Errorf("expected 'Hello ', got %q", handler.messages[0].GetContent().GetText().GetText())
+	if handler.messages[0].GetContent().GetThought().GetSummary()[0].GetText().GetText() != "Analyzing request" {
+		t.Errorf("expected 'Analyzing request', got %q", handler.messages[0].GetContent().GetThought().GetSummary()[0].GetText().GetText())
 	}
-	if handler.messages[1].GetContent().GetText().GetText() != "world!" {
-		t.Errorf("expected 'world!', got %q", handler.messages[1].GetContent().GetText().GetText())
+	
+	toolCall := handler.messages[1].GetContent().GetToolCall()
+	if toolCall == nil {
+		t.Fatal("expected tool call message, got nil")
+	}
+	if toolCall.Id != "call-123" {
+		t.Errorf("expected ID 'call-123', got %q", toolCall.Id)
+	}
+	if toolCall.GetFunctionCall().Name != "get_weather" {
+		t.Errorf("expected name 'get_weather', got %q", toolCall.GetFunctionCall().Name)
+	}
+	if toolCall.GetFunctionCall().Arguments.GetFields()["city"].GetStringValue() != "Paris" {
+		t.Errorf("expected arg city='Paris', got %q", toolCall.GetFunctionCall().Arguments.GetFields()["city"].GetStringValue())
+	}
+
+	if handler.messages[2].GetContent().GetText().GetText() != "The weather in Paris is rainy." {
+		t.Errorf("expected 'The weather in Paris is rainy.', got %q", handler.messages[2].GetContent().GetText().GetText())
 	}
 }
 
