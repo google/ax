@@ -66,7 +66,7 @@ echo "Python server is active!"
 
 # 3. Build and run the Go E2E V2 demonstration
 echo "Building e2e..."
-/opt/homebrew/bin/go build -o bin/e2e e2e.go
+/opt/homebrew/bin/go build -o bin/e2e ./cmd/e2e
 
 echo "Executing E2E Demo with Antigravity WebSocket Harness..."
 bin/e2e
