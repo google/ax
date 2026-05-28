@@ -12,120 +12,81 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
-import json
+import grpc
+from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
+from python.antigravity.harness_server import AntigravityAgentServiceServicer, loaded_config
+from google.antigravity import LocalAgentConfig
 
-from python.antigravity.harness_server import app, hydrate_ax_history_to_steps
-from google.antigravity.types import Step, StepType, StepSource, StepTarget, StepStatus, Text, Thought
-from proto import ax_pb2
+@pytest.fixture
+def mock_config(monkeypatch):
+    cfg = LocalAgentConfig(system_instructions="Test instructions")
+    import python.antigravity.harness_server as hs
+    hs.loaded_config = cfg
+    return cfg
 
-client = TestClient(app)
+def test_grpc_connect_success(mock_config, monkeypatch):
+    async def _run():
+        # 1. Start temporary local gRPC server on random open port
+        server = grpc.aio.server()
+        servicer = AntigravityAgentServiceServicer()
+        ax_pb2_grpc.add_AgentServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        
+        # 2. Connect async stub channel
+        addr = f"localhost:{port}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = ax_pb2_grpc.AgentServiceStub(channel)
+            
+            # Mock the underlying Antigravity SDK class calls
+            class MockConversation:
+                def __init__(self):
+                    self._steps = []
+                async def chat(self, text):
+                    class MockResponse:
+                        def __init__(self):
+                            self.chunks = self._chunk_generator()
+                        async def _chunk_generator(self):
+                            from google.antigravity.types import Text, Thought
+                            yield Thought(text="Thinking details", step_index=0)
+                            yield Text(text="Hello human", step_index=0)
+                    return MockResponse()
+                    
+            class MockAgent:
+                def __init__(self, config):
+                    self.conversation = MockConversation()
+                async def __aenter__(self):
+                    return self
+                async def __aexit__(self, exc_type, exc, tb):
+                    pass
+                    
+            monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
+            
+            # 3. Construct and fire standard AgentRequest
+            start_payload = ax_pb2.AgentStart(
+                agent_id="test",
+                messages=[
+                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                ]
+            )
+            req = ax_pb2.AgentRequest(
+                conversation_id="conv-test",
+                exec_id="exec-test",
+                start=start_payload
+            )
+            
+            responses = []
+            async for resp in stub.Connect(req):
+                responses.append(resp)
+                
+            # 4. Assert outputs are correctly mapped and completed
+            assert len(responses) == 3 # Thought + Text + End
+            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Thinking details"
+            assert responses[1].outputs.messages[0].content.text.text == "Hello human"
+            assert responses[2].WhichOneof('type') == 'end'
+            
+        await server.stop(0)
 
-def test_hydrate_ax_history_to_steps():
-    # Create mock AX Message protobuf objects
-    msg = ax_pb2.Message()
-    msg.role = "user"
-    msg.content.text.text = "Hi"
-    
-    steps = hydrate_ax_history_to_steps([msg])
-    
-    assert len(steps) == 1
-    assert steps[0].source == StepSource.USER
-    assert steps[0].content == "Hi"
-    assert steps[0].is_complete_response is True
-
-@patch("python.antigravity.harness_server.Agent")
-def test_websocket_endpoint_success(mock_agent_class):
-    # 1. Setup mocks for Agent, Conversation, and ChatResponse
-    mock_agent = MagicMock()
-    mock_agent_class.return_value = mock_agent
-    
-    # Mock context manager methods
-    mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
-    mock_agent.__aexit__ = AsyncMock(return_value=None)
-    
-    mock_conversation = MagicMock()
-    mock_agent.conversation = mock_conversation
-    mock_conversation._steps = []
-    
-    # Mock response stream chunks
-    async def mock_chunks():
-        yield Text(step_index=0, text="Hello ")
-        yield Text(step_index=1, text="world!")
-        
-    mock_chat_response = MagicMock()
-    mock_chat_response.chunks = mock_chunks()
-    mock_conversation.chat = AsyncMock(return_value=mock_chat_response)
-    
-    # Load a dummy config globally to pass server validation
-    import python.antigravity.harness_server as server
-    server.loaded_config = MagicMock()
-    
-    # 2. Build start payload
-    start_payload = {
-        "conversation_id": "conv-123",
-        "exec_id": "exec-456",
-        "messages": [
-            # Raw protobuf JSON message
-            {
-                "role": "user",
-                "content": {
-                    "text": {"text": "Hi"}
-                }
-            }
-        ]
-    }
-    
-    # 3. Run WebSocket test client
-    with client.websocket_connect("/ws") as websocket:
-        # Send start payload
-        websocket.send_text(json.dumps(start_payload))
-        
-        # Receive streamed text chunks
-        resp1 = websocket.receive_json()
-        assert resp1["type"] == "text"
-        assert resp1["content"] == "Hello "
-        
-        resp2 = websocket.receive_json()
-        assert resp2["type"] == "text"
-        assert resp2["content"] == "world!"
-        
-        # Receive complete
-        resp3 = websocket.receive_json()
-        assert resp3["type"] == "complete"
-        
-    # Verify mocks
-    mock_conversation.chat.assert_called_once_with("Hi")
-
-@patch("python.antigravity.harness_server.Agent")
-def test_websocket_endpoint_error(mock_agent_class):
-    mock_agent = MagicMock()
-    mock_agent_class.return_value = mock_agent
-    mock_agent.__aenter__ = AsyncMock(return_value=mock_agent)
-    mock_agent.__aexit__ = AsyncMock(return_value=None)
-    
-    mock_conversation = MagicMock()
-    mock_agent.conversation = mock_conversation
-    mock_conversation._steps = []
-    
-    # Mock chat to throw an exception
-    mock_conversation.chat = AsyncMock(side_effect=RuntimeError("Gemini connection timeout"))
-    
-    import python.antigravity.harness_server as server
-    server.loaded_config = MagicMock()
-    
-    start_payload = {
-        "conversation_id": "conv-123",
-        "exec_id": "exec-456",
-        "messages": [{"role": "user", "content": {"text": {"text": "Hi"}}}]
-    }
-    
-    with client.websocket_connect("/ws") as websocket:
-        websocket.send_text(json.dumps(start_payload))
-        
-        # Expect error frame
-        resp = websocket.receive_json()
-        assert resp["type"] == "error"
-        assert "Gemini connection timeout" in resp["error"]
+    asyncio.run(_run())

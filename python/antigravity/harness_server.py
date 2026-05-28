@@ -15,20 +15,16 @@
 import argparse
 import asyncio
 import importlib.util
-import json
 import logging
-import os
 import sys
-import uuid
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-import uvicorn
+import grpc
+from google.protobuf.struct_pb2 import Struct
 
-from google.protobuf.json_format import Parse
-from proto import ax_pb2
+from python.proto import ax_pb2
+from python.proto import ax_pb2_grpc
+from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig
 from google.antigravity.types import Step, StepType, StepSource, StepTarget, StepStatus, Text, Thought, ToolCall
-
-app = FastAPI()
 
 # Global placeholder for loaded agent config
 loaded_config: AgentConfig | None = None
@@ -91,86 +87,123 @@ def hydrate_ax_history_to_steps(historical_messages) -> list[Step]:
         steps.append(step)
     return steps
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    print("[WS] Connection accepted.")
-    try:
-        # 1. Receive the start message
-        data = await websocket.receive_text()
-        payload = json.loads(data)
+class AntigravityAgentServiceServicer(ax_pb2_grpc.AgentServiceServicer):
+    """Implements the standard ax.AgentService protocol over gRPC."""
+
+    async def Connect(self, request: ax_pb2.AgentRequest, context):
+        print(f"[gRPC] Connect turn requested. conv_id={request.conversation_id}, exec_id={request.exec_id}")
         
-        conversation_id = payload.get("conversation_id")
-        exec_id = payload.get("exec_id")
-        raw_messages = payload.get("messages", [])
-        
-        print(f"[WS] Starting turn. conv_id={conversation_id}, exec_id={exec_id}, messages_count={len(raw_messages)}")
-        
-        # Deserialize AX protobuf messages
-        ax_messages = []
-        for raw_msg in raw_messages:
-            msg_str = json.dumps(raw_msg)
-            ax_msg = Parse(msg_str, ax_pb2.Message())
-            ax_messages.append(ax_msg)
-            
+        # 1. Retrieve and check messages
+        ax_messages = request.start.messages
         if not ax_messages:
-            raise ValueError("No messages found in start payload")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("No messages found in start payload")
+            return
             
         historical_messages = ax_messages[:-1]
         latest_message = ax_messages[-1]
         
-        # Only support text queries for now in latest_message
         if latest_message.content.WhichOneof('type') != 'text':
-            raise ValueError("Latest message must contain text content")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("Latest message must contain text content")
+            return
         latest_query_text = latest_message.content.text.text
         
         # 2. Initialize the Antigravity Agent session
         global loaded_config
         if not loaded_config:
-            raise RuntimeError("Agent config is not loaded on the server")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details("Agent config is not loaded on the server")
+            return
             
-        async with Agent(loaded_config) as agent:
-            conversation = agent.conversation
-            
-            # Hydrate history
-            print(f"[WS] Hydrating {len(historical_messages)} historical messages...")
-            history_steps = hydrate_ax_history_to_steps(historical_messages)
-            conversation._steps.extend(history_steps)
-            
-            # Run the turn with streaming
-            print(f"[WS] Running chat query: {latest_query_text}")
-            response = await conversation.chat(latest_query_text)
-            
-            async for chunk in response.chunks:
-                if isinstance(chunk, Text):
-                    await websocket.send_json({"type": "text", "content": chunk.text})
-                elif isinstance(chunk, Thought):
-                    await websocket.send_json({"type": "thought", "content": chunk.text})
-                elif isinstance(chunk, ToolCall):
-                    await websocket.send_json({
-                        "type": "tool_call",
-                        "id": chunk.id or "",
-                        "name": str(chunk.name),
-                        "args": chunk.args
-                    })
-                    
-        # Send complete frame
-        await websocket.send_json({"type": "complete"})
-        print("[WS] Turn completed successfully.")
-        
-    except WebSocketDisconnect:
-        print("[WS] Client disconnected.")
-    except Exception as e:
-        logging.exception("Error in WebSocket turn handler")
         try:
-            await websocket.send_json({"type": "error", "error": str(e)})
-        except Exception:
-            pass
-        finally:
-            await websocket.close()
+            async with Agent(loaded_config) as agent:
+                conversation = agent.conversation
+                
+                # Hydrate history
+                print(f"[gRPC] Hydrating {len(historical_messages)} historical messages...")
+                history_steps = hydrate_ax_history_to_steps(historical_messages)
+                conversation._steps.extend(history_steps)
+                
+                # Run the turn with streaming
+                print(f"[gRPC] Running chat query: {latest_query_text}")
+                response = await conversation.chat(latest_query_text)
+                
+                async for chunk in response.chunks:
+                    if isinstance(chunk, Text):
+                        msg = ax_pb2.Message(
+                            role="assistant",
+                            content=content_pb2.Content(text=content_pb2.TextContent(text=chunk.text))
+                        )
+                        yield ax_pb2.AgentResponse(
+                            conversation_id=request.conversation_id,
+                            exec_id=request.exec_id,
+                            outputs=ax_pb2.AgentOutputs(messages=[msg])
+                        )
+                    elif isinstance(chunk, Thought):
+                        summary = [
+                            content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text=chunk.text))
+                        ]
+                        msg = ax_pb2.Message(
+                            role="model",
+                            content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
+                        )
+                        yield ax_pb2.AgentResponse(
+                            conversation_id=request.conversation_id,
+                            exec_id=request.exec_id,
+                            outputs=ax_pb2.AgentOutputs(messages=[msg])
+                        )
+                    elif isinstance(chunk, ToolCall):
+                        struct_args = Struct()
+                        struct_args.update(chunk.args)
+                        
+                        func_call = content_pb2.FunctionCallContent(
+                            name=str(chunk.name),
+                            arguments=struct_args
+                        )
+                        msg = ax_pb2.Message(
+                            role="model",
+                            content=content_pb2.Content(tool_call=content_pb2.ToolCallContent(
+                                id=chunk.id or "",
+                                function_call=func_call
+                            ))
+                        )
+                        yield ax_pb2.AgentResponse(
+                            conversation_id=request.conversation_id,
+                            exec_id=request.exec_id,
+                            outputs=ax_pb2.AgentOutputs(messages=[msg])
+                        )
+                        
+            # Yield completion end frame
+            yield ax_pb2.AgentResponse(
+                conversation_id=request.conversation_id,
+                exec_id=request.exec_id,
+                end=ax_pb2.AgentEnd()
+            )
+            print("[gRPC] Turn completed successfully.")
+            
+        except Exception as e:
+            logging.exception("Error inside Connect servicer execution")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Agent execution terminated due to error. ({str(e)})")
+            return
+
+    async def HealthCheck(self, request: ax_pb2.HealthCheckRequest, context):
+        """Simple health-probe responder."""
+        return ax_pb2.HealthCheckResponse(healthy=True, message="Antigravity gRPC harness active")
+
+async def serve(host: str, port: int):
+    server = grpc.aio.server()
+    ax_pb2_grpc.add_AgentServiceServicer_to_server(AntigravityAgentServiceServicer(), server)
+    
+    listen_addr = f"{host}:{port}"
+    server.add_insecure_port(listen_addr)
+    print(f"Starting gRPC harness server on {listen_addr}...")
+    await server.start()
+    await server.wait_for_termination()
 
 def main():
-    parser = argparse.ArgumentParser(description="Antigravity WebSocket Harness Server")
+    parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
     parser.add_argument("--agent_file", default="examples/antigravity_agent/agent.py", help="Path to the agent config file")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
@@ -184,8 +217,7 @@ def main():
         print(f"ERROR: Failed to load agent config: {e}", file=sys.stderr)
         sys.exit(1)
         
-    print(f"Starting WebSocket server on {args.host}:{args.port}...")
-    uvicorn.run(app, host=args.host, port=args.port)
+    asyncio.run(serve(args.host, args.port))
 
 if __name__ == "__main__":
     main()

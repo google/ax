@@ -19,9 +19,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
-
-	"github.com/gorilla/websocket"
+	"time"
 
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
@@ -73,17 +73,16 @@ func main() {
 		fmt.Println("WARNING: GEMINI_API_KEY is not set. Execution will likely fail if dependencies are missing, but we will try anyway.")
 	}
 	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
-		// Check if Python WebSocket server is active, otherwise fallback
+		// Check if Python gRPC server is active, otherwise fallback
 		var realHarness harness.Harness
-		address := "ws://localhost:50053/ws"
-		dialer := websocket.DefaultDialer
-		conn, _, err := dialer.Dial(address, nil)
+		address := "localhost:50053"
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if err != nil {
 			fmt.Printf("WARNING: Antigravity harness server not active at %s, falling back to test harness: %v\n", address, err)
 			realHarness = harnesstest.New()
 		} else {
 			conn.Close()
-			fmt.Printf("Connected to Antigravity harness server at %s\n", address)
+			fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
 			realHarness = harness.NewAntigravityHarness(address)
 		}
 		reg.RegisterHarness("antigravity", realHarness)

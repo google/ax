@@ -16,13 +16,12 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 
-	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -33,15 +32,16 @@ var _ Harness = (*AntigravityHarness)(nil)
 var _ Execution = (*antigravityExecution)(nil)
 
 // AntigravityHarness implements the Harness interface by connecting to the
-// Antigravity Python agent server over WebSockets.
+// Antigravity Python agent server over gRPC.
 type AntigravityHarness struct {
 	address string
 }
 
 // NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
+// Address defaults to "localhost:50053" (gRPC TCP connection).
 func NewAntigravityHarness(address string) *AntigravityHarness {
 	if address == "" {
-		address = "ws://localhost:50053/ws"
+		address = "localhost:50053"
 	}
 	return &AntigravityHarness{
 		address: address,
@@ -78,148 +78,78 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
-		return fmt.Errorf("execution is closed")
+		return fmt.Errorf("execution session already closed")
 	}
 	e.queued = append(e.queued, msg...)
 	return nil
 }
 
-// Run implements Execution.Run.
-// It connects to the Python server over WebSockets, sends the start payload containing history,
-// and streams responses back to the handler.
+// Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return fmt.Errorf("execution session already closed")
+	}
+	// Retrieve queued inputs
 	inputs := e.queued
 	e.queued = nil
 	e.mu.Unlock()
 
-	// 1. Establish WebSocket connection
-	dialer := websocket.DefaultDialer
-	conn, _, err := dialer.DialContext(ctx, e.harness.address, nil)
+	if len(inputs) == 0 {
+		return fmt.Errorf("no input messages queued for execution turn")
+	}
+
+	// 1. Connect to the gRPC server
+	conn, err := grpc.DialContext(ctx, e.harness.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return fmt.Errorf("failed to dial antigravity harness websocket at %s: %w", e.harness.address, err)
+		return fmt.Errorf("failed to connect to gRPC harness server at %s: %w", e.harness.address, err)
 	}
 	defer conn.Close()
 
-	// 2. Serialize inputs using protojson to match Python Parse() requirements
-	var serializedMessages []json.RawMessage
-	for _, msg := range inputs {
-		bytes, err := protojson.Marshal(msg)
-		if err != nil {
-			return fmt.Errorf("failed to marshal message to JSON: %w", err)
-		}
-		serializedMessages = append(serializedMessages, json.RawMessage(bytes))
+	// 2. Create AgentService client
+	client := proto.NewAgentServiceClient(conn)
+
+	// 3. Build standard AgentRequest
+	req := &proto.AgentRequest{
+		ConversationId: e.conversationID,
+		ExecId:         e.id,
+		Start: &proto.AgentStart{
+			AgentId:  "antigravity",
+			Messages: inputs,
+		},
 	}
 
-	// 3. Construct and send start payload
-	startPayload := map[string]any{
-		"conversation_id": e.conversationID,
-		"exec_id":         e.id,
-		"messages":        serializedMessages,
-	}
-	payloadBytes, err := json.Marshal(startPayload)
+	// 4. Call Connect to start bidirectional streaming
+	stream, err := client.Connect(ctx, req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal start payload: %w", err)
+		return fmt.Errorf("failed to call gRPC AgentService.Connect: %w", err)
 	}
 
-	err = conn.WriteMessage(websocket.TextMessage, payloadBytes)
-	if err != nil {
-		return fmt.Errorf("failed to send start payload over WebSocket: %w", err)
-	}
-
-	// 4. Stream responses from WebSocket
-	type WSResponse struct {
-		Type    string          `json:"type"`
-		Content string          `json:"content"`
-		Error   string          `json:"error"`
-		ID      string          `json:"id"`
-		Name    string          `json:"name"`
-		Args    json.RawMessage `json:"args"`
-	}
-
+	// 5. Stream responses and trigger callbacks
 	for {
-		_, message, err := conn.ReadMessage()
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return fmt.Errorf("failed to read message from WebSocket: %w", err)
+			return fmt.Errorf("gRPC harness streaming failure: %w", err)
 		}
 
-		var resp WSResponse
-		if err := json.Unmarshal(message, &resp); err != nil {
-			return fmt.Errorf("failed to unmarshal WebSocket response: %w", err)
-		}
-
-		switch resp.Type {
-		case "text":
-			msg := &proto.Message{
-				Role: "assistant",
-				Content: &proto.Content{
-					Type: &proto.Content_Text{
-						Text: &proto.TextContent{Text: resp.Content},
-					},
-				},
-			}
-			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
-				return fmt.Errorf("failed to send message to handler: %w", err)
-			}
-		case "thought":
-			msg := &proto.Message{
-				Role: "model",
-				Content: &proto.Content{
-					Type: &proto.Content_Thought{
-						Thought: &proto.ThoughtContent{
-							Summary: []*proto.ThoughtSummaryContent{
-								{
-									Type: &proto.ThoughtSummaryContent_Text{
-										Text: &proto.TextContent{Text: resp.Content},
-									},
-								},
-							},
-						},
-					},
-				},
-			}
-			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
-				return fmt.Errorf("failed to send thought to handler: %w", err)
-			}
-		case "tool_call":
-			var argsMap map[string]any
-			if len(resp.Args) > 0 {
-				if err := json.Unmarshal(resp.Args, &argsMap); err != nil {
-					return fmt.Errorf("failed to unmarshal tool call args: %w", err)
+		switch payload := resp.Type.(type) {
+		case *proto.AgentResponse_Outputs:
+			for _, outMsg := range payload.Outputs.Messages {
+				if err := handler.OnMessage(ctx, e.id, outMsg); err != nil {
+					return fmt.Errorf("failed to dispatch streamed output: %w", err)
 				}
 			}
-			structArgs, err := structpb.NewStruct(argsMap)
-			if err != nil {
-				return fmt.Errorf("failed to create structpb from tool call args: %w", err)
-			}
-
-			msg := &proto.Message{
-				Role: "model",
-				Content: &proto.Content{
-					Type: &proto.Content_ToolCall{
-						ToolCall: &proto.ToolCallContent{
-							Id: resp.ID,
-							Type: &proto.ToolCallContent_FunctionCall{
-								FunctionCall: &proto.FunctionCallContent{
-									Name:      resp.Name,
-									Arguments: structArgs,
-								},
-							},
-						},
-					},
-				},
-			}
-			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
-				return fmt.Errorf("failed to send tool call to handler: %w", err)
-			}
-		case "complete":
+		case *proto.AgentResponse_End:
+			// Standard turn complete callback
 			return handler.OnComplete(ctx, e.id)
-		case "error":
-			return fmt.Errorf("antigravity harness server error: %s", resp.Error)
-		default:
-			return fmt.Errorf("unknown response type from WebSocket: %q", resp.Type)
 		}
 	}
+
+	return nil
 }
 
 // Close implements Execution.Close.

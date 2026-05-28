@@ -26,8 +26,8 @@ PORT=50053
 ADDRESS="localhost:$PORT"
 AGENT_FILE="examples/antigravity_agent/agent.py"
 
-# 1. Start Python WebSocket server in the background
-echo "Starting Python WebSocket Harness Server on port $PORT..."
+# 1. Start Python gRPC server in the background
+echo "Starting Python gRPC Harness Server on port $PORT..."
 PYTHONPATH=python:. .venv/bin/python -m python.antigravity.harness_server --agent_file "$AGENT_FILE" --port "$PORT" > /tmp/antigravity_harness.log 2>&1 &
 SERVER_PID=$!
 
@@ -68,7 +68,7 @@ echo "Python server is active!"
 echo "Building e2e..."
 /opt/homebrew/bin/go build -o bin/e2e ./cmd/e2e
 
-echo "Executing E2E Demo with Antigravity WebSocket Harness..."
+echo "Executing E2E Demo with Antigravity gRPC Harness..."
 bin/e2e
 
 echo "Success!"
