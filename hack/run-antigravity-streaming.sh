@@ -24,7 +24,7 @@ fi
 
 PORT=50053
 ADDRESS="localhost:$PORT"
-AGENT_FILE="examples/antigravity_agent/weather_agent.py"
+AGENT_FILE="examples/antigravity_agent/agent.py"
 
 # 1. Start Python WebSocket server in the background
 echo "Starting Python WebSocket Harness Server on port $PORT..."

@@ -18,29 +18,51 @@ from google.antigravity import LocalAgentConfig
 from google.antigravity.connections.local import LocalConnectionStrategy
 from google.antigravity.conversation.conversation import Conversation
 from google.antigravity.tools.tool_runner import ToolRunner
-from google.antigravity.types import Text, Thought
+from google.antigravity.types import Text, Thought, ToolCall
 
-# Expose agent_config globally for harness_server.py config loading
+# 1. Define a custom local python tool
+def get_weather(city: str) -> str:
+    """Retrieves the current weather report for a specified city.
+
+    Args:
+        city (str): The name of the city for which to retrieve the weather report.
+
+    Returns:
+        str: Weather report status and details.
+    """
+    # Output to stderr so it does not pollute the stdout stream capture
+    sys.stderr.write(f"\n[PYTHON TOOL get_weather executed for city: {city}]\n")
+    sys.stderr.flush()
+    c = city.lower()
+    if "new york" in c or "nyc" in c:
+        return "The weather in New York is sunny with a temperature of 25 degrees Celsius (77 degrees Fahrenheit)."
+    elif "san francisco" in c or "sf" in c:
+        return "The weather in San Francisco is foggy with a temperature of 16 degrees Celsius (60.8 degrees Fahrenheit)."
+    else:
+        return f"Weather information for '{city}' is not available."
+
+# 2. Expose agent_config globally for harness_server.py config loading
 agent_config = LocalAgentConfig(
-    system_instructions="You are a helpful assistant powered by Google Antigravity."
+    system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
+    tools=[get_weather]
 )
 
-# Expose the L2 configuration strategy for custom loaders if needed
-strategy_factory = lambda: LocalConnectionStrategy(tool_runner=ToolRunner())
+# Expose the L2 configuration strategy factory for custom loaders
+strategy_factory = lambda: LocalConnectionStrategy(tool_runner=ToolRunner(tools=[get_weather]))
 
 async def main():
-    # 1. Initialize the local connection strategy
+    # 3. Initialize the local connection strategy
     strategy = strategy_factory()
     
-    # 2. Create the stateful conversation session
+    # 4. Create the stateful conversation session
     print("Starting stateful Antigravity conversation (L2 API)...")
     async with Conversation.create(strategy) as conversation:
-        prompt = sys.argv[1] if len(sys.argv) > 1 else "Explain quantum computing in one sentence."
+        prompt = sys.argv[1] if len(sys.argv) > 1 else "What is the weather in New York?"
         
-        # 3. Send query and receive streaming ChatResponse
+        # 5. Send query and receive streaming ChatResponse
         response = await conversation.chat(prompt)
         
-        # 4. Stream semantic chunks (Thoughts and Text) in real-time
+        # 6. Stream semantic chunks (Thoughts, Text, and ToolCalls) in real-time
         async for chunk in response.chunks:
             if isinstance(chunk, Text):
                 sys.stdout.write(chunk.text)
@@ -49,10 +71,10 @@ async def main():
                 # Display thought process in comment style
                 sys.stdout.write(f"\n[Thinking]: {chunk.text}")
                 sys.stdout.flush()
+            elif isinstance(chunk, ToolCall):
+                sys.stdout.write(f"\n[Tool Call]: {chunk.name} with args {chunk.args}\n")
+                sys.stdout.flush()
         print()
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
