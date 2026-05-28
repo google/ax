@@ -28,6 +28,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// Compile-time interface assertions.
+var _ Harness = (*AntigravityHarness)(nil)
+var _ Execution = (*antigravityExecution)(nil)
+
 // AntigravityHarness implements the Harness interface by connecting to the
 // Antigravity Python agent server over WebSockets.
 type AntigravityHarness struct {
