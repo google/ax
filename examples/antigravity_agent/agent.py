@@ -27,7 +27,12 @@ async def main():
     async with Agent(agent_config) as agent:
         prompt = sys.argv[1] if len(sys.argv) > 1 else "Explain quantum computing in one sentence."
         response = await agent.chat(prompt)
-        print(await response.text())
+        
+        # Stream token deltas to console in real-time
+        async for token in response:
+            sys.stdout.write(token)
+            sys.stdout.flush()
+        print()
 
 if __name__ == "__main__":
     asyncio.run(main())
