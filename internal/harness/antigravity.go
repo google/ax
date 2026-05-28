@@ -16,31 +16,32 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"os/exec"
-	"strings"
 	"sync"
+
+	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
 
-// AntigravityHarness implements the Harness interface by running the
-// Antigravity Python agent as a subprocess.
+// AntigravityHarness implements the Harness interface by connecting to the
+// Antigravity Python agent server over WebSockets.
 type AntigravityHarness struct {
-	scriptPath string
+	address string
 }
 
-// NewAntigravityHarness creates a new AntigravityHarness with a configurable script path.
-func NewAntigravityHarness(scriptPath string) *AntigravityHarness {
-	if scriptPath == "" {
-		scriptPath = "examples/antigravity_agent/agent.py"
+// NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
+func NewAntigravityHarness(address string) *AntigravityHarness {
+	if address == "" {
+		address = "ws://localhost:50053/ws"
 	}
 	return &AntigravityHarness{
-		scriptPath: scriptPath,
+		address: address,
 	}
 }
-
 
 // Start implements Harness.Start.
 func (h *AntigravityHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
@@ -79,64 +80,107 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 }
 
 // Run implements Execution.Run.
-// It executes the Python agent as a subprocess, passing the last user message as an argument.
+// It connects to the Python server over WebSockets, sends the start payload containing history,
+// and streams responses back to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	e.mu.Lock()
 	inputs := e.queued
 	e.queued = nil
 	e.mu.Unlock()
 
-	// Find the last user message to pass to the agent
-	var prompt string
-	for i := len(inputs) - 1; i >= 0; i-- {
-		msg := inputs[i]
-		if msg.Role == "user" {
-			if textContent := msg.GetContent().GetText().GetText(); textContent != "" {
-				prompt = textContent
-				break
+	// 1. Establish WebSocket connection
+	dialer := websocket.DefaultDialer
+	conn, _, err := dialer.DialContext(ctx, e.harness.address, nil)
+	if err != nil {
+		return fmt.Errorf("failed to dial antigravity harness websocket at %s: %w", e.harness.address, err)
+	}
+	defer conn.Close()
+
+	// 2. Serialize inputs using protojson to match Python Parse() requirements
+	var serializedMessages []json.RawMessage
+	for _, msg := range inputs {
+		bytes, err := protojson.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal message to JSON: %w", err)
+		}
+		serializedMessages = append(serializedMessages, json.RawMessage(bytes))
+	}
+
+	// 3. Construct and send start payload
+	startPayload := map[string]any{
+		"conversation_id": e.conversationID,
+		"exec_id":         e.id,
+		"messages":        serializedMessages,
+	}
+	payloadBytes, err := json.Marshal(startPayload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal start payload: %w", err)
+	}
+
+	err = conn.WriteMessage(websocket.TextMessage, payloadBytes)
+	if err != nil {
+		return fmt.Errorf("failed to send start payload over WebSocket: %w", err)
+	}
+
+	// 4. Stream responses from WebSocket
+	type WSResponse struct {
+		Type    string `json:"type"`
+		Content string `json:"content"`
+		Error   string `json:"error"`
+	}
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			return fmt.Errorf("failed to read message from WebSocket: %w", err)
+		}
+
+		var resp WSResponse
+		if err := json.Unmarshal(message, &resp); err != nil {
+			return fmt.Errorf("failed to unmarshal WebSocket response: %w", err)
+		}
+
+		switch resp.Type {
+		case "text":
+			msg := &proto.Message{
+				Role: "assistant",
+				Content: &proto.Content{
+					Type: &proto.Content_Text{
+						Text: &proto.TextContent{Text: resp.Content},
+					},
+				},
 			}
+			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
+				return fmt.Errorf("failed to send message to handler: %w", err)
+			}
+		case "thought":
+			msg := &proto.Message{
+				Role: "model",
+				Content: &proto.Content{
+					Type: &proto.Content_Thought{
+						Thought: &proto.ThoughtContent{
+							Summary: []*proto.ThoughtSummaryContent{
+								{
+									Type: &proto.ThoughtSummaryContent_Text{
+										Text: &proto.TextContent{Text: resp.Content},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			if err := handler.OnMessage(ctx, e.id, msg); err != nil {
+				return fmt.Errorf("failed to send thought to handler: %w", err)
+			}
+		case "complete":
+			return handler.OnComplete(ctx, e.id)
+		case "error":
+			return fmt.Errorf("antigravity harness server error: %s", resp.Error)
+		default:
+			return fmt.Errorf("unknown response type from WebSocket: %q", resp.Type)
 		}
 	}
-
-	// TODO: As a next step, we should implement this as a gRPC server to avoid subprocess overhead.
-	
-	// Prepare the command
-	args := []string{e.harness.scriptPath}
-	if prompt != "" {
-		args = append(args, prompt)
-	}
-
-	cmd := exec.CommandContext(ctx, "python3", args...)
-	
-	// Capture stdout and stderr
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Run the command
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run antigravity agent (stderr: %s): %w", stderr.String(), err)
-	}
-
-	output := strings.TrimSpace(stdout.String())
-
-	// Send the output back to the handler
-	msg := &proto.Message{
-		Role: "assistant",
-		Content: &proto.Content{
-			Type: &proto.Content_Text{
-				Text: &proto.TextContent{
-					Text: output,
-				},
-			},
-		},
-	}
-
-	if err := handler.OnMessage(ctx, e.id, msg); err != nil {
-		return fmt.Errorf("failed to send message to handler: %w", err)
-	}
-
-	return handler.OnComplete(ctx, e.id)
 }
 
 // Close implements Execution.Close.

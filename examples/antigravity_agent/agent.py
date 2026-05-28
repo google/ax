@@ -16,10 +16,15 @@ import asyncio
 import sys
 from google.antigravity import Agent, LocalAgentConfig
 
+# Expose agent_config globally for harness_server.py loading
+agent_config = LocalAgentConfig(
+    system_instructions="You are a helpful assistant powered by Google Antigravity."
+)
+
 async def main():
-    # Initialize the agent configuration. It automatically picks up GEMINI_API_KEY from the environment.
-    config = LocalAgentConfig()
-    async with Agent(config) as agent:
+    # Initialize the agent session using the global config.
+    # It automatically picks up GEMINI_API_KEY from the environment.
+    async with Agent(agent_config) as agent:
         prompt = sys.argv[1] if len(sys.argv) > 1 else "Explain quantum computing in one sentence."
         response = await agent.chat(prompt)
         print(await response.text())

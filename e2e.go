@@ -20,7 +20,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
@@ -54,14 +55,11 @@ func main() {
 		// Build harness with bad path, manually implementing fallback check
 		var badHarness harness.Harness
 		scriptPath := "non-existent-script.py"
-		if _, err := exec.LookPath("python3"); err != nil {
-			fmt.Printf("WARNING: python3 not found, falling back to test harness: %v\n", err)
-			badHarness = harnesstest.New()
-		} else if _, err := os.Stat(scriptPath); err != nil {
+		if _, err := os.Stat(scriptPath); err != nil {
 			fmt.Printf("WARNING: Antigravity agent script not found at %s, falling back to test harness: %v\n", scriptPath, err)
 			badHarness = harnesstest.New()
 		} else {
-			badHarness = harness.NewAntigravityHarness(scriptPath)
+			badHarness = harness.NewAntigravityHarness("ws://localhost:50054/ws")
 		}
 		reg.RegisterHarness("antigravity", badHarness)
 	})
@@ -75,17 +73,18 @@ func main() {
 		fmt.Println("WARNING: GEMINI_API_KEY is not set. Execution will likely fail if dependencies are missing, but we will try anyway.")
 	}
 	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
-		// Build harness with real path, manually implementing fallback check
+		// Check if Python WebSocket server is active, otherwise fallback
 		var realHarness harness.Harness
-		scriptPath := "examples/antigravity_agent/agent.py"
-		if _, err := exec.LookPath("python3"); err != nil {
-			fmt.Printf("WARNING: python3 not found, falling back to test harness: %v\n", err)
-			realHarness = harnesstest.New()
-		} else if _, err := os.Stat(scriptPath); err != nil {
-			fmt.Printf("WARNING: Antigravity agent script not found at %s, falling back to test harness: %v\n", scriptPath, err)
+		address := "ws://localhost:50053/ws"
+		dialer := websocket.DefaultDialer
+		conn, _, err := dialer.Dial(address, nil)
+		if err != nil {
+			fmt.Printf("WARNING: Antigravity harness server not active at %s, falling back to test harness: %v\n", address, err)
 			realHarness = harnesstest.New()
 		} else {
-			realHarness = harness.NewAntigravityHarness(scriptPath)
+			conn.Close()
+			fmt.Printf("Connected to Antigravity harness server at %s\n", address)
+			realHarness = harness.NewAntigravityHarness(address)
 		}
 		reg.RegisterHarness("antigravity", realHarness)
 	})
