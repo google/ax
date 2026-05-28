@@ -240,7 +240,7 @@ func (r *Registry) Close() error {
 
 	return firstErr
 }
-// RegisterHarness registers a harness.
+// TODO(anj): Remove this registration once we have harness and agent registration consolidated.
 func (r *Registry) RegisterHarness(id string, h harness.Harness) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -20,7 +20,11 @@ async def main():
     # Initialize the agent configuration. It automatically picks up GEMINI_API_KEY from the environment.
     config = LocalAgentConfig()
     async with Agent(config) as agent:
-        prompt = sys.argv[1] if len(sys.argv) > 1 else "Explain quantum computing in one sentence."
+        # Check if the user has sent a prompt otherwise thrown an error
+        
+        prompt = sys.argv[1] if len(sys.argv) > 1 else None
+        if not prompt:
+            raise ValueError("Please provide a prompt for your agent. Usage: python agent.py <prompt>")
         response = await agent.chat(prompt)
         print(await response.text())
 

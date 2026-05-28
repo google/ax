@@ -79,14 +79,21 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 }
 
 // Run implements Execution.Run.
-// It executes the Python agent as a subprocess, passing the last user message as an argument.
+// It executes the Python agent as a one-shot subprocess turn.
+//
+// NOTE: This is a stateless, subprocess-based validation harness. Because a new
+// subprocess is launched for every turn, it does not support persistent state
+// or dynamic input streaming. We retrieve all queued inputs at the start of the
+// turn, clear the queue, and pass only the last user prompt to the subprocess.
+// Full bidirectional streaming input/output will be supported once we migrate to
+// the gRPC HarnessService server as noted below.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	e.mu.Lock()
 	inputs := e.queued
 	e.queued = nil
 	e.mu.Unlock()
 
-	// Find the last user message to pass to the agent
+	// Extract only the latest user message since the CLI script only accepts a single prompt argument.
 	var prompt string
 	for i := len(inputs) - 1; i >= 0; i-- {
 		msg := inputs[i]
@@ -98,7 +105,8 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 		}
 	}
 
-	// TODO: As a next step, we should implement this as a gRPC server to avoid subprocess overhead.
+	// TODO(anj): Upgrade this to a gRPC HarnessService server to support full bidirectional
+	// input/output streaming and avoid subprocess invocation overhead.
 	
 	// Prepare the command
 	args := []string{e.harness.scriptPath}
