@@ -1,4 +1,4 @@
-//go:build !harness
+//go:build harness
 
 // Copyright 2026 Google LLC
 //
@@ -20,19 +20,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
+	"github.com/google/ax/internal/controller2"
 	"github.com/google/ax/proto"
 )
-
-type dummyAgent struct{}
-
-func (a *dummyAgent) Connect(ctx context.Context, conversationID string, execID string, start *proto.AgentStart, e agent.Executor, o agent.OutputHandler) error {
-	return nil
-}
-func (a *dummyAgent) Close() error { return nil }
 
 func TestServer_Fork(t *testing.T) {
 	ctx := context.Background()
@@ -51,12 +43,9 @@ func TestServer_Fork(t *testing.T) {
 		},
 	}
 
-	c, err := controller.New(ctx, controller.Config{
+	c, err := controller2.New(ctx, controller2.Config{
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
-		},
-		PlannerBuilder: func(ctx context.Context, r *controller.Registry) (agent.Agent, error) {
-			return &dummyAgent{}, nil
 		},
 	})
 	if err != nil {
@@ -107,12 +96,9 @@ func TestServer_Fork_RequiresDestID(t *testing.T) {
 		},
 	}
 
-	c, err := controller.New(ctx, controller.Config{
+	c, err := controller2.New(ctx, controller2.Config{
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
-		},
-		PlannerBuilder: func(ctx context.Context, r *controller.Registry) (agent.Agent, error) {
-			return &dummyAgent{}, nil
 		},
 	})
 	if err != nil {

@@ -1,6 +1,17 @@
 # How to contribute
 
-We'd love to accept your patches and contributions to this project.
+We'd love to accept your patches and contributions to this project. However, please note our current temporary policy below.
+
+> [!IMPORTANT]
+> **Temporary Pause on External Contributions**
+> 
+> AX is currently undergoing a significant architectural redesign, and the codebase is highly unstable. To ensure we can focus on stabilizing the core framework, we are temporarily **pausing the acceptance of external Pull Requests**.
+> 
+> Please do not open Pull Requests at this time, as they are likely to conflict with ongoing changes and may be closed without review. Instead, we encourage you to:
+> - Open an **Issue** to propose feature requests or report bugs.
+> - Join discussions on existing issues to share your feedback.
+> 
+> We will update this guide once the core architecture stabilizes and we are ready to welcome contributions again. Thank you for your understanding and patience!
 
 ## Before you begin
 

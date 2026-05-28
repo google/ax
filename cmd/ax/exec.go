@@ -29,7 +29,6 @@ import (
 
 	"github.com/google/ax/cmd/ax/internal"
 	"github.com/google/ax/cmd/ax/internal/cliutil"
-	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -68,14 +67,17 @@ func init() {
 // TODO(jbd): Add multimodal input flags, e.g. --input-image.
 
 var (
-	execController *controller.Controller
+	// The concrete type depends on the build tag:
+	// - Default: *controller.Controller
+	// - With -tags harness: *controller2.Controller
+	execController cliutil.Controller
 	// interruptCount tracks consecutive Ctrl+C events to support exiting on double Ctrl+C.
 	interruptCount int32
 	// activeCancel stores the cancellation function for the currently in-flight request,
 	// allowing a single Ctrl+C to cancel the active execution request rather than exiting the process.
-	activeCancel   context.CancelFunc
+	activeCancel context.CancelFunc
 	// cancelMu protects activeCancel from concurrent access across goroutines.
-	cancelMu       sync.Mutex
+	cancelMu sync.Mutex
 )
 
 func runExec(cmd *cobra.Command, args []string) error {
@@ -315,7 +317,7 @@ func runAutoExec(ctx context.Context, d *internal.Display, req *proto.ExecReques
 func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.ExecRequest) (*proto.ConfirmationContent, error) {
 	var confirmation *proto.ConfirmationContent
 	var lastSeq int32
-	outputHandler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
+	outputHandler := cliutil.ExecHandler(func(resp *proto.ExecResponse) error {
 		for _, m := range resp.Outputs {
 			if conf := m.GetContent().GetConfirmation(); conf != nil {
 				confirmation = conf
