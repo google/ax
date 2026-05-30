@@ -44,6 +44,7 @@ func TestServer_Fork(t *testing.T) {
 	}
 
 	c, err := controller2.New(ctx, controller2.Config{
+		Registry: controller2.NewRegistry(),
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
 		},
@@ -97,6 +98,7 @@ func TestServer_Fork_RequiresDestID(t *testing.T) {
 	}
 
 	c, err := controller2.New(ctx, controller2.Config{
+		Registry: controller2.NewRegistry(),
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return log, nil
 		},

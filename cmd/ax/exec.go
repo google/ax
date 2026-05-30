@@ -23,7 +23,6 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -70,14 +69,8 @@ var (
 	// The concrete type depends on the build tag:
 	// - Default: *controller.Controller
 	// - With -tags harness: *controller2.Controller
-	execController cliutil.Controller
-	// interruptCount tracks consecutive Ctrl+C events to support exiting on double Ctrl+C.
-	interruptCount int32
-	// activeCancel stores the cancellation function for the currently in-flight request,
-	// allowing a single Ctrl+C to cancel the active execution request rather than exiting the process.
-	activeCancel context.CancelFunc
-	// cancelMu protects activeCancel from concurrent access across goroutines.
-	cancelMu sync.Mutex
+	execController   cliutil.Controller
+	interruptHandler = NewInterruptHandler()
 )
 
 func runExec(cmd *cobra.Command, args []string) error {
@@ -99,30 +92,13 @@ func runExec(cmd *cobra.Command, args []string) error {
 			sig := <-sigChan
 			if sig == syscall.SIGTERM {
 				fmt.Println("\nReceived SIGTERM, exiting...")
-				if execController != nil {
-					execController.Close()
-				}
-				os.Exit(1)
+				interruptHandler.exit()
 			}
 
-			cancelMu.Lock()
-			cancelFn := activeCancel
-			cancelMu.Unlock()
-
-			if cancelFn != nil {
-				fmt.Println("\nCanceling current request...")
-				cancelFn()
-			} else {
-				count := atomic.AddInt32(&interruptCount, 1)
-				if count == 1 {
-					fmt.Println("\nPress Ctrl+C again to exit.")
-					startInterruptResetTimer()
-				} else if count >= 2 {
+			if !interruptHandler.TriggerCancel() {
+				if interruptHandler.HandleInterrupt() {
 					fmt.Println("\nExiting...")
-					if execController != nil {
-						execController.Close()
-					}
-					os.Exit(1)
+					interruptHandler.exit()
 				}
 			}
 		}
@@ -177,10 +153,8 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 	}
 
 	for {
-		reqCtx, cancelReq := context.WithCancel(ctx)
-		cancelMu.Lock()
-		activeCancel = cancelReq
-		cancelMu.Unlock()
+		reqCtx, cancel := context.WithCancel(ctx)
+		interruptHandler.SetActiveCancel(cancel)
 
 		conf, err := runAutoExec(reqCtx, d, &proto.ExecRequest{
 			ConversationId: id,
@@ -190,10 +164,8 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 		})
 		lastSeq = 0 // disable resuming from sequence, user sees the seq on the screen
 
-		cancelMu.Lock()
-		activeCancel = nil
-		cancelMu.Unlock()
-		cancelReq()
+		interruptHandler.ClearActiveCancel()
+		cancel()
 
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -210,14 +182,10 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 				approved, err := d.PromptForApproval(conf.Question)
 				if err != nil {
 					if errors.Is(err, internal.ErrUserAborted) {
-						count := atomic.AddInt32(&interruptCount, 1)
-						if count == 1 {
-							fmt.Println("\nPress Ctrl+C again to exit.")
-							startInterruptResetTimer()
-							continue
-						} else if count >= 2 {
+						if interruptHandler.HandleInterrupt() {
 							return nil
 						}
+						continue
 					}
 					return err
 				}
@@ -252,10 +220,8 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 					}}
 				}
 
-				reqCtx, cancelReq := context.WithCancel(ctx)
-				cancelMu.Lock()
-				activeCancel = cancelReq
-				cancelMu.Unlock()
+				reqCtx, cancel := context.WithCancel(ctx)
+				interruptHandler.SetActiveCancel(cancel)
 
 				conf, err = runAutoExec(reqCtx, d, &proto.ExecRequest{
 					ConversationId: id,
@@ -263,10 +229,8 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 					Inputs:         decision,
 				})
 
-				cancelMu.Lock()
-				activeCancel = nil
-				cancelMu.Unlock()
-				cancelReq()
+				interruptHandler.ClearActiveCancel()
+				cancel()
 
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
@@ -425,15 +389,11 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 		input, err = d.PromptForInput()
 		if err != nil {
 			if errors.Is(err, internal.ErrUserAborted) {
-				count := atomic.AddInt32(&interruptCount, 1)
-				if count == 1 {
-					fmt.Println("\nPress Ctrl+C again to exit.")
-					startInterruptResetTimer()
-					input = "" // Continue loop to prompt again
-					continue
-				} else if count >= 2 {
+				if interruptHandler.HandleInterrupt() {
 					return "", true, nil
 				}
+				input = "" // Continue loop to prompt again
+				continue
 			}
 			return "", false, err
 		}
@@ -447,9 +407,68 @@ func promptUser(d *internal.Display, input string) (string, bool, error) {
 	return input, false, nil
 }
 
-func startInterruptResetTimer() {
-	go func() {
-		time.Sleep(2 * time.Second)
-		atomic.StoreInt32(&interruptCount, 0)
-	}()
+// InterruptHandler encapsulates the cancellation and signal handling state.
+type InterruptHandler struct {
+	mu             sync.Mutex
+	activeCancel   context.CancelFunc
+	interruptCount int32
+}
+
+// NewInterruptHandler creates a new InterruptHandler.
+func NewInterruptHandler() *InterruptHandler {
+	return &InterruptHandler{}
+}
+
+// SetActiveCancel sets the active cancel function.
+func (h *InterruptHandler) SetActiveCancel(cancel context.CancelFunc) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.activeCancel = cancel
+}
+
+// ClearActiveCancel clears the active cancel function.
+func (h *InterruptHandler) ClearActiveCancel() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.activeCancel = nil
+}
+
+// HandleInterrupt increments the interrupt count and returns true if the process should exit.
+// It also starts a timer to reset the count.
+func (h *InterruptHandler) HandleInterrupt() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.interruptCount++
+	if h.interruptCount == 1 {
+		fmt.Println("\nPress Ctrl+C again to exit.")
+		go func() {
+			time.Sleep(2 * time.Second)
+			h.mu.Lock()
+			h.interruptCount = 0
+			h.mu.Unlock()
+		}()
+		return false
+	}
+	return true
+}
+
+// TriggerCancel triggers cancellation if there is an active cancel function.
+// It returns true if it triggered cancellation, or false if there was no active cancellation.
+func (h *InterruptHandler) TriggerCancel() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.activeCancel != nil {
+		fmt.Println("\nCanceling current request...")
+		h.activeCancel()
+		return true
+	}
+	return false
+}
+
+// exit gracefully shuts down the controller (if any) and terminates the process.
+func (h *InterruptHandler) exit() {
+	if execController != nil {
+		execController.Close()
+	}
+	os.Exit(1)
 }
