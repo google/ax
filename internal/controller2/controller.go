@@ -73,7 +73,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
-	h, err := d.registry.GetHarness(req.AgentId)
+	h, err := d.registry.Harness(req.AgentId)
 	if err != nil {
 		// Fallback to test harness
 		log.Printf("WARNING: harness %s not found in registry, falling back to test harness: %v", req.AgentId, err)

@@ -195,8 +195,8 @@ func (r *Registry) Get(id string) (agent.Agent, error) {
 	return a, nil
 }
 
-// GetInfo retrieves agent metadata by ID.
-func (r *Registry) GetInfo(id string) (*agent.AgentInfo, error) {
+// AgentInfo retrieves agent metadata by ID.
+func (r *Registry) AgentInfo(id string) (*agent.AgentInfo, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
