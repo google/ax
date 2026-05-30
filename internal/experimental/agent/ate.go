@@ -27,7 +27,7 @@ import (
 	"github.com/google/ax/proto"
 )
 
-// SubstrateAgent manages execution in a SubstrATE actor.
+// SubstrateAgent manages execution in a Substrate actor.
 type SubstrateAgent struct {
 	ateClient *ate.Client
 	config    SubstrateAgentConfig

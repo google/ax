@@ -62,10 +62,10 @@ func createATEClient() any {
 		}
 	}
 
-	log.Printf("Creating SubstrATE client (Namespace: %s, Template: %s, Endpoint: %s)", ns, template, endpoint)
+	log.Printf("Creating Substrate client (Namespace: %s, Template: %s, Endpoint: %s)", ns, template, endpoint)
 	client, err := ate.NewClient(ns, template, endpoint, grpc.WithTransportCredentials(credentials.NewTLS(clientTLSConfig)))
 	if err != nil {
-		log.Printf("Warning: Failed to create SubstrATE client: %v", err)
+		log.Printf("Warning: Failed to create Substrate client: %v", err)
 		return nil
 	}
 	return client

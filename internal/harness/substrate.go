@@ -31,7 +31,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// SubstrateHarness manages execution in a SubstrATE sandboxed actor over gRPC HarnessService.
+// SubstrateHarnessConfig configures a SubstrateHarness.
+type SubstrateHarnessConfig struct {
+	Port     int
+	DialOpts []grpc.DialOption
+
+	SubstrateAPIEndpoint string
+	HarnessNamespace     string
+	HarnessTemplate      string
+}
+
+// SubstrateHarness manages execution in a Substrate sandboxed actor over gRPC HarnessService.
 type SubstrateHarness struct {
 	ateClient *ate.Client
 	port      int
@@ -39,26 +49,27 @@ type SubstrateHarness struct {
 }
 
 // NewSubstrateHarness creates a new SubstrateHarness.
-func NewSubstrateHarness(endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
-	if port == 0 {
-		port = 50053 // Default HarnessService port
+func NewSubstrateHarness(cfg SubstrateHarnessConfig) (*SubstrateHarness, error) {
+	if cfg.Port == 0 {
+		cfg.Port = 50053 // Default HarnessService port
 	}
-	if namespace == "" {
-		namespace = "ax"
+	if cfg.HarnessNamespace == "" {
+		cfg.HarnessNamespace = "ax"
 	}
-	if template == "" {
-		template = "ax-harness-template"
+	if cfg.HarnessTemplate == "" {
+		cfg.HarnessTemplate = "ax-harness-template"
 	}
-	client, err := ate.NewClient(namespace, template, endpoint)
+	client, err := ate.NewClient(cfg.HarnessNamespace, cfg.HarnessTemplate, cfg.SubstrateAPIEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ATE client: %w", err)
 	}
+	opts := cfg.DialOpts
 	if len(opts) == 0 {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 	return &SubstrateHarness{
 		ateClient: client,
-		port:      port,
+		port:      cfg.Port,
 		dialOpts:  opts,
 	}, nil
 }
@@ -169,7 +180,7 @@ func (e *substrateExecution) Close(ctx context.Context) error {
 	}
 
 	// Suspend actor to return resource to standard standby pool
-	log.Printf("Suspending SubstrATE actor for conversation %s (execution %s)", e.conversationID, e.execID)
+	log.Printf("Suspending Substrate actor for conversation %s (execution %s)", e.conversationID, e.execID)
 	suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := e.harness.ateClient.SuspendActor(suspendCtx, e.conversationID); err != nil {
