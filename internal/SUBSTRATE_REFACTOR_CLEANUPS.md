@@ -4,3 +4,5 @@
 * Remove axepp.
 * Remove ate build tag.
 * Remove harnessHandler once Exec RPC is revisited.
+* Introduce a SubsrateHarness that wraps a regular Harness implementation and provides
+  automatic resume and suspension.
