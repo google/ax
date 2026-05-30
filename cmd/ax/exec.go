@@ -302,7 +302,6 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 				},
 			},
 		}
-		agentID = "" // reset agent id for next turn
 	}
 }
 

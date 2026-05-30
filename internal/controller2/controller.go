@@ -32,8 +32,8 @@ type ExecHandler func(resp *proto.ExecResponse) error
 // Controller is the main controller that coordinates all components.
 // It acts as a single-writer system for managing agentic loops.
 type Controller struct {
-	registry      *Registry
-	eventLog      executor.EventLog
+	registry *Registry
+	eventLog executor.EventLog
 }
 
 // Config configures the controller.
@@ -56,8 +56,8 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 
 	return &Controller{
-		registry:      cfg.Registry,
-		eventLog:      eventLog,
+		registry: cfg.Registry,
+		eventLog: eventLog,
 	}, nil
 }
 
@@ -71,7 +71,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 
 	// TODO(jbd): Resume an incomplete execution if there exists one.
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
-  // TODO(anj): We need to consolidate agents and harness registration.
+	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
 	h, err := d.registry.GetHarness(req.AgentId)
 	if err != nil {
