@@ -27,29 +27,21 @@ import (
 
 // Harness implements the harness.Harness interface for testing purposes.
 type Harness struct {
-	mu     sync.Mutex
-	Active map[string]*Execution
 }
 
 // New creates a new Harness instance.
 func New() *Harness {
-	return &Harness{
-		Active: make(map[string]*Execution),
-	}
+	return &Harness{}
 }
 
 // Start implements harness.Harness.
 func (h *Harness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	execID := uuid.NewString()
 	exec := &Execution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             execID,
 	}
-	h.Active[execID] = exec
 	return exec, nil
 }
 
@@ -61,7 +53,6 @@ type Execution struct {
 
 	mu     sync.Mutex
 	queued []*proto.Message
-	closed bool
 }
 
 // ID implements harness.Execution.
@@ -100,13 +91,5 @@ func (e *Execution) Run(ctx context.Context, handler harness.Handler) error {
 
 // Close implements harness.Execution.
 func (e *Execution) Close(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.closed = true
-
-	e.harness.mu.Lock()
-	delete(e.harness.Active, e.id)
-	e.harness.mu.Unlock()
-
 	return nil
 }
