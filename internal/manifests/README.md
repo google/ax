@@ -4,22 +4,19 @@ This directory contains manifests to deploy AX with the `harness` configuration 
 
 ---
 
-## 🚀 Deploying
-
-This setup deploys the AX server built with the `harness` tag, enabling the test/mock harness path (which defaults to returning `"Hello world"`).
-
-### 1. Build and Deploy
+## Deploying
 
 Make sure your target environment variables are exported:
 
 ```bash
+export PROJECT_ID="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
-export BUCKET_NAME="snapshot-substrate-test-ax-substrate"
-export KO_DOCKER_REPO="gcr.io/ax-substrate/ate-images"
+export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
+export KO_DOCKER_REPO="gcr.io/$PROJECT_ID/ate-images"
 export KO_DEFAULTPLATFORMS="linux/amd64"
 ```
 
-Render the template variables and apply the resolved manifest to the cluster with the `harness` build tag:
+Render the template variables and apply the resolved manifest:
 
 ```bash
 sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
@@ -28,7 +25,7 @@ sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
     | GOFLAGS="-tags=harness" ko apply -f -
 ```
 
-If you are deploying for the first time, use the following command:
+Use the following command for initial deployment:
 
 ```bash
 kubectl apply -f ax-deployment2.yaml
@@ -37,7 +34,7 @@ kubectl apply -f ax-deployment2.yaml
 If you have a deployment and rolling out a new version, you can do:
 
 ```bash
-kubectl delete pods -l app=ax-server -n ax
+kubectl delete pods -l app=ax-server -n ax 
 kubectl delete workerpool ax-harness-workerpool -n ax
 kubectl delete actortemplate ax-harness-template -n ax
 ```
