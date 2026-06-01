@@ -62,59 +62,30 @@ async def main():
     strategy = strategy_factory()
     
     # 4. Create the stateful conversation session
+    print("Starting stateful Antigravity conversation (L2 API)...")
     async with Conversation.create(strategy) as conversation:
-        # Check if a prompt was passed via CLI arguments (single-turn compatibility mode)
-        cli_prompt = sys.argv[1] if len(sys.argv) > 1 else None
+        prompt = sys.argv[1] if len(sys.argv) > 1 else None
+        if not prompt:
+            raise ValueError("Please provide a prompt for your agent. Usage: python agent.py <prompt>")
         
-        if cli_prompt:
-            await run_turn(conversation, cli_prompt)
-            print()
-            return
-            
-        # Multi-turn interactive chat mode
-        print("=" * 50)
-        print("Antigravity Interactive Console Chat (L2 API)")
-        print("Type 'exit' or 'quit' to end the conversation.")
-        print("=" * 50)
+        # 5. Send query and receive streaming ChatResponse
+        response = await conversation.chat(prompt)
         
-        while True:
-            try:
-                # Standard Python input prompt
-                user_input = input("\nYou: ")
-            except (EOFError, KeyboardInterrupt):
-                print("\nGoodbye!")
-                break
-                
-            clean_input = user_input.strip()
-            if not clean_input:
-                continue
-                
-            if clean_input.lower() in ("exit", "quit"):
-                print("Goodbye!")
-                break
-                
-            sys.stdout.write("Agent: ")
-            sys.stdout.flush()
-            await run_turn(conversation, clean_input)
-            sys.stdout.write("\n")
-
-async def run_turn(conversation, prompt):
-    # Send query and receive streaming ChatResponse
-    response = await conversation.chat(prompt)
-    
-    # Stream semantic chunks (Thoughts, Text, and ToolCalls) in real-time
-    async for chunk in response.chunks:
-        if isinstance(chunk, Text):
-            sys.stdout.write(chunk.text)
-            sys.stdout.flush()
-        elif isinstance(chunk, Thought):
-            # Display thought process in comment style
-            sys.stdout.write(f"\n[Thinking]: {chunk.text}")
-            sys.stdout.flush()
-        elif isinstance(chunk, ToolCall):
-            sys.stdout.write(f"\n[Tool Call]: {chunk.name} with args {chunk.args}\n")
-            sys.stdout.flush()
+        # 6. Stream semantic chunks (Thoughts, Text, and ToolCalls) in real-time
+        async for chunk in response.chunks:
+            if isinstance(chunk, Text):
+                sys.stdout.write(chunk.text)
+                sys.stdout.flush()
+            elif isinstance(chunk, Thought):
+                # Display thought process in comment style
+                sys.stdout.write(f"\n[Thinking]: {chunk.text}")
+                sys.stdout.flush()
+            elif isinstance(chunk, ToolCall):
+                sys.stdout.write(f"\n[Tool Call]: {chunk.name} with args {chunk.args}\n")
+                sys.stdout.flush()
+        print()
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
