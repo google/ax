@@ -91,14 +91,10 @@ axepp-image:
 	@echo "Building axepp container image with ko..."
 	GOFLAGS="-tags=ate" ko build --base-import-paths ./cmd/axepp
 
-axharness-image:
-	@echo "Building axharness container image with ko..."
-	ko build --base-import-paths ./cmd/axharness
-
 ax-shell-image:
 	# Used to debug ax servers within a cluster.
 	@echo "Building ax shell container image with ko using busybox..."
 	KO_DOCKER_REPO=$(KO_DOCKER_REPO)/ax-shell KO_DEFAULTBASEIMAGE=busybox:1.36 GOFLAGS="-tags=ate" ko build --base-import-paths ./cmd/ax
 
 # Build all container images
-images: ax-image axepp-image axharness-image ax-shell-image
+images: ax-image axepp-image ax-shell-image
