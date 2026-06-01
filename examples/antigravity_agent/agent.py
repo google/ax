@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# NOTE ON ARCHITECTURE:
+# This file plays a dual-purpose role:
+# 1. Standalone Sandbox: Can be run directly via CLI (python agent.py "prompt") for local L2 debugging.
+# 2. Declarative Config Module: Exposes 'agent_config' globally, which python/antigravity/harness_server.py 
+#    dynamically imports to serve this agent over production gRPC.
+
 import asyncio
+
 import sys
 from google.antigravity import LocalAgentConfig
 from google.antigravity.connections.local import LocalConnectionStrategy
@@ -57,7 +64,9 @@ async def main():
     # 4. Create the stateful conversation session
     print("Starting stateful Antigravity conversation (L2 API)...")
     async with Conversation.create(strategy) as conversation:
-        prompt = sys.argv[1] if len(sys.argv) > 1 else "What is the weather in New York?"
+        prompt = sys.argv[1] if len(sys.argv) > 1 else None
+        if not prompt:
+            raise ValueError("Please provide a prompt for your agent. Usage: python agent.py <prompt>")
         
         # 5. Send query and receive streaming ChatResponse
         response = await conversation.chat(prompt)

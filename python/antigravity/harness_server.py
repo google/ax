@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# NOTE ON ARCHITECTURE:
+# This is a generic, reusable gRPC server that does not define tools or personas. 
+# Instead, it dynamically imports any agent configuration file (defaulting to examples/antigravity_agent/agent.py) 
+# passed via the --agent_file CLI argument, then hosts it over the AX AgentService protocol.
+
 import argparse
+
 import asyncio
 import importlib.util
 import logging
