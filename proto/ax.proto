@@ -112,7 +112,9 @@ service AgentService {
 message HarnessMessage {
   // TODO(jbd): This is a placeholder message
   // and will be replaced with the actual protocol.
-  repeated Message messages = 1;
+  string harness_id = 1;         // The unique identifier of the harness.
+  bytes harness_config = 2;      // The configuration for the harness.
+  repeated Message messages = 3; // The input/output messages.
 }
 
 service HarnessService {
