@@ -56,33 +56,16 @@ func main() {
 	})
 
 	// -------------------------------------------------------------------------
-	// Demo 2: Build-time Fallback (Antigravity with bad script path)
+	// Demo 2: Antigravity Execution (Requires google-antigravity & GEMINI_API_KEY)
 	// -------------------------------------------------------------------------
-	fmt.Println("\n--- Demo 2: Build-time Fallback ---")
-	fmt.Println("Registering 'antigravity' with non-existent script. Should fallback to Test Harness.")
-	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
-		// Build harness with bad path, manually implementing fallback check
-		var badHarness harness.Harness
-		scriptPath := "non-existent-script.py"
-		if _, err := os.Stat(scriptPath); err != nil {
-			fmt.Printf("WARNING: Antigravity agent script not found at %s, falling back to test harness: %v\n", scriptPath, err)
-			badHarness = harnesstest.New()
-		} else {
-			badHarness = harness.NewAntigravityHarness("ws://localhost:50054/ws")
-		}
-		reg.RegisterHarness("antigravity", badHarness)
-	})
-
-	// -------------------------------------------------------------------------
-	// Demo 3: Antigravity Execution (Requires google-antigravity & GEMINI_API_KEY)
-	// -------------------------------------------------------------------------
-	fmt.Println("\n--- Demo 3: Antigravity Execution ---")
+	fmt.Println("\n--- Demo 2: Antigravity Execution ---")
 	fmt.Println("Registering 'antigravity' with real script. Attempting execution.")
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		fmt.Println("WARNING: GEMINI_API_KEY is not set. Execution will likely fail if dependencies are missing, but we will try anyway.")
 	}
 	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
-		// Check if Python gRPC server is active, otherwise fallback
+		// With the new stateful gRPC-based streaming harness, connectivity checks on the
+		// server address replace the build-time checks for local script file presence.
 		var realHarness harness.Harness
 		address := "localhost:50053"
 		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
