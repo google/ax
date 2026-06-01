@@ -22,6 +22,7 @@ import (
 	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/harness"
 )
 
 // Controller is the active controller type for this build.
@@ -32,7 +33,10 @@ type ExecHandler = controller2.ExecHandler
 
 // NewControllerFromConfig creates a controller2.Controller.
 func NewControllerFromConfig(ctx context.Context, cfg *config.Config) (*controller2.Controller, error) {
+	reg := controller2.NewRegistry()
+	reg.RegisterHarness("antigravity", harness.NewAntigravityHarness(""))
 	return controller2.New(ctx, controller2.Config{
+		Registry: reg,
 		EventLogBuilder: func() (executor.EventLog, error) {
 			return executor.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},

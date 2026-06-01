@@ -170,7 +170,7 @@ func (m *mockAgentRegistry) List() []string {
 	return nil
 }
 
-func (m *mockAgentRegistry) GetInfo(id string) (*agent.AgentInfo, error) {
+func (m *mockAgentRegistry) AgentInfo(id string) (*agent.AgentInfo, error) {
 	if m.getInfoFunc != nil {
 		return m.getInfoFunc(id)
 	}

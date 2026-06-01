@@ -198,8 +198,8 @@ func (r *Registry) Get(id string) (agent.Agent, error) {
 	return a, nil
 }
 
-// GetInfo retrieves agent metadata by ID.
-func (r *Registry) GetInfo(id string) (*agent.AgentInfo, error) {
+// AgentInfo retrieves agent metadata by ID.
+func (r *Registry) AgentInfo(id string) (*agent.AgentInfo, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -247,8 +247,8 @@ func (r *Registry) RegisterHarness(id string, h harness.Harness) {
 	r.harnesses[id] = h
 }
 
-// GetHarness retrieves a harness by ID.
-func (r *Registry) GetHarness(id string) (harness.Harness, error) {
+// Harness retrieves a harness by ID.
+func (r *Registry) Harness(id string) (harness.Harness, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	h, ok := r.harnesses[id]

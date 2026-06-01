@@ -47,7 +47,8 @@ spec:
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
     - name: "axharness"
-      image: ko://github.com/google/ax/cmd/axharness
+      image: ko://github.com/google/ax/cmd/ax
+      command: ["/ko-app/ax", "harness"]
       ports:
       - containerPort: 50053
   snapshotsConfig:

@@ -37,7 +37,7 @@ const disallowConfirmationsKey contextKey = "disallowConfirmations"
 // AgentRegistry defines the interface needed by the planner to discover agents.
 type AgentRegistry interface {
 	List() []string
-	GetInfo(id string) (*agent.AgentInfo, error)
+	AgentInfo(id string) (*agent.AgentInfo, error)
 }
 
 // ContentGenerator abstracts Gemini content generation for testing.
@@ -519,7 +519,7 @@ func agentsToTools(registry AgentRegistry, nativeTools ...Tool) ([]*genai.Tool, 
 	var tools []*genai.Tool
 	// TODO(lhuan): Check if agentsToTools returns an error or empty list and return a friendly "no agent available, try later" error.
 	for _, id := range agents {
-		info, err := registry.GetInfo(id)
+		info, err := registry.AgentInfo(id)
 		if err != nil {
 			continue // Skip agents we can't get info for
 		}

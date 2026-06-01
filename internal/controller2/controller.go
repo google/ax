@@ -19,6 +19,7 @@ package controller2
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/harness/harnesstest"
@@ -31,20 +32,21 @@ type ExecHandler func(resp *proto.ExecResponse) error
 // Controller is the main controller that coordinates all components.
 // It acts as a single-writer system for managing agentic loops.
 type Controller struct {
-	registry       *Registry
-	eventLog       executor.EventLog
+	registry *Registry
+	eventLog executor.EventLog
 }
 
 // Config configures the controller.
 type Config struct {
+	Registry        *Registry
 	EventLogBuilder executor.EventLogBuilder
 }
 
 // New creates a new controller instance.
 func New(ctx context.Context, cfg Config) (*Controller, error) {
-	// Initialize agent registry
-	registry := NewRegistry()
-
+	if cfg.Registry == nil {
+		return nil, fmt.Errorf("registry is required")
+	}
 	if cfg.EventLogBuilder == nil {
 		return nil, fmt.Errorf("event log builder is required")
 	}
@@ -54,8 +56,8 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 	}
 
 	return &Controller{
-		registry:       registry,
-		eventLog:       eventLog,
+		registry: cfg.Registry,
+		eventLog: eventLog,
 	}, nil
 }
 
@@ -69,8 +71,14 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 
 	// TODO(jbd): Resume an incomplete execution if there exists one.
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
-
-	h := harnesstest.New()
+	// TODO(anj): We need to consolidate agents and harness registration.
+	// Adding harness registration support temporarily.
+	h, err := d.registry.Harness(req.AgentId)
+	if err != nil {
+		// Fallback to test harness
+		log.Printf("WARNING: harness %s not found in registry, falling back to test harness: %v", req.AgentId, err)
+		h = harnesstest.New()
+	}
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
 		return fmt.Errorf("failed to start harness session: %w", err)
