@@ -14,7 +14,16 @@
 
 // Package main implements an end-to-end demonstration of the Antigravity harness
 // integration with AX Controller V2.
+//
+// TO RUN THIS E2E DEMONSTRATION:
+//
+// Step 1: Start the Python gRPC Harness Server (in a separate terminal or background):
+//   PYTHONPATH=python:. /Users/anjalisridhar/.gemini/jetski/worktrees/harness-interface-3/implement-agy-sdk-streaming-20260528/.venv/bin/python python/antigravity/harness_server.py --port 50053
+//
+// Step 2: Run this Go E2E client:
+//   go run cmd/e2e/main.go
 package main
+
 
 import (
 	"context"
