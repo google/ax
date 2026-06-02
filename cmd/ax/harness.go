@@ -83,6 +83,7 @@ func NewHarnessServiceServer() *HarnessServiceServer {
 
 // Connect implements the bidirectional gRPC streaming capability.
 // It receives client inputs and responds with "hello world" unless the input message text is "go_away".
+// TODO(params): Update the implementation to be a proper one.
 func (s *HarnessServiceServer) Connect(stream proto.HarnessService_ConnectServer) error {
 	for {
 		req, err := stream.Recv()
