@@ -93,7 +93,7 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 		if err := stream.Send(msg); err != nil {
 			return fmt.Errorf("Failed to send message: %v", err)
 		}
-
+    // TODO(params): Replace this with a proper protocol for go away.
 		if text == "go_away" {
 			log.Println("Sending 'go_away' to close the stream...")
 			break

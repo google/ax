@@ -97,6 +97,7 @@ func (s *HarnessServiceServer) Connect(stream proto.HarnessService_ConnectServer
 		shouldGoAway := false
 		for _, m := range req.Messages {
 			if textBlock, ok := m.Content.Type.(*proto.Content_Text); ok {
+				// TODO(params): Replace this with a proper protocol for go away.
 				if textBlock.Text.Text == "go_away" {
 					shouldGoAway = true
 					break
