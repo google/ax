@@ -82,17 +82,30 @@ func NewHarnessServiceServer() *HarnessServiceServer {
 }
 
 // Connect implements the bidirectional gRPC streaming capability.
-// It receives client inputs and responds only with "Hello world".
+// It receives client inputs and responds with "hello world" unless the input message text is "go_away".
 func (s *HarnessServiceServer) Connect(stream proto.HarnessService_ConnectServer) error {
-	// TODO: Connect will be implemented to serve the built in harnesses
-	// as an isolated actor.
 	for {
-		_, err := stream.Recv()
+		req, err := stream.Recv()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+
+		shouldGoAway := false
+		for _, m := range req.Messages {
+			if textBlock, ok := m.Content.Type.(*proto.Content_Text); ok {
+				if textBlock.Text.Text == "go_away" {
+					shouldGoAway = true
+					break
+				}
+			}
+		}
+
+		if shouldGoAway {
+			log.Println("Received 'go_away' message, closing stream...")
+			return nil
 		}
 
 		err = stream.Send(&proto.HarnessMessage{
@@ -102,7 +115,7 @@ func (s *HarnessServiceServer) Connect(stream proto.HarnessService_ConnectServer
 					Content: &proto.Content{
 						Type: &proto.Content_Text{
 							Text: &proto.TextContent{
-								Text: "Hello world",
+								Text: "hello world",
 							},
 						},
 					},
