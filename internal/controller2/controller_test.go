@@ -41,6 +41,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 
 	log := &executortest.MemoryEventLog{}
 	reg := NewRegistry()
+	reg.RegisterHarness("", harnesstest.New())
 	c, err := New(ctx, Config{
 		Registry: reg,
 		EventLogBuilder: func() (executor.EventLog, error) {
@@ -193,17 +194,8 @@ func TestController2_ExecRuntimeFallback(t *testing.T) {
 		Inputs:         inputs,
 		AgentId:        "antigravity",
 	}, handler)
-	if err != nil {
-		t.Fatalf("Controller2.Exec failed: %v", err)
-	}
-
-	if len(outputs) != 1 {
-		t.Fatalf("expected exactly 1 output message, got %d", len(outputs))
-	}
-
-	gotText := outputs[0].GetContent().GetText().GetText()
-	if gotText != "Hello world" {
-		t.Errorf("expected 'Hello world' output text response due to runtime fallback, got %q", gotText)
+	if err == nil {
+		t.Fatal("expected error for unregistered agent lookup under V2, got nil")
 	}
 }
 

@@ -35,6 +35,15 @@ type ExecHandler = controller2.ExecHandler
 func NewControllerFromConfig(ctx context.Context, cfg *config.Config) (*controller2.Controller, error) {
 	reg := controller2.NewRegistry()
 	reg.RegisterHarness("antigravity", harness.NewAntigravityHarness(""))
+
+	// Register legacy agents so that the V2 registry can detect and block them with a clear validation error
+	for _, agentCfg := range cfg.Registry.RemoteAgents {
+		_ = reg.RegisterRemote(ctx, agentCfg)
+	}
+	for _, agentCfg := range cfg.Registry.ColabAgents {
+		_ = reg.RegisterColab(agentCfg)
+	}
+
 	return controller2.New(ctx, controller2.Config{
 		Registry: reg,
 		EventLogBuilder: func() (executor.EventLog, error) {

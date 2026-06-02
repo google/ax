@@ -73,3 +73,26 @@ func TestRegistry_GracefulShutdown(t *testing.T) {
 	// We are testing for absence of panic/deadlock here.
 	_ = r.Close()
 }
+
+func TestRegistry_LegacyAgentValidation(t *testing.T) {
+	r := NewRegistry()
+
+	err := r.RegisterRemote(context.Background(), config.RemoteAgentConfig{
+		ID:      "legacy-remote-agent",
+		Name:    "Legacy Agent",
+		Address: "localhost:8494",
+	})
+	if err != nil {
+		t.Fatalf("failed to register remote agent: %v", err)
+	}
+
+	_, err = r.Harness("legacy-remote-agent")
+	if err == nil {
+		t.Fatal("expected error for legacy agent lookup in V2 mode, got nil")
+	}
+
+	expectedErr := `agent "legacy-remote-agent" is registered under legacy agent config but has no V2 harness interface implementation`
+	if err.Error() != expectedErr {
+		t.Errorf("expected error message %q, got %q", expectedErr, err.Error())
+	}
+}

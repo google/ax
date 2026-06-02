@@ -19,10 +19,8 @@ package controller2
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/google/ax/internal/controller/executor"
-	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
@@ -75,9 +73,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// Adding harness registration support temporarily.
 	h, err := d.registry.Harness(req.AgentId)
 	if err != nil {
-		// Fallback to test harness
-		log.Printf("WARNING: harness %s not found in registry, falling back to test harness: %v", req.AgentId, err)
-		h = harnesstest.New()
+		return fmt.Errorf("harness/agent %q not found in registry: %w", req.AgentId, err)
 	}
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {

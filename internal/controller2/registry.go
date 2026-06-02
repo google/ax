@@ -253,7 +253,10 @@ func (r *Registry) Harness(id string) (harness.Harness, error) {
 	defer r.mu.RUnlock()
 	h, ok := r.harnesses[id]
 	if !ok {
-		return nil, fmt.Errorf("harness %s not found", id)
+		if _, exists := r.agents[id]; exists {
+			return nil, fmt.Errorf("agent %q is registered under legacy agent config but has no V2 harness interface implementation", id)
+		}
+		return nil, fmt.Errorf("harness %q not found (local V2 execution only)", id)
 	}
 	return h, nil
 }
