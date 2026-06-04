@@ -69,6 +69,19 @@ func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateAc
 	return resp, nil
 }
 
+// ResumeActor resumes the actor, scheduling it onto a worker. The returned
+// actor carries the worker IP once it is running.
+func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeActorResponse, error) {
+	client := ateapipb.NewControlClient(c.conn)
+	resp, err := client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
+		ActorId: id,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error when calling Control.ResumeActor: %w", err)
+	}
+	return resp, nil
+}
+
 // SuspendActor suspends the actor.
 func (c *Client) SuspendActor(ctx context.Context, id string) (*ateapipb.SuspendActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)

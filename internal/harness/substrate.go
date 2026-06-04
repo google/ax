@@ -16,6 +16,7 @@ package harness
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -24,7 +25,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/google/ax/internal/experimental/k8s/ate"
 	"github.com/google/ax/proto"
@@ -49,7 +53,8 @@ func NewSubstrateHarness(endpoint string, namespace string, template string, por
 	if template == "" {
 		template = "ax-harness-template"
 	}
-	client, err := ate.NewClient(namespace, template, endpoint)
+	controlCreds := grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}))
+	client, err := ate.NewClient(namespace, template, endpoint, controlCreds)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ATE client: %w", err)
 	}
@@ -69,11 +74,18 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 		return nil, errors.New("SubstrateHarness needs valid conversationID")
 	}
 
-	resp, err := h.ateClient.CreateActor(ctx, conversationID)
-	if err != nil {
+	// CreateActor is idempotent here: on follow-up turns the actor was created
+	// (and suspended) on a previous turn, so AlreadyExists is expected and fine.
+	if _, err := h.ateClient.CreateActor(ctx, conversationID); err != nil && status.Code(err) != codes.AlreadyExists {
 		return nil, fmt.Errorf("failed to create substrate actor %s: %w", conversationID, err)
 	}
-	actor := resp.Actor
+
+	// Resume the actor so it is scheduled onto a worker and gets a routable IP.
+	resumeResp, err := h.ateClient.ResumeActor(ctx, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resume substrate actor %s: %w", conversationID, err)
+	}
+	actor := resumeResp.Actor
 	if actor == nil {
 		return nil, fmt.Errorf("received nil actor in response for %s", conversationID)
 	}

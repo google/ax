@@ -41,6 +41,12 @@ This command will:
 - Create the `ax` namespace.
 - Create the `WorkerPool` and `ActorTemplate` for the AX harness.
 - Create the `ax-server` `ReplicaSet` (the controller front-end).
+- Create the `ax-server-config` `ConfigMap` that tells the `ax-server` which
+  harnesses to serve (mounted at `/etc/ax/ax.yaml`).
+
+The harness registry lives in that `ConfigMap`. By default it registers a
+substrate harness (`hello-world`) backed by the `ax-harness-template`, marked as
+the default via `harnesses.default`.
 
 Wait until the template is ready:
 ```bash
@@ -70,9 +76,9 @@ Conversation: fb344a18-3720-4c4f-8a6e-2ce34db975b3
 
 ⏺ hello
 
-Hello world
+hello world
 ```
-*The request is served directly by the `ax-server`.*
+*The request is served by the harness actor running on Substrate.*
 
 ## 🧹 How to Uninstall
 
