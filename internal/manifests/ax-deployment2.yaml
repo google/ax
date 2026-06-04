@@ -74,7 +74,7 @@ spec:
       containers:
         - name: ax-server
           image: ko://github.com/google/ax/cmd/ax
-          command: ["/ko-app/ax", "serve"]
+          command: ["/ko-app/ax", "serve", "--config", "/etc/ax/ax.yaml"]
           ports:
             - containerPort: 8494
           env:
@@ -82,3 +82,27 @@ spec:
               value: "${GEMINI_API_KEY}"
             - name: AX_SUBSTRATE
               value: "1"
+          volumeMounts:
+            - name: ax-config
+              mountPath: /etc/ax
+      volumes:
+        - name: ax-config
+          configMap:
+            name: ax-server-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ax-server-config
+  namespace: ax
+data:
+  ax.yaml: |
+    ate:
+      endpoint: "api.ate-system.svc:443"
+    harnesses:
+      default: hello-world
+      substrate:
+        - id: hello-world
+          namespace: ax
+          template: ax-harness-template
+          port: 50053

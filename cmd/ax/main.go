@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/google/ax/internal/config"
+	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -61,10 +61,10 @@ func connect(server string) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-func newConfig(cmd *cobra.Command, configFile string) (*config.Config, error) {
-	cfg, err := config.LoadFromFile(configFile)
+func newConfig(cmd *cobra.Command, configFile string) (*cliutil.Config, error) {
+	cfg, err := cliutil.LoadFromFile(configFile)
 	if errors.Is(err, os.ErrNotExist) && !cmd.Flags().Changed("config") {
-		return config.DefaultConfig(), nil
+		return cliutil.DefaultConfig(), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error loading config file '%s': %w", configFile, err)

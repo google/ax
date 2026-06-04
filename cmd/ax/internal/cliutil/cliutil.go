@@ -34,8 +34,21 @@ type Controller = *controller.Controller
 // ExecHandler is the handler type accepted by Controller.Exec.
 type ExecHandler = controller.ExecHandler
 
+// Config is the configuration type for this build.
+type Config = config.Config
+
+// LoadFromFile loads configuration from a YAML file.
+func LoadFromFile(path string) (*Config, error) {
+	return config.LoadFromFile(path)
+}
+
+// DefaultConfig returns a configuration with default values set.
+func DefaultConfig() *Config {
+	return config.DefaultConfig()
+}
+
 // NewControllerFromConfig creates a new Controller instance based on the provided configuration.
-func NewControllerFromConfig(ctx context.Context, cfg *config.Config) (*controller.Controller, error) {
+func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Controller, error) {
 	// Validate planner type early
 	switch cfg.Planner.Type {
 	case "gemini":

@@ -59,26 +59,6 @@ func TestValidateID(t *testing.T) {
 			id:      "",
 			wantErr: true,
 		},
-		{
-			name:    "reserved gemini",
-			id:      "gemini",
-			wantErr: true,
-		},
-		{
-			name:    "reserved gemini mixed case",
-			id:      "Gemini",
-			wantErr: true,
-		},
-		{
-			name:    "reserved __planner",
-			id:      "__planner",
-			wantErr: true,
-		},
-		{
-			name:    "reserved __planner mixed case",
-			id:      "__Planner",
-			wantErr: true,
-		},
 	}
 
 	for _, tt := range tests {

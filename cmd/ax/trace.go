@@ -24,7 +24,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/google/ax/internal/config"
+	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
@@ -115,7 +115,7 @@ type TraceData struct {
 	Execs          []ExecTrace `json:"execs"`
 }
 
-func loadTraceData(ctx context.Context, cfg *config.Config, convID string) (*TraceData, error) {
+func loadTraceData(ctx context.Context, cfg *cliutil.Config, convID string) (*TraceData, error) {
 	events, rootExecID, execIDs, err := fetch(ctx, cfg, convID)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func loadTraceData(ctx context.Context, cfg *config.Config, convID string) (*Tra
 	}, nil
 }
 
-func fetch(ctx context.Context, cfg *config.Config, convID string) ([]*proto.ExecutionEvent, string, []string, error) {
+func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.ExecutionEvent, string, []string, error) {
 	evLog, err := executor.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("could not open sqlite eventlog: %w", err)

@@ -14,62 +14,47 @@
 
 package controller2
 
-// TODO(lhuan): Setup a better automated testing framework
-
 import (
-	"context"
-	"fmt"
-	"net"
 	"testing"
 
-	"google.golang.org/grpc"
-
-	"github.com/google/ax/internal/config"
-	"github.com/google/ax/proto"
+	"github.com/google/ax/internal/harness/harnesstest"
 )
 
-type mockAgentServer struct {
-	proto.UnimplementedAgentServiceServer
-	healthy bool
-}
-
-func startMockGRPCServer(t *testing.T, healthy bool) (string, func()) {
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("failed to listen: %v", err)
-	}
-	s := grpc.NewServer()
-	proto.RegisterAgentServiceServer(s, &mockAgentServer{healthy: healthy})
-	go func() {
-		if err := s.Serve(lis); err != nil {
-			// server might be closed
-		}
-	}()
-	return lis.Addr().String(), func() {
-		s.Stop()
-		lis.Close()
-	}
-}
-
-func TestRegistry_GracefulShutdown(t *testing.T) {
+func TestRegistry_RegisterHarness(t *testing.T) {
 	r := NewRegistry()
+	h := harnesstest.New()
 
-	address, cleanup := startMockGRPCServer(t, true)
-	defer cleanup()
-
-	// Register multiple agents to create workload
-	for i := range 50 {
-		err := r.RegisterRemote(context.Background(), config.RemoteAgentConfig{
-			ID:      fmt.Sprintf("remote-shutdown-test-%d", i),
-			Name:    "Shutdown Test Remote",
-			Address: address,
-		})
-		if err != nil {
-			t.Fatalf("Failed to register remote agent for shutdown test: %v", err)
-		}
+	if err := r.RegisterHarness("antigravity", h); err != nil {
+		t.Fatalf("RegisterHarness(valid id): %v", err)
 	}
 
-	// Close should return specific errors for failed agents, but NOT panic or deadlock
-	// We are testing for absence of panic/deadlock here.
-	_ = r.Close()
+	// Duplicate id is rejected.
+	if err := r.RegisterHarness("antigravity", h); err == nil {
+		t.Error("expected error registering duplicate id, got nil")
+	}
+
+	// Invalid id is rejected.
+	if err := r.RegisterHarness("bad id", h); err == nil {
+		t.Error("expected error registering invalid id, got nil")
+	}
+
+	// Empty id (the default) bypasses validation and is allowed.
+	if err := r.RegisterHarness("", h); err != nil {
+		t.Fatalf("RegisterHarness(default): %v", err)
+	}
+}
+
+func TestRegistry_FindHarness(t *testing.T) {
+	r := NewRegistry()
+	h := harnesstest.New()
+	if err := r.RegisterHarness("antigravity", h); err != nil {
+		t.Fatalf("RegisterHarness: %v", err)
+	}
+
+	if _, err := r.Harness("antigravity"); err != nil {
+		t.Errorf("Harness(antigravity): %v", err)
+	}
+	if _, err := r.Harness("missing"); err == nil {
+		t.Error("expected error looking up missing harness, got nil")
+	}
 }

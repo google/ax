@@ -19,21 +19,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/google/ax/internal/agent"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 )
-
-type dummyAgent struct{}
-
-func (a *dummyAgent) Connect(ctx context.Context, conversationID string, execID string, start *proto.AgentStart, e agent.Executor, o agent.OutputHandler) error {
-	return nil
-}
-
-func (a *dummyAgent) Close() error { return nil }
 
 func TestController2_ExecHelloWorld(t *testing.T) {
 	ctx := context.Background()
@@ -93,7 +84,7 @@ func TestController2_ExecAntigravityFallback(t *testing.T) {
 
 	log := &executortest.MemoryEventLog{}
 	reg := NewRegistry()
-	
+
 	// Build and register harness with bad path to trigger build-time fallback
 	var badHarness harness.Harness
 	scriptPath := "non-existent-script.py"
@@ -102,7 +93,9 @@ func TestController2_ExecAntigravityFallback(t *testing.T) {
 	} else {
 		badHarness = harness.NewAntigravityHarness(scriptPath)
 	}
-	reg.RegisterHarness("antigravity", badHarness)
+	if err := reg.RegisterHarness("antigravity", badHarness); err != nil {
+		t.Fatal(err)
+	}
 
 	c, err := New(ctx, Config{
 		Registry: reg,
@@ -206,5 +199,3 @@ func TestController2_ExecRuntimeFallback(t *testing.T) {
 		t.Errorf("expected 'Hello world' output text response due to runtime fallback, got %q", gotText)
 	}
 }
-
-
