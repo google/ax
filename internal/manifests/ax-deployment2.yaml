@@ -14,15 +14,28 @@
 
 # TODO(jbd): This yaml will eventually become the ax-deployment.yaml.tmpl.
 
+# ---------------------------------------------------------------------------
+# Namespaces
+# ---------------------------------------------------------------------------
+# Namespace "ax" is reserved for built-in harnesses. Users who bring their own
+# harness images should add their own namespaces.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ax
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: custom-harness
+---
+# ---------------------------------------------------------------------------
+# Built-in harnesses
+# ---------------------------------------------------------------------------
 apiVersion: ate.dev/v1alpha1
 kind: WorkerPool
 metadata:
-  name: ax-harness-workerpool
+  name: harness-workerpool
   namespace: ax
 spec:
   replicas: 5
@@ -31,12 +44,51 @@ spec:
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate
 metadata:
-  name: ax-harness-template
+  name: antigravity-template
   namespace: ax
 spec:
   workerPoolRef:
-    name: ax-harness-workerpool
+    name: harness-workerpool
     namespace: ax
+  runsc:
+    amd64:
+      url: "gs://gvisor/releases/nightly/2026-05-19/x86_64/runsc"
+      sha256Hash: "a397be1abc2420d26bce6c70e6e2ff96c73aaaab929756c56f5e2089ea842b63"
+    arm64:
+      url: "gs://gvisor/releases/nightly/2026-05-19/aarch64/runsc"
+      sha256Hash: "1ba2366ae2efceba166046f51a4104f9261c9cb72c6db8f5b3fe2dc57dea86b9"
+  pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
+  containers:
+    # TODO(wjjclaud): update the hello-world demo container with real antigravity.
+    - name: "axharness"
+      image: ko://github.com/google/ax/cmd/ax
+      command: ["/ko-app/ax", "harness"]
+      ports:
+      - containerPort: 50053
+  snapshotsConfig:
+    location: gs://${BUCKET_NAME}/antigravity/
+---
+# ---------------------------------------------------------------------------
+# Custom harnesses
+# ---------------------------------------------------------------------------
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: harness-workerpool
+  namespace: custom-harness
+spec:
+  replicas: 3
+  ateomImage: ko://github.com/agent-substrate/substrate/cmd/servers/ateom-gvisor
+---
+apiVersion: ate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: hello-world-template
+  namespace: custom-harness
+spec:
+  workerPoolRef:
+    name: harness-workerpool
+    namespace: custom-harness
   runsc:
     amd64:
       url: "gs://gvisor/releases/nightly/2026-05-19/x86_64/runsc"
@@ -52,8 +104,11 @@ spec:
       ports:
       - containerPort: 50053
   snapshotsConfig:
-    location: gs://${BUCKET_NAME}/ax-harness/
+    location: gs://${BUCKET_NAME}/hello-world/
 ---
+# ---------------------------------------------------------------------------
+# AX Server
+# ---------------------------------------------------------------------------
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
@@ -82,6 +137,8 @@ spec:
               value: "${GEMINI_API_KEY}"
             - name: AX_SUBSTRATE
               value: "1"
+            - name: AX_SUBSTRATE_ENDPOINT
+              value: "api.ate-system.svc:443"
           volumeMounts:
             - name: ax-config
               mountPath: /etc/ax
@@ -97,12 +154,14 @@ metadata:
   namespace: ax
 data:
   ax.yaml: |
-    ate:
-      endpoint: "api.ate-system.svc:443"
     harnesses:
-      default: hello-world
+      default: antigravity
+      # Built-in harness
+      antigravity:
+        - id: antigravity
+      # Custom harness
       substrate:
         - id: hello-world
-          namespace: ax
-          template: ax-harness-template
+          namespace: custom-harness
+          template: hello-world-template
           port: 50053

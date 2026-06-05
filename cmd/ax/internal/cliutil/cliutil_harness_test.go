@@ -22,19 +22,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/config/harnessconfig"
+	"github.com/google/ax/internal/config2"
 )
 
 func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
-	cfg := &harnessconfig.Config{
-		EventLog: harnessconfig.EventLogConfig{
-			SQLiteConfig: harnessconfig.SQLiteConfig{
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
 				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
 			},
 		},
-		Harnesses: harnessconfig.HarnessesConfig{
+		Harnesses: config2.HarnessesConfig{
 			Default: "ag",
-			Antigravity: []harnessconfig.AntigravityHarnessConfig{
+			Antigravity: []config2.AntigravityHarnessConfig{
 				{ID: "ag", Address: "localhost:50053"},
 			},
 		},
@@ -51,10 +51,10 @@ func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
 }
 
 func TestNewControllerFromConfig_UnknownDefaultHarness(t *testing.T) {
-	cfg := &harnessconfig.Config{
-		Harnesses: harnessconfig.HarnessesConfig{
+	cfg := &config2.Config{
+		Harnesses: config2.HarnessesConfig{
 			Default: "missing",
-			Antigravity: []harnessconfig.AntigravityHarnessConfig{
+			Antigravity: []config2.AntigravityHarnessConfig{
 				{ID: "ag", Address: "localhost:50053"},
 			},
 		},
@@ -67,4 +67,82 @@ func TestNewControllerFromConfig_UnknownDefaultHarness(t *testing.T) {
 	if !strings.Contains(err.Error(), "missing") {
 		t.Errorf("expected error to mention %q, got: %v", "missing", err)
 	}
+}
+
+func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "1")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Default: "ag",
+			Antigravity: []config2.AntigravityHarnessConfig{
+				{ID: "ag"},
+			},
+		},
+	}
+
+	c, err := NewControllerFromConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewControllerFromConfig: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil controller")
+	}
+	c.Close()
+}
+
+func TestNewControllerFromConfig_CustomHarnessRequiresSubstrateMode(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Substrate: []config2.SubstrateHarnessConfig{
+				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
+			},
+		},
+	}
+
+	_, err := NewControllerFromConfig(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected error for custom substrate harness without AX_SUBSTRATE=1, got nil")
+	}
+	if !strings.Contains(err.Error(), "AX_SUBSTRATE=1") {
+		t.Errorf("expected error to mention AX_SUBSTRATE=1, got: %v", err)
+	}
+}
+
+func TestNewControllerFromConfig_CustomHarnessInSubstrateMode(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "1")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Substrate: []config2.SubstrateHarnessConfig{
+				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
+			},
+		},
+	}
+
+	c, err := NewControllerFromConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewControllerFromConfig: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil controller")
+	}
+	c.Close()
 }
