@@ -56,11 +56,12 @@ This command will:
 - Build the AX images using `ko` with the `harness` build tag.
 - Create the `ax` namespace (AX control plane + built-in harnesses) and the
   `custom-harness` namespace (the example custom harness).
-- Create a shared `harness-workerpool` `WorkerPool` and the built-in
+- Create a shared `ax-harness-workerpool` `WorkerPool` and the built-in
   `antigravity-template` `ActorTemplate` in `ax` (all built-in harnesses share
   this pool).
-- Create a shared `harness-workerpool` `WorkerPool` and the `hello-world-template`
-  `ActorTemplate` in `custom-harness` (custom harnesses there share this pool).
+- Create a shared `custom-harness-workerpool` `WorkerPool` and the
+  `hello-world-template` `ActorTemplate` in `custom-harness` (custom harnesses
+  there share this pool).
 - Create the `ax-server` `ReplicaSet` (the controller front-end) in `ax`.
 - Create the `ax-server-config` `ConfigMap` that tells the `ax-server` which
   harnesses to serve (mounted at `/etc/ax/ax.yaml`).

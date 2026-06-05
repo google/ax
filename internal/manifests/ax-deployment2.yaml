@@ -35,7 +35,7 @@ metadata:
 apiVersion: ate.dev/v1alpha1
 kind: WorkerPool
 metadata:
-  name: harness-workerpool
+  name: ax-harness-workerpool
   namespace: ax
 spec:
   replicas: 5
@@ -48,7 +48,7 @@ metadata:
   namespace: ax
 spec:
   workerPoolRef:
-    name: harness-workerpool
+    name: ax-harness-workerpool
     namespace: ax
   runsc:
     amd64:
@@ -74,7 +74,7 @@ spec:
 apiVersion: ate.dev/v1alpha1
 kind: WorkerPool
 metadata:
-  name: harness-workerpool
+  name: custom-harness-workerpool
   namespace: custom-harness
 spec:
   replicas: 3
@@ -87,7 +87,7 @@ metadata:
   namespace: custom-harness
 spec:
   workerPoolRef:
-    name: harness-workerpool
+    name: custom-harness-workerpool
     namespace: custom-harness
   runsc:
     amd64:
