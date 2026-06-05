@@ -28,4 +28,3 @@ harnesses:
 
   antigravity:
     - id: antigravity-example
-      address: "localhost:50053"
