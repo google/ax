@@ -37,13 +37,14 @@ import (
 
 // SubstrateHarness manages execution in a SubstrATE sandboxed actor over gRPC HarnessService.
 type SubstrateHarness struct {
+	harnessID string
 	ateClient *ate.Client
 	port      int
 	dialOpts  []grpc.DialOption
 }
 
 // NewSubstrateHarness creates a new SubstrateHarness.
-func NewSubstrateHarness(endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
+func NewSubstrateHarness(harnessID string, endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
 	if port == 0 {
 		port = 50053 // Default HarnessService port
 	}
@@ -62,6 +63,7 @@ func NewSubstrateHarness(endpoint string, namespace string, template string, por
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 	return &SubstrateHarness{
+		harnessID: harnessID,
 		ateClient: client,
 		port:      port,
 		dialOpts:  opts,
@@ -142,20 +144,26 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 		return fmt.Errorf("failed to open harness service stream: %w", err)
 	}
 
-	// Send inputs
-	err = stream.Send(&proto.HarnessMessage{
-		Messages: inputs,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to send harness inputs: %w", err)
+	// Send a HarnessRequest to initiate the turn.
+	start := &proto.HarnessRequest{
+		ConversationId: e.conversationID,
+		HarnessId:      e.harness.harnessID,
+		Type: &proto.HarnessRequest_Start{
+			Start: &proto.HarnessStart{
+				Messages: inputs,
+			},
+		},
+	}
+	if err := stream.Send(start); err != nil {
+		return fmt.Errorf("failed to send harness start: %w", err)
 	}
 
-	// Close send direction to trigger server processing
+	// Close send direction to trigger server processing.
 	if err := stream.CloseSend(); err != nil {
 		return fmt.Errorf("failed to close stream send direction: %w", err)
 	}
 
-	// Receive response stream
+	// Drain HarnessResponse frames until the terminal HarnessEnd.
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -164,10 +172,18 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 		if err != nil {
 			return fmt.Errorf("error receiving from harness stream: %w", err)
 		}
-		for _, m := range resp.Messages {
-			if err := handler.OnMessage(ctx, e.execID, m); err != nil {
-				return err
+		switch payload := resp.Type.(type) {
+		case *proto.HarnessResponse_Outputs:
+			for _, m := range payload.Outputs.Messages {
+				if err := handler.OnMessage(ctx, e.execID, m); err != nil {
+					return err
+				}
 			}
+		case *proto.HarnessResponse_End:
+			if payload.End.GetState() == proto.State_STATE_FAILED {
+				return fmt.Errorf("harness failed: %s", payload.End.GetErrorMessage())
+			}
+			return handler.OnComplete(ctx, e.execID)
 		}
 	}
 

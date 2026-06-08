@@ -31,6 +31,7 @@ import (
 
 var (
 	harnessServerAddr string
+	harnessClientID   string
 )
 
 var harnessClientCmd = &cobra.Command{
@@ -42,6 +43,7 @@ var harnessClientCmd = &cobra.Command{
 
 func init() {
 	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "localhost:50053", "The server address for the gRPC HarnessService.")
+	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "", "The harness id to send on the request envelope.")
 	rootCmd.AddCommand(harnessClientCmd)
 }
 
@@ -57,72 +59,63 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 
 	client := proto.NewHarnessServiceClient(conn)
 
+	fmt.Print("Client > ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	input := scanner.Text()
+
 	stream, err := client.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("Failed to open connection stream: %v", err)
+		return fmt.Errorf("failed to open connection stream: %v", err)
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("Interactive client started. Type your messages below.")
-	fmt.Println("Type 'go_away' to close the stream and exit.")
-	for {
-		fmt.Print("\nClient > ")
-		if !scanner.Scan() {
-			break
-		}
-		text := scanner.Text()
-		if text == "" {
-			continue
-		}
-
-		msg := &proto.HarnessMessage{
-			Messages: []*proto.Message{
-				{
-					Role: "user",
-					Content: &proto.Content{
-						Type: &proto.Content_Text{
-							Text: &proto.TextContent{
-								Text: text,
-							},
+	// A single HarnessRequest{start} initiates the turn.
+	start := &proto.HarnessRequest{
+		ConversationId: "harnessclient",
+		HarnessId:      harnessClientID,
+		Type: &proto.HarnessRequest_Start{
+			Start: &proto.HarnessStart{
+				Messages: []*proto.Message{
+					{
+						Role: "user",
+						Content: &proto.Content{
+							Type: &proto.Content_Text{Text: &proto.TextContent{Text: input}},
 						},
 					},
 				},
 			},
-		}
+		},
+	}
+	if err := stream.Send(start); err != nil {
+		return fmt.Errorf("failed to send start: %v", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		return fmt.Errorf("failed to close send side: %v", err)
+	}
 
-		if err := stream.Send(msg); err != nil {
-			return fmt.Errorf("Failed to send message: %v", err)
-		}
-		// TODO(params): Replace this with a proper protocol for go away.
-		if text == "go_away" {
-			log.Println("Sending 'go_away' to close the stream...")
+	// Drain HarnessResponse frames until HarnessEnd / EOF.
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
 			break
 		}
-
-		resp, err := stream.Recv()
 		if err != nil {
-			return fmt.Errorf("Failed to receive response: %v", err)
+			return fmt.Errorf("failed to receive response: %v", err)
 		}
-
-		for i, m := range resp.Messages {
-			var textContent string
-			if textBlock, ok := m.Content.Type.(*proto.Content_Text); ok {
-				textContent = textBlock.Text.Text
+		switch payload := resp.Type.(type) {
+		case *proto.HarnessResponse_Outputs:
+			for i, m := range payload.Outputs.Messages {
+				var text string
+				if tb, ok := m.Content.Type.(*proto.Content_Text); ok {
+					text = tb.Text.Text
+				}
+				fmt.Printf("Server > message[%d] (%s): %s\n", i, m.Role, text)
 			}
-			fmt.Printf("Server > message[%d] (%s): %s\n", i, m.Role, textContent)
+		case *proto.HarnessResponse_End:
+			fmt.Printf("Server > [end] state=%s %s\n", payload.End.GetState(), payload.End.GetErrorMessage())
 		}
 	}
 
-	// Close send side to signal request completion
-	if err := stream.CloseSend(); err != nil {
-		return fmt.Errorf("Failed to close send side of stream: %v", err)
-	}
-
-	log.Println("Waiting for final stream EOF...")
-	_, err = stream.Recv()
-	if err != io.EOF {
-		return fmt.Errorf("Expected EOF from server, got: %v", err)
-	}
 	log.Println("Stream closed successfully by server.")
 	return nil
 }

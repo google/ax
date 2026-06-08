@@ -85,7 +85,7 @@ type SubstrateHarnessConfig struct {
 // as a substrate actor; otherwise it runs locally.
 func (c AntigravityHarnessConfig) NewHarness(substrate bool, endpoint string) (harness.Harness, error) {
 	if substrate {
-		return newSubstrateHarness(endpoint, defaultNamespace, antigravityTemplate, defaultPort)
+		return newSubstrateHarness(c.ID, endpoint, defaultNamespace, antigravityTemplate, defaultPort)
 	}
 	address := c.Address
 	if address == "" {
@@ -101,12 +101,12 @@ func (c SubstrateHarnessConfig) NewHarness(endpoint string) (harness.Harness, er
 	if port == 0 {
 		port = defaultPort
 	}
-	return newSubstrateHarness(endpoint, c.Namespace, c.Template, port)
+	return newSubstrateHarness(c.ID, endpoint, c.Namespace, c.Template, port)
 }
 
 // newSubstrateHarness brings up a harness that is deployed as a substrate actor.
-func newSubstrateHarness(endpoint, namespace, template string, port int) (harness.Harness, error) {
-	sh, err := harness.NewSubstrateHarness(endpoint, namespace, template, port)
+func newSubstrateHarness(harnessID, endpoint, namespace, template string, port int) (harness.Harness, error) {
+	sh, err := harness.NewSubstrateHarness(harnessID, endpoint, namespace, template, port)
 	if err != nil {
 		return nil, err
 	}
