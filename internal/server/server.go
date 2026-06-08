@@ -135,6 +135,11 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
+	opts = append(opts,
+		grpc.ChainUnaryInterceptor(LoggingInterceptor),
+		grpc.ChainStreamInterceptor(StreamLoggingInterceptor),
+	)
+
 	s.grpcServer = grpc.NewServer(opts...)
 	proto.RegisterControllerServiceServer(s.grpcServer, s)
 	proto.RegisterConversationServiceServer(s.grpcServer, s)
