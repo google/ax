@@ -58,8 +58,9 @@ func New(c *controller.Controller) *Server {
 // Exec executes a new agentic task with streaming responses.
 func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[proto.ExecResponse]) error {
 	ctx := stream.Context()
-	slog.InfoContext(ctx, "Executing...",
-		slog.String("conversation_id", req.ConversationId))
+	slog.InfoContext(ctx, "Executing request",
+		slog.String("request", req.String()),
+	)
 
 	inFlight, cleanup := s.markInFlight(req.ConversationId)
 	if inFlight {
