@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package main implements a demo HarnessService.
+// It is intended for testing purposes only and should be replaced with a real
+// implementation in production.
+// TODO(wjjclaud): Replace this file with a real harness implementation.
 package main
 
 import (

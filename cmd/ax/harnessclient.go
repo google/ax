@@ -13,6 +13,9 @@
 // limitations under the License.
 
 // Package main implements a simple client for the fake HarnessService.
+// It is intended for testing purposes only and should be replaced with
+// the actual ax client implementation.
+// TODO(wjjclaud): Update or replace this file with ax client implementation.
 package main
 
 import (
@@ -24,6 +27,7 @@ import (
 	"os"
 
 	"github.com/google/ax/proto"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,7 +47,7 @@ var harnessClientCmd = &cobra.Command{
 
 func init() {
 	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "localhost:50053", "The server address for the gRPC HarnessService.")
-	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "", "The harness id to send on the request envelope.")
+	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "testharness", "The harness id to send on the request envelope.")
 	rootCmd.AddCommand(harnessClientCmd)
 }
 
@@ -71,7 +75,7 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 
 	// A single HarnessRequest{start} initiates the turn.
 	start := &proto.HarnessRequest{
-		ConversationId: "harnessclient",
+		ConversationId: uuid.NewString(),
 		HarnessId:      harnessClientID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
