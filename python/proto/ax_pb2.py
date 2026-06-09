@@ -40,7 +40,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from proto import content_pb2 as proto_dot_content__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eproto/ax.proto\x12\x02\x61x\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13proto/content.proto\"S\n\nAgentStart\x12\x10\n\x08\x61gent_id\x18\x01 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x02 \x01(\x0c\x12\x1d\n\x08messages\x18\x03 \x03(\x0b\x32\x0b.ax.Message\"-\n\x0c\x41gentOutputs\x12\x1d\n\x08messages\x18\x01 \x03(\x0b\x32\x0b.ax.Message\"\n\n\x08\x41gentEnd\"W\n\x0c\x41gentRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0f\n\x07\x65xec_id\x18\x02 \x01(\t\x12\x1d\n\x05start\x18\x03 \x01(\x0b\x32\x0e.ax.AgentStart\"\x83\x01\n\rAgentResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0f\n\x07\x65xec_id\x18\x02 \x01(\t\x12#\n\x07outputs\x18\x03 \x01(\x0b\x32\x10.ax.AgentOutputsH\x00\x12\x1b\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x0c.ax.AgentEndH\x00\x42\x06\n\x04type\"L\n\x07Message\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x1c\n\x07\x63ontent\x18\x02 \x01(\x0b\x32\x0b.ax.Content\x12\x15\n\rinternal_only\x18\x03 \x01(\x08\"\x83\x01\n\x11\x43onversationEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0b\n\x03seq\x18\x02 \x01(\x05\x12\x0f\n\x07\x65xec_id\x18\x03 \x01(\t\x12\x1d\n\x08messages\x18\x04 \x03(\x0b\x32\x0b.ax.Message\x12\x18\n\x05state\x18\x05 \x01(\x0e\x32\t.ax.State\"\xcd\x01\n\x0e\x45xecutionEvent\x12\x0f\n\x07\x65xec_id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x03 \x01(\x0c\x12\x1b\n\x06inputs\x18\x04 \x03(\x0b\x32\x0b.ax.Message\x12\x1c\n\x07outputs\x18\x05 \x03(\x0b\x32\x0b.ax.Message\x12\x18\n\x05state\x18\x06 \x01(\x0e\x32\t.ax.State\x12-\n\ttimestamp\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x14\n\x12HealthCheckRequest\"7\n\x13HealthCheckResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"/\n\x0eHarnessMessage\x12\x1d\n\x08messages\x18\x01 \x03(\x0b\x32\x0b.ax.Message\"}\n\x0b\x45xecRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x1b\n\x06inputs\x18\x02 \x03(\x0b\x32\x0b.ax.Message\x12\x10\n\x08last_seq\x18\x03 \x01(\x05\x12\x10\n\x08\x61gent_id\x18\x04 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x05 \x01(\x0c\"9\n\x0c\x45xecResponse\x12\x1c\n\x07outputs\x18\x01 \x03(\x0b\x32\x0b.ax.Message\x12\x0b\n\x03seq\x18\x02 \x01(\x05\"4\n\x19\x44\x65leteConversationRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\"\x1c\n\x1a\x44\x65leteConversationResponse\"e\n\x17\x46orkConversationRequest\x12\x1b\n\x13src_conversation_id\x18\x01 \x01(\t\x12\x0f\n\x07src_seq\x18\x02 \x01(\x05\x12\x1c\n\x14\x64\x65st_conversation_id\x18\x03 \x01(\t\"3\n\x18\x46orkConversationResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t*X\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n\rSTATE_PENDING\x10\x01\x12\x10\n\x0cSTATE_FAILED\x10\x02\x12\x13\n\x0fSTATE_COMPLETED\x10\x03\x32\x80\x01\n\x0c\x41gentService\x12\x30\n\x07\x43onnect\x12\x10.ax.AgentRequest\x1a\x11.ax.AgentResponse0\x01\x12>\n\x0bHealthCheck\x12\x16.ax.HealthCheckRequest\x1a\x17.ax.HealthCheckResponse2G\n\x0eHarnessService\x12\x35\n\x07\x43onnect\x12\x12.ax.HarnessMessage\x1a\x12.ax.HarnessMessage(\x01\x30\x01\x32@\n\x11\x43ontrollerService\x12+\n\x04\x45xec\x12\x0f.ax.ExecRequest\x1a\x10.ax.ExecResponse0\x01\x32\xb9\x01\n\x13\x43onversationService\x12S\n\x12\x44\x65leteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponse\x12M\n\x10\x46orkConversation\x12\x1b.ax.ForkConversationRequest\x1a\x1c.ax.ForkConversationResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eproto/ax.proto\x12\x02\x61x\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13proto/content.proto\"S\n\nAgentStart\x12\x10\n\x08\x61gent_id\x18\x01 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x02 \x01(\x0c\x12\x1d\n\x08messages\x18\x03 \x03(\x0b\x32\x0b.ax.Message\"-\n\x0c\x41gentOutputs\x12\x1d\n\x08messages\x18\x01 \x03(\x0b\x32\x0b.ax.Message\"\n\n\x08\x41gentEnd\"W\n\x0c\x41gentRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0f\n\x07\x65xec_id\x18\x02 \x01(\t\x12\x1d\n\x05start\x18\x03 \x01(\x0b\x32\x0e.ax.AgentStart\"\x83\x01\n\rAgentResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0f\n\x07\x65xec_id\x18\x02 \x01(\t\x12#\n\x07outputs\x18\x03 \x01(\x0b\x32\x10.ax.AgentOutputsH\x00\x12\x1b\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x0c.ax.AgentEndH\x00\x42\x06\n\x04type\"L\n\x07Message\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x1c\n\x07\x63ontent\x18\x02 \x01(\x0b\x32\x0b.ax.Content\x12\x15\n\rinternal_only\x18\x03 \x01(\x08\"\x83\x01\n\x11\x43onversationEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x0b\n\x03seq\x18\x02 \x01(\x05\x12\x0f\n\x07\x65xec_id\x18\x03 \x01(\t\x12\x1d\n\x08messages\x18\x04 \x03(\x0b\x32\x0b.ax.Message\x12\x18\n\x05state\x18\x05 \x01(\x0e\x32\t.ax.State\"\xcd\x01\n\x0e\x45xecutionEvent\x12\x0f\n\x07\x65xec_id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x03 \x01(\x0c\x12\x1b\n\x06inputs\x18\x04 \x03(\x0b\x32\x0b.ax.Message\x12\x1c\n\x07outputs\x18\x05 \x03(\x0b\x32\x0b.ax.Message\x12\x18\n\x05state\x18\x06 \x01(\x0e\x32\t.ax.State\x12-\n\ttimestamp\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x14\n\x12HealthCheckRequest\"7\n\x13HealthCheckResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"E\n\x0cHarnessStart\x12\x16\n\x0eharness_config\x18\x01 \x01(\x0c\x12\x1d\n\x08messages\x18\x02 \x03(\x0b\x32\x0b.ax.Message\"1\n\rHarnessCancel\x12 \n\x06reason\x18\x01 \x01(\x0e\x32\x10.ax.CancelReason\"\x8d\x01\n\x0eHarnessRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x12\n\nharness_id\x18\x02 \x01(\t\x12!\n\x05start\x18\x03 \x01(\x0b\x32\x10.ax.HarnessStartH\x00\x12#\n\x06\x63\x61ncel\x18\x04 \x01(\x0b\x32\x11.ax.HarnessCancelH\x00\x42\x06\n\x04type\"/\n\x0eHarnessOutputs\x12\x1d\n\x08messages\x18\x01 \x03(\x0b\x32\x0b.ax.Message\"=\n\nHarnessEnd\x12\x18\n\x05state\x18\x01 \x01(\x0e\x32\t.ax.State\x12\x15\n\rerror_message\x18\x02 \x01(\t\"x\n\x0fHarnessResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12%\n\x07outputs\x18\x02 \x01(\x0b\x32\x12.ax.HarnessOutputsH\x00\x12\x1d\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x0e.ax.HarnessEndH\x00\x42\x06\n\x04type\"}\n\x0b\x45xecRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x1b\n\x06inputs\x18\x02 \x03(\x0b\x32\x0b.ax.Message\x12\x10\n\x08last_seq\x18\x03 \x01(\x05\x12\x10\n\x08\x61gent_id\x18\x04 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x05 \x01(\x0c\"9\n\x0c\x45xecResponse\x12\x1c\n\x07outputs\x18\x01 \x03(\x0b\x32\x0b.ax.Message\x12\x0b\n\x03seq\x18\x02 \x01(\x05\"4\n\x19\x44\x65leteConversationRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\"\x1c\n\x1a\x44\x65leteConversationResponse\"e\n\x17\x46orkConversationRequest\x12\x1b\n\x13src_conversation_id\x18\x01 \x01(\t\x12\x0f\n\x07src_seq\x18\x02 \x01(\x05\x12\x1c\n\x14\x64\x65st_conversation_id\x18\x03 \x01(\t\"3\n\x18\x46orkConversationResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t*l\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n\rSTATE_PENDING\x10\x01\x12\x10\n\x0cSTATE_FAILED\x10\x02\x12\x13\n\x0fSTATE_COMPLETED\x10\x03\x12\x12\n\x0eSTATE_CANCELED\x10\x04*\x8c\x01\n\x0c\x43\x61ncelReason\x12\x1d\n\x19\x43\x41NCEL_REASON_UNSPECIFIED\x10\x00\x12 \n\x1c\x43\x41NCEL_REASON_USER_REQUESTED\x10\x01\x12\x19\n\x15\x43\x41NCEL_REASON_TIMEOUT\x10\x02\x12 \n\x1c\x43\x41NCEL_REASON_INTERNAL_ERROR\x10\x03\x32\x80\x01\n\x0c\x41gentService\x12\x30\n\x07\x43onnect\x12\x10.ax.AgentRequest\x1a\x11.ax.AgentResponse0\x01\x12>\n\x0bHealthCheck\x12\x16.ax.HealthCheckRequest\x1a\x17.ax.HealthCheckResponse2H\n\x0eHarnessService\x12\x36\n\x07\x43onnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x01\x30\x01\x32@\n\x11\x43ontrollerService\x12+\n\x04\x45xec\x12\x0f.ax.ExecRequest\x1a\x10.ax.ExecResponse0\x01\x32\xb9\x01\n\x13\x43onversationService\x12S\n\x12\x44\x65leteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponse\x12M\n\x10\x46orkConversation\x12\x1b.ax.ForkConversationRequest\x1a\x1c.ax.ForkConversationResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -48,8 +48,10 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'proto.ax_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\032github.com/google/ax/proto'
-  _globals['_STATE']._serialized_start=1417
-  _globals['_STATE']._serialized_end=1505
+  _globals['_STATE']._serialized_start=1868
+  _globals['_STATE']._serialized_end=1976
+  _globals['_CANCELREASON']._serialized_start=1979
+  _globals['_CANCELREASON']._serialized_end=2119
   _globals['_AGENTSTART']._serialized_start=76
   _globals['_AGENTSTART']._serialized_end=159
   _globals['_AGENTOUTPUTS']._serialized_start=161
@@ -70,26 +72,36 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_HEALTHCHECKREQUEST']._serialized_end=883
   _globals['_HEALTHCHECKRESPONSE']._serialized_start=885
   _globals['_HEALTHCHECKRESPONSE']._serialized_end=940
-  _globals['_HARNESSMESSAGE']._serialized_start=942
-  _globals['_HARNESSMESSAGE']._serialized_end=989
-  _globals['_EXECREQUEST']._serialized_start=991
-  _globals['_EXECREQUEST']._serialized_end=1116
-  _globals['_EXECRESPONSE']._serialized_start=1118
-  _globals['_EXECRESPONSE']._serialized_end=1175
-  _globals['_DELETECONVERSATIONREQUEST']._serialized_start=1177
-  _globals['_DELETECONVERSATIONREQUEST']._serialized_end=1229
-  _globals['_DELETECONVERSATIONRESPONSE']._serialized_start=1231
-  _globals['_DELETECONVERSATIONRESPONSE']._serialized_end=1259
-  _globals['_FORKCONVERSATIONREQUEST']._serialized_start=1261
-  _globals['_FORKCONVERSATIONREQUEST']._serialized_end=1362
-  _globals['_FORKCONVERSATIONRESPONSE']._serialized_start=1364
-  _globals['_FORKCONVERSATIONRESPONSE']._serialized_end=1415
-  _globals['_AGENTSERVICE']._serialized_start=1508
-  _globals['_AGENTSERVICE']._serialized_end=1636
-  _globals['_HARNESSSERVICE']._serialized_start=1638
-  _globals['_HARNESSSERVICE']._serialized_end=1709
-  _globals['_CONTROLLERSERVICE']._serialized_start=1711
-  _globals['_CONTROLLERSERVICE']._serialized_end=1775
-  _globals['_CONVERSATIONSERVICE']._serialized_start=1778
-  _globals['_CONVERSATIONSERVICE']._serialized_end=1963
+  _globals['_HARNESSSTART']._serialized_start=942
+  _globals['_HARNESSSTART']._serialized_end=1011
+  _globals['_HARNESSCANCEL']._serialized_start=1013
+  _globals['_HARNESSCANCEL']._serialized_end=1062
+  _globals['_HARNESSREQUEST']._serialized_start=1065
+  _globals['_HARNESSREQUEST']._serialized_end=1206
+  _globals['_HARNESSOUTPUTS']._serialized_start=1208
+  _globals['_HARNESSOUTPUTS']._serialized_end=1255
+  _globals['_HARNESSEND']._serialized_start=1257
+  _globals['_HARNESSEND']._serialized_end=1318
+  _globals['_HARNESSRESPONSE']._serialized_start=1320
+  _globals['_HARNESSRESPONSE']._serialized_end=1440
+  _globals['_EXECREQUEST']._serialized_start=1442
+  _globals['_EXECREQUEST']._serialized_end=1567
+  _globals['_EXECRESPONSE']._serialized_start=1569
+  _globals['_EXECRESPONSE']._serialized_end=1626
+  _globals['_DELETECONVERSATIONREQUEST']._serialized_start=1628
+  _globals['_DELETECONVERSATIONREQUEST']._serialized_end=1680
+  _globals['_DELETECONVERSATIONRESPONSE']._serialized_start=1682
+  _globals['_DELETECONVERSATIONRESPONSE']._serialized_end=1710
+  _globals['_FORKCONVERSATIONREQUEST']._serialized_start=1712
+  _globals['_FORKCONVERSATIONREQUEST']._serialized_end=1813
+  _globals['_FORKCONVERSATIONRESPONSE']._serialized_start=1815
+  _globals['_FORKCONVERSATIONRESPONSE']._serialized_end=1866
+  _globals['_AGENTSERVICE']._serialized_start=2122
+  _globals['_AGENTSERVICE']._serialized_end=2250
+  _globals['_HARNESSSERVICE']._serialized_start=2252
+  _globals['_HARNESSSERVICE']._serialized_end=2324
+  _globals['_CONTROLLERSERVICE']._serialized_start=2326
+  _globals['_CONTROLLERSERVICE']._serialized_end=2390
+  _globals['_CONVERSATIONSERVICE']._serialized_start=2393
+  _globals['_CONVERSATIONSERVICE']._serialized_end=2578
 # @@protoc_insertion_point(module_scope)

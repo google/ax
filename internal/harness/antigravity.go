@@ -107,23 +107,30 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 	defer conn.Close()
 
-	// 2. Create AgentService client
-	client := proto.NewAgentServiceClient(conn)
+	// 2. Create HarnessService client.
+	client := proto.NewHarnessServiceClient(conn)
 
-	// 3. Build standard AgentRequest
-	req := &proto.AgentRequest{
+	// 3. Build standard HarnessRequest.
+	start := &proto.HarnessRequest{
 		ConversationId: e.conversationID,
-		ExecId:         e.id,
-		Start: &proto.AgentStart{
-			AgentId:  "antigravity",
-			Messages: inputs,
+		HarnessId:      "antigravity",
+		Type: &proto.HarnessRequest_Start{
+			Start: &proto.HarnessStart{
+				Messages: inputs,
+			},
 		},
 	}
 
 	// 4. Call Connect to start bidirectional streaming
-	stream, err := client.Connect(ctx, req)
+	stream, err := client.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to call gRPC AgentService.Connect: %w", err)
+		return fmt.Errorf("failed to call gRPC HarnessService.Connect: %w", err)
+	}
+	if err := stream.Send(start); err != nil {
+		return fmt.Errorf("failed to send harness start: %w", err)
+	}
+	if err := stream.CloseSend(); err != nil {
+		return fmt.Errorf("failed to close stream send direction: %w", err)
 	}
 
 	// 5. Stream responses and trigger callbacks
@@ -137,14 +144,16 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 		}
 
 		switch payload := resp.Type.(type) {
-		case *proto.AgentResponse_Outputs:
+		case *proto.HarnessResponse_Outputs:
 			for _, outMsg := range payload.Outputs.Messages {
 				if err := handler.OnMessage(ctx, e.id, outMsg); err != nil {
 					return fmt.Errorf("failed to dispatch streamed output: %w", err)
 				}
 			}
-		case *proto.AgentResponse_End:
-			// Standard turn complete callback
+		case *proto.HarnessResponse_End:
+			if payload.End.GetState() == proto.State_STATE_FAILED {
+				return fmt.Errorf("harness failed: %s", payload.End.GetErrorMessage())
+			}
 			return handler.OnComplete(ctx, e.id)
 		}
 	}

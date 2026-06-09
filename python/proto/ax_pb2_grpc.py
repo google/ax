@@ -188,8 +188,8 @@ class HarnessServiceStub(object):
         """
         self.Connect = channel.stream_stream(
                 '/ax.HarnessService/Connect',
-                request_serializer=proto_dot_ax__pb2.HarnessMessage.SerializeToString,
-                response_deserializer=proto_dot_ax__pb2.HarnessMessage.FromString,
+                request_serializer=proto_dot_ax__pb2.HarnessRequest.SerializeToString,
+                response_deserializer=proto_dot_ax__pb2.HarnessResponse.FromString,
                 _registered_method=True)
 
 
@@ -197,7 +197,11 @@ class HarnessServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Connect(self, request_iterator, context):
-        """Missing associated documentation comment in .proto file."""
+        """Connect drives one harness execution. The client sends
+        HarnessRequest{start} (and may send one HarnessRequest{cancel}
+        mid-stream), and the server streams zero or more HarnessResponse{outputs}
+        frames terminated by exactly one HarnessResponse{end}.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -207,8 +211,8 @@ def add_HarnessServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Connect': grpc.stream_stream_rpc_method_handler(
                     servicer.Connect,
-                    request_deserializer=proto_dot_ax__pb2.HarnessMessage.FromString,
-                    response_serializer=proto_dot_ax__pb2.HarnessMessage.SerializeToString,
+                    request_deserializer=proto_dot_ax__pb2.HarnessRequest.FromString,
+                    response_serializer=proto_dot_ax__pb2.HarnessResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -236,8 +240,8 @@ class HarnessService(object):
             request_iterator,
             target,
             '/ax.HarnessService/Connect',
-            proto_dot_ax__pb2.HarnessMessage.SerializeToString,
-            proto_dot_ax__pb2.HarnessMessage.FromString,
+            proto_dot_ax__pb2.HarnessRequest.SerializeToString,
+            proto_dot_ax__pb2.HarnessResponse.FromString,
             options,
             channel_credentials,
             insecure,

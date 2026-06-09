@@ -16,7 +16,7 @@ import asyncio
 import pytest
 import grpc
 from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
-from python.antigravity.harness_server import AntigravityAgentServiceServicer, loaded_config
+from python.antigravity.harness_server import AntigravityHarnessServiceServicer, loaded_config
 from google.antigravity import LocalAgentConfig
 
 @pytest.fixture
@@ -30,15 +30,15 @@ def test_grpc_connect_success(mock_config, monkeypatch):
     async def _run():
         # 1. Start temporary local gRPC server on random open port
         server = grpc.aio.server()
-        servicer = AntigravityAgentServiceServicer()
-        ax_pb2_grpc.add_AgentServiceServicer_to_server(servicer, server)
+        servicer = AntigravityHarnessServiceServicer()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
         
         # 2. Connect async stub channel
         addr = f"localhost:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
-            stub = ax_pb2_grpc.AgentServiceStub(channel)
+            stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
             # Mock the underlying Antigravity SDK class calls
             class MockConversation:
@@ -64,21 +64,23 @@ def test_grpc_connect_success(mock_config, monkeypatch):
                     
             monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
             
-            # 3. Construct and fire standard AgentRequest
-            start_payload = ax_pb2.AgentStart(
-                agent_id="test",
+            # 3. Construct and fire a HarnessRequest{start} over the bidi stream
+            start_payload = ax_pb2.HarnessStart(
                 messages=[
                     ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
                 ]
             )
-            req = ax_pb2.AgentRequest(
+            req = ax_pb2.HarnessRequest(
                 conversation_id="conv-test",
-                exec_id="exec-test",
+                harness_id="antigravity",
                 start=start_payload
             )
             
+            async def request_iter():
+                yield req
+
             responses = []
-            async for resp in stub.Connect(req):
+            async for resp in stub.Connect(request_iter()):
                 responses.append(resp)
                 
             # 4. Assert outputs are correctly mapped and completed
@@ -86,6 +88,7 @@ def test_grpc_connect_success(mock_config, monkeypatch):
             assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Thinking details"
             assert responses[1].outputs.messages[0].content.text.text == "Hello human"
             assert responses[2].WhichOneof('type') == 'end'
+            assert responses[2].end.state == ax_pb2.STATE_COMPLETED
             
         await server.stop(0)
 

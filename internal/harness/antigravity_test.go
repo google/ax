@@ -49,19 +49,25 @@ func (h *mockHandler) OnComplete(ctx context.Context, execID string) error {
 	return nil
 }
 
-// mockAgentServer implements proto.AgentServiceServer for testing.
-type mockAgentServer struct {
-	proto.UnimplementedAgentServiceServer
+// mockHarnessServer implements proto.HarnessServiceServer for testing.
+type mockHarnessServer struct {
+	proto.UnimplementedHarnessServiceServer
 	failConnect bool
 }
 
-func (s *mockAgentServer) Connect(req *proto.AgentRequest, stream proto.AgentService_ConnectServer) error {
+func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
 	if s.failConnect {
 		return status.Error(codes.Internal, "internal mock server crash")
 	}
 
+	// Read the initiating HarnessRequest{start}.
+	req, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+
 	// 1. Verify conversation details
-	if req.ConversationId != "conv-test" {
+	if req.GetConversationId() != "conv-test" {
 		return status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
@@ -82,14 +88,12 @@ func (s *mockAgentServer) Connect(req *proto.AgentRequest, stream proto.AgentSer
 			},
 		},
 	}
-	err := stream.Send(&proto.AgentResponse{
-		ConversationId: req.ConversationId,
-		ExecId:         req.ExecId,
-		Type: &proto.AgentResponse_Outputs{
-			Outputs: &proto.AgentOutputs{Messages: []*proto.Message{tMsg}},
+	if err := stream.Send(&proto.HarnessResponse{
+		ConversationId: req.GetConversationId(),
+		Type: &proto.HarnessResponse_Outputs{
+			Outputs: &proto.HarnessOutputs{Messages: []*proto.Message{tMsg}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
@@ -102,23 +106,20 @@ func (s *mockAgentServer) Connect(req *proto.AgentRequest, stream proto.AgentSer
 			},
 		},
 	}
-	err = stream.Send(&proto.AgentResponse{
-		ConversationId: req.ConversationId,
-		ExecId:         req.ExecId,
-		Type: &proto.AgentResponse_Outputs{
-			Outputs: &proto.AgentOutputs{Messages: []*proto.Message{txtMsg}},
+	if err := stream.Send(&proto.HarnessResponse{
+		ConversationId: req.GetConversationId(),
+		Type: &proto.HarnessResponse_Outputs{
+			Outputs: &proto.HarnessOutputs{Messages: []*proto.Message{txtMsg}},
 		},
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
 	// 4. Stream end frame
-	return stream.Send(&proto.AgentResponse{
-		ConversationId: req.ConversationId,
-		ExecId:         req.ExecId,
-		Type: &proto.AgentResponse_End{
-			End: &proto.AgentEnd{},
+	return stream.Send(&proto.HarnessResponse{
+		ConversationId: req.GetConversationId(),
+		Type: &proto.HarnessResponse_End{
+			End: &proto.HarnessEnd{State: proto.State_STATE_COMPLETED},
 		},
 	})
 }
@@ -133,8 +134,8 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 
 	// Initialize and start local gRPC server
 	grpcServer := grpc.NewServer()
-	mockServer := &mockAgentServer{}
-	proto.RegisterAgentServiceServer(grpcServer, mockServer)
+	mockServer := &mockHarnessServer{}
+	proto.RegisterHarnessServiceServer(grpcServer, mockServer)
 
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil && err != grpc.ErrServerStopped {
@@ -191,8 +192,8 @@ func TestAntigravityHarness_Run_ErrorFrame(t *testing.T) {
 	defer lis.Close()
 
 	grpcServer := grpc.NewServer()
-	mockServer := &mockAgentServer{failConnect: true}
-	proto.RegisterAgentServiceServer(grpcServer, mockServer)
+	mockServer := &mockHarnessServer{failConnect: true}
+	proto.RegisterHarnessServiceServer(grpcServer, mockServer)
 
 	go func() {
 		_ = grpcServer.Serve(lis)
