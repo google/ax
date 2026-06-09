@@ -76,6 +76,55 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	if gotText != "Hello world" {
 		t.Errorf("expected 'Hello world' output text response, got %q", gotText)
 	}
+
+	// Verify that events were logged correctly in Conversation Log
+	events, err := log.Events(ctx, cid)
+	if err != nil {
+		t.Fatalf("failed to retrieve logged events: %v", err)
+	}
+
+	if len(events) != 3 {
+		t.Fatalf("expected 3 logged events, got %d", len(events))
+	}
+
+	// 1. First event should be inputs
+	if len(events[0].Messages) != 1 {
+		t.Errorf("expected 1 message in first event, got %d", len(events[0].Messages))
+	} else {
+		gotInputText := events[0].Messages[0].GetContent().GetText().GetText()
+		if gotInputText != "Trigger prompt" {
+			t.Errorf("expected 'Trigger prompt' in logged input, got %q", gotInputText)
+		}
+	}
+	if events[0].State != proto.State_STATE_PENDING {
+		t.Errorf("expected first event state to be PENDING, got %v", events[0].State)
+	}
+
+	// 2. Second event should be output
+	if len(events[1].Messages) != 1 {
+		t.Errorf("expected 1 message in second event, got %d", len(events[1].Messages))
+	} else {
+		gotOutputText := events[1].Messages[0].GetContent().GetText().GetText()
+		if gotOutputText != "Hello world" {
+			t.Errorf("expected 'Hello world' in logged output, got %q", gotOutputText)
+		}
+	}
+	if events[1].State != proto.State_STATE_PENDING {
+		t.Errorf("expected second event state to be PENDING, got %v", events[1].State)
+	}
+
+	// 3. Third event should be completion
+	if len(events[2].Messages) != 0 {
+		t.Errorf("expected 0 messages in third event, got %d", len(events[2].Messages))
+	}
+	if events[2].State != proto.State_STATE_COMPLETED {
+		t.Errorf("expected third event state to be COMPLETED, got %v", events[2].State)
+	}
+
+	// Verify that no Execution Events were logged (moving away from granular execution log)
+	if len(log.AllExecEvents) != 0 {
+		t.Errorf("expected 0 execution events in V2, got %d: %v", len(log.AllExecEvents), log.AllExecEvents)
+	}
 }
 
 func TestController2_ExecAntigravityFallback(t *testing.T) {

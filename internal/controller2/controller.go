@@ -84,13 +84,26 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to start harness session: %w", err)
 	}
 	defer exec.Close(ctx)
-
+ 
 	if err := exec.Queue(ctx, req.Inputs...); err != nil {
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 
+	// Log inputs before running harness
+	inputEvent := &proto.ConversationEvent{
+		ConversationId: req.ConversationId,
+		ExecId:         exec.ID(),
+		Messages:       req.Inputs,
+		State:          proto.State_STATE_PENDING,
+	}
+	if _, err := d.eventLog.Append(ctx, inputEvent); err != nil {
+		return fmt.Errorf("failed to log inputs: %w", err)
+	}
+
 	hhandler := &harnessHandler{
-		execHandler: handler,
+		conversationID: req.ConversationId,
+		eventLog:       d.eventLog,
+		execHandler:    handler,
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
 		return fmt.Errorf("harness execution turn failed: %w", err)
@@ -100,10 +113,24 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 }
 
 type harnessHandler struct {
-	execHandler ExecHandler
+	conversationID string
+	eventLog       executor.EventLog
+	execHandler    ExecHandler
 }
 
 func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *proto.Message) error {
+	// Log every response received from the harness
+	event := &proto.ConversationEvent{
+		ConversationId: a.conversationID,
+		ExecId:         execID,
+		Messages:       []*proto.Message{msg},
+		State:          proto.State_STATE_PENDING,
+	}
+	// TODO(anj): The harness should send the full input sent to get this particular response.
+	if _, err := a.eventLog.Append(ctx, event); err != nil {
+		log.Printf("WARNING: failed to log streamed message: %v", err)
+	}
+
 	if a.execHandler == nil {
 		return nil
 	}
@@ -113,6 +140,15 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 }
 
 func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
+	// Mark the execution turn as completed in the conversation log
+	event := &proto.ConversationEvent{
+		ConversationId: a.conversationID,
+		ExecId:         execID,
+		State:          proto.State_STATE_COMPLETED,
+	}
+	if _, err := a.eventLog.Append(ctx, event); err != nil {
+		log.Printf("WARNING: failed to log completion event: %v", err)
+	}
 	return nil
 }
 

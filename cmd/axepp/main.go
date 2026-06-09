@@ -25,7 +25,6 @@ import (
 	"crypto/x509"
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -82,7 +81,7 @@ func runSession(ctx context.Context, sc ateapipb.ControlClient, sessionID string
 
 	destinationIP := resp.GetActor().GetAteomPodIp()
 	destrinationAddr := net.JoinHostPort(destinationIP, *axPort)
-	log.Printf("Redirecting to address: %s", destrinationAddr)
+	slog.InfoContext(ctx, "Redirecting request to backend", slog.String("address", destrinationAddr))
 
 	var headers []*corepb.HeaderValueOption
 
@@ -174,7 +173,8 @@ func main() {
 	if *grpcServerCredBundle != "" {
 		bundleBytes, err := os.ReadFile(*grpcServerCredBundle)
 		if err != nil {
-			log.Fatalf("Failed to read bundle: %v", err)
+			slog.Error("Failed to read bundle", slog.Any("error", err))
+			os.Exit(1)
 		}
 		certPool := x509.NewCertPool()
 		if ok := certPool.AppendCertsFromPEM(bundleBytes); ok {
@@ -185,7 +185,8 @@ func main() {
 	clientCreds := credentials.NewTLS(clientTLSConfig)
 	conn, err := grpc.NewClient(scAddress, grpc.WithTransportCredentials(clientCreds))
 	if err != nil {
-		log.Fatalf("did not connect: %v", err)
+		slog.Error("did not connect to substrate control", slog.Any("error", err))
+		os.Exit(1)
 	}
 	defer conn.Close()
 
@@ -193,15 +194,17 @@ func main() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
-		log.Fatalf("Failed to listen on :%d: %v", *port, err)
+		slog.Error("Failed to listen", slog.Int("port", *port), slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	s := grpc.NewServer()
 	as := &authServer{sc: sc}
 	authv3.RegisterAuthorizationServer(s, as)
 
-	log.Printf("ax Envoy Authorization Service (ext_authz) listening on %v", lis.Addr())
+	slog.Info("ax Envoy Authorization Service (ext_authz) listening", slog.Any("address", lis.Addr()))
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve gRPC server: %v", err)
+		slog.Error("Failed to serve gRPC server", slog.Any("error", err))
+		os.Exit(1)
 	}
 }

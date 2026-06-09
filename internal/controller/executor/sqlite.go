@@ -106,6 +106,7 @@ func (l *SQLiteEventLog) Append(ctx context.Context, event *proto.ConversationEv
 }
 
 // AppendExec inserts an execution event into the database.
+// TODO(anj): Remove execution_log table and AppendExec when legacy controller is removed.
 func (l *SQLiteEventLog) AppendExec(ctx context.Context, event *proto.ExecutionEvent) error {
 	payload, err := marshalOpts.Marshal(event)
 	if err != nil {

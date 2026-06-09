@@ -13,6 +13,6 @@ examples/sandbox_agent/cloudbuild.yaml
 tasklog/*
 python/__pycache__
 python/proto/__pycache__
-axepp
+/axepp
 __pycache__/
 examples/a2a_agent/output/*

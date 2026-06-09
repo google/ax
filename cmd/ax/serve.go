@@ -16,7 +16,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -45,6 +45,9 @@ func init() {
 func runServe(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	// Initialize structured logging (JSON to stdout)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	cfg, err := newConfig(cmd, serveConfigFile)
 	if err != nil {
 		return err
@@ -70,10 +73,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	go func() {
 		<-sigChan
-		log.Println("\nReceived interrupt, shutting down...")
+		slog.InfoContext(ctx, "Received interrupt, shutting down...")
 		srv.GracefulStop()
 	}()
-	log.Printf("Starting AX server at %s...\n", cfg.Server.Address)
+	slog.InfoContext(ctx, "Starting AX server", slog.String("address", cfg.Server.Address))
 	if err := srv.Serve(cfg.Server.Address); err != nil {
 		return fmt.Errorf("error serving: %w", err)
 	}
