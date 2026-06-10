@@ -111,7 +111,7 @@ run_local() {
     wait "$ax_pid" 2>/dev/null || true
     log_step "Shutdown complete!"
   }
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
 
   log_step "Starting Python gRPC Harness Server on port $port..."
   PYTHONPATH=python:. "$python_bin" -m python.antigravity.harness_server --agent_file "$agent_file" --port "$port" > /tmp/antigravity_harness.log 2>&1 &
@@ -157,7 +157,7 @@ run_test() {
       wait "$server_pid" 2>/dev/null || true
     fi
   }
-  trap cleanup EXIT INT TERM
+  trap cleanup EXIT
 
   log_step "Starting Python gRPC Harness Server on port $port..."
   PYTHONPATH=python:. "$python_bin" -m python.antigravity.harness_server --agent_file "$agent_file" --port "$port" > /tmp/antigravity_harness.log 2>&1 &
