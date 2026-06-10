@@ -49,7 +49,7 @@ export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
 export KO_DOCKER_REPO="gcr.io/$PROJECT_ID/ate-images"
 export KO_DEFAULTPLATFORMS="linux/amd64"
 
-./internal/hack/install-ax.sh --deploy-ax-server
+./hack/ax-dev.sh cloud deploy --harness
 ```
 
 This command will:
@@ -110,7 +110,7 @@ hello world
 To remove AX resources from your cluster, run:
 
 ```bash
-./internal/hack/install-ax.sh --delete-ax-server
+./hack/ax-dev.sh cloud delete --harness
 ```
 
 ---

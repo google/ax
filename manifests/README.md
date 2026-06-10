@@ -22,7 +22,7 @@ Use the core installation script to build the images and apply the resolved mani
 ```bash
 export GEMINI_API_KEY="your-api-key"
 export BUCKET_NAME="your-gcs-bucket"
-./hack/install-ax.sh --deploy-ax-server
+./hack/ax-dev.sh cloud deploy
 ```
 
 This command will:
@@ -58,7 +58,7 @@ ax exec --server=localhost:8001 --input="hello"
 To remove AX resources from your cluster, run:
 
 ```bash
-./hack/install-ax.sh --delete-ax-server
+./hack/ax-dev.sh cloud delete
 ```
 
 ---
