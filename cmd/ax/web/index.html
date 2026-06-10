@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AX Monitor Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-page: #0b0f19;
+  --bg-card: #161b26;
+  --bg-card-hover: #1e2538;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.15);
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.15);
+  --color-danger: #ef4444;
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-bg: rgba(99, 102, 241, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.hdr {
+  background: rgba(11, 15, 25, 0.8);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-color);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.hdr-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hdr-logo {
+  font-size: 24px;
+  color: var(--color-accent);
+  font-weight: 700;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; text-shadow: 0 0 10px rgba(99, 102, 241, 0.5); }
+  100% { transform: scale(1); opacity: 0.9; }
+}
+
+.hdr h1 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.hdr-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-success);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--color-success);
+}
+
+.status-dot.loading {
+  background-color: var(--color-warning);
+  box-shadow: 0 0 8px var(--color-warning);
+  animation: blink 1s infinite alternate;
+}
+
+@keyframes blink {
+  from { opacity: 0.4; } to { opacity: 1; }
+}
+
+/* Layout Container */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Dashboard View */
+.view-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow-y: auto;
+  gap: 24px;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.view-panel.hidden {
+  display: none;
+}
+
+/* Metrics Row */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.metric-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.metric-info h3 {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.metric-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.metric-card.active .metric-icon { background: var(--color-warning-bg); color: var(--color-warning); }
+.metric-card.completed .metric-icon { background: var(--color-success-bg); color: var(--color-success); }
+.metric-card.failed .metric-icon { background: var(--color-danger-bg); color: var(--color-danger); }
+.metric-card.total .metric-icon { background: var(--color-accent-bg); color: var(--color-accent); }
+
+/* Controls (Search & Filter) */
+.controls-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-wrapper {
+  flex: 1;
+  min-width: 260px;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--color-accent);
+}
+
+.filter-select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+  min-width: 150px;
+}
+
+.filter-select:focus {
+  border-color: var(--color-accent);
+}
+
+.refresh-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  user-select: none;
+  cursor: pointer;
+}
+
+.refresh-control input {
+  cursor: pointer;
+}
+
+/* Conversations List Table */
+.table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.conv-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.conv-table th {
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.conv-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.conv-table tr:last-child td {
+  border-bottom: none;
+}
+
+.conv-table tr:hover td {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.conv-id {
+  font-family: 'Fira Code', monospace;
+  font-weight: 500;
+}
+
+.agent-badge-table {
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+/* Status Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-running { background: var(--color-warning-bg); color: var(--color-warning); }
+.badge-completed { background: var(--color-success-bg); color: var(--color-success); }
+.badge-failed { background: var(--color-danger-bg); color: var(--color-danger); }
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.btn-trace {
+  background: var(--color-accent-bg);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-trace:hover {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
+.empty-state {
+  padding: 48px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-state-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+/* Trace View Panel (Slides In) */
+.trace-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-page);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow-y: auto;
+  gap: 20px;
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.trace-panel.active {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.trace-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.btn-back {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.btn-back:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.trace-title-info {
+  text-align: right;
+}
+
+.trace-title-info h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.trace-title-info p {
+  font-family: 'Fira Code', monospace;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* Timeline component */
+.timeline-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.timeline-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.tl-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.tl-label {
+  width: 140px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-family: 'Fira Code', monospace;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-track {
+  flex: 1;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.tl-bar {
+  height: 100%;
+  border-radius: 5px;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  min-width: 8px;
+  cursor: pointer;
+  transition: filter 0.2s;
+}
+
+.tl-bar:hover {
+  filter: brightness(1.2);
+}
+
+.tl-bar span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.tl-bar.c0 { background: #818cf8; }
+.tl-bar.c1 { background: #34d399; }
+.tl-bar.c2 { background: #fbbf24; }
+.tl-bar.c3 { background: #c084fc; }
+.tl-bar.c4 { background: #f87171; }
+.tl-bar.c5 { background: #2dd4bf; }
+.tl-bar.c6 { background: #f472b6; }
+
+/* Execution Details Cards */
+.exec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.exec-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.exec-card-hdr {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.01);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.exec-card-hdr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.expand-ico {
+  color: var(--text-secondary);
+  font-size: 12px;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.exec-card-hdr.collapsed .expand-ico {
+  transform: rotate(-90deg);
+}
+
+.exec-card-body.hidden {
+  display: none;
+}
+
+.exec-name {
+  font-family: 'Fira Code', monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.agent-badge {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  font-family: 'Fira Code', monospace;
+}
+
+.exec-card-hdr .badge {
+  margin-left: auto;
+}
+
+.event {
+  border-top: 1px solid var(--border-color);
+}
+
+.event:first-child {
+  border-top: none;
+}
+
+.state-evt {
+  padding: 10px 20px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: rgba(255, 255, 255, 0.005);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.state-evt .etime {
+  font-family: 'Fira Code', monospace;
+  color: var(--text-muted);
+}
+
+.evt-meta {
+  padding: 12px 20px 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.etime {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'Fira Code', monospace;
+}
+
+.evt-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.content-list {
+  padding: 4px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.content-item {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.role-user { border-color: rgba(99, 102, 241, 0.2); }
+.role-user .c-hdr { background: rgba(99, 102, 241, 0.08); color: #818cf8; }
+.role-user .c-body { background: rgba(99, 102, 241, 0.02); }
+
+.role-model { border-color: rgba(16, 185, 129, 0.2); }
+.role-model .c-hdr { background: rgba(16, 185, 129, 0.08); color: #34d399; }
+.role-model .c-body { background: rgba(16, 185, 129, 0.02); }
+
+.role-agent { border-color: rgba(45, 212, 191, 0.2); }
+.role-agent .c-hdr { background: rgba(45, 212, 191, 0.08); color: #2dd4bf; }
+.role-agent .c-body { background: rgba(45, 212, 191, 0.02); }
+
+.role-assistant { border-color: rgba(192, 132, 252, 0.2); }
+.role-assistant .c-hdr { background: rgba(192, 132, 252, 0.08); color: #c084fc; }
+.role-assistant .c-body { background: rgba(192, 132, 252, 0.02); }
+
+.role-unspecified, .role-unknown { border-color: var(--border-color); }
+.role-unspecified .c-hdr, .role-unknown .c-hdr { background: rgba(255, 255, 255, 0.04); color: var(--text-secondary); }
+.role-unspecified .c-body, .role-unknown .c-body { background: rgba(255, 255, 255, 0.005); }
+
+.c-hdr {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.c-body {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.txt {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.txt pre {
+  background: #090d16;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0;
+  font-family: 'Fira Code', monospace;
+  border: 1px solid var(--border-color);
+}
+
+.txt code {
+  font-family: 'Fira Code', monospace;
+}
+
+.conf-q {
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #fbbf24;
+}
+
+.conf-q::before {
+  content: "? ";
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.conf-approved {
+  font-size: 12px;
+  color: var(--color-success);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.conf-approved::before {
+  content: "✓";
+  font-size: 14px;
+}
+
+.conf-denied {
+  font-size: 12px;
+  color: var(--color-danger);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.conf-denied::before {
+  content: "✗";
+  font-size: 14px;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-page);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="hdr">
+  <div class="hdr-left">
+    <span class="hdr-logo">⬡</span>
+    <h1>AX Monitor Dashboard</h1>
+  </div>
+  <div class="hdr-status">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Connected</span>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- Dashboard Main Panel -->
+  <div class="view-panel" id="dashboard-view">
+    <!-- Metrics Row -->
+    <div class="metrics-row">
+      <div class="metric-card total">
+        <div class="metric-info">
+          <h3>Total</h3>
+          <div class="metric-value" id="metric-total">0</div>
+        </div>
+        <div class="metric-icon">Σ</div>
+      </div>
+      <div class="metric-card active">
+        <div class="metric-info">
+          <h3>Active</h3>
+          <div class="metric-value" id="metric-active">0</div>
+        </div>
+        <div class="metric-icon">⚡</div>
+      </div>
+      <div class="metric-card completed">
+        <div class="metric-info">
+          <h3>Completed</h3>
+          <div class="metric-value" id="metric-completed">0</div>
+        </div>
+        <div class="metric-icon">✓</div>
+      </div>
+      <div class="metric-card failed">
+        <div class="metric-info">
+          <h3>Failed</h3>
+          <div class="metric-value" id="metric-failed">0</div>
+        </div>
+        <div class="metric-icon">✗</div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar">
+      <div class="search-wrapper">
+        <input type="text" id="search-input" class="search-input" placeholder="Search conversations by ID or Agent...">
+      </div>
+      <select id="filter-select" class="filter-select">
+        <option value="ALL">All Statuses</option>
+        <option value="RUNNING">Running</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="FAILED">Failed</option>
+      </select>
+      <label class="refresh-control">
+        <input type="checkbox" id="poll-enable" checked>
+        Live Polling (3s)
+      </label>
+    </div>
+
+    <!-- Table Card -->
+    <div class="table-card">
+      <table class="conv-table" id="conv-table">
+        <thead>
+          <tr>
+            <th>Conversation ID</th>
+            <th>Agent</th>
+            <th>Status</th>
+            <th>Last Seq</th>
+            <th>Duration</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="conv-tbody">
+          <!-- Dynamically populated rows -->
+        </tbody>
+      </table>
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <div class="empty-state-icon">🔍</div>
+        <div>No conversations found matching criteria.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trace View Panel -->
+  <div class="trace-panel" id="trace-view">
+    <div class="trace-header-row">
+      <button class="btn-back" onclick="closeTraceView()">
+        ← Back to Dashboard
+      </button>
+      <div class="trace-title-info">
+        <h2 id="trace-title">Execution Trace</h2>
+        <p id="trace-conv-id"></p>
+      </div>
+    </div>
+
+    <!-- Timeline Card -->
+    <div class="timeline-card" id="timeline-card">
+      <div class="timeline-title">Execution Timeline</div>
+      <div class="tl-rows" id="tl-rows">
+        <!-- Dynamically populated timeline bars -->
+      </div>
+    </div>
+
+    <!-- Execution Details Cards List -->
+    <div class="exec-list" id="exec-list">
+      <!-- Dynamically populated cards -->
+    </div>
+  </div>
+</div>
+
+<script>
+// State Management
+let conversations = [];
+let pollInterval = null;
+let activeConversationId = null;
+
+// DOM Elements
+const searchInput = document.getElementById('search-input');
+const filterSelect = document.getElementById('filter-select');
+const pollEnable = document.getElementById('poll-enable');
+const convTbody = document.getElementById('conv-tbody');
+const emptyState = document.getElementById('empty-state');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+
+const metricTotal = document.getElementById('metric-total');
+const metricActive = document.getElementById('metric-active');
+const metricCompleted = document.getElementById('metric-completed');
+const metricFailed = document.getElementById('metric-failed');
+
+// Initial Load & Polling setup
+function init() {
+  fetchConversations();
+  setupPolling();
+  
+  searchInput.addEventListener('input', renderDashboard);
+  filterSelect.addEventListener('change', renderDashboard);
+  pollEnable.addEventListener('change', setupPolling);
+}
+
+// Fetch lists of conversations from the API
+async function fetchConversations() {
+  try {
+    statusDot.className = 'status-dot loading';
+    statusText.textContent = 'Updating...';
+    
+    const response = await fetch('/api/conversations');
+    if (!response.ok) throw new Error('API request failed');
+    conversations = await response.json() || [];
+    
+    statusDot.className = 'status-dot';
+    statusText.textContent = 'Connected';
+    
+    updateMetrics();
+    renderDashboard();
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    statusDot.className = 'status-dot loading';
+    statusText.textContent = 'Connection Error';
+  }
+}
+
+function setupPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+  
+  if (pollEnable.checked) {
+    pollInterval = setInterval(() => {
+      // If we are looking at a trace, poll that trace, otherwise poll the main list
+      if (activeConversationId) {
+        fetchTrace(activeConversationId, true);
+      } else {
+        fetchConversations();
+      }
+    }, 3000);
+  }
+}
+
+function updateMetrics() {
+  metricTotal.textContent = conversations.length;
+  metricActive.textContent = conversations.filter(c => c.status === 'RUNNING' || c.status === 'PENDING').length;
+  metricCompleted.textContent = conversations.filter(c => c.status === 'COMPLETED').length;
+  metricFailed.textContent = conversations.filter(c => c.status === 'FAILED').length;
+}
+
+function renderDashboard() {
+  const query = searchInput.value.toLowerCase().trim();
+  const filter = filterSelect.value;
+  
+  const filtered = conversations.filter(c => {
+    const matchesSearch = c.id.toLowerCase().includes(query) || c.agent.toLowerCase().includes(query);
+    const matchesFilter = filter === 'ALL' || c.status === filter;
+    return matchesSearch && matchesFilter;
+  });
+  
+  if (filtered.length === 0) {
+    convTbody.innerHTML = '';
+    emptyState.style.display = 'block';
+    return;
+  }
+  
+  emptyState.style.display = 'none';
+  
+  convTbody.innerHTML = filtered.map(c => {
+    let statusClass = 'badge-running';
+    if (c.status === 'COMPLETED') statusClass = 'badge-completed';
+    if (c.status === 'FAILED') statusClass = 'badge-failed';
+    
+    return `
+      <tr>
+        <td class="conv-id">${esc(c.id)}</td>
+        <td><span class="agent-badge-table">${esc(c.agent)}</span></td>
+        <td>
+          <span class="badge ${statusClass}">
+            <span class="badge-dot"></span>
+            ${esc(c.status)}
+          </span>
+        </td>
+        <td>${c.last_seq}</td>
+        <td>${esc(c.duration)}</td>
+        <td>
+          <button class="btn-trace" onclick="openTraceView('${esc(c.id)}')">
+            📊 View Trace
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Trace Details Fetching and Rendering
+async function openTraceView(conversationId) {
+  activeConversationId = conversationId;
+  document.getElementById('trace-conv-id').textContent = conversationId;
+  document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Loading execution trace...</div>';
+  document.getElementById('tl-rows').innerHTML = '';
+  document.getElementById('timeline-card').style.display = 'none';
+  
+  document.getElementById('trace-view').classList.add('active');
+  document.getElementById('dashboard-view').classList.add('hidden');
+  
+  await fetchTrace(conversationId);
+}
+
+function closeTraceView() {
+  activeConversationId = null;
+  document.getElementById('trace-view').classList.remove('active');
+  document.getElementById('dashboard-view').classList.remove('hidden');
+  fetchConversations(); // Update list immediately when coming back
+}
+
+async function fetchTrace(conversationId, quiet = false) {
+  try {
+    if (!quiet) {
+      statusDot.className = 'status-dot loading';
+      statusText.textContent = 'Loading Trace...';
+    }
+    
+    const response = await fetch(`/api/trace?conversation=${conversationId}`);
+    if (!response.ok) throw new Error('Failed to load trace');
+    
+    const traceData = await response.json();
+    
+    statusDot.className = 'status-dot';
+    statusText.textContent = 'Connected';
+    
+    renderTrace(traceData);
+  } catch (error) {
+    console.error('Error fetching trace:', error);
+    if (!quiet) {
+      document.getElementById('exec-list').innerHTML = `<div style="padding: 20px; text-align: center; color: var(--color-danger);">Failed to load trace: ${esc(error.message)}</div>`;
+    }
+  }
+}
+
+// Ported trace rendering logic from trace.go
+function esc(s){
+  if(s==null)return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTime(ts){
+  const d=new Date(ts);
+  return d.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
+}
+
+const BT=String.fromCharCode(96);
+const FENCE=BT+BT+BT;
+const reSplit=new RegExp('('+FENCE+'(?:[^\\n]*)?\\n[\\s\\S]*?'+FENCE+')');
+const reMatch=new RegExp('^'+FENCE+'([^\\n]*)?\\n([\\s\\S]*)'+FENCE+'$');
+function renderText(raw){
+  const parts=raw.split(reSplit);
+  return parts.map(part=>{
+    const m=part.match(reMatch);
+    if(m){return '<pre><code>'+esc(m[2])+'</code></pre>';}
+    return '<span class="txt">'+esc(part)+'</span>';
+  }).join('');
+}
+
+function renderContent(c){
+  const role=c.role||'unknown';
+  let body='';
+  if(c.text){
+    body='<div class="c-body"><div class="txt">'+renderText(c.text.text)+'</div></div>';
+  } else if(c.confirmation){
+    const cf=c.confirmation;
+    if(cf.question){
+      body='<div class="c-body"><div class="conf-q">'+esc(cf.question)+'</div></div>';
+    } else if(cf.approval!=null){
+      const cls=cf.approval.approved?'conf-approved':'conf-denied';
+      body='<div class="c-body"><div class="'+cls+'"></div></div>';
+    }
+  }
+  if(!body)return '';
+  return '<div class="content-item role-'+esc(role)+'"><div class="c-hdr">'+esc(role)+'</div>'+body+'</div>';
+}
+
+function renderEvent(ev){
+  const time=fmtTime(ev.timestamp);
+  const hasIn=ev.inputs&&ev.inputs.length>0;
+  const hasOut=ev.outputs&&ev.outputs.length>0;
+
+  if(!hasIn&&!hasOut&&ev.state){
+    return `<div class="event"><div class="state-evt"><span class="etime">${esc(time)}</span>State → ${esc(ev.state)}</div></div>`;
+  }
+
+  let html=`<div class="event"><div class="evt-meta"><span class="etime">${esc(time)}</span></div>`;
+  if(hasIn){
+    html+='<div class="content-list">';
+    ev.inputs.forEach(c=>{html+=renderContent(c);});
+    html+='</div>';
+  }
+  if(hasOut){
+    html+='<div class="content-list">';
+    ev.outputs.forEach(c=>{html+=renderContent(c);});
+    html+='</div>';
+  }
+  html+='</div>';
+  return html;
+}
+
+function getLastState(events){
+  for(let i=events.length-1;i>=0;i--){
+    if(events[i].state)return events[i].state;
+  }
+  return null;
+}
+
+function renderTrace(data) {
+  if (!data.execs || data.execs.length === 0) {
+    document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">No executions recorded for this conversation yet.</div>';
+    document.getElementById('timeline-card').style.display = 'none';
+    return;
+  }
+
+  // Build timeline
+  const execTimes=data.execs.map(e=>{
+    const ts=e.events.map(ev=>new Date(ev.timestamp).getTime());
+    const start=ts.length?Math.min(...ts):null;
+    const end=ts.length?Math.max(...ts):null;
+    return{execID:e.exec_id,start,end};
+  });
+  execTimes.sort((a,b)=>{
+    if(a.start==null)return 1;
+    if(b.start==null)return -1;
+    return a.start-b.start;
+  });
+  let minT=null,maxT=null;
+  execTimes.forEach(({start,end})=>{
+    if(start!=null){
+      if(minT==null||start<minT)minT=start;
+      if(maxT==null||end>maxT)maxT=end;
+    }
+  });
+  const span=maxT-minT||1;
+
+  document.getElementById('timeline-card').style.display = 'block';
+  
+  let tlHtml = '';
+  execTimes.forEach(({execID,start,end},i)=>{
+    const shortName=execID===data.root_exec_id?'root':execID.slice(data.root_exec_id.length+1);
+    const left=start!=null?((start-minT)/span*100).toFixed(2):0;
+    const width=start!=null?Math.max((end-start)/span*100,0.4).toFixed(2):0;
+    const dur=end-start;
+    const durStr=dur<1000?dur+'ms':(dur/1000).toFixed(2)+'s';
+    const colorCls='c'+(i%7);
+    tlHtml+=`
+      <div class="tl-row">
+        <div class="tl-label" title="${esc(execID)}">${esc(shortName)}</div>
+        <div class="tl-track">
+          <div class="tl-bar ${colorCls}" style="left:${left}%;width:${width}%;" title="${esc(durStr)}" onclick="scrollToCard('${esc(execID)}')">
+            <span>${esc(durStr)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  document.getElementById('tl-rows').innerHTML = tlHtml;
+
+  // Render execution details cards
+  let execListHtml = '';
+  data.execs.forEach((exec,i)=>{
+    const shortName=exec.exec_id===data.root_exec_id?'root':exec.exec_id.slice(data.root_exec_id.length+1);
+    const lastState=getLastState(exec.events);
+    
+    let statusClass = 'badge-running';
+    if (lastState === 'STATE_COMPLETED') statusClass = 'badge-completed';
+    if (lastState === 'STATE_FAILED') statusClass = 'badge-failed';
+    
+    const stateBadge=lastState?`<span class="badge ${statusClass}"><span class="badge-dot"></span>${esc(lastState.replace('STATE_',''))}</span>`:'';
+
+    execListHtml+=`
+      <div class="exec-card" id="card-${esc(exec.exec_id)}">
+        <div class="exec-card-hdr collapsed" onclick="toggleCard(this)">
+          <span class="expand-ico">▼</span>
+          <span class="exec-name">${esc(shortName)}</span>
+          <span class="agent-badge">${esc(exec.agent_id||'—')}</span>
+          ${stateBadge}
+        </div>
+        <div class="exec-card-body hidden">
+          <div class="exec-card-body-content">
+            ${exec.events.map(ev => renderEvent(ev)).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  document.getElementById('exec-list').innerHTML = execListHtml;
+}
+
+function scrollToCard(execID){
+  const el=document.getElementById('card-'+execID);
+  if(!el)return;
+  const hdr=el.querySelector('.exec-card-hdr');
+  const body=el.querySelector('.exec-card-body');
+  if(hdr&&hdr.classList.contains('collapsed')){
+    hdr.classList.remove('collapsed');
+    body.classList.remove('hidden');
+  }
+  el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function toggleCard(hdr){
+  hdr.classList.toggle('collapsed');
+  hdr.nextElementSibling.classList.toggle('hidden');
+}
+
+// Initial boot
+window.onload = init;
+</script>
+</body>
+</html>
