@@ -24,6 +24,7 @@ import importlib.util
 import logging
 import sys
 import grpc
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
 
 from python.proto import ax_pb2
@@ -210,6 +211,11 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
 async def serve(host: str, port: int):
     server = grpc.aio.server()
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(), server)
+
+    # Serve the standard gRPC health protocol.
+    health_servicer = health.aio.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
     
     listen_addr = f"{host}:{port}"
     server.add_insecure_port(listen_addr)

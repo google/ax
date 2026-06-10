@@ -93,3 +93,25 @@ def test_grpc_connect_success(mock_config, monkeypatch):
         await server.stop(0)
 
     asyncio.run(_run())
+
+
+def test_health_check():
+    async def _run():
+        from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+
+        server = grpc.aio.server()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(), server)
+        health_servicer = health.aio.HealthServicer()
+        health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+        await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        try:
+            async with grpc.aio.insecure_channel(f"localhost:{port}") as channel:
+                stub = health_pb2_grpc.HealthStub(channel)
+                resp = await stub.Check(health_pb2.HealthCheckRequest(service=""))
+                assert resp.status == health_pb2.HealthCheckResponse.SERVING
+        finally:
+            await server.stop(0)
+
+    asyncio.run(_run())

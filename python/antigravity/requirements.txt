@@ -1,0 +1,9 @@
+# Runtime dependencies for the antigravity HarnessService server
+# (python/antigravity/harness_server.py).
+#
+# grpcio-health-checking is published on public PyPI but not the internal
+# mirror, so allow PyPI as an extra index for it.
+--extra-index-url https://pypi.org/simple/
+
+google-antigravity
+grpcio-health-checking==1.81.0

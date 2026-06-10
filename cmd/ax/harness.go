@@ -30,6 +30,8 @@ import (
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
@@ -58,6 +60,11 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	grpcServer := grpc.NewServer()
 	harnessServer := NewHarnessServiceServer()
 	proto.RegisterHarnessServiceServer(grpcServer, harnessServer)
+
+	// Serve the standard gRPC health protocol.
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
 
 	// Graceful shutdown handling
 	sigChan := make(chan os.Signal, 1)

@@ -28,12 +28,17 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
 	"github.com/google/ax/internal/experimental/k8s/ate"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
+
+// healthCheckTimeout defines the maximum time Start waits for a freshly
+// created/resumed actor's harness to become reachable and ready.
+const healthCheckTimeout = 60 * time.Second
 
 // SubstrateHarness manages execution in a SubstrATE sandboxed actor over gRPC HarnessService.
 type SubstrateHarness struct {
@@ -95,11 +100,18 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 		return nil, fmt.Errorf("actor %s has no active worker IP address", conversationID)
 	}
 
-	// 2. Establish connection to the actor's worker IP
+	// Establish connection to the actor's worker IP
 	workerAddr := fmt.Sprintf("%s:%d", actor.AteomPodIp, h.port)
 	conn, err := grpc.NewClient(workerAddr, h.dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial remote harness service at %s: %w", workerAddr, err)
+	}
+
+	// Wait for the harness to be reachable and ready before handing back the
+	// execution.
+	if err := waitForHealthy(ctx, conn, healthCheckTimeout); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("harness for %s not ready at %s: %w", conversationID, workerAddr, err)
 	}
 
 	return &substrateExecution{
@@ -109,6 +121,42 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 		conn:           conn,
 		client:         proto.NewHarnessServiceClient(conn),
 	}, nil
+}
+
+// waitForHealthy blocks until the harness behind conn reports SERVING via the
+// standard gRPC health protocol until timeout. A harness that is reachable
+// but does not implement the health service (Unimplemented) is treated as
+// ready; connection failures (Unavailable) and NOT_SERVING are retried.
+func waitForHealthy(ctx context.Context, conn *grpc.ClientConn, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client := grpc_health_v1.NewHealthClient(conn)
+	const maxBackoff = 2 * time.Second
+	backoff := 100 * time.Millisecond
+	for {
+		resp, err := client.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: ""})
+		if err == nil && resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING {
+			return nil
+		}
+		if status.Code(err) == codes.Unimplemented {
+			// Reachable but no health service: the port is up, proceed.
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			if err != nil {
+				return fmt.Errorf("harness not healthy within %s: %w", timeout, err)
+			}
+			return fmt.Errorf("harness not healthy within %s (last status: %s)", timeout, resp.GetStatus())
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
 }
 
 type substrateExecution struct {
