@@ -63,6 +63,20 @@ To remove AX resources from your cluster, run:
 
 ---
 
+## ☁️ GKE SubstrATE vs. Open-Source SubstrATE Compatibility
+
+AX supports both self-managed open-source SubstrATE (`ate.dev/v1alpha1`) and managed GKE SubstrATE (`ate.gke.io/v1alpha1`) clusters.
+
+### Key Architectural & Schema Differences:
+* **Container Configuration**: In open-source, containers (like AX server or harnesses) are defined inside the `ActorTemplate` resource. In GKE, the managed sandboxing engine requires containers to be declared inside the `WorkerPool` resource's `spec.containers` instead.
+* **Snapshot Storage (`snapshotsConfig.location`)**: Open-source takes a single string URI (`gs://bucket/folder/`), whereas GKE validates this as a structured object containing separate `bucket` and `folder` string keys.
+* **Envoy Router Cert Signer**: The SPIFFE certificate signer name is `servicedns.podcert.ate.dev/identity` in open-source, but is `servicedns.podcert.gke.io/identity` in GKE.
+
+### Automatic Routing:
+The unified deploy script (`./hack/ax-dev.sh`) dynamically detects if your active cluster runs GKE's managed CRD endpoints (`workerpools.ate.gke.io`). If GKE is found, it automatically applies GKE-specific manifest files (`-gke.yaml`), bypassing manual configuration changes.
+
+---
+
 ## 🛠️ Inspection & Diagnostics
 
 Use the **`kubectl ate`** CLI tool to inspect the live states of

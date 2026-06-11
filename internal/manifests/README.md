@@ -52,6 +52,9 @@ export KO_DEFAULTPLATFORMS="linux/amd64"
 ./hack/ax-dev.sh cloud deploy --harness
 ```
 
+> [!NOTE]
+> If GKE SubstrATE is detected on your cluster, the script automatically applies GKE-specific harness configurations from `internal/manifests/ax-deployment2-gke.yaml` rather than the default open-source template.
+
 This command will:
 - Build the AX images using `ko` with the `harness` build tag.
 - Create the `ax` namespace (AX control plane + built-in harnesses) and the
