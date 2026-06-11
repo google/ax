@@ -1,0 +1,134 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ax
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: custom-harness
+---
+apiVersion: ate.gke.io/v1alpha1
+kind: WorkerPool
+metadata:
+  name: ax-harness-workerpool
+  namespace: ax
+spec:
+  replicas: 5
+  containers:
+    - name: "axharness"
+      image: ko://github.com/google/ax/cmd/ax
+      command: ["/ko-app/ax", "harness"]
+      ports:
+      - containerPort: 50053
+---
+apiVersion: ate.gke.io/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: antigravity-template
+  namespace: ax
+spec:
+  workerPoolRef:
+    name: ax-harness-workerpool
+  snapshotsConfig:
+    location:
+      bucket: "${BUCKET_NAME}"
+      folder: "antigravity"
+---
+apiVersion: ate.gke.io/v1alpha1
+kind: WorkerPool
+metadata:
+  name: custom-harness-workerpool
+  namespace: custom-harness
+spec:
+  replicas: 3
+  containers:
+    - name: "axharness"
+      image: ko://github.com/google/ax/cmd/ax
+      command: ["/ko-app/ax", "harness"]
+      ports:
+      - containerPort: 50053
+---
+apiVersion: ate.gke.io/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: hello-world-template
+  namespace: custom-harness
+spec:
+  workerPoolRef:
+    name: custom-harness-workerpool
+  snapshotsConfig:
+    location:
+      bucket: "${BUCKET_NAME}"
+      folder: "hello-world"
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: ax-server
+  namespace: ax
+  labels:
+    app: ax-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ax-server
+  template:
+    metadata:
+      labels:
+        app: ax-server
+    spec:
+      containers:
+        - name: ax-server
+          image: ko://github.com/google/ax/cmd/ax
+          command: ["/ko-app/ax", "serve", "--config", "/etc/ax/ax.yaml"]
+          ports:
+            - containerPort: 8494
+          env:
+            - name: GEMINI_API_KEY
+              value: "${GEMINI_API_KEY}"
+            - name: AX_SUBSTRATE
+              value: "1"
+            - name: AX_SUBSTRATE_ENDPOINT
+              value: "api.ate-system.svc:443"
+          volumeMounts:
+            - name: ax-config
+              mountPath: /etc/ax
+      volumes:
+        - name: ax-config
+          configMap:
+            name: ax-server-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ax-server-config
+  namespace: ax
+data:
+  ax.yaml: |
+    harnesses:
+      default: antigravity
+      # Built-in harness
+      antigravity:
+        - id: antigravity
+      # Custom harness
+      substrate:
+        - id: hello-world
+          namespace: custom-harness
+          template: hello-world-template
+          port: 50053
