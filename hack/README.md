@@ -62,11 +62,11 @@ Deploys or deletes the AX Orchestrator server resources on a SubstrATE-enabled K
     export BUCKET_NAME="your-gcs-bucket-name"
     export KO_DOCKER_REPO="gcr.io/your-project-id/ate-images"
     export KO_DEFAULTPLATFORMS="linux/amd64"
-    ./hack/ax-dev.sh cloud deploy --harness
+    ./hack/ax-dev.sh cloud deploy --harness # or --v2
     ```
   * **Tear Down / Delete**:
     ```bash
-    ./hack/ax-dev.sh cloud delete [--harness]
+    ./hack/ax-dev.sh cloud delete [--harness | --v2]
     ```
 
 ---

@@ -49,7 +49,7 @@ export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
 export KO_DOCKER_REPO="gcr.io/$PROJECT_ID/ate-images"
 export KO_DEFAULTPLATFORMS="linux/amd64"
 
-./hack/ax-dev.sh cloud deploy --harness
+./hack/ax-dev.sh cloud deploy --harness # or --v2
 ```
 
 > [!NOTE]
