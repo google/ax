@@ -70,11 +70,11 @@ func (a *SubstrateAgent) Connect(ctx context.Context, conversationID string, exe
 	if actor == nil {
 		return fmt.Errorf("received nil actor in response")
 	}
-	if actor.AteomPodIp == "" {
-		return fmt.Errorf("actor has no active worker IP address (AteomPodIp is empty)")
+	if actor.GetActiveWorker().GetIp() == "" {
+		return fmt.Errorf("actor has no active worker IP address (ActiveWorker.Ip is empty)")
 	}
 
-	workerAddr := fmt.Sprintf("%s:%d", actor.AteomPodIp, a.config.Port)
+	workerAddr := fmt.Sprintf("%s:%d", actor.GetActiveWorker().GetIp(), a.config.Port)
 	// 2. Connect to the Actor.
 	var activeAgent agent.Agent
 	switch strings.ToLower(a.config.Protocol) {

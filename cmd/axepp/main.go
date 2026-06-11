@@ -29,7 +29,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/agent-substrate/substrate/proto/ateapipb"
+	"github.com/ai-on-gke/SubstrATE/proto/ateapipb"
 	corepb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"github.com/google/ax/proto"
@@ -56,9 +56,11 @@ type authServer struct {
 func runSession(ctx context.Context, sc ateapipb.ControlClient, sessionID string) (*authv3.CheckResponse, error) {
 	slog.InfoContext(ctx, "About to call CreateActor", slog.Any("actor-id", sessionID))
 	if _, err := sc.CreateActor(ctx, &ateapipb.CreateActorRequest{
-		ActorId:                sessionID,
-		ActorTemplateNamespace: *actorTemplateNamespace,
-		ActorTemplateName:      *actorTemplateName,
+		ActorKey: &ateapipb.ActorKey{
+			ActorTemplateNamespace: *actorTemplateNamespace,
+			ActorTemplateName:      *actorTemplateName,
+			ActorId:                sessionID,
+		},
 	}); err != nil {
 		if status.Code(err) != codes.AlreadyExists {
 			slog.ErrorContext(ctx, "CreateActor error", slog.Any("error", err))
@@ -70,7 +72,11 @@ func runSession(ctx context.Context, sc ateapipb.ControlClient, sessionID string
 
 	slog.InfoContext(ctx, "About to call ResumeActor", slog.Any("actor-id", sessionID))
 	resp, err := sc.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
-		ActorId: sessionID,
+		ActorKey: &ateapipb.ActorKey{
+			ActorTemplateNamespace: *actorTemplateNamespace,
+			ActorTemplateName:      *actorTemplateName,
+			ActorId:                sessionID,
+		},
 	})
 	if err != nil {
 		slog.InfoContext(ctx, "ResumeActor error", slog.Any("error", err))
@@ -79,7 +85,7 @@ func runSession(ctx context.Context, sc ateapipb.ControlClient, sessionID string
 		}, nil
 	}
 
-	destinationIP := resp.GetActor().GetAteomPodIp()
+	destinationIP := resp.GetActor().GetActiveWorker().GetIp()
 	destrinationAddr := net.JoinHostPort(destinationIP, *axPort)
 	slog.InfoContext(ctx, "Redirecting request to backend", slog.String("address", destrinationAddr))
 

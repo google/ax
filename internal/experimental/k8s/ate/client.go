@@ -19,7 +19,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agent-substrate/substrate/proto/ateapipb"
+	"github.com/ai-on-gke/SubstrATE/proto/ateapipb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -59,9 +59,11 @@ func NewClient(ns, template, target string, opts ...grpc.DialOption) (*Client, e
 func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.CreateActor(ctx, &ateapipb.CreateActorRequest{
-		ActorId:                id,
-		ActorTemplateNamespace: c.namespace,
-		ActorTemplateName:      c.template,
+		ActorKey: &ateapipb.ActorKey{
+			ActorTemplateNamespace: c.namespace,
+			ActorTemplateName:      c.template,
+			ActorId:                id,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.CreateActor: %w", err)
@@ -74,7 +76,11 @@ func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateAc
 func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
-		ActorId: id,
+		ActorKey: &ateapipb.ActorKey{
+			ActorTemplateNamespace: c.namespace,
+			ActorTemplateName:      c.template,
+			ActorId:                id,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.ResumeActor: %w", err)
@@ -86,7 +92,11 @@ func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeAc
 func (c *Client) SuspendActor(ctx context.Context, id string) (*ateapipb.SuspendActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
-		ActorId: id,
+		ActorKey: &ateapipb.ActorKey{
+			ActorTemplateNamespace: c.namespace,
+			ActorTemplateName:      c.template,
+			ActorId:                id,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.SuspendActor: %w", err)

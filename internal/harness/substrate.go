@@ -96,12 +96,12 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 	if actor == nil {
 		return nil, fmt.Errorf("received nil actor in response for %s", conversationID)
 	}
-	if actor.AteomPodIp == "" {
+	if actor.GetActiveWorker().GetIp() == "" {
 		return nil, fmt.Errorf("actor %s has no active worker IP address", conversationID)
 	}
 
-	// Establish connection to the actor's worker IP
-	workerAddr := fmt.Sprintf("%s:%d", actor.AteomPodIp, h.port)
+	// 2. Establish connection to the actor's worker IP
+	workerAddr := fmt.Sprintf("%s:%d", actor.GetActiveWorker().GetIp(), h.port)
 	conn, err := grpc.NewClient(workerAddr, h.dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial remote harness service at %s: %w", workerAddr, err)
