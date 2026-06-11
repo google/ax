@@ -19,11 +19,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ai-on-gke/SubstrATE/proto/ateapipb"
+	"github.com/agent-substrate/substrate/proto/ateapipb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// Actor represents a running SubstrATE actor instance.
+type Actor struct {
+	IP string
+}
+
+// Client wraps the SubstrATE API client connection.
 type Client struct {
 	namespace string
 	template  string
@@ -56,58 +62,49 @@ func NewClient(ns, template, target string, opts ...grpc.DialOption) (*Client, e
 }
 
 // CreateActor creates a new actor.
-func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateActorResponse, error) {
+func (c *Client) CreateActor(ctx context.Context, id string) (*Actor, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.CreateActor(ctx, &ateapipb.CreateActorRequest{
-		ActorKey: &ateapipb.ActorKey{
-			ActorTemplateNamespace: c.namespace,
-			ActorTemplateName:      c.template,
-			ActorId:                id,
-		},
+		ActorId:                id,
+		ActorTemplateNamespace: c.namespace,
+		ActorTemplateName:      c.template,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error when calling Control.CreateActor: %w", err)
+		return nil, err
 	}
-	return resp, nil
+	actor := resp.GetActor()
+	if actor == nil {
+		return &Actor{}, nil
+	}
+	return &Actor{IP: actor.AteomPodIp}, nil
 }
 
-// ResumeActor resumes the actor, scheduling it onto a worker. The returned
-// actor carries the worker IP once it is running.
-func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeActorResponse, error) {
+// ResumeActor resumes the actor, scheduling it onto a worker.
+func (c *Client) ResumeActor(ctx context.Context, id string) (*Actor, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
-		ActorKey: &ateapipb.ActorKey{
-			ActorTemplateNamespace: c.namespace,
-			ActorTemplateName:      c.template,
-			ActorId:                id,
-		},
+		ActorId: id,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error when calling Control.ResumeActor: %w", err)
+		return nil, err
 	}
-	return resp, nil
+	actor := resp.GetActor()
+	if actor == nil {
+		return nil, fmt.Errorf("received nil actor in response")
+	}
+	return &Actor{IP: actor.AteomPodIp}, nil
 }
 
 // SuspendActor suspends the actor.
-func (c *Client) SuspendActor(ctx context.Context, id string) (*ateapipb.SuspendActorResponse, error) {
+func (c *Client) SuspendActor(ctx context.Context, id string) error {
 	client := ateapipb.NewControlClient(c.conn)
-	resp, err := client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
-		ActorKey: &ateapipb.ActorKey{
-			ActorTemplateNamespace: c.namespace,
-			ActorTemplateName:      c.template,
-			ActorId:                id,
-		},
+	_, err := client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
+		ActorId: id,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("error when calling Control.SuspendActor: %w", err)
-	}
-	return resp, nil
+	return err
 }
 
-// Close closes the gRPC connection.
+// Close closes the underlying connection.
 func (c *Client) Close() error {
-	if c.conn != nil {
-		return c.conn.Close()
-	}
-	return nil
+	return c.conn.Close()
 }

@@ -1,0 +1,213 @@
+#  Copyright 2026 Google LLC
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valkey-config
+  namespace: ate-system
+data:
+  valkey.conf: |
+    # Enforce TLS and disable standard port
+    port 0
+    tls-port 6379
+    tls-cluster yes
+    tls-replication yes
+
+    # Load certificates from projected volume
+    tls-cert-file /run/servicedns.podcert.ate.dev/credential-bundle.pem
+    tls-key-file /run/servicedns.podcert.ate.dev/credential-bundle.pem
+    tls-ca-cert-file /etc/valkey-ca/ca.crt
+    tls-auth-clients yes
+
+    # Enable cluster mode
+    cluster-enabled yes
+    cluster-config-file nodes.conf
+    cluster-node-timeout 5000
+    appendonly yes
+    protected-mode no
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey-cluster-service
+  namespace: ate-system
+spec:
+  clusterIP: None
+  selector:
+    app: valkey-cluster
+  ports:
+  - name: valkey
+    port: 6379
+    targetPort: 6379
+  - name: bus
+    port: 16379
+    targetPort: 16379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey-cluster
+  namespace: ate-system
+spec:
+  selector:
+    app: valkey-cluster
+  ports:
+  - name: valkey
+    port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: valkey-cluster
+  namespace: ate-system
+spec:
+  serviceName: valkey-cluster-service
+  replicas: 6
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: valkey-cluster
+  template:
+    metadata:
+      labels:
+        app: valkey-cluster
+    spec:
+      containers:
+      - name: valkey
+        image: valkey/valkey:8.0
+        command: ["valkey-server", "/etc/valkey/valkey.conf"]
+        ports:
+        - name: valkey
+          containerPort: 6379
+        - name: bus
+          containerPort: 16379
+        volumeMounts:
+        - name: config
+          mountPath: /etc/valkey
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ate.dev
+        - name: valkey-ca-certs
+          mountPath: /etc/valkey-ca
+          readOnly: true
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: config
+        configMap:
+          name: valkey-config
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: valkey-ca-certs
+        projected:
+          sources:
+          - secret:
+              name: valkey-ca-certs
+              items:
+              - key: ca.crt
+                path: ca.crt
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: valkey-cluster-init
+  namespace: ate-system
+spec:
+  template:
+    metadata:
+      labels:
+        app: valkey-cluster-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: init
+        image: valkey/valkey:8.0
+        volumeMounts:
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ate.dev
+        - name: valkey-ca-certs
+          mountPath: /etc/valkey-ca
+          readOnly: true
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Waiting for all Valkey pods to resolve..."
+          for i in 0 1 2 3 4 5; do
+            until getent hosts valkey-cluster-${i}.valkey-cluster-service.ate-system.svc >/dev/null 2>&1; do
+              echo "Waiting for valkey-cluster-${i} DNS..."
+              sleep 2
+            done
+          done
+
+          echo "All pods resolved. Getting IPs..."
+          POD_IPS=""
+          for i in 0 1 2 3 4 5; do
+            ip=$(getent hosts valkey-cluster-${i}.valkey-cluster-service.ate-system.svc | awk '{print $1}')
+            POD_IPS="${POD_IPS} ${ip}:6379"
+          done
+
+          echo "Checking if Valkey cluster is already initialized..."
+          until valkey-cli --tls --cacert /etc/valkey-ca/ca.crt --cert /run/servicedns.podcert.ate.dev/credential-bundle.pem --key /run/servicedns.podcert.ate.dev/credential-bundle.pem -h valkey-cluster-0.valkey-cluster-service.ate-system.svc ping >/dev/null 2>&1; do
+            echo "Waiting for valkey-cluster-0 to respond to ping..."
+            sleep 2
+          done
+
+          INIT_STATUS=$(valkey-cli --tls --cacert /etc/valkey-ca/ca.crt --cert /run/servicedns.podcert.ate.dev/credential-bundle.pem --key /run/servicedns.podcert.ate.dev/credential-bundle.pem -h valkey-cluster-0.valkey-cluster-service.ate-system.svc cluster info 2>/dev/null | grep cluster_state || true)
+
+          if [ -z "${INIT_STATUS}" ] || ! echo "${INIT_STATUS}" | grep -q "cluster_state:ok"; then
+            echo "Initializing Valkey cluster..."
+            valkey-cli --tls \
+              --cacert /etc/valkey-ca/ca.crt \
+              --cert /run/servicedns.podcert.ate.dev/credential-bundle.pem \
+              --key /run/servicedns.podcert.ate.dev/credential-bundle.pem \
+              --cluster create ${POD_IPS} \
+              --cluster-replicas 1 \
+              --cluster-yes
+            echo "Cluster initialization complete!"
+          else
+            echo "Cluster already initialized."
+          fi
+      volumes:
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: valkey-ca-certs
+        projected:
+          sources:
+          - secret:
+              name: valkey-ca-certs
+              items:
+              - key: ca.crt
+                path: ca.crt
+

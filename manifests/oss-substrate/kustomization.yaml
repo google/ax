@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: oss-ate-system
+
+resources:
+  - ate-system-namespace.yaml
+  - generated/role.yaml
+  - generated/ate.dev_actortemplates.yaml
+  - generated/ate.dev_workerpools.yaml
+  - valkey.yaml
+  - ate-api-server.yaml
+  - ate-controller.yaml
+  - atelet.yaml
+  - atenet-router.yaml
+  - atenet-dns.yaml
+  - pod-certificate-controller.yaml

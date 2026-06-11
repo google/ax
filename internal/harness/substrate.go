@@ -87,21 +87,16 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 		return nil, fmt.Errorf("failed to create substrate actor %s: %w", conversationID, err)
 	}
 
-	// Resume the actor so it is scheduled onto a worker and gets a routable IP.
-	resumeResp, err := h.ateClient.ResumeActor(ctx, conversationID)
+	actor, err := h.ateClient.ResumeActor(ctx, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resume substrate actor %s: %w", conversationID, err)
 	}
-	actor := resumeResp.Actor
-	if actor == nil {
-		return nil, fmt.Errorf("received nil actor in response for %s", conversationID)
-	}
-	if actor.GetActiveWorker().GetIp() == "" {
+	if actor == nil || actor.IP == "" {
 		return nil, fmt.Errorf("actor %s has no active worker IP address", conversationID)
 	}
 
 	// 2. Establish connection to the actor's worker IP
-	workerAddr := fmt.Sprintf("%s:%d", actor.GetActiveWorker().GetIp(), h.port)
+	workerAddr := fmt.Sprintf("%s:%d", actor.IP, h.port)
 	conn, err := grpc.NewClient(workerAddr, h.dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial remote harness service at %s: %w", workerAddr, err)
@@ -251,7 +246,7 @@ func (e *substrateExecution) Close(ctx context.Context) error {
 	)
 	suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := e.harness.ateClient.SuspendActor(suspendCtx, e.conversationID); err != nil {
+	if err := e.harness.ateClient.SuspendActor(suspendCtx, e.conversationID); err != nil {
 		slog.ErrorContext(ctx, "Failed to suspend SubstrATE actor",
 			slog.String("conversation_id", e.conversationID),
 			slog.Any("error", err),

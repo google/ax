@@ -201,20 +201,11 @@ cloud_deploy() {
 
   local manifest="manifests/ax-deployment.yaml.tmpl"
   local service="manifests/ax-service.yaml"
-  local is_gke=false
-
-  if run_kubectl get crd workerpools.ate.gke.io &>/dev/null; then
-    is_gke=true
-  fi
 
   while [[ "$#" -gt 0 ]]; do
     case $1 in
       --harness|--v2)
-        if [ "$is_gke" = true ]; then
-          manifest="internal/manifests/ax-deployment2-gke.yaml"
-        else
-          manifest="internal/manifests/ax-deployment2.yaml"
-        fi
+        manifest="internal/manifests/ax-deployment2.yaml"
         service=""
         shift
         ;;
@@ -223,10 +214,6 @@ cloud_deploy() {
         ;;
     esac
   done
-
-  if [ "$is_gke" = true ] && [ "$manifest" = "manifests/ax-deployment.yaml.tmpl" ]; then
-    manifest="manifests/ax-deployment-gke.yaml.tmpl"
-  fi
 
   log_step "Deploying AX Server and Harnesses from $manifest to Kubernetes cluster..."
   sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
@@ -243,20 +230,11 @@ cloud_deploy() {
 cloud_delete() {
   local manifest="manifests/ax-deployment.yaml.tmpl"
   local service="manifests/ax-service.yaml"
-  local is_gke=false
-
-  if run_kubectl get crd workerpools.ate.gke.io &>/dev/null; then
-    is_gke=true
-  fi
 
   while [[ "$#" -gt 0 ]]; do
     case $1 in
       --harness|--v2)
-        if [ "$is_gke" = true ]; then
-          manifest="internal/manifests/ax-deployment2-gke.yaml"
-        else
-          manifest="internal/manifests/ax-deployment2.yaml"
-        fi
+        manifest="internal/manifests/ax-deployment2.yaml"
         service=""
         shift
         ;;
@@ -265,10 +243,6 @@ cloud_delete() {
         ;;
     esac
   done
-
-  if [ "$is_gke" = true ] && [ "$manifest" = "manifests/ax-deployment.yaml.tmpl" ]; then
-    manifest="manifests/ax-deployment-gke.yaml.tmpl"
-  fi
 
   log_step "Deleting AX Server and Harnesses ($manifest) from Kubernetes cluster..."
   sed -e "s|\${GEMINI_API_KEY}|dummy-key|g" \

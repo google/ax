@@ -62,19 +62,15 @@ func NewSubstrateAgent(endpoint string, config SubstrateAgentConfig) (*Substrate
 // Connect handles processing of input content by creating an actor and delegating to RemoteAgent.
 func (a *SubstrateAgent) Connect(ctx context.Context, conversationID string, execID string, start *proto.AgentStart, e agent.Executor, o agent.OutputHandler) error {
 	// 1. Create Actor
-	resp, err := a.ateClient.CreateActor(ctx, execID)
+	actor, err := a.ateClient.CreateActor(ctx, execID)
 	if err != nil {
 		return fmt.Errorf("failed to create actor: %w", err)
 	}
-	actor := resp.Actor
-	if actor == nil {
-		return fmt.Errorf("received nil actor in response")
-	}
-	if actor.GetActiveWorker().GetIp() == "" {
-		return fmt.Errorf("actor has no active worker IP address (ActiveWorker.Ip is empty)")
+	if actor == nil || actor.IP == "" {
+		return fmt.Errorf("actor has no active worker IP address")
 	}
 
-	workerAddr := fmt.Sprintf("%s:%d", actor.GetActiveWorker().GetIp(), a.config.Port)
+	workerAddr := fmt.Sprintf("%s:%d", actor.IP, a.config.Port)
 	// 2. Connect to the Actor.
 	var activeAgent agent.Agent
 	switch strings.ToLower(a.config.Protocol) {
@@ -109,7 +105,7 @@ func (a *SubstrateAgent) Connect(ctx context.Context, conversationID string, exe
 		log.Printf("Suspending ATE actor for execution %s", execID)
 		suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, err := a.ateClient.SuspendActor(suspendCtx, execID); err != nil {
+		if err := a.ateClient.SuspendActor(suspendCtx, execID); err != nil {
 			log.Printf("Failed to suspend actor %s: %v", execID, err)
 		}
 	}()

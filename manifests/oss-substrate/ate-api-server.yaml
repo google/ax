@@ -1,0 +1,172 @@
+#  Copyright 2026 Google LLC
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+
+# Define Permissions (Read-Only for Pods)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ate-api-server-role
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["ate.dev"]
+  resources: ["actortemplates"]
+  verbs: ["get", "watch", "list"]
+---
+# Create Service Account for Workload Identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+---
+# 4. Bind Identity to Permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ate-api-server-binding
+subjects:
+- kind: ServiceAccount
+  name: ate-api-server
+  namespace: ate-system
+roleRef:
+  kind: ClusterRole
+  name: ate-api-server-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 5. Deploy the API Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-api-server-deployment
+  namespace: ate-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ate-api-server
+  template:
+    metadata:
+      labels:
+        app: ate-api-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: ate-api-server
+      containers:
+      - name: ate-api-server
+        image: ko://github.com/agent-substrate/substrate/cmd/servers/ateapi
+        args:
+          - "--grpc-listen-addr=0.0.0.0:443"
+          - "--grpc-server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem"
+          - --redis-cluster-address=@env
+          - --redis-ca-certs=/etc/valkey-ca/ca.crt
+          - --redis-use-iam-auth=@env
+          - --redis-tls-server-name=@env
+          - --redis-client-cert=@env
+          - --client-jwt-issuer=@env
+          - --client-jwt-audience=api.ate-system.svc
+          - --session-id-jwt-pool=/run/session-id-jwt-pool/pool.json
+          - --session-id-ca-pool=/run/session-id-ca-pool/pool.json
+          - --workerpool-ca-certs=/run/workerpool-ca-certs/trust-bundle.pem
+        env:
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://opentelemetry-collector.gke-managed-otel.svc.cluster.local:4317
+        # Inject env vars from a ConfigMap created by each developer.  This lets
+        # each developer customize their own redis address, etc, without having
+        # to edit this manifest, which can remain constant across all
+        # developers.
+        envFrom:
+        - configMapRef:
+            name: ate-api-server-envvars
+            optional: true
+        volumeMounts:
+        - name: "servicedns"
+          mountPath: "/run/servicedns.podcert.ate.dev"
+        - name: "session-id-jwt-pool"
+          mountPath: "/run/session-id-jwt-pool"
+        # Note: See README.md for how to generate this secret.
+        - name: "valkey-ca-certs"
+          mountPath: "/etc/valkey-ca"
+          readOnly: true
+        - name: "session-id-ca-pool"
+          mountPath: "/run/session-id-ca-pool"
+          readOnly: true
+        - name: "workerpool-ca-certs"
+          mountPath: "/run/workerpool-ca-certs"
+          readOnly: true
+        ports:
+        - containerPort: 443
+        - name: prometheus
+          containerPort: 9090
+      volumes:
+      - name: "servicedns"
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: "session-id-jwt-pool"
+        projected:
+          sources:
+          - secret: 
+              name: "session-id-jwt-pool"
+              items: 
+              - key: "pool"
+                path: "pool.json"
+      - name: "valkey-ca-certs"
+        projected:
+          sources:
+          - secret:
+              name: "valkey-ca-certs"
+              items:
+              - key: "ca.crt"
+                path: "ca.crt"
+      - name: "session-id-ca-pool"
+        projected:
+          sources:
+          - secret:
+              name: "session-id-ca-pool"
+              items:
+              - key: "pool"
+                path: "pool.json"
+      - name: "workerpool-ca-certs"
+        projected:
+          sources:
+          - clusterTrustBundle:
+              signerName: podidentity.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+---
+# 6. Expose the Session Assigner
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: ate-system
+spec:
+  type: ClusterIP
+  selector:
+    app: ate-api-server
+  ports:
+  - name: grpc
+    protocol: TCP
+    port: 443
+    targetPort: 443

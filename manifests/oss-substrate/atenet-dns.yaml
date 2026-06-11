@@ -1,0 +1,176 @@
+#  Copyright 2026 Google LLC
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atenet-dns
+  namespace: ate-system
+  labels:
+    app: dns
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atenet-dns
+  namespace: ate-system
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atenet-dns
+  namespace: ate-system
+subjects:
+- kind: ServiceAccount
+  name: atenet-dns
+  namespace: ate-system
+roleRef:
+  kind: Role
+  name: atenet-dns
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atenet-dns
+  namespace: kube-system
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atenet-dns
+  namespace: kube-system
+subjects:
+- kind: ServiceAccount
+  name: atenet-dns
+  namespace: ate-system
+roleRef:
+  kind: Role
+  name: atenet-dns
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns
+  namespace: ate-system
+  labels:
+    app: dns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dns
+  template:
+    metadata:
+      labels:
+        app: dns
+    spec:
+      serviceAccountName: atenet-dns
+      shareProcessNamespace: true
+      initContainers:
+      - name: init-dns
+        image: busybox:1.36
+        command: ["sh", "-c"]
+        # Initial core file is sufficient to start CoreDNS but does not contain
+        # any additional configuration. The controller will update the Corefile.
+        args:
+        - |
+          cat <<'EOF' > /etc/coredns/Corefile
+          .:53 {
+              errors
+              health :8080
+              ready :8181
+              reload
+          }
+          EOF
+        volumeMounts:
+        - name: dns-config-volume
+          mountPath: /etc/coredns
+      containers:
+      - name: coredns
+        image: coredns/coredns:1.11.1
+        imagePullPolicy: IfNotPresent
+        args: [ "-conf", "/etc/coredns/Corefile" ]
+        volumeMounts:
+        - name: dns-config-volume
+          mountPath: /etc/coredns
+        ports:
+        - name: dns
+          containerPort: 53
+          protocol: UDP
+        - name: dns-tcp
+          containerPort: 53
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8181
+            scheme: HTTP
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+      - name: dns-controller
+        image: ko://github.com/agent-substrate/substrate/cmd/servers/atenet
+        args:
+        - "dns"
+        - "--log-level=debug"
+        - "--interval=10s"
+        - "--corefile-path=/etc/coredns/Corefile"
+        volumeMounts:
+        - name: dns-config-volume
+          mountPath: /etc/coredns
+      volumes:
+        - name: dns-config-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns
+  namespace: ate-system
+  labels:
+    app: dns
+spec:
+  selector:
+    app: dns
+  type: ClusterIP
+  ports:
+  - name: dns
+    port: 53
+    protocol: UDP
+  - name: dns-tcp
+    port: 53
+    protocol: TCP
