@@ -15,6 +15,9 @@
 
 set -e
 
+# Ensure Go bin paths are included in PATH
+export PATH=$PATH:$(go env GOPATH)/bin:~/go/bin
+
 COLOR_CYAN='\033[1;36m'
 COLOR_RED='\033[1;31m'
 COLOR_RESET='\033[0m'
