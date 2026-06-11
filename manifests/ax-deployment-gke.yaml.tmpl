@@ -113,18 +113,18 @@ data:
                 name: ax-route
                 virtual_hosts:
                 - name: ax-virtual-host
-                domain: ["*"]
-                routes:
-                - match:
-                    prefix: "/"
-                  route:
-                    cluster: dynamic_forward_proxy_cluster
-                    timeout: 0s
-                    idle_timeout: 0s
-                  typed_per_filter_config:
-                    envoy.filters.http.dynamic_forward_proxy:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.PerRouteConfig
-                      host_rewrite_header: x-backend-ip
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      prefix: "/"
+                    route:
+                      cluster: dynamic_forward_proxy_cluster
+                      timeout: 0s
+                      idle_timeout: 0s
+                    typed_per_filter_config:
+                      envoy.filters.http.dynamic_forward_proxy:
+                        "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.PerRouteConfig
+                        host_rewrite_header: x-backend-ip
       clusters:
       - name: dynamic_forward_proxy_cluster
         lb_policy: CLUSTER_PROVIDED
@@ -199,13 +199,13 @@ spec:
       - name: axepp
         image: ko://github.com/google/ax/cmd/axepp
         args:
-          - "--grpc-server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem"          
+          - "--grpc-server-cred-bundle=/run/servicedns.podcert.gke.io/credential-bundle.pem"          
         ports:
         - containerPort: 50051
           name: grpc
         volumeMounts:
         - name: "servicedns"
-          mountPath: "/run/servicedns.podcert.ate.dev"
+          mountPath: "/run/servicedns.podcert.gke.io"
       volumes:
       - name: envoy-config
         configMap:
@@ -214,6 +214,6 @@ spec:
         projected:
           sources:
           - podCertificate:
-              signerName: servicedns.podcert.ate.dev/identity
+              signerName: servicedns.podcert.gke.io/identity
               keyType: ECDSAP256
               credentialBundlePath: credential-bundle.pem
