@@ -28,7 +28,6 @@ import (
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -159,14 +158,10 @@ func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.Ex
 	}
 
 	var allEvents []*proto.ExecutionEvent
-	var hasExecLogs bool
 	for _, eID := range execIDs {
 		events, err := evLog.ExecEvents(ctx, eID)
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("failed to query events for exec %s: %w", eID, err)
-		}
-		if len(events) > 0 {
-			hasExecLogs = true
 		}
 		allEvents = append(allEvents, events...)
 	}
@@ -174,66 +169,7 @@ func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.Ex
 	// Use the first execID as the rootExecID as requested by user
 	rootExecID := execIDs[0]
 
-	if !hasExecLogs {
-		allEvents = reconstructExecEvents(convEvents)
-	}
-
 	return allEvents, rootExecID, execIDs, nil
-}
-
-func reconstructExecEvents(convEvents []*proto.ConversationEvent) []*proto.ExecutionEvent {
-	eventsMap := make(map[string][]*proto.ConversationEvent)
-	var execIDsOrdered []string
-	seenExec := make(map[string]bool)
-
-	for _, ev := range convEvents {
-		if ev.ExecId == "" {
-			continue
-		}
-		if !seenExec[ev.ExecId] {
-			execIDsOrdered = append(execIDsOrdered, ev.ExecId)
-			seenExec[ev.ExecId] = true
-		}
-		eventsMap[ev.ExecId] = append(eventsMap[ev.ExecId], ev)
-	}
-
-	var result []*proto.ExecutionEvent
-	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	for _, eID := range execIDsOrdered {
-		evs := eventsMap[eID]
-		if len(evs) == 0 {
-			continue
-		}
-
-		var inputs []*proto.Message
-		var outputs []*proto.Message
-		var finalState proto.State
-
-		for i, ev := range evs {
-			if i == 0 {
-				inputs = append(inputs, ev.Messages...)
-			} else {
-				outputs = append(outputs, ev.Messages...)
-			}
-			finalState = ev.State
-		}
-
-		seqOffset := evs[0].Seq
-		mockTime := baseTime.Add(time.Duration(seqOffset) * time.Second)
-
-		execEv := &proto.ExecutionEvent{
-			ExecId:    eID,
-			AgentId:   "unknown",
-			Inputs:    inputs,
-			Outputs:   outputs,
-			State:     finalState,
-			Timestamp: timestamppb.New(mockTime),
-		}
-		result = append(result, execEv)
-	}
-
-	return result
 }
 
 func buildExecTraces(execIDs []string, events []*proto.ExecutionEvent) []ExecTrace {
