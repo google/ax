@@ -49,13 +49,38 @@ Runs local end-to-end integration tests using the stateful Python harness and Go
 Deploys or deletes the AX Orchestrator server resources on a SubstrATE-enabled Kubernetes cluster.
 
 - **Commands**:
-  - **Deploy to Cluster**:
+  * **Standard Deployment**:
     ```bash
     export GEMINI_API_KEY="your-gemini-api-key"
     export BUCKET_NAME="your-gcs-bucket-name"
     ./hack/ax-dev.sh cloud deploy
     ```
-  - **Tear Down / Delete**:
+  * **Harness E2E Path Deployment (V2 Experimental)**:
+    Deploys AX server along with isolated warm harness worker pools (`antigravity` and `hello-world` actors):
     ```bash
-    ./hack/ax-dev.sh cloud delete
+    export GEMINI_API_KEY="your-gemini-api-key"
+    export BUCKET_NAME="your-gcs-bucket-name"
+    export KO_DOCKER_REPO="gcr.io/your-project-id/ate-images"
+    export KO_DEFAULTPLATFORMS="linux/amd64"
+    ./hack/ax-dev.sh cloud deploy --harness
     ```
+  * **Tear Down / Delete**:
+    ```bash
+    ./hack/ax-dev.sh cloud delete [--harness]
+    ```
+
+---
+
+### 4. Running E2E Harness Tests on Cloud / GKE
+To test the deployed AX + SubstrATE + Harness stack end-to-end:
+
+1. **Port-Forward AX Server**:
+   ```bash
+   kubectl port-forward -n ax rs/ax-server 8494:8494
+   ```
+2. **Execute request targeting local tunnel**:
+   Compile the local CLI and execute the plan request (it will launch the default `antigravity` harness actor on SubstrATE automatically):
+   ```bash
+   go build -o bin/ax ./cmd/ax
+   ./bin/ax exec --server localhost:8494 --input "hello"
+   ```
