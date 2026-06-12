@@ -26,8 +26,11 @@ import (
 const (
 	// The substrate namespace reserved for AX's built-in harnesses.
 	defaultNamespace = "ax"
-	// The default port of HarnessService.
-	defaultPort = 80
+	// The default HarnessService port for non-substrate harnesses.
+	defaultPort = 50053
+	// The port for harnesses running as substrate actors. Substrate's
+	// actor networking DNATs inbound workerPodIP:80 to the actor.
+	substrateDefaultPort = 80
 	// The Antigravity ActorTemplate name.
 	antigravityTemplate = "antigravity-template"
 )
@@ -85,7 +88,7 @@ type SubstrateHarnessConfig struct {
 // as a substrate actor; otherwise it runs locally.
 func (c AntigravityHarnessConfig) NewHarness(substrate bool, endpoint string) (harness.Harness, error) {
 	if substrate {
-		return newSubstrateHarness(c.ID, endpoint, defaultNamespace, antigravityTemplate, defaultPort)
+		return newSubstrateHarness(c.ID, endpoint, defaultNamespace, antigravityTemplate, substrateDefaultPort)
 	}
 	address := c.Address
 	if address == "" {
@@ -99,7 +102,7 @@ func (c AntigravityHarnessConfig) NewHarness(substrate bool, endpoint string) (h
 func (c SubstrateHarnessConfig) NewHarness(endpoint string) (harness.Harness, error) {
 	port := c.Port
 	if port == 0 {
-		port = defaultPort
+		port = substrateDefaultPort
 	}
 	return newSubstrateHarness(c.ID, endpoint, c.Namespace, c.Template, port)
 }

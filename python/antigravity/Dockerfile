@@ -56,6 +56,8 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 80
 
+# Command for local docker build and test.
+# Substrate ignores the image CMD and runs the ActorTemplate `command` instead.
 CMD ["python", "-m", "python.antigravity.harness_server", \
      "--agent_file", "examples/antigravity_agent/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]
