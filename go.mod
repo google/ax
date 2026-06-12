@@ -6,7 +6,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/a2aproject/a2a-go/v2 v2.2.0
-	github.com/agent-substrate/substrate v0.0.0-20260611053709-a3f44744d37b
+	github.com/agent-substrate/substrate v0.0.0-20260612160914-27aa4eec85f2
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2

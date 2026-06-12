@@ -16,10 +16,8 @@ github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
 github.com/a2aproject/a2a-go/v2 v2.2.0 h1:eayiNXYpyTOLVhhQrGmIHlcy8GnOdnwaNdYQPvS84Ik=
 github.com/a2aproject/a2a-go/v2 v2.2.0/go.mod h1:htTxMwicNXXXEwwfjuB/Pd1g7UHDrswhSievncmTVcE=
-github.com/agent-substrate/substrate v0.0.0-20260610233805-8c64c7bf3a4f h1:oFLOlBmMf74qiGW0R9P1oQsI7m+iCu2Zb9+GJNVdH6c=
-github.com/agent-substrate/substrate v0.0.0-20260610233805-8c64c7bf3a4f/go.mod h1:ZPtBipt+cON5CWwPGtRKd8mlF7+vk8YaPRs9gHay5Io=
-github.com/agent-substrate/substrate v0.0.0-20260611053709-a3f44744d37b h1:fpoOQUZ1CV3v10q50dP9eGXzrnltC14DQdKP8269L/s=
-github.com/agent-substrate/substrate v0.0.0-20260611053709-a3f44744d37b/go.mod h1:TgdtEUV6iaflJTwmS8ONiGsyyJD+5okPZj2H6mM8WlA=
+github.com/agent-substrate/substrate v0.0.0-20260612160914-27aa4eec85f2 h1:SlFLoJ3EPWrgR3bBlwCUmpJY6rqrAmvkwb1a9++WOBw=
+github.com/agent-substrate/substrate v0.0.0-20260612160914-27aa4eec85f2/go.mod h1:TgdtEUV6iaflJTwmS8ONiGsyyJD+5okPZj2H6mM8WlA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=
