@@ -54,8 +54,8 @@ ENV PYTHONPATH=/app:/app/python
 # Flush stdout/stderr immediately so server logs surface in container logs.
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 50053
+EXPOSE 80
 
 CMD ["python", "-m", "python.antigravity.harness_server", \
      "--agent_file", "examples/antigravity_agent/agent.py", \
-     "--host", "0.0.0.0", "--port", "50053"]
+     "--host", "0.0.0.0", "--port", "80"]
