@@ -39,7 +39,7 @@ metadata:
   namespace: ax
 spec:
   replicas: 5
-  ateomImage: ko://github.com/agent-substrate/substrate/cmd/servers/ateom-gvisor
+  ateomImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
 ---
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate
@@ -59,12 +59,18 @@ spec:
       sha256Hash: "1ba2366ae2efceba166046f51a4104f9261c9cb72c6db8f5b3fe2dc57dea86b9"
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
-    # TODO(wjjclaud): update the hello-world demo container with real antigravity.
     - name: "axharness"
-      image: ko://github.com/google/ax/cmd/ax
-      command: ["/ko-app/ax", "harness"]
-      ports:
-      - containerPort: 50053
+      image: ${ANTIGRAVITY_IMAGE}
+      command: ["python", "-m", "python.antigravity.harness_server",
+                "--agent_file", "/app/examples/antigravity_agent/agent.py",
+                "--host", "0.0.0.0", "--port", "80"]
+      env:
+        - name: GEMINI_API_KEY
+          value: "${GEMINI_API_KEY}"
+        - name: PYTHONPATH
+          value: "/app:/app/python"
+        - name: PYTHONUNBUFFERED
+          value: "1"
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/antigravity/
 ---
@@ -78,7 +84,7 @@ metadata:
   namespace: custom-harness
 spec:
   replicas: 3
-  ateomImage: ko://github.com/agent-substrate/substrate/cmd/servers/ateom-gvisor
+  ateomImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
 ---
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate
@@ -100,9 +106,8 @@ spec:
   containers:
     - name: "axharness"
       image: ko://github.com/google/ax/cmd/ax
-      command: ["/ko-app/ax", "harness"]
-      ports:
-      - containerPort: 50053
+      # Serve on 80: substrate's actor networking only DNATs workerPodIP:80.
+      command: ["/ko-app/ax", "harness", "--port", "80"]
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/hello-world/
 ---
@@ -164,4 +169,3 @@ data:
         - id: hello-world
           namespace: custom-harness
           template: hello-world-template
-          port: 50053

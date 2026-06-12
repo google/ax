@@ -27,7 +27,7 @@ const (
 	// The substrate namespace reserved for AX's built-in harnesses.
 	defaultNamespace = "ax"
 	// The default port of HarnessService.
-	defaultPort = 50053
+	defaultPort = 80
 	// The Antigravity ActorTemplate name.
 	antigravityTemplate = "antigravity-template"
 )

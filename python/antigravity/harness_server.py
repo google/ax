@@ -223,12 +223,34 @@ async def serve(host: str, port: int):
     await server.start()
     await server.wait_for_termination()
 
+def resolve_localhost():
+    """Ensure `localhost` resolves to 127.0.0.1.
+
+    Substrate actors run under gVisor with no runtime-injected /etc/hosts.
+    The antigravity SDK dials localharness at ws://localhost:<port>/
+    and Python's resolver needs `localhost` in /etc/hosts.
+    """
+    try:
+        try:
+            with open("/etc/hosts", "r") as f:
+                if "localhost" in f.read():
+                    return
+        except FileNotFoundError:
+            pass
+        with open("/etc/hosts", "a") as f:
+            f.write("127.0.0.1\tlocalhost\n")
+    except OSError as e:
+        print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
     parser.add_argument("--agent_file", default="examples/antigravity_agent/agent.py", help="Path to the agent config file")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()
+    
+    resolve_localhost()
     
     # Load the agent config globally
     global loaded_config

@@ -5,5 +5,5 @@
 # mirror, so allow PyPI as an extra index for it.
 --extra-index-url https://pypi.org/simple/
 
-google-antigravity
+google-antigravity==0.1.2
 grpcio-health-checking==1.81.0
