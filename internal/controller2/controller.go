@@ -19,7 +19,7 @@ package controller2
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/harness/harnesstest"
@@ -76,7 +76,11 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	h, err := d.registry.Harness(req.AgentId)
 	if err != nil {
 		// Fallback to test harness
-		log.Printf("WARNING: harness %s not found in registry, falling back to test harness: %v", req.AgentId, err)
+		slog.WarnContext(ctx, "Harness not found in registry, falling back to test harness",
+			slog.String("agent_id", req.AgentId),
+			slog.String("conversation_id", req.ConversationId),
+			slog.Any("error", err),
+		)
 		h = harnesstest.New()
 	}
 	exec, err := h.Start(ctx, req.ConversationId)
@@ -128,7 +132,10 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 	}
 	// TODO(anj): The harness should send the full input sent to get this particular response.
 	if _, err := a.eventLog.Append(ctx, event); err != nil {
-		log.Printf("WARNING: failed to log streamed message: %v", err)
+		slog.WarnContext(ctx, "Failed to log streamed message to event log",
+			slog.String("conversation_id", a.conversationID),
+			slog.Any("error", err),
+		)
 	}
 
 	if a.execHandler == nil {
@@ -147,7 +154,10 @@ func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
 		State:          proto.State_STATE_COMPLETED,
 	}
 	if _, err := a.eventLog.Append(ctx, event); err != nil {
-		log.Printf("WARNING: failed to log completion event: %v", err)
+		slog.WarnContext(ctx, "Failed to log completion event to event log",
+			slog.String("conversation_id", a.conversationID),
+			slog.Any("error", err),
+		)
 	}
 	return nil
 }

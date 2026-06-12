@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -245,11 +245,17 @@ func (e *substrateExecution) Close(ctx context.Context) error {
 	}
 
 	// Suspend actor to return resource to standard standby pool
-	log.Printf("Suspending SubstrATE actor for conversation %s (execution %s)", e.conversationID, e.execID)
+	slog.InfoContext(ctx, "Suspending SubstrATE actor",
+		slog.String("conversation_id", e.conversationID),
+		slog.String("exec_id", e.execID),
+	)
 	suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := e.harness.ateClient.SuspendActor(suspendCtx, e.conversationID); err != nil {
-		log.Printf("Failed to suspend actor %s: %v", e.conversationID, err)
+		slog.ErrorContext(ctx, "Failed to suspend SubstrATE actor",
+			slog.String("conversation_id", e.conversationID),
+			slog.Any("error", err),
+		)
 	}
 
 	return nil
