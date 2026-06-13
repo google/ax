@@ -95,6 +95,94 @@ def test_grpc_connect_success(mock_config, monkeypatch):
     asyncio.run(_run())
 
 
+def test_grpc_connect_agent_reused(mock_config, monkeypatch):
+    async def _run():
+        server = grpc.aio.server()
+        servicer = AntigravityHarnessServiceServicer()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        
+        addr = f"localhost:{port}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = ax_pb2_grpc.HarnessServiceStub(channel)
+            
+            class MockConversation:
+                def __init__(self):
+                    self._steps = []
+                async def chat(self, text):
+                    class MockResponse:
+                        def __init__(self):
+                            self.chunks = self._chunk_generator()
+                        async def _chunk_generator(self):
+                            from google.antigravity.types import Text
+                            yield Text(text="Response", step_index=0)
+                    return MockResponse()
+                    
+            agent_instances = []
+            class MockAgent:
+                def __init__(self, config):
+                    self.conversation = MockConversation()
+                    self.closed = False
+                    agent_instances.append(self)
+                async def __aenter__(self):
+                    return self
+                async def __aexit__(self, exc_type, exc, tb):
+                    self.closed = True
+                    
+            monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
+            
+            # Fire first turn for conv-1
+            req1 = ax_pb2.HarnessRequest(
+                conversation_id="conv-1",
+                harness_id="antigravity",
+                start=ax_pb2.HarnessStart(
+                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))]
+                )
+            )
+            async def req_iter1():
+                yield req1
+            async for _ in stub.Connect(req_iter1()):
+                pass
+            
+            # Fire second turn for same conv-1
+            req2 = ax_pb2.HarnessRequest(
+                conversation_id="conv-1",
+                harness_id="antigravity",
+                start=ax_pb2.HarnessStart(
+                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi again")))]
+                )
+            )
+            async def req_iter2():
+                yield req2
+            async for _ in stub.Connect(req_iter2()):
+                pass
+                
+            # Fire third turn for a different conv-2
+            req3 = ax_pb2.HarnessRequest(
+                conversation_id="conv-2",
+                harness_id="antigravity",
+                start=ax_pb2.HarnessStart(
+                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="New conv")))]
+                )
+            )
+            async def req_iter3():
+                yield req3
+            async for _ in stub.Connect(req_iter3()):
+                pass
+                
+            # Verify only 2 agents were instantiated (reused the first one)
+            assert len(agent_instances) == 2
+            
+            # Verify cleanup closes all agents
+            await servicer.cleanup()
+            assert all(a.closed for a in agent_instances)
+            
+        await server.stop(0)
+
+    asyncio.run(_run())
+
+
 def test_health_check():
     async def _run():
         from grpc_health.v1 import health, health_pb2, health_pb2_grpc
