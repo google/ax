@@ -16,8 +16,8 @@ package internal
 
 import (
 	"fmt"
+	"io"
 	"os"
-	"sync/atomic"
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
@@ -38,55 +38,99 @@ var (
 // ErrUserAborted is returned when the user aborts a prompt.
 var ErrUserAborted = huh.ErrUserAborted
 
+type displayState int
+
+const (
+	stateNone displayState = iota
+	stateText
+	stateThought
+)
+
 type Display struct {
 	id string
+	w  io.Writer // Target output writer, e.g., os.Stdout or a test buffer
 
 	userStyle       lipgloss.Style
 	checkpointStyle lipgloss.Style
 	idStyle         lipgloss.Style
 	resumeStyle     lipgloss.Style
 
-	loadingVisible atomic.Bool
-	loadingStopCh  chan bool
+	state displayState // Tracks the last printed chunk type to correctly format transition newlines
 }
 
-func NewDisplay(id string) *Display {
+func NewDisplay(id string, w io.Writer) *Display {
+	if w == nil {
+		w = os.Stdout
+	}
 	return &Display{
 		id:              id,
+		w:               w,
 		userStyle:       lipgloss.NewStyle().Foreground(purple),
 		checkpointStyle: lipgloss.NewStyle().Foreground(comment),
 		idStyle:         lipgloss.NewStyle().Foreground(comment),
 		resumeStyle:     lipgloss.NewStyle().Foreground(comment),
-		loadingStopCh:   make(chan bool),
+		state:           stateNone,
 	}
 }
 
 // DisplayInput displays the user input.
 func (d *Display) DisplayInput(text string) {
-	fmt.Printf("%s %s\n",
+	if d.state != stateNone {
+		fmt.Fprintln(d.w)
+	}
+	d.state = stateNone
+	fmt.Fprintf(d.w, "%s %s\n",
 		d.userStyle.Render("⏺"),
 		text,
 	)
-	fmt.Println()
+	fmt.Fprintln(d.w)
 }
 
-// DisplayOutput displays an output fragment.
-func (d *Display) DisplayOutput(text string) {
-	fmt.Println(text)
-	fmt.Println()
+// DisplayText prints a chunk of model text response.
+func (d *Display) DisplayText(text string) {
+	if d.state == stateThought {
+		fmt.Fprintln(d.w) // end the thinking line
+	}
+	d.state = stateText
+	fmt.Fprint(d.w, text)
+}
+
+// DisplayThought prints a chunk of model thinking process.
+func (d *Display) DisplayThought(text string) {
+	if d.state != stateThought {
+		if d.state == stateText {
+			fmt.Fprintln(d.w)
+		}
+		fmt.Fprint(d.w, "Thinking: ")
+	}
+	d.state = stateThought
+	fmt.Fprint(d.w, text)
+}
+
+// DisplaySystem prints a system/error message on a new line.
+func (d *Display) DisplaySystem(text string) {
+	if d.state != stateNone {
+		fmt.Fprintln(d.w)
+	}
+	d.state = stateNone
+	fmt.Fprintln(d.w, text)
 }
 
 // FinishOutput completes the streaming output and shows info if provided
 func (d *Display) FinishOutput(info string) {
-	if info != "" {
-		fmt.Println(d.checkpointStyle.Render(info))
+	if d.state != stateNone {
+		fmt.Fprintln(d.w)
 	}
-	fmt.Println()
+	d.state = stateNone
+	if info != "" {
+		fmt.Fprintln(d.w, d.checkpointStyle.Render(info))
+	}
+	fmt.Fprintln(d.w)
 }
 
 func (d *Display) DisplayHeader() {
-	fmt.Println(d.idStyle.Render("Conversation: " + d.id))
-	fmt.Println()
+	fmt.Fprintln(d.w, d.idStyle.Render("Conversation: " + d.id))
+	fmt.Fprintln(d.w)
 }
 
 // PromptForApproval shows an accept/reject dialog
@@ -128,10 +172,10 @@ func (d *Display) PromptForInput() (string, error) {
 }
 
 func (d *Display) ShowResumption(id string, server string) {
-	fmt.Println(d.resumeStyle.Render("To resume the conversation,"))
+	fmt.Fprintln(d.w, d.resumeStyle.Render("To resume the conversation,"))
 	if server != "" {
-		fmt.Println(d.resumeStyle.Render(fmt.Sprintf("ax exec --conversation %s --server %s", id, server)))
+		fmt.Fprintln(d.w, d.resumeStyle.Render(fmt.Sprintf("ax exec --conversation %s --server %s", id, server)))
 	} else {
-		fmt.Println(d.resumeStyle.Render(fmt.Sprintf("ax exec --conversation %s", id)))
+		fmt.Fprintln(d.w, d.resumeStyle.Render(fmt.Sprintf("ax exec --conversation %s", id)))
 	}
 }
