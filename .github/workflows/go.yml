@@ -48,7 +48,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.25'
+        go-version-file: go.mod
 
     - name: Build
       run: go build -v ./...
@@ -56,6 +56,11 @@ jobs:
     - name: Test
       run: go test -v ./...
 
+    - name: Build (harness)
+      run: go build -tags harness -v ./...
+
+    - name: Test (harness)
+      run: go test -tags harness -v ./...
     
 
     - name: Check for binary files in PR
