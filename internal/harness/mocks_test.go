@@ -14,8 +14,8 @@
 
 package harness
 
-// Shared in-process fakes for the harness tests: a fake ATE Control server
-// (the substrate control plane), a fake HarnessService server (the harness
+// Shared in-process mocks for the harness tests: a mock Substrate Control server
+// (the substrate control plane), a mock HarnessService server (the harness
 // inside an actor), a recording Handler, and message builders.
 
 import (
@@ -33,11 +33,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// fakeControlServer is an in-process ateapipb.ControlServer that records the
+// mockControlServer is an in-process ateapipb.ControlServer that records the
 // actor lifecycle calls SubstrateHarness makes and lets tests steer the
 // CreateActor/ResumeActor responses. Only the three RPCs SubstrateHarness uses
 // are implemented; the rest come from the embedded Unimplemented server.
-type fakeControlServer struct {
+type mockControlServer struct {
 	ateapipb.UnimplementedControlServer
 
 	mu           sync.Mutex
@@ -50,7 +50,7 @@ type fakeControlServer struct {
 	resumeNilActor bool   // when true, ResumeActor returns a nil Actor
 }
 
-func (f *fakeControlServer) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.CreateActorResponse, error) {
+func (f *mockControlServer) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.CreateActorResponse, error) {
 	f.mu.Lock()
 	f.createCalls = append(f.createCalls, req.GetActorId())
 	f.mu.Unlock()
@@ -60,7 +60,7 @@ func (f *fakeControlServer) CreateActor(_ context.Context, req *ateapipb.CreateA
 	return &ateapipb.CreateActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorId()}}, nil
 }
 
-func (f *fakeControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
+func (f *mockControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
 	f.mu.Lock()
 	f.resumeCalls = append(f.resumeCalls, req.GetActorId())
 	f.mu.Unlock()
@@ -70,7 +70,7 @@ func (f *fakeControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeA
 	return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorId(), AteomPodIp: f.resumeIP}}, nil
 }
 
-func (f *fakeControlServer) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
+func (f *mockControlServer) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
 	f.mu.Lock()
 	f.suspendCalls = append(f.suspendCalls, req.GetActorId())
 	f.mu.Unlock()
@@ -78,7 +78,7 @@ func (f *fakeControlServer) SuspendActor(_ context.Context, req *ateapipb.Suspen
 }
 
 // calls returns copies of the recorded call lists.
-func (f *fakeControlServer) calls() (create, resume, suspend []string) {
+func (f *mockControlServer) calls() (create, resume, suspend []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.createCalls...),
@@ -86,11 +86,11 @@ func (f *fakeControlServer) calls() (create, resume, suspend []string) {
 		append([]string(nil), f.suspendCalls...)
 }
 
-// fakeHarnessServer is an in-process proto.HarnessServiceServer standing in for
+// mockHarnessServer is an in-process proto.HarnessServiceServer standing in for
 // the harness running inside an actor (substrate) or a local subprocess
 // (antigravity). It records the start frame and emits its configured outputs
 // followed by a terminal HarnessEnd.
-type fakeHarnessServer struct {
+type mockHarnessServer struct {
 	proto.UnimplementedHarnessServiceServer
 
 	// outputs are the messages emitted (in a single Outputs frame) before the
@@ -109,7 +109,7 @@ type fakeHarnessServer struct {
 	gotInputs    []string
 }
 
-func (s *fakeHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
+func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
 	if s.failConnect {
 		return status.Error(codes.Internal, s.errMessage)
 	}
@@ -164,48 +164,48 @@ func (s *fakeHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 }
 
 // received returns a copy of the start frame the server received.
-func (s *fakeHarnessServer) received() (convID, harnessID string, inputs []string) {
+func (s *mockHarnessServer) received() (convID, harnessID string, inputs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.gotConvID, s.gotHarnessID, append([]string(nil), s.gotInputs...)
 }
 
-// fakeHandler records the messages and completion streamed during a turn.
-type fakeHandler struct {
+// mockHandler records the messages and completion streamed during a turn.
+type mockHandler struct {
 	mu       sync.Mutex
 	messages []*proto.Message
 	complete bool
 }
 
-func (h *fakeHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
+func (h *mockHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.messages = append(h.messages, msg)
 	return nil
 }
 
-func (h *fakeHandler) OnComplete(_ context.Context, _ string) error {
+func (h *mockHandler) OnComplete(_ context.Context, _ string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.complete = true
 	return nil
 }
 
-func (h *fakeHandler) isDone() bool {
+func (h *mockHandler) isDone() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.complete
 }
 
 // collected returns a copy of the messages received via OnMessage.
-func (h *fakeHandler) collected() []*proto.Message {
+func (h *mockHandler) collected() []*proto.Message {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]*proto.Message(nil), h.messages...)
 }
 
 // texts returns the text content of each received message, in order.
-func (h *fakeHandler) texts() []string {
+func (h *mockHandler) texts() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []string
@@ -246,7 +246,7 @@ func thoughtText(summary string) *proto.Message {
 
 // startHarnessServer starts a HarnessService + health server (status SERVING)
 // on a random local port and returns its address.
-func startHarnessServer(t *testing.T, srv *fakeHarnessServer) string {
+func startHarnessServer(t *testing.T, srv *mockHarnessServer) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -262,8 +262,8 @@ func startHarnessServer(t *testing.T, srv *fakeHarnessServer) string {
 	return lis.Addr().String()
 }
 
-// startControlServer starts a fake ATE Control server on a random local port.
-func startControlServer(t *testing.T, srv *fakeControlServer) string {
+// startControlServer starts a mock Substrate Control server on a random local port.
+func startControlServer(t *testing.T, srv *mockControlServer) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

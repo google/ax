@@ -23,7 +23,7 @@ import (
 )
 
 func TestAntigravityHarness_Run_Success(t *testing.T) {
-	srv := &fakeHarnessServer{
+	srv := &mockHarnessServer{
 		outputs: []*proto.Message{thoughtText("Analyzing"), assistantText("Hello world")},
 	}
 	harnessClient := NewAntigravityHarness(startHarnessServer(t, srv))
@@ -38,7 +38,7 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 		t.Fatalf("failed to queue message: %v", err)
 	}
 
-	handler := &fakeHandler{}
+	handler := &mockHandler{}
 	if err := exec.Run(context.Background(), handler); err != nil {
 		t.Fatalf("Run failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 }
 
 func TestAntigravityHarness_Run_ErrorFrame(t *testing.T) {
-	srv := &fakeHarnessServer{failConnect: true, errMessage: "internal mock server crash"}
+	srv := &mockHarnessServer{failConnect: true, errMessage: "internal mock server crash"}
 	harnessClient := NewAntigravityHarness(startHarnessServer(t, srv))
 
 	exec, _ := harnessClient.Start(context.Background(), "conv-test")
@@ -73,7 +73,7 @@ func TestAntigravityHarness_Run_ErrorFrame(t *testing.T) {
 		t.Fatalf("failed to queue message: %v", err)
 	}
 
-	err := exec.Run(context.Background(), &fakeHandler{})
+	err := exec.Run(context.Background(), &mockHandler{})
 	if err == nil {
 		t.Fatal("expected error from Run(), got nil")
 	}

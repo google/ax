@@ -120,8 +120,8 @@ func TestWaitForHealthy_ServerDown(t *testing.T) {
 	}
 }
 
-// newTestSubstrateHarness builds a SubstrateHarness wired to the fake control
-// server and the fake harness server. It constructs the struct directly (rather
+// newTestSubstrateHarness builds a SubstrateHarness wired to the mock control
+// server and the mock harness server. It constructs the struct directly (rather
 // than via NewSubstrateHarness) so the control client can use insecure
 // credentials instead of the TLS that NewSubstrateHarness hard-codes.
 func newTestSubstrateHarness(t *testing.T, ctrlAddr, harnessAddr string) *SubstrateHarness {
@@ -153,8 +153,8 @@ func newTestSubstrateHarness(t *testing.T, ctrlAddr, harnessAddr string) *Substr
 // break: create/resume idempotency, worker-IP extraction, the health gate, the
 // Connect streaming protocol, and suspend-on-close.
 func TestSubstrateHarness_EndToEnd(t *testing.T) {
-	ctrl := &fakeControlServer{resumeIP: "127.0.0.1"}
-	srv := &fakeHarnessServer{}
+	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
+	srv := &mockHarnessServer{}
 	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
 
 	ctx := context.Background()
@@ -165,7 +165,7 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 	if err := exec.Queue(ctx, userText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	handler := &fakeHandler{}
+	handler := &mockHandler{}
 	if err := exec.Run(ctx, handler); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -207,11 +207,11 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 }
 
 func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
-	ctrl := &fakeControlServer{
+	ctrl := &mockControlServer{
 		resumeIP:  "127.0.0.1",
 		createErr: status.Error(codes.AlreadyExists, "exists"),
 	}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &fakeHarnessServer{}))
+	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
 
 	ctx := context.Background()
 	exec, err := h.Start(ctx, "conv-1")
@@ -223,7 +223,7 @@ func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
 	if err := exec.Queue(ctx, userText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	handler := &fakeHandler{}
+	handler := &mockHandler{}
 	if err := exec.Run(ctx, handler); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -236,8 +236,8 @@ func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
 }
 
 func TestSubstrateHarness_ResumeNoWorkerIP(t *testing.T) {
-	ctrl := &fakeControlServer{resumeIP: ""} // empty AteomPodIp
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &fakeHarnessServer{}))
+	ctrl := &mockControlServer{resumeIP: ""} // empty AteomPodIp
+	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
 
 	_, err := h.Start(context.Background(), "conv-1")
 	if err == nil {
@@ -249,8 +249,8 @@ func TestSubstrateHarness_ResumeNoWorkerIP(t *testing.T) {
 }
 
 func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
-	ctrl := &fakeControlServer{resumeNilActor: true}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &fakeHarnessServer{}))
+	ctrl := &mockControlServer{resumeNilActor: true}
+	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
 
 	_, err := h.Start(context.Background(), "conv-1")
 	if err == nil {
@@ -262,8 +262,8 @@ func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
 }
 
 func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
-	ctrl := &fakeControlServer{resumeIP: "127.0.0.1"}
-	srv := &fakeHarnessServer{failFrame: true, errMessage: "boom"}
+	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
+	srv := &mockHarnessServer{failFrame: true, errMessage: "boom"}
 	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
 
 	ctx := context.Background()
@@ -275,7 +275,7 @@ func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 	if err := exec.Queue(ctx, userText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if err := exec.Run(ctx, &fakeHandler{}); err == nil {
+	if err := exec.Run(ctx, &mockHandler{}); err == nil {
 		t.Fatal("expected error from failed harness frame, got nil")
 	} else if !strings.Contains(err.Error(), "harness failed") {
 		t.Errorf("error = %v, want it to mention 'harness failed'", err)
