@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import importlib.util
 import logging
+import os
 import sys
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -94,6 +95,37 @@ def hydrate_ax_history_to_steps(historical_messages) -> list[Step]:
         steps.append(step)
     return steps
 
+def _has_credentials(config: AgentConfig | None) -> bool:
+    """Checks if Gemini credentials are set either in env or config."""
+    # Check environment variables
+    has_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    use_vertex = (
+        os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("true", "1") or
+        os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE", "").lower() in ("true", "1")
+    )
+    if has_api_key or use_vertex:
+        return True
+        
+    # Check configuration
+    if config:
+        # Check nested gemini_config
+        gemini_config = getattr(config, "gemini_config", None)
+        if gemini_config:
+            # 1. Direct configuration
+            if getattr(gemini_config, "api_key", None) or getattr(gemini_config, "vertex", False):
+                return True
+            # 2. Per-model configuration
+            models = getattr(gemini_config, "models", None)
+            default_model = getattr(models, "default", None) if models else None
+            if default_model and getattr(default_model, "api_key", None):
+                return True
+                
+        # Check top-level config shorthands
+        if getattr(config, "api_key", None) or getattr(config, "vertex", False):
+            return True
+            
+    return False
+
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     """Implements the ax.HarnessService protocol over gRPC."""
 
@@ -157,6 +189,27 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         latest_query_text = latest_message.content.text.text
         
         # 2. Initialize or get the Antigravity Agent session
+        global loaded_config
+        if not loaded_config:
+            yield ax_pb2.HarnessResponse(
+                conversation_id=request.conversation_id,
+                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="Agent config is not loaded on the server")
+            )
+            return
+            
+        # Check credentials
+        if not _has_credentials(loaded_config):
+            yield ax_pb2.HarnessResponse(
+                conversation_id=request.conversation_id,
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error_message=(
+                        "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
+                        "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
+                    )
+                )
+            )
+            return
         try:
             agent = await self._get_or_create_agent(request.conversation_id)
             conversation = agent.conversation

@@ -21,6 +21,7 @@ from google.antigravity import LocalAgentConfig
 
 @pytest.fixture
 def mock_config(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "mock-api-key")
     cfg = LocalAgentConfig(system_instructions="Test instructions")
     import python.antigravity.harness_server as hs
     hs.loaded_config = cfg
@@ -203,3 +204,122 @@ def test_health_check():
             await server.stop(0)
 
     asyncio.run(_run())
+
+
+def test_grpc_connect_missing_credentials(mock_config, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_ENTERPRISE", raising=False)
+
+    async def _run():
+        server = grpc.aio.server()
+        servicer = AntigravityHarnessServiceServicer()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        
+        addr = f"localhost:{port}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = ax_pb2_grpc.HarnessServiceStub(channel)
+            
+            start_payload = ax_pb2.HarnessStart(
+                messages=[
+                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                ]
+            )
+            req = ax_pb2.HarnessRequest(
+                conversation_id="conv-test-credentials",
+                harness_id="antigravity",
+                start=start_payload
+            )
+            
+            async def request_iter():
+                yield req
+
+            responses = []
+            async for resp in stub.Connect(request_iter()):
+                responses.append(resp)
+                
+            assert len(responses) == 1
+            assert responses[0].WhichOneof('type') == 'end'
+            assert responses[0].end.state == ax_pb2.STATE_FAILED
+            assert "No Gemini credentials configured" in responses[0].end.error_message
+            assert "GEMINI_API_KEY" in responses[0].end.error_message
+            
+        await server.stop(0)
+
+    asyncio.run(_run())
+
+
+def test_grpc_connect_programmatic_credentials(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_ENTERPRISE", raising=False)
+
+    # Config with API key programmatically set
+    cfg = LocalAgentConfig(system_instructions="Test instructions", api_key="mock-config-api-key")
+    import python.antigravity.harness_server as hs
+    hs.loaded_config = cfg
+
+    async def _run():
+        server = grpc.aio.server()
+        servicer = AntigravityHarnessServiceServicer()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        
+        addr = f"localhost:{port}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = ax_pb2_grpc.HarnessServiceStub(channel)
+            
+            # Mock Agent so we can test programmatic config logic passes
+            class MockConversation:
+                def __init__(self):
+                    self._steps = []
+                async def chat(self, text):
+                    class MockResponse:
+                        def __init__(self):
+                            self.chunks = self._chunk_generator()
+                        async def _chunk_generator(self):
+                            from google.antigravity.types import Text
+                            yield Text(text="Passed check", step_index=0)
+                    return MockResponse()
+                    
+            class MockAgent:
+                def __init__(self, config):
+                    self.conversation = MockConversation()
+                async def __aenter__(self):
+                    return self
+                async def __aexit__(self, exc_type, exc, tb):
+                    pass
+            monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
+
+            start_payload = ax_pb2.HarnessStart(
+                messages=[
+                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                ]
+            )
+            req = ax_pb2.HarnessRequest(
+                conversation_id="conv-test-prog",
+                harness_id="antigravity",
+                start=start_payload
+            )
+            
+            async def request_iter():
+                yield req
+
+            responses = []
+            async for resp in stub.Connect(request_iter()):
+                responses.append(resp)
+                
+            assert len(responses) == 2 # Text + End
+            assert responses[0].outputs.messages[0].content.text.text == "Passed check"
+            assert responses[1].end.state == ax_pb2.STATE_COMPLETED
+            
+        await server.stop(0)
+
+    asyncio.run(_run())
+
+
