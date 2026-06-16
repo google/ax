@@ -82,7 +82,7 @@ export KO_DEFAULTPLATFORMS="linux/amd64"
 
 Wait until the templates are ready:
 ```bash
-kubectl wait --for=condition=Ready actortemplate/antigravity-template -n ax --timeout=5m
+kubectl wait --for=condition=Ready actortemplate/ax-harness-template -n ax --timeout=5m
 ```
 
 ### 2. Port-Forward Services
