@@ -26,8 +26,6 @@ import (
 const (
 	// The substrate namespace reserved for AX's built-in harnesses.
 	defaultNamespace = "ax"
-	// The default HarnessService port for non-substrate harnesses.
-	defaultPort = 50053
 	// The port for harnesses running as substrate actors. Substrate's
 	// actor networking DNATs inbound workerPodIP:80 to the actor.
 	substrateDefaultPort = 80
