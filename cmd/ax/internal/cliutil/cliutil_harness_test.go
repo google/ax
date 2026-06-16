@@ -33,9 +33,9 @@ func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
 			},
 		},
 		Harnesses: config2.HarnessesConfig{
-			Default: "ag",
-			Antigravity: []config2.AntigravityHarnessConfig{
-				{ID: "ag", Address: "localhost:50053"},
+			Antigravity: config2.AntigravityHarnessConfig{
+				Default:  true,
+				Endpoint: "localhost:50053",
 			},
 		},
 	}
@@ -50,25 +50,6 @@ func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
 	c.Close()
 }
 
-func TestNewControllerFromConfig_UnknownDefaultHarness(t *testing.T) {
-	cfg := &config2.Config{
-		Harnesses: config2.HarnessesConfig{
-			Default: "missing",
-			Antigravity: []config2.AntigravityHarnessConfig{
-				{ID: "ag", Address: "localhost:50053"},
-			},
-		},
-	}
-
-	_, err := NewControllerFromConfig(context.Background(), cfg)
-	if err == nil {
-		t.Fatal("expected error for unknown default harness, got nil")
-	}
-	if !strings.Contains(err.Error(), "missing") {
-		t.Errorf("expected error to mention %q, got: %v", "missing", err)
-	}
-}
-
 func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "1")
 
@@ -79,9 +60,8 @@ func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 			},
 		},
 		Harnesses: config2.HarnessesConfig{
-			Default: "ag",
-			Antigravity: []config2.AntigravityHarnessConfig{
-				{ID: "ag"},
+			Antigravity: config2.AntigravityHarnessConfig{
+				Default: true,
 			},
 		},
 	}

@@ -24,7 +24,5 @@ eventlog:
     filename: "eventlog/log.sqlite"
 
 harnesses:
-  default: antigravity-example
-
   antigravity:
-    - id: antigravity-example
+    default: true

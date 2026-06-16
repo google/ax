@@ -122,7 +122,5 @@ metadata:
 data:
   ax.yaml: |
     harnesses:
-      default: antigravity
-      # Built-in harness
       antigravity:
-        - id: antigravity
+        default: true

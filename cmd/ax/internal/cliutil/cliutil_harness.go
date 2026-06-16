@@ -56,14 +56,16 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 	endpoint := os.Getenv("AX_SUBSTRATE_ENDPOINT")
 
 	// Built-in harnesses.
-	for _, hc := range cfg.Harnesses.Antigravity {
-		h, err := hc.NewHarness(substrateMode, endpoint)
-		if err != nil {
-			return nil, fmt.Errorf("antigravity harness %q: %w", hc.ID, err)
-		}
-		if err := reg.RegisterHarness(hc.ID, h); err != nil {
-			return nil, fmt.Errorf("register antigravity harness %q: %w", hc.ID, err)
-		}
+	var defaultHarnessID string
+	antigravityHarness, err := cfg.Harnesses.Antigravity.NewHarness(substrateMode, endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("antigravity harness: %w", err)
+	}
+	if err := reg.RegisterHarness("antigravity", antigravityHarness); err != nil {
+		return nil, fmt.Errorf("register antigravity harness: %w", err)
+	}
+	if cfg.Harnesses.Antigravity.Default {
+		defaultHarnessID = "antigravity"
 	}
 
 	// Custom substrate harnesses.
@@ -78,16 +80,19 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 		if err := reg.RegisterHarness(sc.ID, h); err != nil {
 			return nil, fmt.Errorf("register substrate harness %q: %w", sc.ID, err)
 		}
+		if sc.Default {
+			defaultHarnessID = sc.ID
+		}
 	}
 
 	// Register the configured default harness.
-	if id := cfg.Harnesses.Default; id != "" {
-		h, err := reg.Harness(id)
+	if defaultHarnessID != "" {
+		h, err := reg.Harness(defaultHarnessID)
 		if err != nil {
-			return nil, fmt.Errorf("default harness %q not found", id)
+			return nil, fmt.Errorf("default harness %q not found", defaultHarnessID)
 		}
 		if err := reg.RegisterHarness("", h); err != nil {
-			return nil, fmt.Errorf("register default harness %q: %w", id, err)
+			return nil, fmt.Errorf("register default harness %q: %w", defaultHarnessID, err)
 		}
 	}
 
