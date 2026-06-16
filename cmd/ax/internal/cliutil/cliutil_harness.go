@@ -67,7 +67,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 		}
 		antigravityHarness = harness.NewAntigravityHarness(address)
 	} else {
-		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, os.Getenv("AX_SUBSTRATE_ENDPOINT"), "", "", 80)
+		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}

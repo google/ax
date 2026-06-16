@@ -104,8 +104,6 @@ spec:
               value: "${GEMINI_API_KEY}"
             - name: AX_SUBSTRATE
               value: "1"
-            - name: AX_SUBSTRATE_ENDPOINT
-              value: "api.ate-system.svc:443"
           volumeMounts:
             - name: ax-config
               mountPath: /etc/ax
