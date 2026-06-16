@@ -26,13 +26,9 @@ import (
 const (
 	// The substrate namespace reserved for AX's built-in harnesses.
 	defaultNamespace = "ax"
-	// The default HarnessService port for non-substrate harnesses.
-	defaultPort = 50053
 	// The port for harnesses running as substrate actors. Substrate's
 	// actor networking DNATs inbound workerPodIP:80 to the actor.
 	substrateDefaultPort = 80
-	// The Antigravity ActorTemplate name.
-	antigravityTemplate = "antigravity-template"
 )
 
 // Config represents the main configuration for the AX harness server.
@@ -63,38 +59,24 @@ type EventLogConfig struct {
 //   - Custom harnesses on substrate whose implementation and container image are
 //     provided by the user via their own ActorTemplate.
 type HarnessesConfig struct {
-	// Default is the id of the harness to serve when a request specifies no harness.
-	Default     string                     `yaml:"default,omitempty"`
-	Antigravity []AntigravityHarnessConfig `yaml:"antigravity,omitempty"`
-	Substrate   []SubstrateHarnessConfig   `yaml:"substrate,omitempty"`
+	Antigravity AntigravityHarnessConfig `yaml:"antigravity,omitempty"`
+	Substrate   []SubstrateHarnessConfig `yaml:"substrate,omitempty"`
 }
 
 // AntigravityHarnessConfig registers the built-in Antigravity harness.
 type AntigravityHarnessConfig struct {
-	ID      string `yaml:"id"`                // Unique harness identifier
-	Address string `yaml:"address,omitempty"` // HarnessService address
+	Default  bool   `yaml:"default,omitempty"`
+	Endpoint string `yaml:"endpoint,omitempty"` // HarnessService address
 }
 
 // SubstrateHarnessConfig registers a custom harness deployed on substrate
 // from a user-provided container image.
 type SubstrateHarnessConfig struct {
-	ID        string `yaml:"id"`             // Unique harness identifier
-	Namespace string `yaml:"namespace"`      // ActorTemplate namespace (user-owned, not "ax")
-	Template  string `yaml:"template"`       // ActorTemplate name
-	Port      int    `yaml:"port,omitempty"` // HarnessService port
-}
-
-// NewHarness builds the built-in Antigravity harness. In substrate mode it's deployed
-// as a substrate actor; otherwise it runs locally.
-func (c AntigravityHarnessConfig) NewHarness(substrate bool, endpoint string) (harness.Harness, error) {
-	if substrate {
-		return newSubstrateHarness(c.ID, endpoint, defaultNamespace, antigravityTemplate, substrateDefaultPort)
-	}
-	address := c.Address
-	if address == "" {
-		address = fmt.Sprintf("localhost:%d", defaultPort)
-	}
-	return harness.NewAntigravityHarness(address), nil
+	ID        string `yaml:"id"`                // Unique harness identifier
+	Namespace string `yaml:"namespace"`         // ActorTemplate namespace (user-owned, not "ax")
+	Template  string `yaml:"template"`          // ActorTemplate name
+	Port      int    `yaml:"port,omitempty"`    // HarnessService port
+	Default   bool   `yaml:"default,omitempty"` // Default harness or not
 }
 
 // NewHarness builds the custom harness. Custom harnesses always run as substrate
@@ -159,15 +141,17 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("eventlog.sqlite.filename is required")
 	}
 
-	for _, hc := range c.Harnesses.Antigravity {
-		if hc.ID == "" {
-			return fmt.Errorf("antigravity harness id is required")
-		}
+	var defaultCount int
+	if c.Harnesses.Antigravity.Default {
+		defaultCount++
 	}
 
 	for _, sc := range c.Harnesses.Substrate {
 		if sc.ID == "" {
 			return fmt.Errorf("substrate harness id is required")
+		}
+		if sc.ID == "antigravity" {
+			return fmt.Errorf("substrate harness id %q is reserved for the built-in antigravity harness", sc.ID)
 		}
 		if sc.Namespace == "" {
 			return fmt.Errorf("substrate harness %q: namespace is required", sc.ID)
@@ -178,6 +162,13 @@ func (c *Config) Validate() error {
 		if sc.Template == "" {
 			return fmt.Errorf("substrate harness %q: template is required", sc.ID)
 		}
+		if sc.Default {
+			defaultCount++
+		}
+	}
+
+	if defaultCount > 1 {
+		return fmt.Errorf("multiple harnesses marked as default")
 	}
 
 	return nil

@@ -88,7 +88,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to start harness session: %w", err)
 	}
 	defer exec.Close(ctx)
- 
+
 	if err := exec.Queue(ctx, req.Inputs...); err != nil {
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}

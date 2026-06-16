@@ -19,26 +19,6 @@ import (
 	"testing"
 )
 
-func TestAntigravityNewHarness_Local(t *testing.T) {
-	h, err := AntigravityHarnessConfig{ID: "ag"}.NewHarness(false, "")
-	if err != nil {
-		t.Fatalf("NewHarness: %v", err)
-	}
-	if h == nil {
-		t.Fatal("expected non-nil harness")
-	}
-}
-
-func TestAntigravityNewHarness_Substrate(t *testing.T) {
-	h, err := AntigravityHarnessConfig{ID: "ag"}.NewHarness(true, "api.ate-system.svc:443")
-	if err != nil {
-		t.Fatalf("NewHarness: %v", err)
-	}
-	if h == nil {
-		t.Fatal("expected non-nil harness")
-	}
-}
-
 func TestSubstrateNewHarness(t *testing.T) {
 	h, err := SubstrateHarnessConfig{ID: "c", Namespace: "team-ns", Template: "custom-template"}.NewHarness("api.ate-system.svc:443")
 	if err != nil {
@@ -53,7 +33,7 @@ func TestSubstrateNewHarness(t *testing.T) {
 func validConfig() *Config {
 	c := DefaultConfig()
 	c.Harnesses = HarnessesConfig{
-		Antigravity: []AntigravityHarnessConfig{{ID: "ag"}},
+		Antigravity: AntigravityHarnessConfig{Default: true},
 		Substrate: []SubstrateHarnessConfig{
 			{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
 		},
@@ -67,21 +47,21 @@ func TestValidate_ValidConfig(t *testing.T) {
 	}
 }
 
-func TestValidate_AntigravityIDRequired(t *testing.T) {
-	c := validConfig()
-	c.Harnesses.Antigravity[0].ID = ""
-	err := c.Validate()
-	if err == nil || !strings.Contains(err.Error(), "antigravity harness id") {
-		t.Fatalf("Validate() = %v, want antigravity id error", err)
-	}
-}
-
 func TestValidate_CustomIDRequired(t *testing.T) {
 	c := validConfig()
 	c.Harnesses.Substrate[0].ID = ""
 	err := c.Validate()
 	if err == nil || !strings.Contains(err.Error(), "substrate harness id") {
 		t.Fatalf("Validate() = %v, want substrate id error", err)
+	}
+}
+
+func TestValidate_CustomIDReserved(t *testing.T) {
+	c := validConfig()
+	c.Harnesses.Substrate[0].ID = "antigravity"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Validate() = %v, want reserved id error", err)
 	}
 }
 
@@ -109,5 +89,14 @@ func TestValidate_CustomTemplateRequired(t *testing.T) {
 	err := c.Validate()
 	if err == nil || !strings.Contains(err.Error(), "template is required") {
 		t.Fatalf("Validate() = %v, want template-required error", err)
+	}
+}
+
+func TestValidate_MultipleDefaults(t *testing.T) {
+	c := validConfig()
+	c.Harnesses.Substrate[0].Default = true
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "multiple harnesses marked as default") {
+		t.Fatalf("Validate() = %v, want multiple defaults error", err)
 	}
 }
