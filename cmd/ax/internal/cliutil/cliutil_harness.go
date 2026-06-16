@@ -84,7 +84,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 		return nil, fmt.Errorf("custom substrate harnesses require AX_SUBSTRATE=1")
 	}
 	for _, sc := range cfg.Harnesses.Substrate {
-		h, err := sc.NewHarness(endpoint)
+		h, err := sc.NewHarness("")
 		if err != nil {
 			return nil, fmt.Errorf("substrate harness %q: %w", sc.ID, err)
 		}
