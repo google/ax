@@ -39,7 +39,7 @@ spec:
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate
 metadata:
-  name: antigravity-template
+  name: ax-harness-template
   namespace: ax
 spec:
   workerPoolRef:
