@@ -41,6 +41,37 @@ function log_step() {
   echo -e "${COLOR_CYAN}[step]: ${step_name}${COLOR_RESET}"
 }
 
+# wait_with_spinner runs a blocking command while showing a simple spinner on an
+# interactive terminal, then reports "done"/"failed" and returns the command's
+# exit status.
+wait_with_spinner() {
+  local msg="$1"; shift
+  if [[ ! -t 2 ]]; then
+    "$@"
+    return $?
+  fi
+
+  local out; out="$(mktemp)"
+  "$@" >"${out}" 2>&1 &
+  local pid=$! frames='|/-\' i=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    i=$(( (i + 1) % ${#frames} ))
+    printf '\r%s %s' "${frames:${i}:1}" "${msg}" >&2
+    sleep 0.1
+  done
+
+  local status=0
+  wait "${pid}" || status=$?
+  if [[ "${status}" -eq 0 ]]; then
+    printf '\r\033[K%s... done\n' "${msg}" >&2
+  else
+    printf '\r\033[K%s... failed\n' "${msg}" >&2
+    cat "${out}" >&2
+  fi
+  rm -f "${out}"
+  return "${status}"
+}
+
 function usage() {
   echo "Usage: $0 [options]"
   echo ""
@@ -171,6 +202,35 @@ build_antigravity_image() {
   echo "${repo}@${digest}"
 }
 
+build_ateom_image() {
+  if [[ -n "${ATEOM_IMAGE:-}" ]]; then
+    echo "${ATEOM_IMAGE}"
+    return
+  fi
+  if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
+    echo "Error: KO_DOCKER_REPO environment variable must be set" >&2
+    exit 1
+  fi
+
+  # Resolve the substrate source for the version AX is pinned to in go.mod.
+  go mod download github.com/agent-substrate/substrate
+  local sub_dir ateom_ref
+  sub_dir="$(go list -m -f '{{.Dir}}' github.com/agent-substrate/substrate)"
+  if [[ -z "${sub_dir}" ]]; then
+    echo "Error: could not locate the substrate module (go list -m)." >&2
+    exit 1
+  fi
+
+  log_step "build_ateom_image (from ${sub_dir})" >&2
+  ateom_ref="$(cd "${sub_dir}" && KO_DOCKER_REPO="${KO_DOCKER_REPO}" GOFLAGS="" ko build --platform=linux/amd64 -B ./cmd/ateom-gvisor)"
+
+  if [[ "${ateom_ref}" != *@sha256:* ]]; then
+    echo "Error: ko did not return a digest-pinned ateom image (got '${ateom_ref}')." >&2
+    exit 1
+  fi
+  echo "${ateom_ref}"
+}
+
 deploy_ax_server() {
   log_step "deploy_ax_server"
 
@@ -187,15 +247,23 @@ deploy_ax_server() {
   echo "Using GCS Bucket: ${BUCKET_NAME}"
 
   # Build and push the antigravity harness image, capturing its reference.
-  local antigravity_image
+  local antigravity_image ateom_image
   antigravity_image=$(build_antigravity_image)
+  ateom_image=$(build_ateom_image)
 
   # Render template and apply with ko
   sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
       -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
       -e "s|\${ANTIGRAVITY_IMAGE}|${antigravity_image}|g" \
+      -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
       internal/manifests/ax-deployment2.yaml \
       | run_ko -f -
+
+  # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
+  log_step "wait for actortemplate/ax-harness-template to be Ready"
+  wait_with_spinner "waiting for golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
+    run_kubectl wait --for=condition=Ready actortemplate/ax-harness-template \
+    -n ax --timeout="${AX_WAIT_TIMEOUT:-5m}"
 }
 
 delete_ax_server() {
@@ -205,6 +273,7 @@ delete_ax_server() {
   sed -e "s|\${GEMINI_API_KEY}|dummy-key|g" \
       -e "s|\${BUCKET_NAME}|dummy-bucket|g" \
       -e "s|\${ANTIGRAVITY_IMAGE}|dummy-image|g" \
+      -e "s|\${ATEOM_IMAGE}|dummy-image|g" \
       internal/manifests/ax-deployment2.yaml \
       | run_kubectl delete --ignore-not-found -f -
 }

@@ -34,7 +34,7 @@ metadata:
   namespace: ax
 spec:
   replicas: 5
-  ateomImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
+  ateomImage: ${ATEOM_IMAGE}
 ---
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate

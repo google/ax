@@ -27,12 +27,16 @@ and container image are provided by AX.
 ### 1. Build and Deploy
 
 > [!NOTE]
-> Do not manually edit `internal/manifests/ax-deployment2.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${ANTIGRAVITY_IMAGE}` reference during deployment.
+> Do not manually edit `internal/manifests/ax-deployment2.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${ANTIGRAVITY_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
 
-The installation script builds two images and applies the resolved manifests to
-your cluster: the AX control-plane (Go) image, built with `ko` using the
-`harness` build tag, and the built-in **antigravity harness** image, built from
-`python/antigravity/Dockerfile` with Docker or Podman.
+The installation script builds the required images and applies the resolved
+manifests to your cluster:
+
+- the AX control-plane (Go) image, built with `ko` using the `harness` build tag;
+- the built-in **antigravity harness** image, built from
+  `python/antigravity/Dockerfile` with Docker or Podman;
+- the **ateom-gvisor** worker image, built with `ko` from the `go.mod` pinned
+  substrate module.
 
 #### Build prerequisites
 
@@ -78,11 +82,6 @@ export KO_DOCKER_REPO="gcr.io/$PROJECT_ID/ate-images"
 export KO_DEFAULTPLATFORMS="linux/amd64"
 
 ./internal/hack/install-ax.sh --deploy-ax-server
-```
-
-Wait until the templates are ready:
-```bash
-kubectl wait --for=condition=Ready actortemplate/ax-harness-template -n ax --timeout=5m
 ```
 
 ### 2. Port-Forward Services
