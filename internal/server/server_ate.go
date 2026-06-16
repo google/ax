@@ -1,4 +1,4 @@
-//go:build !harness && ate
+//go:build !harness
 
 // Copyright 2026 Google LLC
 //
@@ -29,7 +29,7 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-func createATEClient() any {
+func createATEClient() *ate.Client {
 	if os.Getenv("AX_SUBSTRATE") != "1" {
 		return nil
 	}
@@ -76,8 +76,7 @@ func suspendActor(actorID string) {
 	if client == nil {
 		return
 	}
-	c := client.(*ate.Client)
-	defer c.Close()
+	defer client.Close()
 
 	log.Printf("Automatically suspending actor %s in 50 milliseconds...", actorID)
 	time.Sleep(50 * time.Millisecond)
@@ -85,7 +84,7 @@ func suspendActor(actorID string) {
 	suspendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err := c.SuspendActor(suspendCtx, actorID); err != nil {
+	if _, err := client.SuspendActor(suspendCtx, actorID); err != nil {
 		log.Printf("Failed to automatically suspend actor %s: %v", actorID, err)
 	} else {
 		log.Printf("Successfully suspended actor %s", actorID)

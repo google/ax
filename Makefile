@@ -83,7 +83,7 @@ clean-logs:
 
 ax-image:
 	@echo "Building container image with ko..."
-	GOFLAGS="-tags=ate" ko build --base-import-paths ./cmd/ax
+	ko build --base-import-paths ./cmd/ax
 
 ax-server-image:
 	@echo "Building ax-server (harness path) container image with ko..."
@@ -91,12 +91,12 @@ ax-server-image:
 
 axepp-image:
 	@echo "Building axepp container image with ko..."
-	GOFLAGS="-tags=ate" ko build --base-import-paths ./cmd/axepp
+	ko build --base-import-paths ./cmd/axepp
 
 ax-shell-image:
 	# Used to debug ax servers within a cluster.
 	@echo "Building ax shell container image with ko using busybox..."
-	KO_DOCKER_REPO=$(KO_DOCKER_REPO)/ax-shell KO_DEFAULTBASEIMAGE=busybox:1.36 GOFLAGS="-tags=ate" ko build --base-import-paths ./cmd/ax
+	KO_DOCKER_REPO=$(KO_DOCKER_REPO)/ax-shell KO_DEFAULTBASEIMAGE=busybox:1.36 ko build --base-import-paths ./cmd/ax
 
 # Build all container images
 images: ax-image axepp-image ax-shell-image

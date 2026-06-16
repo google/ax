@@ -45,7 +45,7 @@ run_kubectl() {
 }
 
 run_ko() {
-  GOFLAGS="-tags=ate" ko apply \
+  ko apply \
     ${KUBECTL_CONTEXT:+--context=${KUBECTL_CONTEXT}} \
     "$@"
 }
