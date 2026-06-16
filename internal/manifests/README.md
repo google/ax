@@ -15,25 +15,14 @@ The target Kubernetes cluster is assumed to have
 
 ---
 
-## Harness types
+## Harnesses
 
-AX serves two kinds of harnesses:
-
-- **Built-in** (e.g. Antigravity): implementation
-  and container image are provided by AX. You configure only behavior; AX owns
-  deployment. A built-in runs **locally** or as a **SubstrATE actor** depending
-  on the `AX_SUBSTRATE` environment variable (`1` = substrate). Built-in actors
-  run in the reserved `ax` namespace.
-- **Custom** (the `substrate` config key): implementation and container image are
-  provided by you via your own `ActorTemplate`. Custom harnesses always run on
-  SubstrATE, in **your own namespace** (the `ax` namespace is reserved for
-  built-ins), and require `AX_SUBSTRATE=1`.
+AX serves built-in harnesses (e.g. Antigravity) where the implementation
+and container image are provided by AX.
 
 ---
 
 ## 🚀 Deploying to Agent Substrate
-
-This deploys the AX `harness` path: a built-in harness `WorkerPool` and `ActorTemplate` (the `antigravity` example, in the reserved `ax` namespace), a custom harness `WorkerPool` and `ActorTemplate` (the `hello-world` example, in the `custom-harness` namespace) — provisioned as isolated, warm-standby actors that are live-snapshotted on boot and instantly restored from GCS when a new conversation starts — together with an `ax-server` controller front-end (a `ReplicaSet`) in the `ax` namespace.
 
 ### 1. Build and Deploy
 
@@ -97,27 +86,21 @@ This command will:
   `$KO_DOCKER_REPO`. Both are referenced by **digest** (`repo@sha256:...`) in the
   `ActorTemplate`, which Substrate requires because a moving tag would invalidate
   the actor's live snapshots.
-- Create the `ax` namespace (AX control plane + built-in harnesses) and the
-  `custom-harness` namespace (the example custom harness).
+- Create the `ax` namespace (AX control plane + built-in harnesses).
 - Create a shared `ax-harness-workerpool` `WorkerPool` and the built-in
   `antigravity-template` `ActorTemplate` in `ax` (all built-in harnesses share
   this pool).
-- Create a shared `custom-harness-workerpool` `WorkerPool` and the
-  `hello-world-template` `ActorTemplate` in `custom-harness` (custom harnesses
-  there share this pool).
 - Create the `ax-server` `ReplicaSet` (the controller front-end) in `ax`.
 - Create the `ax-server-config` `ConfigMap` that tells the `ax-server` which
   harnesses to serve (mounted at `/etc/ax/ax.yaml`).
 
 The harness registry lives in that `ConfigMap`. It registers the built-in
 `antigravity` harness (AX-managed, in `ax`; the antigravity image built
-above) and a custom substrate harness (`hello-world`, in `custom-harness`), with
-`antigravity` marked as the default via `harnesses.default`.
+above), with `antigravity` marked as the default via `harnesses.default`.
 
 Wait until the templates are ready:
 ```bash
 kubectl wait --for=condition=Ready actortemplate/antigravity-template -n ax --timeout=5m
-kubectl wait --for=condition=Ready actortemplate/hello-world-template -n custom-harness --timeout=5m
 ```
 
 ### 2. Port-Forward Services
