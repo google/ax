@@ -80,24 +80,6 @@ export KO_DEFAULTPLATFORMS="linux/amd64"
 ./internal/hack/install-ax.sh --deploy-ax-server
 ```
 
-This command will:
-- Build the AX control-plane image with `ko` (`harness` build tag) and the
-  antigravity harness image with the detected container engine, pushing both to
-  `$KO_DOCKER_REPO`. Both are referenced by **digest** (`repo@sha256:...`) in the
-  `ActorTemplate`, which Substrate requires because a moving tag would invalidate
-  the actor's live snapshots.
-- Create the `ax` namespace (AX control plane + built-in harnesses).
-- Create a shared `ax-harness-workerpool` `WorkerPool` and the built-in
-  `antigravity-template` `ActorTemplate` in `ax` (all built-in harnesses share
-  this pool).
-- Create the `ax-server` `ReplicaSet` (the controller front-end) in `ax`.
-- Create the `ax-server-config` `ConfigMap` that tells the `ax-server` which
-  harnesses to serve (mounted at `/etc/ax/ax.yaml`).
-
-The harness registry lives in that `ConfigMap`. It registers the built-in
-`antigravity` harness (AX-managed, in `ax`; the antigravity image built
-above), with `antigravity` marked as the default via `harnesses.default`.
-
 Wait until the templates are ready:
 ```bash
 kubectl wait --for=condition=Ready actortemplate/antigravity-template -n ax --timeout=5m
