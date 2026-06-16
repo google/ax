@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/google/ax/internal/controller/executor"
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -73,22 +75,32 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
-	h, err := d.registry.Harness(req.AgentId)
-	if err != nil {
-		// Fallback to test harness
-		slog.WarnContext(ctx, "Harness not found in registry, falling back to test harness",
-			slog.String("agent_id", req.AgentId),
-			slog.String("conversation_id", req.ConversationId),
-			slog.Any("error", err),
-		)
-		h = harnesstest.New()
+	var h harness.Harness
+	if os.Getenv("AX_SUBSTRATE") == "1" {
+		sh, err := harness.NewSubstrateHarness(req.AgentId, "", "", "", 0)
+		if err != nil {
+			return fmt.Errorf("failed to create substrate harness: %w", err)
+		}
+		h = sh
+	} else {
+		var err error
+		h, err = d.registry.Harness(req.AgentId)
+		if err != nil {
+			// Fallback to test harness
+			slog.WarnContext(ctx, "Harness not found in registry, falling back to test harness",
+				slog.String("agent_id", req.AgentId),
+				slog.String("conversation_id", req.ConversationId),
+				slog.Any("error", err),
+			)
+			h = harnesstest.New()
+		}
 	}
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
 		return fmt.Errorf("failed to start harness session: %w", err)
 	}
 	defer exec.Close(ctx)
- 
+
 	if err := exec.Queue(ctx, req.Inputs...); err != nil {
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
