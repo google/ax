@@ -19,26 +19,6 @@ import (
 	"testing"
 )
 
-func TestAntigravityNewHarness_Local(t *testing.T) {
-	h, err := AntigravityHarnessConfig{Endpoint: "localhost:50053"}.NewHarness(false, "")
-	if err != nil {
-		t.Fatalf("NewHarness: %v", err)
-	}
-	if h == nil {
-		t.Fatal("expected non-nil harness")
-	}
-}
-
-func TestAntigravityNewHarness_Substrate(t *testing.T) {
-	h, err := AntigravityHarnessConfig{}.NewHarness(true, "api.ate-system.svc:443")
-	if err != nil {
-		t.Fatalf("NewHarness: %v", err)
-	}
-	if h == nil {
-		t.Fatal("expected non-nil harness")
-	}
-}
-
 func TestSubstrateNewHarness(t *testing.T) {
 	h, err := SubstrateHarnessConfig{ID: "c", Namespace: "team-ns", Template: "custom-template"}.NewHarness("api.ate-system.svc:443")
 	if err != nil {

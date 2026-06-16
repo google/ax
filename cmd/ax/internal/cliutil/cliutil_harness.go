@@ -24,7 +24,10 @@ import (
 	"github.com/google/ax/internal/config2"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/harness"
 )
+
+const antigravityHarnessID = "antigravity"
 
 // Controller is the active controller type for this build.
 type Controller = *controller2.Controller
@@ -52,20 +55,28 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 	// AX_SUBSTRATE selects how built-in harnesses run: locally (unset) or as
 	// substrate actors ("1").
 	substrateMode := os.Getenv("AX_SUBSTRATE") == "1"
-	// AX_SUBSTRATE_ENDPOINT is the control-plane endpoint for substrate server.
-	endpoint := os.Getenv("AX_SUBSTRATE_ENDPOINT")
 
 	// Built-in harnesses.
 	var defaultHarnessID string
-	antigravityHarness, err := cfg.Harnesses.Antigravity.NewHarness(substrateMode, endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("antigravity harness: %w", err)
+	var antigravityHarness harness.Harness
+	var err error
+	if !substrateMode {
+		address := cfg.Harnesses.Antigravity.Endpoint
+		if address == "" {
+			address = "127.0.0.1:50053"
+		}
+		antigravityHarness = harness.NewAntigravityHarness(address)
+	} else {
+		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, os.Getenv("AX_SUBSTRATE_ENDPOINT"), "", "", 80)
+		if err != nil {
+			return nil, fmt.Errorf("antigravity harness: %w", err)
+		}
 	}
-	if err := reg.RegisterHarness("antigravity", antigravityHarness); err != nil {
+	if err := reg.RegisterHarness(antigravityHarnessID, antigravityHarness); err != nil {
 		return nil, fmt.Errorf("register antigravity harness: %w", err)
 	}
 	if cfg.Harnesses.Antigravity.Default {
-		defaultHarnessID = "antigravity"
+		defaultHarnessID = antigravityHarnessID
 	}
 
 	// Custom substrate harnesses.
@@ -87,6 +98,10 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 
 	// Register the configured default harness.
 	if defaultHarnessID != "" {
+		h, err := reg.Harness(defaultHarnessID)
+		if err != nil {
+			return nil, fmt.Errorf("default harness %q not found", defaultHarnessID)
+		}
 		if err := reg.RegisterHarness("", h); err != nil {
 			return nil, fmt.Errorf("register default harness %q: %w", defaultHarnessID, err)
 		}

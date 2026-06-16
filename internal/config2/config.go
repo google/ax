@@ -31,8 +31,6 @@ const (
 	// The port for harnesses running as substrate actors. Substrate's
 	// actor networking DNATs inbound workerPodIP:80 to the actor.
 	substrateDefaultPort = 80
-	// The Antigravity ActorTemplate name.
-	antigravityTemplate = "antigravity-template"
 )
 
 // Config represents the main configuration for the AX harness server.
@@ -81,19 +79,6 @@ type SubstrateHarnessConfig struct {
 	Template  string `yaml:"template"`          // ActorTemplate name
 	Port      int    `yaml:"port,omitempty"`    // HarnessService port
 	Default   bool   `yaml:"default,omitempty"` // Default harness or not
-}
-
-// NewHarness builds the built-in Antigravity harness. In substrate mode it's deployed
-// as a substrate actor; otherwise it runs locally.
-func (c AntigravityHarnessConfig) NewHarness(substrate bool, endpoint string) (harness.Harness, error) {
-	if substrate {
-		return newSubstrateHarness("antigravity", endpoint, defaultNamespace, antigravityTemplate, substrateDefaultPort)
-	}
-	address := c.Endpoint
-	if address == "" {
-		address = fmt.Sprintf("localhost:%d", defaultPort)
-	}
-	return harness.NewAntigravityHarness(address), nil
 }
 
 // NewHarness builds the custom harness. Custom harnesses always run as substrate
