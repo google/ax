@@ -27,7 +27,10 @@ import (
 	"github.com/google/ax/internal/harness"
 )
 
-const antigravityHarnessID = "antigravity"
+const (
+	antigravityHarnessID         = "antigravity"
+	antigravitySubstrateTemplate = "antigravity-template" // TODO: Replace it with ax-harness-template
+)
 
 // Controller is the active controller type for this build.
 type Controller = *controller2.Controller
@@ -67,7 +70,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 		}
 		antigravityHarness = harness.NewAntigravityHarness(address)
 	} else {
-		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, os.Getenv("AX_SUBSTRATE_ENDPOINT"), "", "", 80)
+		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, os.Getenv("AX_SUBSTRATE_ENDPOINT"), "", antigravitySubstrateTemplate, 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
