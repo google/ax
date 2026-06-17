@@ -87,36 +87,6 @@ func (d *Display) DisplayInput(text string) {
 	fmt.Fprintln(d.w)
 }
 
-// displayText prints a chunk of model text response.
-func (d *Display) displayText(text string) {
-	if d.state == stateThought {
-		fmt.Fprintln(d.w) // end the thinking line
-	}
-	d.state = stateText
-	fmt.Fprint(d.w, text)
-}
-
-// displayThought prints a chunk of model thinking process.
-func (d *Display) displayThought(text string) {
-	if d.state != stateThought {
-		if d.state == stateText {
-			fmt.Fprintln(d.w)
-		}
-		fmt.Fprint(d.w, "Thinking: ")
-	}
-	d.state = stateThought
-	fmt.Fprint(d.w, text)
-}
-
-// displaySystem prints a system/error message on a new line.
-func (d *Display) displaySystem(text string) {
-	if d.state != stateNone {
-		fmt.Fprintln(d.w)
-	}
-	d.state = stateNone
-	fmt.Fprintln(d.w, text)
-}
-
 // Display prints a content block according to its type.
 func (d *Display) Display(content *proto.Content) {
 	if content == nil {
@@ -124,11 +94,18 @@ func (d *Display) Display(content *proto.Content) {
 	}
 	switch o := content.Type.(type) {
 	case *proto.Content_Text:
-		d.displayText(o.Text.Text)
+		if d.state == stateThought {
+			fmt.Fprintln(d.w) // end the thinking line
+		}
+		d.state = stateText
+		fmt.Fprint(d.w, o.Text.Text)
+
 	case *proto.Content_Confirmation:
 		// Let the confirmation prompt handle displaying the question.
+
 	case *proto.Content_ToolCall:
 		// No-op for cleaner CLI logs
+
 	case *proto.Content_ToolResult:
 		// Only print if the tool returned an error, otherwise skip
 		tr := o.ToolResult
@@ -140,17 +117,36 @@ func (d *Display) Display(content *proto.Content) {
 				}
 			}
 		}
+
 	case *proto.Content_Thought:
 		for _, summary := range o.Thought.GetSummary() {
 			if textContent := summary.GetText(); textContent != nil {
-				d.displayThought(textContent.Text)
+				if d.state != stateThought {
+					if d.state == stateText {
+						fmt.Fprintln(d.w)
+					}
+					fmt.Fprint(d.w, "Thinking: ")
+				}
+				d.state = stateThought
+				fmt.Fprint(d.w, textContent.Text)
 			}
 		}
+
 	case *proto.Content_Image, *proto.Content_Audio, *proto.Content_Video, *proto.Content_Document:
 		d.displaySystem(fmt.Sprintf("unsupported output type for display: %T", o))
+
 	default:
 		d.displaySystem(fmt.Sprintf("unknown output type: %v", o))
 	}
+}
+
+// displaySystem prints a system/error message on a new line.
+func (d *Display) displaySystem(text string) {
+	if d.state != stateNone {
+		fmt.Fprintln(d.w)
+	}
+	d.state = stateNone
+	fmt.Fprintln(d.w, text)
 }
 
 // FinishOutput completes the streaming output and shows info if provided
