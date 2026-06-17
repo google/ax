@@ -24,7 +24,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
