@@ -341,38 +341,8 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.ExecRequ
 
 func displayContents(d *internal.Display, contents []*proto.Message) {
 	for _, output := range contents {
-		content := output.GetContent()
-		if content == nil {
-			continue
-		}
-		switch o := content.Type.(type) {
-		case *proto.Content_Text:
-			d.DisplayText(o.Text.Text)
-		case *proto.Content_Confirmation:
-			// Let the confirmation prompt handle displaying the question.
-		case *proto.Content_ToolCall:
-			// No-op for cleaner CLI logs
-		case *proto.Content_ToolResult:
-			// Only print if the tool returned an error, otherwise skip
-			tr := o.ToolResult
-			if fr := tr.GetFunctionResult(); fr != nil {
-				if fr.GetResponse() != nil {
-					respMap := fr.GetResponse().AsMap()
-					if errStr, ok := respMap["error"]; ok {
-						d.DisplaySystem(fmt.Sprintf("[TOOL ERROR for %s]\n%v", fr.Name, errStr))
-					}
-				}
-			}
-		case *proto.Content_Thought:
-			for _, summary := range o.Thought.GetSummary() {
-				if textContent := summary.GetText(); textContent != nil {
-					d.DisplayThought(textContent.Text)
-				}
-			}
-		case *proto.Content_Image, *proto.Content_Audio, *proto.Content_Video, *proto.Content_Document:
-			d.DisplaySystem(fmt.Sprintf("unsupported output type for display: %T", o))
-		default:
-			d.DisplaySystem(fmt.Sprintf("unknown output type: %v", o))
+		if content := output.GetContent(); content != nil {
+			d.Display(content)
 		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/google/ax/proto"
 )
 
 const (
@@ -86,8 +87,8 @@ func (d *Display) DisplayInput(text string) {
 	fmt.Fprintln(d.w)
 }
 
-// DisplayText prints a chunk of model text response.
-func (d *Display) DisplayText(text string) {
+// displayText prints a chunk of model text response.
+func (d *Display) displayText(text string) {
 	if d.state == stateThought {
 		fmt.Fprintln(d.w) // end the thinking line
 	}
@@ -95,8 +96,8 @@ func (d *Display) DisplayText(text string) {
 	fmt.Fprint(d.w, text)
 }
 
-// DisplayThought prints a chunk of model thinking process.
-func (d *Display) DisplayThought(text string) {
+// displayThought prints a chunk of model thinking process.
+func (d *Display) displayThought(text string) {
 	if d.state != stateThought {
 		if d.state == stateText {
 			fmt.Fprintln(d.w)
@@ -107,13 +108,49 @@ func (d *Display) DisplayThought(text string) {
 	fmt.Fprint(d.w, text)
 }
 
-// DisplaySystem prints a system/error message on a new line.
-func (d *Display) DisplaySystem(text string) {
+// displaySystem prints a system/error message on a new line.
+func (d *Display) displaySystem(text string) {
 	if d.state != stateNone {
 		fmt.Fprintln(d.w)
 	}
 	d.state = stateNone
 	fmt.Fprintln(d.w, text)
+}
+
+// Display prints a content block according to its type.
+func (d *Display) Display(content *proto.Content) {
+	if content == nil {
+		return
+	}
+	switch o := content.Type.(type) {
+	case *proto.Content_Text:
+		d.displayText(o.Text.Text)
+	case *proto.Content_Confirmation:
+		// Let the confirmation prompt handle displaying the question.
+	case *proto.Content_ToolCall:
+		// No-op for cleaner CLI logs
+	case *proto.Content_ToolResult:
+		// Only print if the tool returned an error, otherwise skip
+		tr := o.ToolResult
+		if fr := tr.GetFunctionResult(); fr != nil {
+			if fr.GetResponse() != nil {
+				respMap := fr.GetResponse().AsMap()
+				if errStr, ok := respMap["error"]; ok {
+					d.displaySystem(fmt.Sprintf("[TOOL ERROR for %s]\n%v", fr.Name, errStr))
+				}
+			}
+		}
+	case *proto.Content_Thought:
+		for _, summary := range o.Thought.GetSummary() {
+			if textContent := summary.GetText(); textContent != nil {
+				d.displayThought(textContent.Text)
+			}
+		}
+	case *proto.Content_Image, *proto.Content_Audio, *proto.Content_Video, *proto.Content_Document:
+		d.displaySystem(fmt.Sprintf("unsupported output type for display: %T", o))
+	default:
+		d.displaySystem(fmt.Sprintf("unknown output type: %v", o))
+	}
 }
 
 // FinishOutput completes the streaming output and shows info if provided

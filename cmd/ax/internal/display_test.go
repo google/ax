@@ -17,17 +17,30 @@ package internal
 import (
 	"bytes"
 	"testing"
+
+	"github.com/google/ax/proto"
 )
 
 func TestDisplay_Streaming(t *testing.T) {
+	textContent := func(txt string) *proto.Content {
+		return &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: txt}}}
+	}
+	thoughtContent := func(txt string) *proto.Content {
+		return &proto.Content{Type: &proto.Content_Thought{Thought: &proto.ThoughtContent{
+			Summary: []*proto.ThoughtSummaryContent{
+				{Type: &proto.ThoughtSummaryContent_Text{Text: &proto.TextContent{Text: txt}}},
+			},
+		}}}
+	}
+
 	t.Run("consecutive text chunks are concatenated", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello ")
-		d.DisplayText("world")
-		d.DisplayText("!")
+		d.Display(textContent("Hello "))
+		d.Display(textContent("world"))
+		d.Display(textContent("!"))
 
 		got := buf.String()
 		want := "Hello world!"
@@ -41,8 +54,8 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayThought("thinking ")
-		d.DisplayThought("deeply")
+		d.Display(thoughtContent("thinking "))
+		d.Display(thoughtContent("deeply"))
 
 		got := buf.String()
 		want := "Thinking: thinking deeply"
@@ -56,8 +69,8 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayThought("thinking")
-		d.DisplayText("Hello")
+		d.Display(thoughtContent("thinking"))
+		d.Display(textContent("Hello"))
 
 		got := buf.String()
 		want := "Thinking: thinking\nHello"
@@ -71,8 +84,8 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello")
-		d.DisplayThought("thinking")
+		d.Display(textContent("Hello"))
+		d.Display(thoughtContent("thinking"))
 
 		got := buf.String()
 		want := "Hello\nThinking: thinking"
@@ -86,7 +99,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello")
+		d.Display(textContent("Hello"))
 		d.FinishOutput("")
 
 		got := buf.String()
@@ -101,7 +114,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello")
+		d.Display(textContent("Hello"))
 		d.FinishOutput("seq=1")
 
 		got := buf.String()
@@ -113,13 +126,13 @@ func TestDisplay_Streaming(t *testing.T) {
 		}
 	})
 
-	t.Run("DisplaySystem resets state and prints newline", func(t *testing.T) {
+	t.Run("displaySystem resets state and prints newline", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello")
-		d.DisplaySystem("system message")
+		d.Display(textContent("Hello"))
+		d.displaySystem("system message")
 
 		got := buf.String()
 		want := "Hello\nsystem message\n"
@@ -133,7 +146,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.DisplayText("Hello")
+		d.Display(textContent("Hello"))
 		d.DisplayInput("prompt")
 
 		got := buf.String()
