@@ -57,7 +57,7 @@ RUN --mount=type=bind,from=wheels,target=/tmp/wheels \
 # binary built in stage 1.
 COPY python/ /app/python
 COPY examples/antigravity_agent/ /app/examples/antigravity_agent
-COPY --from=build /out/ax /usr/local/bin/ax
+COPY --from=build /out/ax /ax
 
 # `from python.proto import ...` needs /app on the path; the generated stubs do
 # `from proto import ...`, which needs /app/python.
@@ -71,6 +71,6 @@ EXPOSE 80
 # Default command for local docker runs. Substrate ignores the image CMD and runs
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
-CMD ["/usr/local/bin/ax", "harness", \
-     "--agent-file", "/app/examples/antigravity_agent/agent.py", \
+CMD ["/ax", "harness", \
+     "--antigravity-agent-file", "/app/examples/antigravity_agent/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]
