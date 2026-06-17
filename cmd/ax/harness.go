@@ -30,9 +30,9 @@ import (
 )
 
 var (
-	harnessPort      int
-	harnessHost      string
-	harnessAgentFile string
+	harnessPort                 int
+	harnessHost                 string
+	harnessAntigravityAgentFile string
 )
 
 var harnessCmd = &cobra.Command{
@@ -45,7 +45,7 @@ var harnessCmd = &cobra.Command{
 func init() {
 	harnessCmd.Flags().IntVar(&harnessPort, "port", 50053, "Port for the HarnessService to listen on")
 	harnessCmd.Flags().StringVar(&harnessHost, "host", "127.0.0.1", "Host interface for the HarnessService to bind")
-	harnessCmd.Flags().StringVar(&harnessAgentFile, "agent-file", "examples/antigravity_agent/agent.py", "Path to the agent config file the Python sidecar serves")
+	harnessCmd.Flags().StringVar(&harnessAntigravityAgentFile, "antigravity-agent-file", "examples/antigravity_agent/agent.py", "Path to the agent config file the Python sidecar serves")
 	rootCmd.AddCommand(harnessCmd)
 }
 
@@ -56,7 +56,7 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	py := exec.Command("python3", "-m", "python.antigravity.harness_server",
 		"--host", harnessHost,
 		"--port", strconv.Itoa(harnessPort),
-		"--agent_file", harnessAgentFile,
+		"--agent_file", harnessAntigravityAgentFile,
 	)
 	py.Stdin = os.Stdin
 	py.Stdout = os.Stdout
