@@ -201,29 +201,8 @@ message DeleteConversationRequest {
 
 message DeleteConversationResponse {}
 
-message ForkConversationRequest {
-  // Required: The source conversation ID to fork from.
-  string src_conversation_id = 1;
-  // Optional: The sequence number to fork from.
-  // Defaults to the latest sequence if not set or set to 0.
-  int32 src_seq = 2; // TODO(jbd): Replace this with snapshot_id.
-  // Optional: The destination conversation ID.
-  // Generates a new UUID if not provided.
-  string dest_conversation_id = 3;
-}
-
-message ForkConversationResponse {
-  string conversation_id = 1; // The ID of the new conversation
-
-  // TODO(jbd): Remove conversation_id, and return error if
-  // dest_conversation_id already exists.
-}
-
 service ConversationService {
   // Deletes conversational events and all event log resources
   // for its children executions.
   rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
-
-  // Fork forks an event log from a specific conversation.
-  rpc ForkConversation(ForkConversationRequest) returns (ForkConversationResponse);
 }

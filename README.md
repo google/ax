@@ -128,8 +128,7 @@ ax exec \
 
 If the client gets disconnected, pass the last sequence it saw to
 replay the events it missed. This catches the client up; it does not
-rewind the conversation. To branch from a checkpoint, use `ax fork`
-instead.
+rewind the conversation.
 
 In this example, we catch up a client from sequence number 12:
 
@@ -281,39 +280,6 @@ ax serve
 # Start server with custom config
 ax serve --config my-config.yaml
 ```
-
-### Fork
-
-Fork an existing agentic event log from a specific checkpoint (or the latest state)
-into a new event log.
-
-```bash
-ax fork \
-    --src-conversation <id> \
-    --dest-conversation <id> \
-    [--src-seq <number>] \
-    [--server <address>]
-```
-
-Options:
-- `--src-conversation`: Source conversation ID to fork from (required)
-- `--dest-conversation`: Destination conversation ID for the new event log (required)
-- `--src-seq`: Sequence number to fork from (optional, defaults to latest). Must be a sequence that exists in the source conversation.
-- `--server`: gRPC controller server address (default: "localhost:8494")
-
-**Example:**
-
-```bash
-# Fork from the latest state into a new conversation
-ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
-        --dest-conversation e5e26e38-53a2-4f22-b1cb-ae867357df83
-
-# Fork from a specific checkpoint
-ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
-        --dest-conversation e5e26e38-53a2-4f22-b1cb-ae867357df83 \
-        --src-seq 12
-```
-
 ## Gemini Agent
 
 AX includes a built-in Gemini agent that can be used to generate text based on a given prompt. The agent is registered as `gemini` and can be triggered as a standalone agent or used from custom agent implementations.

@@ -76,38 +76,6 @@ func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[
 	return err
 }
 
-func (s *Server) ForkConversation(ctx context.Context, req *proto.ForkConversationRequest) (*proto.ForkConversationResponse, error) {
-	slog.InfoContext(ctx, "Forking conversation...",
-		slog.String("src_conversation_id", req.SrcConversationId),
-		slog.Int("src_seq", int(req.SrcSeq)),
-		slog.String("dest_conversation_id", req.DestConversationId))
-
-	if req.SrcConversationId == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "src_conversation_id is required")
-	}
-	// dest_conversation_id must be supplied by the caller: the substrate
-	// router uses it to bring up the actor for the new conversation
-	// before the request reaches this handler, so an empty value here
-	// would mean no actor was provisioned.
-	// TODO: consider relaxing this requirement.
-	if req.DestConversationId == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "dest_conversation_id is required")
-	}
-
-	inFlight, cleanup := s.markInFlight(req.DestConversationId)
-	if inFlight {
-		return nil, status.Errorf(codes.FailedPrecondition, "conversation %q is already in flight", req.DestConversationId)
-	}
-	defer cleanup()
-
-	destID, err := s.controller.Fork(ctx, req.SrcConversationId, req.SrcSeq, req.DestConversationId)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to fork conversation: %v", err)
-	}
-	go suspendActor(destID) // TODO(jbd): Move to an interceptor.
-	return &proto.ForkConversationResponse{ConversationId: destID}, nil
-}
-
 func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConversationRequest) (*proto.DeleteConversationResponse, error) {
 	slog.InfoContext(ctx, "Deleting conversation...",
 		slog.String("conversation_id", req.ConversationId))

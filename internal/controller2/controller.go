@@ -24,7 +24,6 @@ import (
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
-	"github.com/google/uuid"
 )
 
 type ExecHandler func(resp *proto.ExecResponse) error
@@ -169,64 +168,6 @@ func (d *Controller) Delete(ctx context.Context, conversationID string) error {
 	}
 
 	return d.eventLog.DeleteEvents(ctx, conversationID)
-}
-
-// Fork forks an event log from a specific conversation up to a checkpoint.
-func (d *Controller) Fork(ctx context.Context, srcConversationID string, srcSeq int32, destConversationID string) (string, error) {
-	if srcConversationID == "" {
-		return "", fmt.Errorf("src_conversation_id is required")
-	}
-	// TODO(anj-s): Check whether destination ID already exists and reject collisions.
-	if destConversationID == "" {
-		destConversationID = uuid.NewString()
-	}
-
-	events, err := d.eventLog.Events(ctx, srcConversationID)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve source events: %w", err)
-	}
-	if len(events) == 0 {
-		return "", fmt.Errorf("source conversation %s not found or has no events", srcConversationID)
-	}
-
-	// When the caller specifies srcSeq, require that it actually exists in
-	// the source event log. Without this check a typo or stale checkpoint
-	// silently degrades to "fork all events", which is misleading. Walk
-	// the events once: stop as soon as we pass the requested seq, and
-	// truncate the slice on an exact match so the copy loop below doesn't
-	// need to re-check the bound.
-	if srcSeq > 0 {
-		found := false
-		for i, ev := range events {
-			if ev.Seq == srcSeq {
-				events = events[:i+1]
-				found = true
-				break
-			}
-			if ev.Seq > srcSeq {
-				break
-			}
-		}
-		if !found {
-			return "", fmt.Errorf("src_seq %d not found in conversation %s", srcSeq, srcConversationID)
-		}
-	}
-
-	for _, ev := range events {
-		// Clone the event to update the conversation ID.
-		newEvent := &proto.ConversationEvent{
-			ConversationId: destConversationID,
-			Seq:            ev.Seq,
-			ExecId:         ev.ExecId,
-			Messages:       ev.Messages,
-			State:          ev.State,
-		}
-		if _, err := d.eventLog.Append(ctx, newEvent); err != nil {
-			return "", fmt.Errorf("failed to append forked event: %w", err)
-		}
-	}
-
-	return destConversationID, nil
 }
 
 // Registry returns the agent registry.

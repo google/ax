@@ -14,7 +14,7 @@
 // limitations under the License.
 
 // Command axepp is an Envoy External Processing (ext_authz) plugin for the ax server.
-// It intercepts Exec, DeleteConversation, and ForkConversation gRPC requests to
+// Intercepts Exec and DeleteConversation gRPC requests to
 // extract conversation IDs and safely initiate session/actor resumption.
 package main
 
@@ -144,13 +144,6 @@ func (s *authServer) Check(ctx context.Context, req *authv3.CheckRequest) (*auth
 	case "/ax.ConversationService/DeleteConversation":
 		var delReq proto.DeleteConversationRequest
 		resp, err := route(ctx, s.sc, body, &delReq, path, func() string { return delReq.GetConversationId() })
-		if err != nil {
-			slog.ErrorContext(ctx, "EPP routing failed", slog.String("path", path), slog.Any("error", err))
-		}
-		return resp, err
-	case "/ax.ConversationService/ForkConversation":
-		var forkReq proto.ForkConversationRequest
-		resp, err := route(ctx, s.sc, body, &forkReq, path, func() string { return forkReq.GetDestConversationId() })
 		if err != nil {
 			slog.ErrorContext(ctx, "EPP routing failed", slog.String("path", path), slog.Any("error", err))
 		}

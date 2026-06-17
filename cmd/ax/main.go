@@ -46,8 +46,6 @@ and run the controller server.`,
 func init() {
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(serveCmd)
-
-	rootCmd.AddCommand(forkCmd)
 }
 
 func connect(server string) (*grpc.ClientConn, error) {
