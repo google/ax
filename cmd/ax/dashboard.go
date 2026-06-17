@@ -30,20 +30,20 @@ import (
 )
 
 var (
-	monitorAddr       string
-	monitorConfigFile string
+	dashboardAddr       string
+	dashboardConfigFile string
 )
 
-var monitorCmd = &cobra.Command{
-	Use:   "monitor",
-	Short: "Start the AX Monitor Dashboard",
-	Long:  `Start a local HTTP server to monitor AX conversations and executions.`,
-	RunE:  runMonitor,
+var dashboardCmd = &cobra.Command{
+	Use:   "dashboard",
+	Short: "Start the AX Dashboard",
+	Long:  `Start a local HTTP server to display AX conversations and executions dashboard.`,
+	RunE:  runDashboard,
 }
 
 func init() {
-	monitorCmd.Flags().StringVar(&monitorAddr, "addr", "localhost:8080", "Server address to listen on")
-	monitorCmd.Flags().StringVar(&monitorConfigFile, "config", "ax.yaml", "Path to YAML configuration file")
+	dashboardCmd.Flags().StringVar(&dashboardAddr, "addr", "localhost:8080", "Server address to listen on")
+	dashboardCmd.Flags().StringVar(&dashboardConfigFile, "config", "ax.yaml", "Path to YAML configuration file")
 }
 
 type ConversationResponse struct {
@@ -54,11 +54,11 @@ type ConversationResponse struct {
 	Duration string `json:"duration"`
 }
 
-func runMonitor(cmd *cobra.Command, args []string) error {
+func runDashboard(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	cfg, err := newConfig(cmd, monitorConfigFile)
+	cfg, err := newConfig(cmd, dashboardConfigFile)
 	if err != nil {
 		return err
 	}
@@ -97,13 +97,13 @@ func runMonitor(cmd *cobra.Command, args []string) error {
 		}
 	})
 
-	listener, err := net.Listen("tcp", monitorAddr)
+	listener, err := net.Listen("tcp", dashboardAddr)
 	if err != nil {
-		return fmt.Errorf("failed to bind server to %s: %w", monitorAddr, err)
+		return fmt.Errorf("failed to bind server to %s: %w", dashboardAddr, err)
 	}
 	defer listener.Close()
 
-	slog.InfoContext(ctx, "AX Monitor Dashboard started", slog.String("url", fmt.Sprintf("http://%s", listener.Addr().String())))
+	slog.InfoContext(ctx, "AX Dashboard started", slog.String("url", fmt.Sprintf("http://%s", listener.Addr().String())))
 
 	server := &http.Server{
 		Handler: mux,

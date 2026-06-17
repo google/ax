@@ -47,7 +47,7 @@ func init() {
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(serveCmd)
 
-	rootCmd.AddCommand(monitorCmd)
+	rootCmd.AddCommand(dashboardCmd)
 }
 
 func connect(server string) (*grpc.ClientConn, error) {
