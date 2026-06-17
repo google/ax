@@ -27,20 +27,21 @@ and container image are provided by AX.
 ### 1. Build and Deploy
 
 > [!NOTE]
-> Do not manually edit `internal/manifests/ax-deployment2.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${ANTIGRAVITY_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
+> Do not manually edit `internal/manifests/ax-deployment2.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
 
 The installation script builds the required images and applies the resolved
 manifests to your cluster:
 
-- the AX control-plane (Go) image, built with `ko` using the `harness` build tag;
-- the built-in **antigravity harness** image, built from
-  `python/antigravity/Dockerfile` with Docker or Podman;
+- the comprehensive **ax** image, built from `cmd/ax/Dockerfile` with Docker or
+  Podman (the `harness`-tagged Go `ax` binary plus the Antigravity Python sidecar
+  on a Debian base). The ax-server runs `ax serve`; the harness actor runs
+  `ax harness`, which forks the sidecar;
 - the **ateom-gvisor** worker image, built with `ko` from the `go.mod` pinned
   substrate module.
 
 #### Build prerequisites
 
-The antigravity image bundles the antigravity SDK and its `localharness` binary,
+The ax image bundles the antigravity SDK and its `localharness` binary,
 installed offline from a pre-downloaded linux/amd64 wheel cache. Fetch it once
 (re-run after dependency changes):
 
@@ -55,7 +56,7 @@ installed offline from a pre-downloaded linux/amd64 wheel cache. Fetch it once
 > (override the primary index with `PIP_INDEX_URL`). Customize the cache location
 > with `WHEELS_DIR` and the interpreter with `PYTHON`.
 
-You also need a container engine to build and push the harness image. The script
+You also need a container engine to build and push the ax image. The script
 auto-detects one (preferring a **running** docker, then podman); force a choice
 with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`. The engine must
 support `--build-context` and `RUN --mount`:

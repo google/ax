@@ -55,12 +55,12 @@ spec:
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
     - name: "axharness"
-      image: ${ANTIGRAVITY_IMAGE}
+      image: ${AX_IMAGE}
       # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
-      # environment are specified here. The harness serves on port 80 because
-      # substrate DNATs workerPodIP:80.
-      command: ["python", "-m", "python.antigravity.harness_server",
-                "--agent_file", "/app/examples/antigravity_agent/agent.py",
+      # environment are specified here. `ax harness` forks the Antigravity Python
+      # sidecar, which serves on port 80 because substrate DNATs workerPodIP:80.
+      command: ["/usr/local/bin/ax", "harness",
+                "--agent-file", "/app/examples/antigravity_agent/agent.py",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
         - name: GEMINI_API_KEY
@@ -95,8 +95,8 @@ spec:
     spec:
       containers:
         - name: ax-server
-          image: ko://github.com/google/ax/cmd/ax
-          command: ["/ko-app/ax", "serve", "--config", "/etc/ax/ax.yaml"]
+          image: ${AX_IMAGE}
+          command: ["/usr/local/bin/ax", "serve", "--config", "/etc/ax/ax.yaml"]
           ports:
             - containerPort: 8494
           env:

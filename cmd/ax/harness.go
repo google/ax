@@ -12,30 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package main implements a demo HarnessService.
-// It is intended for testing purposes only and should be replaced with a real
-// implementation in production.
-// TODO(wjjclaud): Replace this file with a real harness implementation.
+// Package main: the `ax harness` command. It supervises the Antigravity Python
+// sidecar server (which serves the HarnessService and gRPC health), forking it
+// as a child process and forwarding termination signals.
 package main
 
 import (
 	"fmt"
 	"log"
-	"net"
 	"os"
+	"os/exec"
 	"os/signal"
-	"sync"
+	"strconv"
 	"syscall"
 
-	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
-	harnessPort int
+	harnessPort      int
+	harnessHost      string
+	harnessAgentFile string
 )
 
 var harnessCmd = &cobra.Command{
@@ -46,152 +43,42 @@ var harnessCmd = &cobra.Command{
 }
 
 func init() {
-	harnessCmd.Flags().IntVar(&harnessPort, "port", 50053, "The port for the gRPC HarnessService to listen on")
+	harnessCmd.Flags().IntVar(&harnessPort, "port", 50053, "Port for the HarnessService to listen on")
+	harnessCmd.Flags().StringVar(&harnessHost, "host", "127.0.0.1", "Host interface for the HarnessService to bind")
+	harnessCmd.Flags().StringVar(&harnessAgentFile, "agent-file", "examples/antigravity_agent/agent.py", "Path to the agent config file the Python sidecar serves")
 	rootCmd.AddCommand(harnessCmd)
 }
 
+// runHarness forks the Antigravity Python sidecar server, which serves the
+// HarnessService (and gRPC health) on the configured port. ax harness supervises
+// the child: it forwards termination signals and exits with the child's status.
 func runHarness(cmd *cobra.Command, args []string) error {
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", harnessPort))
-	if err != nil {
-		return fmt.Errorf("failed to listen on port :%d: %w", harnessPort, err)
+	py := exec.Command("python3", "-m", "python.antigravity.harness_server",
+		"--host", harnessHost,
+		"--port", strconv.Itoa(harnessPort),
+		"--agent_file", harnessAgentFile,
+	)
+	py.Stdin = os.Stdin
+	py.Stdout = os.Stdout
+	py.Stderr = os.Stderr
+	py.Env = os.Environ()
+
+	if err := py.Start(); err != nil {
+		return fmt.Errorf("failed to start antigravity harness server: %w", err)
 	}
+	log.Printf("forked antigravity harness server (pid %d) on %s:%d", py.Process.Pid, harnessHost, harnessPort)
 
-	// Start gRPC Server
-	grpcServer := grpc.NewServer()
-	harnessServer := NewHarnessServiceServer()
-	proto.RegisterHarnessServiceServer(grpcServer, harnessServer)
-
-	// Serve the standard gRPC health protocol.
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
-	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
-
-	// Graceful shutdown handling
+	// Forward termination signals to the child so substrate can stop the actor.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		log.Println("\nReceived shutdown signal, stopping gRPC HarnessService server gracefully...")
-		grpcServer.GracefulStop()
+		for sig := range sigChan {
+			_ = py.Process.Signal(sig)
+		}
 	}()
 
-	log.Printf("gRPC HarnessService listening on port :%d...\n", harnessPort)
-	if err := grpcServer.Serve(lis); err != nil {
-		return fmt.Errorf("failed to serve gRPC: %w", err)
+	if err := py.Wait(); err != nil {
+		return fmt.Errorf("antigravity harness server exited: %w", err)
 	}
 	return nil
-}
-
-// conversationState is the per-conversation state the stub keeps in process memory.
-// On substrate this state is preserved across turns by snapshot/suspend/resume.
-type conversationState struct {
-	turns   int
-	history []string
-}
-
-// HarnessServiceServer implements the gRPC proto.HarnessServiceServer interface.
-type HarnessServiceServer struct {
-	proto.UnimplementedHarnessServiceServer
-
-	mu            sync.Mutex
-	conversations map[string]*conversationState
-}
-
-// NewHarnessServiceServer creates a new HarnessServiceServer.
-func NewHarnessServiceServer() *HarnessServiceServer {
-	return &HarnessServiceServer{conversations: make(map[string]*conversationState)}
-}
-
-// Connect implements one HarnessService turn. It reads the initial
-// HarnessRequest{start} frame, then replies with a "hello world (turn N)"
-// frame, an echo of each input, and a recap of the inputs from prior turns,
-// terminating with HarnessEnd{STATE_COMPLETED}.
-//
-// The per-conversation turn count and input history are kept in process
-// memory and persist across turns.
-func (s *HarnessServiceServer) Connect(stream proto.HarnessService_ConnectServer) error {
-	req, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-
-	convID := req.GetConversationId()
-	if req.GetStart() == nil {
-		return stream.Send(&proto.HarnessResponse{
-			ConversationId: convID,
-			Type: &proto.HarnessResponse_End{
-				End: &proto.HarnessEnd{
-					State:        proto.State_STATE_FAILED,
-					ErrorMessage: "expected HarnessRequest{start} as the first frame",
-				},
-			},
-		})
-	}
-
-	// Collect this turn's input text(s).
-	var inputs []string
-	for _, m := range req.GetStart().GetMessages() {
-		if text := m.GetContent().GetText().GetText(); text != "" {
-			inputs = append(inputs, text)
-		}
-	}
-
-	// Update per-conversation state held in process memory.
-	s.mu.Lock()
-	st := s.conversations[convID]
-	if st == nil {
-		st = &conversationState{}
-		s.conversations[convID] = st
-	}
-	st.turns++
-	turn := st.turns
-	prior := ""
-	if len(st.history) > 0 {
-		prior = st.history[len(st.history)-1]
-	}
-	st.history = append(st.history, inputs...)
-	s.mu.Unlock()
-
-	// Reply: turn number, this turn's inputs, and the remembered prior inputs.
-	if err := stream.Send(textOutput(convID, fmt.Sprintf("hello world (turn %d)", turn))); err != nil {
-		return err
-	}
-	for _, in := range inputs {
-		if err := stream.Send(textOutput(convID, "received: "+in)); err != nil {
-			return err
-		}
-	}
-	if prior != "" {
-		if err := stream.Send(textOutput(convID, "previously you said: "+prior)); err != nil {
-			return err
-		}
-	}
-
-	return stream.Send(&proto.HarnessResponse{
-		ConversationId: convID,
-		Type: &proto.HarnessResponse_End{
-			End: &proto.HarnessEnd{State: proto.State_STATE_COMPLETED},
-		},
-	})
-}
-
-// textOutput builds a HarnessResponse carrying a single assistant text Message.
-func textOutput(convID, text string) *proto.HarnessResponse {
-	return &proto.HarnessResponse{
-		ConversationId: convID,
-		Type: &proto.HarnessResponse_Outputs{
-			Outputs: &proto.HarnessOutputs{
-				Messages: []*proto.Message{
-					{
-						Role: "assistant",
-						Content: &proto.Content{
-							Type: &proto.Content_Text{
-								Text: &proto.TextContent{Text: text},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
 }

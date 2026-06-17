@@ -20,9 +20,9 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
-# Directory holding the pre-downloaded linux/amd64 wheels used to build the
-# antigravity harness image (including the google-antigravity wheel that bundles
-# the localharness binary). Populate it with `install-ax.sh --fetch-wheels`
+# Directory holding the pre-downloaded linux/amd64 wheels baked into the ax image
+# (including the google-antigravity wheel that bundles the localharness binary).
+# Populate it with `install-ax.sh --fetch-wheels`
 # (delete the directory first to refresh from scratch). Override the location
 # with the WHEELS_DIR env var.
 WHEELS_DIR="${WHEELS_DIR:-${HOME}/.cache/ax-antigravity-wheels}"
@@ -76,20 +76,14 @@ function usage() {
   echo "Usage: $0 [options]"
   echo ""
   echo "Options:"
-  echo "  --fetch-wheels                        Download the antigravity harness wheels into WHEELS_DIR"
-  echo "  --deploy-ax-server                    Deploy AX server and components using ko"
+  echo "  --fetch-wheels                        Download the antigravity wheels into WHEELS_DIR"
+  echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components from cluster"
   echo "  -h, --help                            Show this help message"
 }
 
 run_kubectl() {
   kubectl \
-    ${KUBECTL_CONTEXT:+--context=${KUBECTL_CONTEXT}} \
-    "$@"
-}
-
-run_ko() {
-  GOFLAGS="-tags=harness" ko apply \
     ${KUBECTL_CONTEXT:+--context=${KUBECTL_CONTEXT}} \
     "$@"
 }
@@ -144,10 +138,11 @@ fetch_wheels() {
   echo "Wheel cache ready: ${WHEELS_DIR}"
 }
 
-# build_antigravity_image builds and pushes the antigravity harness image and
-# echoes its digest-pinned reference on stdout. Requires KO_DOCKER_REPO,
-# a container engine, and a populated wheel cache.
-build_antigravity_image() {
+# build_ax_image builds and pushes the comprehensive ax image (the Go ax binary
+# plus the Antigravity Python sidecar) and echoes its digest-pinned reference on
+# stdout. Requires KO_DOCKER_REPO, a container engine, and a populated wheel
+# cache.
+build_ax_image() {
   if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
     echo "Error: KO_DOCKER_REPO environment variable must be set" >&2
     exit 1
@@ -165,19 +160,31 @@ build_antigravity_image() {
   fi
 
   local repo tag image digest
-  repo="${KO_DOCKER_REPO}/ax-antigravity-harness"
+  repo="${KO_DOCKER_REPO}/ax"
   tag="$(git rev-parse --short HEAD)"
   image="${repo}:${tag}"
 
   # The cluster runs on linux/amd64 and the bundled localharness is an amd64
   # binary, so the image must be amd64 regardless of the build host.
-  log_step "build_antigravity_image -> ${image}" >&2
+  # Relabel multi-stage build step prefixes to friendlier tags matching log_step's
+  # style.
+  log_step "build_ax_image -> ${image}" >&2
   "${CONTAINER_ENGINE}" build \
     --platform linux/amd64 \
     --build-context "wheels=${WHEELS_DIR}" \
-    -f python/antigravity/Dockerfile \
+    -f cmd/ax/Dockerfile \
     -t "${image}" \
-    . >&2
+    . 2>&1 \
+    | awk -v cyan="${COLOR_CYAN}" -v reset="${COLOR_RESET}" '
+        /^\[[0-9]+\/[0-9]+\] / {
+          s = $1; gsub(/[][]/, "", s); split(s, parts, "/")
+          stage = (parts[1] == "1") ? "build" : "runtime"
+          rest = $0; sub(/^\[[0-9]+\/[0-9]+\] /, "", rest)
+          printf "%s[%s]%s %s\n", cyan, stage, reset, rest
+          fflush(); next
+        }
+        { print; fflush() }
+      ' >&2
 
   # Push the readable tag, then resolve the pushed manifest digest so the
   # ActorTemplate can reference the image by digest (snapshot-safe).
@@ -246,18 +253,18 @@ deploy_ax_server() {
 
   echo "Using GCS Bucket: ${BUCKET_NAME}"
 
-  # Build and push the antigravity harness image, capturing its reference.
-  local antigravity_image ateom_image
-  antigravity_image=$(build_antigravity_image)
+  # Build and push the images, capturing their digest-pinned references.
+  local ax_image ateom_image
+  ax_image=$(build_ax_image)
   ateom_image=$(build_ateom_image)
 
-  # Render template and apply with ko
+  # Render the manifest and apply it.
   sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
       -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
-      -e "s|\${ANTIGRAVITY_IMAGE}|${antigravity_image}|g" \
+      -e "s|\${AX_IMAGE}|${ax_image}|g" \
       -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
       internal/manifests/ax-deployment2.yaml \
-      | run_ko -f -
+      | run_kubectl apply -f -
 
   # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
   log_step "wait for actortemplate/ax-harness-template to be Ready"
@@ -272,7 +279,7 @@ delete_ax_server() {
   # Delete resources using dummy values so credentials aren't required for deletion
   sed -e "s|\${GEMINI_API_KEY}|dummy-key|g" \
       -e "s|\${BUCKET_NAME}|dummy-bucket|g" \
-      -e "s|\${ANTIGRAVITY_IMAGE}|dummy-image|g" \
+      -e "s|\${AX_IMAGE}|dummy-image|g" \
       -e "s|\${ATEOM_IMAGE}|dummy-image|g" \
       internal/manifests/ax-deployment2.yaml \
       | run_kubectl delete --ignore-not-found -f -
