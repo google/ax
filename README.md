@@ -314,30 +314,6 @@ ax fork --src-conversation 38460323-9a78-41cb-8991-022b0ff2c19c \
         --src-seq 12
 ```
 
-### Trace
-
-Visualize the trace of an agentic execution in a Web UI, directly fetching from the event log.
-
-```bash
-ax trace --conversation <id> [--addr <address>] [--config <file>]
-```
-
-This will parse the execution logs and spin up a local web server, automatically opening it in your browser.
-
-Options:
-- `--addr`: Server address to listen on (optional, defaults to "localhost:8080")
-- `--config`: Path to YAML configuration file (optional, defaults to "ax.yaml")
-
-**Examples:**
-
-```bash
-# Trace on default server localhost:8080
-ax trace --conversation 1a6e0b29-87c2-4af0-81ac-0c73bf8fa293
-
-# Trace on a custom server address and port
-ax trace --conversation 1a6e0b29-87c2-4af0-81ac-0c73bf8fa293 --addr 0.0.0.0:9090
-```
-
 ## Gemini Agent
 
 AX includes a built-in Gemini agent that can be used to generate text based on a given prompt. The agent is registered as `gemini` and can be triggered as a standalone agent or used from custom agent implementations.

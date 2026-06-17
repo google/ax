@@ -48,7 +48,6 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.AddCommand(forkCmd)
-	rootCmd.AddCommand(traceCmd)
 }
 
 func connect(server string) (*grpc.ClientConn, error) {
