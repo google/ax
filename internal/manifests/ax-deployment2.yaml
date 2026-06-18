@@ -45,7 +45,6 @@ spec:
   workerPoolRef:
     name: ax-harness-workerpool
     namespace: ax
-
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
     - name: "axharness"
