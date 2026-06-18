@@ -28,6 +28,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"time"
@@ -36,7 +37,6 @@ import (
 	"github.com/google/ax/internal/controller/executor/executortest"
 	"github.com/google/ax/internal/controller2"
 	"github.com/google/ax/internal/harness"
-	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 )
 
@@ -47,10 +47,10 @@ func main() {
 	fmt.Println("==================================================")
 
 	// -------------------------------------------------------------------------
-	// Demo 1: Runtime Fallback (No harness registered)
+	// Demo 1: Unregistered Harness (Should fail)
 	// -------------------------------------------------------------------------
-	fmt.Println("\n--- Demo 1: Runtime Fallback ---")
-	fmt.Println("Requesting 'unregistered-agent'. Should fallback to Test Harness (Hello World).")
+	fmt.Println("\n--- Demo 1: Unregistered Harness ---")
+	fmt.Println("Requesting 'unregistered-agent'. Exec should fail since no harness is registered.")
 	runDemo(ctx, "unregistered-agent", func(reg *controller2.Registry) {
 		// Do not register any harness
 	})
@@ -66,18 +66,15 @@ func main() {
 	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
 		// With the new stateful gRPC-based streaming harness, connectivity checks on the
 		// server address replace the build-time checks for local script file presence.
-		var realHarness harness.Harness
 		address := "localhost:50053"
 		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if err != nil {
-			fmt.Printf("WARNING: Antigravity harness server not active at %s, falling back to test harness: %v\n", address, err)
-			realHarness = harnesstest.New()
-		} else {
-			conn.Close()
-			fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
-			realHarness = harness.NewAntigravityHarness(address)
+			log.Fatalf("Antigravity harness server not active at %s: %v", address, err)
 		}
-		reg.RegisterHarness("antigravity", realHarness)
+		conn.Close()
+		fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
+		harness := harness.NewAntigravityHarness(address)
+		reg.RegisterHarness("antigravity", harness)
 	})
 }
 

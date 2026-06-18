@@ -16,15 +16,54 @@ package controller2
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
 	"github.com/google/ax/internal/harness"
-	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 )
+
+type fakeHarness struct{}
+
+func (f *fakeHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+	return &fakeExecution{id: "fake-exec-id"}, nil
+}
+
+type fakeExecution struct {
+	id     string
+	queued []*proto.Message
+}
+
+func (f *fakeExecution) ID() string {
+	return f.id
+}
+
+func (f *fakeExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+	f.queued = append(f.queued, msg...)
+	return nil
+}
+
+func (f *fakeExecution) Run(ctx context.Context, handler harness.Handler) error {
+	msg := &proto.Message{
+		Role: "assistant",
+		Content: &proto.Content{
+			Type: &proto.Content_Text{
+				Text: &proto.TextContent{
+					Text: "Hello world",
+				},
+			},
+		},
+	}
+	if err := handler.OnMessage(ctx, f.id, msg); err != nil {
+		return err
+	}
+	return handler.OnComplete(ctx, f.id)
+}
+
+func (f *fakeExecution) Close(ctx context.Context) error {
+	return nil
+}
 
 func TestController2_ExecHelloWorld(t *testing.T) {
 	ctx := context.Background()
@@ -32,6 +71,10 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 
 	log := &executortest.MemoryEventLog{}
 	reg := NewRegistry()
+	if err := reg.RegisterHarness("", &fakeHarness{}); err != nil {
+		t.Fatal(err)
+	}
+
 	c, err := New(ctx, Config{
 		Registry: reg,
 		EventLogBuilder: func() (executor.EventLog, error) {
@@ -127,22 +170,13 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	}
 }
 
-func TestController2_ExecAntigravityFallback(t *testing.T) {
+func TestController2_ExecWithAgentID(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
 	log := &executortest.MemoryEventLog{}
 	reg := NewRegistry()
-
-	// Build and register harness with bad path to trigger build-time fallback
-	var badHarness harness.Harness
-	scriptPath := "non-existent-script.py"
-	if _, err := os.Stat(scriptPath); err != nil {
-		badHarness = harnesstest.New() // Fallback
-	} else {
-		badHarness = harness.NewAntigravityHarness(scriptPath)
-	}
-	if err := reg.RegisterHarness("antigravity", badHarness); err != nil {
+	if err := reg.RegisterHarness("my-agent", &fakeHarness{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,11 +208,10 @@ func TestController2_ExecAntigravityFallback(t *testing.T) {
 		},
 	}
 
-	// Request "antigravity" agent
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
+		AgentId:        "my-agent",
 		Inputs:         inputs,
-		AgentId:        "antigravity",
 	}, handler)
 	if err != nil {
 		t.Fatalf("Controller2.Exec failed: %v", err)
@@ -190,16 +223,16 @@ func TestController2_ExecAntigravityFallback(t *testing.T) {
 
 	gotText := outputs[0].GetContent().GetText().GetText()
 	if gotText != "Hello world" {
-		t.Errorf("expected 'Hello world' output text response due to fallback, got %q", gotText)
+		t.Errorf("expected 'Hello world' output text response, got %q", gotText)
 	}
 }
 
-func TestController2_ExecRuntimeFallback(t *testing.T) {
+func TestController2_ExecHarnessNotFound(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
 	log := &executortest.MemoryEventLog{}
-	reg := NewRegistry() // Empty registry, will force runtime fallback for any requested agent
+	reg := NewRegistry() // Empty registry, will force error for any requested agent
 
 	c, err := New(ctx, Config{
 		Registry: reg,
@@ -212,9 +245,7 @@ func TestController2_ExecRuntimeFallback(t *testing.T) {
 	}
 	defer c.Close()
 
-	var outputs []*proto.Message
 	handler := ExecHandler(func(resp *proto.ExecResponse) error {
-		outputs = append(outputs, resp.Outputs...)
 		return nil
 	})
 
@@ -229,22 +260,12 @@ func TestController2_ExecRuntimeFallback(t *testing.T) {
 		},
 	}
 
-	// Request "antigravity" agent, which is NOT registered
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
 		Inputs:         inputs,
 		AgentId:        "antigravity",
 	}, handler)
-	if err != nil {
-		t.Fatalf("Controller2.Exec failed: %v", err)
-	}
-
-	if len(outputs) != 1 {
-		t.Fatalf("expected exactly 1 output message, got %d", len(outputs))
-	}
-
-	gotText := outputs[0].GetContent().GetText().GetText()
-	if gotText != "Hello world" {
-		t.Errorf("expected 'Hello world' output text response due to runtime fallback, got %q", gotText)
+	if err == nil {
+		t.Fatal("expected error requesting unregistered agent, got nil")
 	}
 }

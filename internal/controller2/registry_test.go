@@ -15,14 +15,21 @@
 package controller2
 
 import (
+	"context"
 	"testing"
 
-	"github.com/google/ax/internal/harness/harnesstest"
+	"github.com/google/ax/internal/harness"
 )
+
+type dummyHarness struct{}
+
+func (d *dummyHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+	return nil, nil
+}
 
 func TestRegistry_RegisterHarness(t *testing.T) {
 	r := NewRegistry()
-	h := harnesstest.New()
+	h := &dummyHarness{}
 
 	if err := r.RegisterHarness("antigravity", h); err != nil {
 		t.Fatalf("RegisterHarness(valid id): %v", err)
@@ -46,7 +53,7 @@ func TestRegistry_RegisterHarness(t *testing.T) {
 
 func TestRegistry_FindHarness(t *testing.T) {
 	r := NewRegistry()
-	h := harnesstest.New()
+	h := &dummyHarness{}
 	if err := r.RegisterHarness("antigravity", h); err != nil {
 		t.Fatalf("RegisterHarness: %v", err)
 	}

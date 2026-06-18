@@ -22,7 +22,6 @@ import (
 	"log/slog"
 
 	"github.com/google/ax/internal/controller/executor"
-	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 )
 
@@ -74,13 +73,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// Adding harness registration support temporarily.
 	h, err := d.registry.Harness(req.AgentId)
 	if err != nil {
-		// Fallback to test harness
-		slog.WarnContext(ctx, "Harness not found in registry, falling back to test harness",
-			slog.String("agent_id", req.AgentId),
-			slog.String("conversation_id", req.ConversationId),
-			slog.Any("error", err),
-		)
-		h = harnesstest.New()
+		return fmt.Errorf("failed to get harness for agent %q: %w", req.AgentId, err)
 	}
 	exec, err := h.Start(ctx, req.ConversationId)
 	if err != nil {
