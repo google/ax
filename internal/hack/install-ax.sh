@@ -117,26 +117,13 @@ build_ax_image() {
   tag="$(git rev-parse --short HEAD)"
   image="${repo}:${tag}"
 
-  # The cluster runs on linux/amd64 and the bundled localharness is an amd64
-  # binary, so the image must be amd64 regardless of the build host.
-  # Relabel multi-stage build step prefixes to friendlier tags matching log_step's
-  # style.
   log_step "build_ax_image -> ${image}" >&2
   "${CONTAINER_ENGINE}" build \
     --platform linux/amd64 \
     -f cmd/ax/Dockerfile \
     -t "${image}" \
     . 2>&1 \
-    | awk -v cyan="${COLOR_CYAN}" -v reset="${COLOR_RESET}" '
-        /^\[[0-9]+\/[0-9]+\] / {
-          s = $1; gsub(/[][]/, "", s); split(s, parts, "/")
-          stage = (parts[1] == "1") ? "build" : "deploy"
-          rest = $0; sub(/^\[[0-9]+\/[0-9]+\] /, "", rest)
-          printf "%s[%s]%s %s\n", cyan, stage, reset, rest
-          fflush(); next
-        }
-        { print; fflush() }
-      ' >&2
+    | awk '{ sub(/^\[[0-9]+\/[0-9]+\] /, ""); print; fflush() }' >&2
 
   # Push the readable tag, then resolve the pushed manifest digest so the
   # ActorTemplate can reference the image by digest (snapshot-safe).
