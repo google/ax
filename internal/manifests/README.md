@@ -66,8 +66,6 @@ sure you are logged in to `$KO_DOCKER_REPO` first.
 export PROJECT_ID="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
 export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
-export KO_DOCKER_REPO="gcr.io/$PROJECT_ID/ate-images"
-export KO_DEFAULTPLATFORMS="linux/amd64"
 
 ./internal/hack/install-ax.sh --deploy-ax-server
 ```

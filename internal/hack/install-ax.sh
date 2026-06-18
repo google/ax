@@ -20,6 +20,17 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
+if [[ -n "${PROJECT_ID:-}" ]]; then
+  export KO_DOCKER_REPO="gcr.io/${PROJECT_ID}"
+  echo "Using KO_DOCKER_REPO: ${KO_DOCKER_REPO}" >&2
+fi
+
+export KO_DEFAULTPLATFORMS="${KO_DEFAULTPLATFORMS:-linux/amd64}"
+
+
+
+
+
 # ANSI color codes for prettier output
 COLOR_CYAN='\033[1;36m'
 COLOR_RESET='\033[0m'
