@@ -20,18 +20,6 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
-# Directory holding the pre-downloaded linux/amd64 wheels baked into the ax image
-# (including the google-antigravity wheel that bundles the localharness binary).
-# Populate it with `install-ax.sh --fetch-wheels`
-# (delete the directory first to refresh from scratch). Override the location
-# with the WHEELS_DIR env var.
-WHEELS_DIR="${WHEELS_DIR:-${HOME}/.cache/ax-antigravity-wheels}"
-
-# Python interpreter used by --fetch-wheels. Any Python 3 with pip works; the
-# downloaded wheels always target the container's Python (3.13) regardless of
-# this interpreter's own version. Override with the PYTHON env var.
-PYTHON="${PYTHON:-python3}"
-
 # ANSI color codes for prettier output
 COLOR_CYAN='\033[1;36m'
 COLOR_RESET='\033[0m'
@@ -76,7 +64,6 @@ function usage() {
   echo "Usage: $0 [options]"
   echo ""
   echo "Options:"
-  echo "  --fetch-wheels                        Download the antigravity wheels into WHEELS_DIR"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components from cluster"
   echo "  -h, --help                            Show this help message"
@@ -110,38 +97,9 @@ detect_container_engine() {
   fi
 }
 
-# fetch_wheels downloads the antigravity harness wheel closure into WHEELS_DIR.
-# Resolution targets linux/amd64 + CPython 3.13 regardless of the host OS or host
-# Python.
-fetch_wheels() {
-  log_step "fetch_wheels -> ${WHEELS_DIR}"
-
-  if ! "${PYTHON}" -m pip --version >/dev/null 2>&1; then
-    echo "Error: '${PYTHON} -m pip' is not available." >&2
-    echo "Install pip or set PYTHON to an interpreter that has it." >&2
-    exit 1
-  fi
-
-  mkdir -p "${WHEELS_DIR}"
-
-  "${PYTHON}" -m pip download \
-    --only-binary=:all: \
-    --python-version 3.13 \
-    --platform manylinux_2_17_x86_64 \
-    --platform manylinux2014_x86_64 \
-    --platform manylinux_2_28_x86_64 \
-    --platform manylinux1_x86_64 \
-    --platform linux_x86_64 \
-    -r python/antigravity/requirements.txt \
-    -d "${WHEELS_DIR}"
-
-  echo "Wheel cache ready: ${WHEELS_DIR}"
-}
-
 # build_ax_image builds and pushes the comprehensive ax image (the Go ax binary
 # plus the Antigravity Python sidecar) and echoes its digest-pinned reference on
-# stdout. Requires KO_DOCKER_REPO, a container engine, and a populated wheel
-# cache.
+# stdout. Requires KO_DOCKER_REPO and a container engine.
 build_ax_image() {
   if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
     echo "Error: KO_DOCKER_REPO environment variable must be set" >&2
@@ -151,11 +109,6 @@ build_ax_image() {
   if ! command -v "${CONTAINER_ENGINE}" >/dev/null 2>&1; then
     echo "Error: container engine '${CONTAINER_ENGINE}' not found in PATH." >&2
     echo "Install it or set CONTAINER_ENGINE to an available builder." >&2
-    exit 1
-  fi
-  if [[ ! -d "${WHEELS_DIR}" ]] || [[ -z "$(ls -A "${WHEELS_DIR}" 2>/dev/null)" ]]; then
-    echo "Error: antigravity wheel cache '${WHEELS_DIR}' is missing or empty." >&2
-    echo "Run '$0 --fetch-wheels' to populate it (or set WHEELS_DIR)." >&2
     exit 1
   fi
 
@@ -171,14 +124,13 @@ build_ax_image() {
   log_step "build_ax_image -> ${image}" >&2
   "${CONTAINER_ENGINE}" build \
     --platform linux/amd64 \
-    --build-context "wheels=${WHEELS_DIR}" \
     -f cmd/ax/Dockerfile \
     -t "${image}" \
     . 2>&1 \
     | awk -v cyan="${COLOR_CYAN}" -v reset="${COLOR_RESET}" '
         /^\[[0-9]+\/[0-9]+\] / {
           s = $1; gsub(/[][]/, "", s); split(s, parts, "/")
-          stage = (parts[1] == "1") ? "build" : "runtime"
+          stage = (parts[1] == "1") ? "build" : "deploy"
           rest = $0; sub(/^\[[0-9]+\/[0-9]+\] /, "", rest)
           printf "%s[%s]%s %s\n", cyan, stage, reset, rest
           fflush(); next
@@ -302,7 +254,6 @@ done
 
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-    --fetch-wheels) fetch_wheels ;;
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
     *)

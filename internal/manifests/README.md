@@ -42,28 +42,15 @@ manifests to your cluster:
 #### Build prerequisites
 
 The ax image bundles the antigravity SDK and its `localharness` binary,
-installed offline from a pre-downloaded linux/amd64 wheel cache. Fetch it once
-(re-run after dependency changes):
-
-```bash
-./internal/hack/install-ax.sh --fetch-wheels
-```
-
-> [!NOTE]
-> `--fetch-wheels` resolves the **linux/amd64 + CPython 3.13** wheels regardless
-> of your host OS/Python, so Mac and Linux produce the same set. It uses your
-> host pip index configuration, which must reach the private antigravity registry
-> (override the primary index with `PIP_INDEX_URL`). Customize the cache location
-> with `WHEELS_DIR` and the interpreter with `PYTHON`.
+installed from PyPI at build time. The image targets the cluster's **linux/amd64**
+nodes and is built with `--platform linux/amd64`.
 
 You also need a container engine to build and push the ax image. The script
 auto-detects one (preferring a **running** docker, then podman); force a choice
-with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`. The engine must
-support `--build-context` and `RUN --mount`:
+with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
 - **Docker** — Docker Desktop (macOS; cross-builds linux/amd64 via emulation) or
-  Docker Engine (Linux; native). Requires BuildKit (default since Docker 23; on
-  older Docker use `docker buildx`). Authenticate to your registry with
+  Docker Engine (Linux; native). Authenticate to your registry with
   `gcloud auth configure-docker <region>-docker.pkg.dev` or `docker login`.
 - **Podman** — on macOS, start a machine first with `podman machine init &&
   podman machine start` (cross-builds linux/amd64 via emulation); on Linux it

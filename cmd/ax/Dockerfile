@@ -17,18 +17,9 @@
 # skills/code execution. Used by both the ax-server (`ax serve`) and the harness
 # actor (`ax harness`, which forks the Python sidecar).
 #
-# Build context: repository root. The Antigravity runtime deps -- including the
-# linux/amd64 google-antigravity wheel that bundles the linux `localharness`
-# binary -- are installed offline from a "wheels" build context, so the build
-# needs no access to the private package registry. Populate the wheel cache with
-# `internal/hack/install-ax.sh --fetch-wheels` (which also drives build/deploy).
-#
-# Requires an OCI builder that supports additional build contexts and
-# RUN --mount: docker with BuildKit (default since Docker 23; older Docker: use
-# `docker buildx build`), or podman/buildah >= 4.0. For example:
-#   docker build --platform linux/amd64 \
-#     --build-context wheels=$HOME/.cache/ax-antigravity-wheels \
-#     -f cmd/ax/Dockerfile -t <ref> . && docker push <ref>
+# Build context: repository root. The image targets the cluster's linux/amd64
+# nodes, so it is built with `--platform linux/amd64`. For a standalone build:
+#   docker build --platform linux/amd64 -f cmd/ax/Dockerfile -t <ref> . && docker push <ref>
 
 # --- Stage 1: build the ax Go binary (with the harness build tag) -------------
 FROM --platform=$BUILDPLATFORM golang:1.26 AS build
@@ -48,10 +39,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 FROM python:3.13
 WORKDIR /app
 
-# Antigravity runtime deps, installed offline from the pre-downloaded wheels.
+# Antigravity runtime deps, installed from PyPI at build time.
 COPY python/antigravity/requirements.txt /tmp/requirements.txt
-RUN --mount=type=bind,from=wheels,target=/tmp/wheels \
-    pip install --no-cache-dir --no-index --find-links=/tmp/wheels -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
