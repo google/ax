@@ -37,7 +37,6 @@ type Config struct {
 // RegistryConfig allows registring agents.
 type RegistryConfig struct {
 	RemoteAgents []RemoteAgentConfig `yaml:"remote_agents,omitempty"`
-	ColabAgents  []ColabAgentConfig  `yaml:"colab_agents,omitempty"`
 }
 
 // SubstrateConfig configures the Substrate integration.
@@ -115,21 +114,7 @@ type A2AConfig struct {
 	Stateless bool `yaml:"stateless,omitempty"` // Send full history each turn (default: stateful)
 }
 
-// ColabAgentConfig configures a Colab agent to register on startup.
-type ColabAgentConfig struct {
-	ID              string            `yaml:"id"`                          // Unique agent identifier
-	Name            string            `yaml:"name"`                        // Human-readable name
-	Description     string            `yaml:"description"`                 // Description of agent capabilities
-	LocalFile       string            `yaml:"local_file,omitempty"`        // Path to local .py or .ipynb file (uploaded to VM)
-	DriveFile       string            `yaml:"drive_file,omitempty"`        // Path to .ipynb file in Google Drive (e.g. MyDrive/notebooks/nb.ipynb)
-	Accelerator     string            `yaml:"accelerator,omitempty"`       // Accelerator type (optional), e.g. "tpu-v5e1", "gpu-A100"
-	DriveMountPath  string            `yaml:"drive_mount_path,omitempty"`  // Path to mount Google Drive (optional), default: "/content/drive"
-	Requirements    string            `yaml:"requirements,omitempty"`      // Path to requirements.txt (optional)
-	InputFlag       string            `yaml:"input_flag,omitempty"`        // Input parameter name (optional). For .py, passed as --<name>. For .ipynb, set as a variable before %run
-	OutputImage     string            `yaml:"output_image,omitempty"`      // Local path to download the output image to
-	OutputDrivePath string            `yaml:"output_drive_path,omitempty"` // Google Drive path to save converted .ipynb (e.g. MyDrive/notebooks/out.ipynb)
-	Metadata        map[string]string `yaml:"metadata,omitempty"`          // Optional metadata
-}
+
 
 type LocalAgentConfig struct {
 	ID          string            `yaml:"id"`                 // Unique agent identifier

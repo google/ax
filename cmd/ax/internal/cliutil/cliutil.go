@@ -103,12 +103,6 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		}
 	}
 
-	for _, agentCfg := range cfg.Registry.ColabAgents {
-		if err := c.Registry().RegisterColab(agentCfg); err != nil {
-			return nil, fmt.Errorf("failed to register colab agent %s: %w", agentCfg.ID, err)
-		}
-	}
-
 
 	return c, nil
 }
