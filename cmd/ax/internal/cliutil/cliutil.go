@@ -109,11 +109,6 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		}
 	}
 
-	for _, agentCfg := range cfg.Registry.SubstrateAgents {
-		if err := c.Registry().RegisterATE(ctx, cfg.ATE.Endpoint, agentCfg); err != nil {
-			return nil, fmt.Errorf("failed to register ATE agent %s: %w", agentCfg.ID, err)
-		}
-	}
 
 	return c, nil
 }

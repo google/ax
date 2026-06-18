@@ -27,22 +27,21 @@ import (
 
 // Config represents the main configuration for AX server.
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	EventLog EventLogConfig `yaml:"eventlog"`
-	Planner  PlannerConfig  `yaml:"planner,omitempty"`
-	Registry RegistryConfig `yaml:"registry,omitempty"`
-	ATE      ATEConfig      `yaml:"ate,omitempty"`
+	Server    ServerConfig    `yaml:"server"`
+	EventLog  EventLogConfig  `yaml:"eventlog"`
+	Planner   PlannerConfig   `yaml:"planner,omitempty"`
+	Registry  RegistryConfig  `yaml:"registry,omitempty"`
+	Substrate SubstrateConfig `yaml:"substrate,omitempty"`
 }
 
 // RegistryConfig allows registring agents.
 type RegistryConfig struct {
-	RemoteAgents    []RemoteAgentConfig    `yaml:"remote_agents,omitempty"`
-	ColabAgents     []ColabAgentConfig     `yaml:"colab_agents,omitempty"`
-	SubstrateAgents []SubstrateAgentConfig `yaml:"substrate_agents,omitempty"`
+	RemoteAgents []RemoteAgentConfig `yaml:"remote_agents,omitempty"`
+	ColabAgents  []ColabAgentConfig  `yaml:"colab_agents,omitempty"`
 }
 
-// ATEConfig configures the ATE integration.
-type ATEConfig struct {
+// SubstrateConfig configures the Substrate integration.
+type SubstrateConfig struct {
 	Endpoint string `yaml:"endpoint"`
 }
 
@@ -95,21 +94,6 @@ type GeminiConfig struct {
 	Temperature  float32       `json:"temperature,omitempty" yaml:"temperature,omitempty"` // 0 means use model default
 	Timeout      time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	Tools        []string      `json:"tools,omitempty" yaml:"tools,omitempty"`
-}
-
-// SubstrateAgentConfig allows registering a new agent with an ATE actor template.
-type SubstrateAgentConfig struct {
-	ID          string            `yaml:"id"`                 // Unique agent identifier
-	Name        string            `yaml:"name"`               // Human-readable name
-	Description string            `yaml:"description"`        // Description of agent capabilities
-	Port        int               `yaml:"port"`               // Port the agent is listening on
-	Namespace   string            `yaml:"namespace"`          // Namespace for actor
-	Template    string            `yaml:"template"`           // Template for actor
-	Protocol    string            `yaml:"protocol,omitempty"` // "axp" (default) or "a2a"
-	Auth        auth.Auth         `yaml:"auth,omitempty"`     // Optional auth
-	Headers     auth.Headers      `yaml:"headers,omitempty"`  // Optional headers
-	Metadata    map[string]string `yaml:"metadata,omitempty"` // Optional metadata
-	// TODO(jbd): Rename this struct before releasing.
 }
 
 // RemoteAgentConfig configures a remote agent to register on startup.
