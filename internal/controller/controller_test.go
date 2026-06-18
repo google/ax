@@ -16,9 +16,11 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/ax/internal/agent"
+	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/controller/executor"
 	"github.com/google/ax/internal/controller/executor/executortest"
 	"github.com/google/ax/proto"
@@ -504,3 +506,244 @@ func (m *mockAgentFunc) Connect(ctx context.Context, conversationID string, exec
 }
 
 func (m *mockAgentFunc) Close() error { return nil }
+
+// TestController_Exec_ExplicitAgent_SkipsPlannerBuilder verifies that when
+// the caller specifies a concrete --agent (i.e. ExecRequest.AgentId is not
+// empty and is not the planner sentinel), the controller does NOT invoke the
+// planner builder. This is what allows `ax exec --agent <name>` to run with
+// no Gemini credentials configured. See google/ax#135.
+func TestController_Exec_ExplicitAgent_SkipsPlannerBuilder(t *testing.T) {
+	ctx := context.Background()
+	cid := "test-conv-explicit-agent"
+
+	log := &executortest.MemoryEventLog{}
+
+	var ranAgent bool
+	customAgent := &mockAgentFunc{
+		connectFunc: func(_ context.Context, _, _ string, _ *proto.AgentStart, _ agent.Executor, o agent.OutputHandler) error {
+			ranAgent = true
+			return o(&proto.AgentOutputs{
+				Messages: []*proto.Message{{
+					Role:    "assistant",
+					Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi from custom"}}},
+				}},
+			})
+		},
+	}
+
+	var plannerBuilderCalls int
+	c, err := New(ctx, Config{
+		EventLogBuilder: func() (executor.EventLog, error) {
+			return log, nil
+		},
+		PlannerBuilder: func(_ context.Context, _ *Registry) (agent.Agent, error) {
+			plannerBuilderCalls++
+			return nil, errors.New("no Gemini credentials configured (test sentinel: planner builder must not be called when --agent is explicit)")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	if err := c.Registry().RegisterLocal(config.LocalAgentConfig{
+		ID:    "custom",
+		Name:  "Custom",
+		Agent: customAgent,
+	}); err != nil {
+		t.Fatalf("RegisterLocal: %v", err)
+	}
+
+	var msgs []*proto.Message
+	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+		msgs = append(msgs, resp.Outputs...)
+		return nil
+	})
+
+	err = c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		AgentId:        "custom",
+		Inputs: []*proto.Message{
+			{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hello"}}}},
+		},
+	}, handler)
+	if err != nil {
+		t.Fatalf("Exec returned unexpected error: %v", err)
+	}
+	if plannerBuilderCalls != 0 {
+		t.Fatalf("plannerBuilder was called %d time(s); want 0 (it must not be built when --agent is explicit)", plannerBuilderCalls)
+	}
+	if !ranAgent {
+		t.Fatal("custom agent was not run")
+	}
+	if len(msgs) != 1 || msgs[0].GetContent().GetText().GetText() != "hi from custom" {
+		t.Fatalf("unexpected outputs: %v", msgs)
+	}
+}
+
+// TestController_Exec_DefaultAgent_BuildsPlanner verifies that when no
+// --agent is provided, the controller still builds the planner (the existing
+// default behaviour is preserved).
+func TestController_Exec_DefaultAgent_BuildsPlanner(t *testing.T) {
+	ctx := context.Background()
+	cid := "test-conv-default-agent"
+
+	log := &executortest.MemoryEventLog{}
+	var plannerBuilderCalls int
+	c, err := New(ctx, Config{
+		EventLogBuilder: func() (executor.EventLog, error) {
+			return log, nil
+		},
+		PlannerBuilder: func(_ context.Context, _ *Registry) (agent.Agent, error) {
+			plannerBuilderCalls++
+			return &dummyAgent{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	err = c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		Inputs: []*proto.Message{
+			{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hello"}}}},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plannerBuilderCalls != 1 {
+		t.Fatalf("plannerBuilder was called %d time(s); want 1 (planner is required when --agent is not provided)", plannerBuilderCalls)
+	}
+}
+
+// TestController_Exec_ResumePlannerExec_BuildsPlanner verifies that when an
+// in-flight pending execution was originally driven by the planner, resuming
+// it builds the planner even if the new request did not specify --agent (and
+// thus would otherwise default to the planner anyway). This guards against a
+// regression where the lazy-build refactor would skip the build during
+// resumption.
+func TestController_Exec_ResumePlannerExec_BuildsPlanner(t *testing.T) {
+	ctx := context.Background()
+	cid := "test-conv-resume-planner"
+	execID := "test-exec-resume-planner"
+
+	log := &executortest.MemoryEventLog{
+		AllEvents: []*proto.ConversationEvent{
+			{
+				ConversationId: cid,
+				ExecId:         execID,
+				State:          proto.State_STATE_PENDING,
+				Seq:            1,
+			},
+		},
+		AllExecEvents: []*proto.ExecutionEvent{
+			{
+				ExecId:  execID,
+				AgentId: plannerAgentID,
+				State:   proto.State_STATE_PENDING,
+				Outputs: []*proto.Message{
+					{
+						Role: "assistant",
+						Content: &proto.Content{
+							Type: &proto.Content_Confirmation{
+								Confirmation: &proto.ConfirmationContent{Question: "?"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var plannerBuilderCalls int
+	c, err := New(ctx, Config{
+		EventLogBuilder: func() (executor.EventLog, error) { return log, nil },
+		PlannerBuilder: func(_ context.Context, _ *Registry) (agent.Agent, error) {
+			plannerBuilderCalls++
+			return &dummyAgent{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	if err := c.Exec(ctx, &proto.ExecRequest{ConversationId: cid}, func(*proto.ExecResponse) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if plannerBuilderCalls != 1 {
+		t.Fatalf("plannerBuilder was called %d time(s); want 1 (resuming a planner-driven exec must build the planner)", plannerBuilderCalls)
+	}
+}
+
+// TestController_Exec_ResumeCustomAgentExec_SkipsPlanner verifies the
+// symmetric case: when the pending execution was driven by an explicit
+// custom agent, resuming it must NOT require a planner.
+func TestController_Exec_ResumeCustomAgentExec_SkipsPlanner(t *testing.T) {
+	ctx := context.Background()
+	cid := "test-conv-resume-custom"
+	execID := "test-exec-resume-custom"
+
+	log := &executortest.MemoryEventLog{
+		AllEvents: []*proto.ConversationEvent{
+			{
+				ConversationId: cid,
+				ExecId:         execID,
+				State:          proto.State_STATE_PENDING,
+				Seq:            1,
+			},
+		},
+		AllExecEvents: []*proto.ExecutionEvent{
+			{
+				ExecId:  execID,
+				AgentId: "custom",
+				State:   proto.State_STATE_PENDING,
+				Outputs: []*proto.Message{
+					{
+						Role: "assistant",
+						Content: &proto.Content{
+							Type: &proto.Content_Confirmation{
+								Confirmation: &proto.ConfirmationContent{Question: "?"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	customAgent := &mockAgentFunc{
+		connectFunc: func(_ context.Context, _, _ string, _ *proto.AgentStart, _ agent.Executor, _ agent.OutputHandler) error {
+			return nil
+		},
+	}
+
+	var plannerBuilderCalls int
+	c, err := New(ctx, Config{
+		EventLogBuilder: func() (executor.EventLog, error) { return log, nil },
+		PlannerBuilder: func(_ context.Context, _ *Registry) (agent.Agent, error) {
+			plannerBuilderCalls++
+			return nil, errors.New("planner builder must not be called when resuming a custom-agent exec")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	if err := c.Registry().RegisterLocal(config.LocalAgentConfig{
+		ID:    "custom",
+		Agent: customAgent,
+	}); err != nil {
+		t.Fatalf("RegisterLocal: %v", err)
+	}
+
+	if err := c.Exec(ctx, &proto.ExecRequest{ConversationId: cid, AgentId: "custom"}, func(*proto.ExecResponse) error { return nil }); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if plannerBuilderCalls != 0 {
+		t.Fatalf("plannerBuilder was called %d time(s); want 0", plannerBuilderCalls)
+	}
+}

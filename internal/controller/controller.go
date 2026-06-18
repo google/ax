@@ -86,6 +86,15 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 }
 
 func (d *Controller) tryResuming(ctx context.Context, req *proto.ExecRequest, el executor.EventLog, registry map[string]agent.Agent, handler ExecHandler) (history []*proto.Message, done bool, err error) {
+	// Backwards-compatible shim: build planner eagerly if this older entry
+	// point is used (no internal callers remain after the lazy refactor).
+	return d.tryResumingLazy(ctx, req, el, registry, func() error { return nil }, handler)
+}
+
+// tryResumingLazy is like tryResuming but it asks ensurePlanner to materialize
+// the planner only if the pending execution was originally driven by the
+// planner. See Exec for context.
+func (d *Controller) tryResumingLazy(ctx context.Context, req *proto.ExecRequest, el executor.EventLog, registry map[string]agent.Agent, ensurePlanner func() error, handler ExecHandler) (history []*proto.Message, done bool, err error) {
 	events, err := el.Events(ctx, req.ConversationId)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to retrieve execution history: %w", err)
@@ -142,6 +151,13 @@ func (d *Controller) tryResuming(ctx context.Context, req *proto.ExecRequest, el
 	if pendingEvent == nil {
 		return nil, false, fmt.Errorf("failed to retrieve pending event: %w", err)
 	}
+	// The pending execution may have been driven by the planner. Make sure
+	// the planner is in the registry before dispatching to the executor.
+	if pendingEvent.AgentId == plannerAgentID {
+		if err := ensurePlanner(); err != nil {
+			return nil, false, err
+		}
+	}
 	if err := d.execute(
 		ctx,
 		req.ConversationId,
@@ -161,19 +177,18 @@ func (d *Controller) tryResuming(ctx context.Context, req *proto.ExecRequest, el
 // Exec executes a new agentic loop execution or resumes an existing one.
 // If id is empty, a UUID will be generated.
 // If the execution already exists, it will be resumed with optional new inputs.
+//
+// The Gemini-based planner is built lazily: it is only constructed when the
+// execution actually needs it (either because no explicit agent was requested,
+// or because the resumed pending execution was originally driven by the
+// planner). This means callers that pass an explicit non-planner --agent do
+// not need Gemini credentials configured. See google/ax#135.
 func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler ExecHandler) error {
 	if req.ConversationId == "" {
 		return fmt.Errorf("conversation_id is required")
 	}
 
-	planner, err := d.plannerBuilder(ctx, d.registry)
-	if err != nil {
-		return fmt.Errorf("failed to create planner: %w", err)
-	}
-
 	registry := maps.Clone(d.registry.Map())
-	registry[plannerAgentID] = planner
-
 	// TODO(lhuan): consider remove this.
 	registry[geminiAgentID] = gemini.NewGeminiAgent()
 
@@ -181,8 +196,32 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		req.AgentId = plannerAgentID
 	}
 
-	// Replay the execution history if any.
-	history, done, err := d.tryResuming(ctx, req, d.eventLog, registry, handler)
+	// plannerNeeded returns true the first time we discover we need the
+	// Gemini planner for this Exec. We resolve it lazily so that callers
+	// passing --agent <non-planner> never pay the planner construction cost
+	// (and never require Gemini credentials).
+	ensurePlanner := func() error {
+		if _, ok := registry[plannerAgentID]; ok {
+			return nil
+		}
+		planner, err := d.plannerBuilder(ctx, d.registry)
+		if err != nil {
+			return fmt.Errorf("failed to create planner: %w", err)
+		}
+		registry[plannerAgentID] = planner
+		return nil
+	}
+
+	if req.AgentId == plannerAgentID {
+		if err := ensurePlanner(); err != nil {
+			return err
+		}
+	}
+
+	// Replay the execution history if any. tryResuming may discover that a
+	// pending execution was driven by the planner; in that case it will
+	// invoke ensurePlanner before dispatching to the executor.
+	history, done, err := d.tryResumingLazy(ctx, req, d.eventLog, registry, ensurePlanner, handler)
 	if err != nil {
 		return err
 	}
