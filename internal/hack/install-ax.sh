@@ -27,10 +27,6 @@ fi
 
 export KO_DEFAULTPLATFORMS="${KO_DEFAULTPLATFORMS:-linux/amd64}"
 
-
-
-
-
 # ANSI color codes for prettier output
 COLOR_CYAN='\033[1;36m'
 COLOR_RESET='\033[0m'
