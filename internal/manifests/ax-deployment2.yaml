@@ -32,6 +32,8 @@ kind: WorkerPool
 metadata:
   name: ax-harness-workerpool
   namespace: ax
+  labels:
+    workload: ax-harness
 spec:
   replicas: 5
   ateomImage: ${ATEOM_IMAGE}
@@ -42,9 +44,9 @@ metadata:
   name: ax-harness-template
   namespace: ax
 spec:
-  workerPoolRef:
-    name: ax-harness-workerpool
-    namespace: ax
+  workerSelector:
+    matchLabels:
+      workload: ax-harness
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
     - name: "axharness"
