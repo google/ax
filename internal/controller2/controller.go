@@ -81,25 +81,23 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	}
 	defer exec.Close(ctx)
 
+	l := newLogger(d.eventLog, req.ConversationId, exec.ID(), req.AgentId)
+	if _, err := l.ResumptionState(ctx); err != nil {
+		return fmt.Errorf("failed to check resumption state: %w", err)
+	}
+
 	if err := exec.Queue(ctx, req.Inputs...); err != nil {
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 
 	// Log inputs before running harness
-	inputEvent := &proto.ConversationEvent{
-		ConversationId: req.ConversationId,
-		ExecId:         exec.ID(),
-		Messages:       req.Inputs,
-		State:          proto.State_STATE_PENDING,
-	}
-	if _, err := d.eventLog.Append(ctx, inputEvent); err != nil {
+	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
 		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 
 	hhandler := &harnessHandler{
-		conversationID: req.ConversationId,
-		eventLog:       d.eventLog,
-		execHandler:    handler,
+		logger:      l,
+		execHandler: handler,
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
 		return fmt.Errorf("harness execution turn failed: %w", err)
@@ -109,23 +107,16 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 }
 
 type harnessHandler struct {
-	conversationID string
-	eventLog       eventlog.EventLog
-	execHandler    ExecHandler
+	logger      *logger
+	execHandler ExecHandler
 }
 
 func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *proto.Message) error {
 	// Log every response received from the harness
-	event := &proto.ConversationEvent{
-		ConversationId: a.conversationID,
-		ExecId:         execID,
-		Messages:       []*proto.Message{msg},
-		State:          proto.State_STATE_PENDING,
-	}
 	// TODO(anj): The harness should send the full input sent to get this particular response.
-	if _, err := a.eventLog.Append(ctx, event); err != nil {
+	if _, err := a.logger.LogOutputs(ctx, []*proto.Message{msg}, proto.State_STATE_PENDING); err != nil {
 		slog.WarnContext(ctx, "Failed to log streamed message to event log",
-			slog.String("conversation_id", a.conversationID),
+			slog.String("conversation_id", a.logger.conversationID),
 			slog.Any("error", err),
 		)
 	}
@@ -140,14 +131,9 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 
 func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
 	// Mark the execution turn as completed in the conversation log
-	event := &proto.ConversationEvent{
-		ConversationId: a.conversationID,
-		ExecId:         execID,
-		State:          proto.State_STATE_COMPLETED,
-	}
-	if _, err := a.eventLog.Append(ctx, event); err != nil {
+	if _, err := a.logger.LogOutputs(ctx, nil, proto.State_STATE_COMPLETED); err != nil {
 		slog.WarnContext(ctx, "Failed to log completion event to event log",
-			slog.String("conversation_id", a.conversationID),
+			slog.String("conversation_id", a.logger.conversationID),
 			slog.Any("error", err),
 		)
 	}
@@ -177,4 +163,66 @@ func (d *Controller) Close() error {
 		return fmt.Errorf("failed to close registry: %w", err)
 	}
 	return nil
+}
+
+func newLogger(
+	el eventlog.EventLog,
+	conversationID string,
+	execID string,
+	harnessID string) *logger {
+	return &logger{
+		el:             el,
+		conversationID: conversationID,
+		execID:         execID,
+		harnessID:      harnessID,
+	}
+}
+
+type logger struct {
+	conversationID string
+	execID         string
+	el             eventlog.EventLog
+	harnessID      string
+}
+
+func (l *logger) ResumptionState(ctx context.Context) (proto.State, error) {
+	events, err := l.el.Events(ctx, l.conversationID)
+	if err != nil {
+		return proto.State_STATE_UNSPECIFIED, err
+	}
+
+	var state proto.State
+	for _, ev := range events {
+		if ev.HarnessId != "" && ev.HarnessId != l.harnessID {
+			return proto.State_STATE_UNSPECIFIED, fmt.Errorf("resumption not allowed: harness ID changed from %s to %s", ev.HarnessId, l.harnessID)
+		}
+		if l.execID == "" || ev.ExecId == l.execID {
+			if ev.State != proto.State_STATE_UNSPECIFIED {
+				state = ev.State
+			}
+		}
+	}
+	return state, nil
+}
+
+func (l *logger) LogInputs(ctx context.Context, inputs []*proto.Message, harnessConfig []byte) (int32, error) {
+	ev := &proto.ConversationEvent{
+		ConversationId: l.conversationID,
+		ExecId:         l.execID,
+		HarnessId:      l.harnessID,
+		HarnessConfig:  harnessConfig,
+		Messages:       inputs,
+		State:          proto.State_STATE_PENDING,
+	}
+	return l.el.Append(ctx, ev)
+}
+
+func (l *logger) LogOutputs(ctx context.Context, outputs []*proto.Message, state proto.State) (int32, error) {
+	ev := &proto.ConversationEvent{
+		ConversationId: l.conversationID,
+		ExecId:         l.execID,
+		Messages:       outputs,
+		State:          state,
+	}
+	return l.el.Append(ctx, ev)
 }

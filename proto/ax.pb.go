@@ -515,8 +515,10 @@ type ConversationEvent struct {
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Seq            int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	ExecId         string                 `protobuf:"bytes,3,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
-	Messages       []*Message             `protobuf:"bytes,4,rep,name=messages,proto3" json:"messages,omitempty"`
-	State          State                  `protobuf:"varint,5,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
+	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
+	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
+	Messages       []*Message             `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
+	State          State                  `protobuf:"varint,7,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -570,6 +572,20 @@ func (x *ConversationEvent) GetExecId() string {
 		return x.ExecId
 	}
 	return ""
+}
+
+func (x *ConversationEvent) GetHarnessId() string {
+	if x != nil {
+		return x.HarnessId
+	}
+	return ""
+}
+
+func (x *ConversationEvent) GetHarnessConfig() []byte {
+	if x != nil {
+		return x.HarnessConfig
+	}
+	return nil
 }
 
 func (x *ConversationEvent) GetMessages() []*Message {
@@ -1392,13 +1408,16 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\aMessage\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12%\n" +
 	"\acontent\x18\x02 \x01(\v2\v.ax.ContentR\acontent\x12#\n" +
-	"\rinternal_only\x18\x03 \x01(\bR\finternalOnly\"\xb1\x01\n" +
+	"\rinternal_only\x18\x03 \x01(\bR\finternalOnly\"\xf7\x01\n" +
 	"\x11ConversationEvent\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12\x17\n" +
-	"\aexec_id\x18\x03 \x01(\tR\x06execId\x12'\n" +
-	"\bmessages\x18\x04 \x03(\v2\v.ax.MessageR\bmessages\x12\x1f\n" +
-	"\x05state\x18\x05 \x01(\x0e2\t.ax.StateR\x05state\"\x8e\x02\n" +
+	"\aexec_id\x18\x03 \x01(\tR\x06execId\x12\x1d\n" +
+	"\n" +
+	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
+	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfig\x12'\n" +
+	"\bmessages\x18\x06 \x03(\v2\v.ax.MessageR\bmessages\x12\x1f\n" +
+	"\x05state\x18\a \x01(\x0e2\t.ax.StateR\x05state\"\x8e\x02\n" +
 	"\x0eExecutionEvent\x12\x17\n" +
 	"\aexec_id\x18\x01 \x01(\tR\x06execId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12!\n" +
