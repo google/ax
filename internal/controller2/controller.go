@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/ax/internal/controller/executor"
+	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/proto"
 )
 
@@ -31,13 +31,13 @@ type ExecHandler func(resp *proto.ExecResponse) error
 // It acts as a single-writer system for managing agentic loops.
 type Controller struct {
 	registry *Registry
-	eventLog executor.EventLog
+	eventLog eventlog.EventLog
 }
 
 // Config configures the controller.
 type Config struct {
 	Registry        *Registry
-	EventLogBuilder executor.EventLogBuilder
+	EventLogBuilder eventlog.EventLogBuilder
 }
 
 // New creates a new controller instance.
@@ -110,7 +110,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 
 type harnessHandler struct {
 	conversationID string
-	eventLog       executor.EventLog
+	eventLog       eventlog.EventLog
 	execHandler    ExecHandler
 }
 
@@ -160,7 +160,7 @@ func (d *Controller) Delete(ctx context.Context, conversationID string) error {
 		return fmt.Errorf("conversation_id is required")
 	}
 
-	return d.eventLog.DeleteEvents(ctx, conversationID)
+	return d.eventLog.DeleteAll(ctx, conversationID)
 }
 
 // Registry returns the agent registry.
