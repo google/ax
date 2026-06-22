@@ -231,61 +231,50 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             text_chunks = []
             thought_chunks = []
             
+            def flush_text():
+                if not text_chunks:
+                    return None
+                msg = ax_pb2.Message(
+                    role="assistant",
+                    content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
+                )
+                text_chunks.clear()
+                return ax_pb2.HarnessResponse(
+                    conversation_id=request.conversation_id,
+                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                )
+                
+            def flush_thought():
+                if not thought_chunks:
+                    return None
+                summary = [
+                    content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text="".join(thought_chunks)))
+                ]
+                thought_chunks.clear()
+                msg = ax_pb2.Message(
+                    role="model",
+                    content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
+                )
+                return ax_pb2.HarnessResponse(
+                    conversation_id=request.conversation_id,
+                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                )
+            
             async for chunk in response.chunks:
                 if isinstance(chunk, Text):
-                    if thought_chunks:
-                        # Flush accumulated thoughts as a single message
-                        summary = [
-                            content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text="".join(thought_chunks)))
-                        ]
-                        thought_chunks.clear()
-                        msg = ax_pb2.Message(
-                            role="model",
-                            content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
-                        )
-                        yield ax_pb2.HarnessResponse(
-                            conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                        )
+                    if (resp := flush_thought()):
+                        yield resp
                     text_chunks.append(chunk.text)
                 elif isinstance(chunk, Thought):
-                    if text_chunks:
-                        # Flush accumulated text as a single message
-                        msg = ax_pb2.Message(
-                            role="assistant",
-                            content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
-                        )
-                        text_chunks.clear()
-                        yield ax_pb2.HarnessResponse(
-                            conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                        )
+                    if (resp := flush_text()):
+                        yield resp
                     thought_chunks.append(chunk.text)
                 elif isinstance(chunk, ToolCall):
                     # Flush all pending text/thought buffers before dispatching the tool call
-                    if text_chunks:
-                        msg = ax_pb2.Message(
-                            role="assistant",
-                            content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
-                        )
-                        text_chunks.clear()
-                        yield ax_pb2.HarnessResponse(
-                            conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                        )
-                    if thought_chunks:
-                        summary = [
-                            content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text="".join(thought_chunks)))
-                        ]
-                        thought_chunks.clear()
-                        msg = ax_pb2.Message(
-                            role="model",
-                            content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
-                        )
-                        yield ax_pb2.HarnessResponse(
-                            conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                        )
+                    if (resp := flush_text()):
+                        yield resp
+                    if (resp := flush_thought()):
+                        yield resp
                     
                     struct_args = Struct()
                     struct_args.update(chunk.args)
@@ -307,27 +296,10 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                     )
             
             # Flush any remaining text/thought buffers after the generator loop ends
-            if text_chunks:
-                msg = ax_pb2.Message(
-                    role="assistant",
-                    content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
-                )
-                yield ax_pb2.HarnessResponse(
-                    conversation_id=request.conversation_id,
-                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                )
-            if thought_chunks:
-                summary = [
-                    content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text="".join(thought_chunks)))
-                ]
-                msg = ax_pb2.Message(
-                    role="model",
-                    content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
-                )
-                yield ax_pb2.HarnessResponse(
-                    conversation_id=request.conversation_id,
-                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                )
+            if (resp := flush_text()):
+                yield resp
+            if (resp := flush_thought()):
+                yield resp
                         
             # Yield completion end frame
             yield ax_pb2.HarnessResponse(
