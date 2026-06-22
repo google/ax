@@ -320,6 +320,17 @@ def resolve_localhost():
         print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
 
 
+def enhance_config_with_preinstalled_skills(config) -> None:
+    skills_dir = os.environ.get("SKILLS_DIR")
+    if skills_dir and os.path.isdir(skills_dir):
+        print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
+        if not hasattr(config, "skills_paths") or config.skills_paths is None:
+            config.skills_paths = []
+        config.skills_paths = list(config.skills_paths)
+        if skills_dir not in config.skills_paths:
+            config.skills_paths.append(skills_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
     parser.add_argument("--agent_file", default="examples/antigravity_agent/agent.py", help="Path to the agent config file")
@@ -333,6 +344,7 @@ def main():
     global loaded_config
     try:
         loaded_config = load_agent_config(args.agent_file)
+        enhance_config_with_preinstalled_skills(loaded_config)
     except Exception as e:
         print(f"ERROR: Failed to load agent config: {e}", file=sys.stderr)
         sys.exit(1)

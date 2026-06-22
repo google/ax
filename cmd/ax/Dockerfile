@@ -47,6 +47,8 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # binary built in stage 1.
 COPY python/ /app/python
 COPY examples/antigravity_agent/ /app/examples/antigravity_agent
+COPY examples/skills/ /app/skills/
+ENV SKILLS_DIR=/app/skills
 COPY --from=build /out/ax /ax
 
 # `from python.proto import ...` needs /app on the path; the generated stubs do
