@@ -320,7 +320,7 @@ def resolve_localhost():
         print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
 
 
-def enhance_config_with_preinstalled_skills(config) -> None:
+def enhance_config_from_env(config) -> None:
     skills_dir = os.environ.get("SKILLS_DIR")
     if skills_dir and os.path.isdir(skills_dir):
         print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
@@ -344,7 +344,7 @@ def main():
     global loaded_config
     try:
         loaded_config = load_agent_config(args.agent_file)
-        enhance_config_with_preinstalled_skills(loaded_config)
+        enhance_config_from_env(loaded_config)
     except Exception as e:
         print(f"ERROR: Failed to load agent config: {e}", file=sys.stderr)
         sys.exit(1)

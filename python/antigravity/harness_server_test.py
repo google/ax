@@ -323,8 +323,8 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
     asyncio.run(_run())
 
 
-def test_enhance_config_with_preinstalled_skills(monkeypatch, tmp_path):
-    from python.antigravity.harness_server import enhance_config_with_preinstalled_skills
+def test_enhance_config_from_env(monkeypatch, tmp_path):
+    from python.antigravity.harness_server import enhance_config_from_env
     from google.antigravity import LocalAgentConfig
     import os
     
@@ -336,7 +336,7 @@ def test_enhance_config_with_preinstalled_skills(monkeypatch, tmp_path):
     
     # Test: Using SKILLS_DIR env var
     monkeypatch.setenv("SKILLS_DIR", str(skills_dir))
-    enhance_config_with_preinstalled_skills(cfg)
+    enhance_config_from_env(cfg)
     assert str(skills_dir) in cfg.skills_paths
 
 
