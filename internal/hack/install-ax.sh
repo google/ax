@@ -121,7 +121,17 @@ build_ax_image() {
 
   local repo tag image digest
   repo="${KO_DOCKER_REPO}/ax"
-  tag="$(git rev-parse --short HEAD)"
+  
+  # Use current git branch name as tag, replacing slashes with dashes.
+  # Fall back to commit hash if in detached HEAD state.
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  if [[ "${branch}" == "HEAD" ]]; then
+    tag="$(git rev-parse --short HEAD)"
+  else
+    tag=$(echo "${branch}" | tr '/' '-')
+  fi
+  
   image="${repo}:${tag}"
 
   log_step "build_ax_image -> ${image}" >&2
