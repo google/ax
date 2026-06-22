@@ -86,6 +86,10 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to check resumption state: %w", err)
 	}
 
+	// TODO(jbd): If the state is pending, first try to resume the
+	// pending execution. If the state is COMPLETED or FAILED, start
+	// a new execution.
+
 	if err := exec.Queue(ctx, req.Inputs...); err != nil {
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
