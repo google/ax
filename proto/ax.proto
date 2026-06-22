@@ -68,8 +68,10 @@ message ConversationEvent {
   string conversation_id = 1;
   int32 seq = 2;
   string exec_id = 3;
-  repeated Message messages = 4;
-  State state = 5;
+  string harness_id = 4;
+  bytes harness_config = 5;
+  repeated Message messages = 6;
+  State state = 7;
 }
 
 // ExecutionEvent is the entry in the event log. ExecutionEvents are used
@@ -83,6 +85,9 @@ message ExecutionEvent {
   repeated Message outputs = 5;
   State state = 6;
   google.protobuf.Timestamp timestamp = 7;
+
+  // TODO(jbd): Remove agent_id and agent_config once controller2 is in place.
+  // These fields are supplied from the ConversationEvent log.
 }
 
 // HealthCheckRequest for agent health checks

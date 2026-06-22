@@ -22,7 +22,7 @@ import (
 	"os"
 
 	"github.com/google/ax/internal/config2"
-	"github.com/google/ax/internal/controller/executor"
+	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/internal/controller2"
 	"github.com/google/ax/internal/harness"
 )
@@ -109,8 +109,8 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 
 	return controller2.New(ctx, controller2.Config{
 		Registry: reg,
-		EventLogBuilder: func() (executor.EventLog, error) {
-			return executor.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
+		EventLogBuilder: func() (eventlog.EventLog, error) {
+			return eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},
 	})
 }

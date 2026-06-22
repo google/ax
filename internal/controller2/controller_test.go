@@ -18,8 +18,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/ax/internal/controller/executor"
-	"github.com/google/ax/internal/controller/executor/executortest"
+	"github.com/google/ax/internal/controller2/eventlog"
+	"github.com/google/ax/internal/controller2/eventlog/eventlogtest"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 )
@@ -69,7 +69,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
-	log := &executortest.MemoryEventLog{}
+	log := &eventlogtest.MemoryEventLog{}
 	reg := NewRegistry()
 	if err := reg.RegisterHarness("", &fakeHarness{}); err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 
 	c, err := New(ctx, Config{
 		Registry: reg,
-		EventLogBuilder: func() (executor.EventLog, error) {
+		EventLogBuilder: func() (eventlog.EventLog, error) {
 			return log, nil
 		},
 	})
@@ -174,7 +174,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
-	log := &executortest.MemoryEventLog{}
+	log := &eventlogtest.MemoryEventLog{}
 	reg := NewRegistry()
 	if err := reg.RegisterHarness("my-agent", &fakeHarness{}); err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 
 	c, err := New(ctx, Config{
 		Registry: reg,
-		EventLogBuilder: func() (executor.EventLog, error) {
+		EventLogBuilder: func() (eventlog.EventLog, error) {
 			return log, nil
 		},
 	})
@@ -231,12 +231,12 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
-	log := &executortest.MemoryEventLog{}
+	log := &eventlogtest.MemoryEventLog{}
 	reg := NewRegistry() // Empty registry, will force error for any requested agent
 
 	c, err := New(ctx, Config{
 		Registry: reg,
-		EventLogBuilder: func() (executor.EventLog, error) {
+		EventLogBuilder: func() (eventlog.EventLog, error) {
 			return log, nil
 		},
 	})

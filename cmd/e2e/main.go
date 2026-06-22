@@ -33,8 +33,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/ax/internal/controller/executor"
-	"github.com/google/ax/internal/controller/executor/executortest"
+	"github.com/google/ax/internal/controller2/eventlog"
+	"github.com/google/ax/internal/controller2/eventlog/eventlogtest"
 	"github.com/google/ax/internal/controller2"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
@@ -82,10 +82,10 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 	reg := controller2.NewRegistry()
 	setupRegistry(reg)
 
-	log := &executortest.MemoryEventLog{}
+	log := &eventlogtest.MemoryEventLog{}
 	c, err := controller2.New(ctx, controller2.Config{
 		Registry: reg,
-		EventLogBuilder: func() (executor.EventLog, error) {
+		EventLogBuilder: func() (eventlog.EventLog, error) {
 			return log, nil
 		},
 	})
