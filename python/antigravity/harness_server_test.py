@@ -323,3 +323,86 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
     asyncio.run(_run())
 
 
+def test_grpc_connect_buffering(mock_config, monkeypatch):
+    async def _run():
+        server = grpc.aio.server()
+        servicer = AntigravityHarnessServiceServicer()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        
+        addr = f"localhost:{port}"
+        async with grpc.aio.insecure_channel(addr) as channel:
+            stub = ax_pb2_grpc.HarnessServiceStub(channel)
+            
+            class MockConversation:
+                def __init__(self):
+                    self._steps = []
+                async def chat(self, text):
+                    class MockResponse:
+                        def __init__(self):
+                            self.chunks = self._chunk_generator()
+                        async def _chunk_generator(self):
+                            from google.antigravity.types import Text, Thought, ToolCall
+                            yield Thought(text="Think1", step_index=0)
+                            yield Thought(text=" Think2", step_index=0)
+                            yield ToolCall(name="tool1", args={}, id="call1")
+                            yield Text(text="Hello", step_index=0)
+                            yield Text(text=" human", step_index=0)
+                    return MockResponse()
+                    
+            class MockAgent:
+                def __init__(self, config):
+                    self.conversation = MockConversation()
+                async def __aenter__(self):
+                    return self
+                async def __aexit__(self, exc_type, exc, tb):
+                    pass
+            monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
+
+            start_payload = ax_pb2.HarnessStart(
+                messages=[
+                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                ]
+            )
+            req = ax_pb2.HarnessRequest(
+                conversation_id="conv-test-buffer",
+                harness_id="antigravity",
+                start=start_payload
+            )
+            
+            async def request_iter():
+                yield req
+
+            responses = []
+            async for resp in stub.Connect(request_iter()):
+                responses.append(resp)
+                
+            # Responses should be:
+            # 1. Thought ("Think1 Think2") - flushed when ToolCall is encountered
+            # 2. ToolCall ("tool1") - processed immediately
+            # 3. Text ("Hello human") - flushed at the end
+            # 4. End frame
+            assert len(responses) == 4
+            
+            # Assert 1st response: Thought summary text is "Think1 Think2"
+            assert responses[0].outputs.messages[0].content.WhichOneof('type') == 'thought'
+            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Think1 Think2"
+            
+            # Assert 2nd response: ToolCall name is "tool1"
+            assert responses[1].outputs.messages[0].content.WhichOneof('type') == 'tool_call'
+            assert responses[1].outputs.messages[0].content.tool_call.function_call.name == "tool1"
+            
+            # Assert 3rd response: Text content is "Hello human"
+            assert responses[2].outputs.messages[0].content.WhichOneof('type') == 'text'
+            assert responses[2].outputs.messages[0].content.text.text == "Hello human"
+            
+            # Assert 4th response: Completion end frame
+            assert responses[3].WhichOneof('type') == 'end'
+            assert responses[3].end.state == ax_pb2.STATE_COMPLETED
+            
+        await server.stop(0)
+
+    asyncio.run(_run())
+
+
