@@ -22,8 +22,8 @@ import (
 	"os"
 
 	"github.com/google/ax/internal/config2"
-	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/internal/harness"
 )
 
@@ -110,6 +110,12 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 	return controller2.New(ctx, controller2.Config{
 		Registry: reg,
 		EventLogBuilder: func() (eventlog.EventLog, error) {
+			// Use Postgres for the event log on substrate; use SQLite for local/dev use.
+			if substrateMode {
+				if dsn := os.Getenv("AX_EVENTLOG_DSN"); dsn != "" {
+					return eventlog.OpenPostgresEventLog(dsn)
+				}
+			}
 			return eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},
 	})

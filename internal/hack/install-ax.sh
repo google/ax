@@ -72,7 +72,8 @@ function usage() {
   echo ""
   echo "Options:"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
-  echo "  --delete-ax-server                    Delete AX server and components from cluster"
+  echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
+  echo "  --delete-all                          Delete AX server, components, and the event-log database"
   echo "  -h, --help                            Show this help message"
 }
 
@@ -204,11 +205,22 @@ deploy_ax_server() {
   ax_image=$(build_ax_image)
   ateom_image=$(build_ateom_image)
 
+  # Resolve a stable Postgres password for the event log.
+  local pg_password="${POSTGRES_PASSWORD:-}"
+  local existing_pw
+  existing_pw="$(run_kubectl -n ax get secret ax-eventlog-postgres -o go-template='{{.data.password | base64decode}}' 2>/dev/null || true)"
+  if [[ -n "${existing_pw}" ]]; then
+    pg_password="${existing_pw}"
+  elif [[ -z "${pg_password}" ]]; then
+    pg_password="$(openssl rand -hex 16)"
+  fi
+
   # Render the manifest and apply it.
   if ! sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
       -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
       -e "s|\${AX_IMAGE}|${ax_image}|g" \
       -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
+      -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g" \
       internal/manifests/ax-deployment2.yaml \
       | run_kubectl apply -f -; then
     echo >&2
@@ -218,6 +230,12 @@ deploy_ax_server() {
     exit 1
   fi
 
+  # Wait for the event-log Postgres to be ready before ax-server relies on it.
+  log_step "wait for statefulset/ax-eventlog-postgres to be ready"
+  wait_with_spinner "waiting for postgres (timeout ${AX_WAIT_TIMEOUT:-5m})" \
+    run_kubectl -n ax rollout status statefulset/ax-eventlog-postgres \
+    --timeout="${AX_WAIT_TIMEOUT:-5m}"
+
   # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
   log_step "wait for actortemplate/ax-harness-template to be Ready"
   wait_with_spinner "waiting for golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
@@ -225,14 +243,31 @@ deploy_ax_server() {
     -n ax --timeout="${AX_WAIT_TIMEOUT:-5m}"
 }
 
+# delete_ax_server removes the AX server and harness resources but preserves the
+# event-log database: it leaves the namespace and the Postgres subsystem
+# (Service/Secret/StatefulSet and its PVC) intact so a later redeploy reuses the
+# existing data.
 delete_ax_server() {
   log_step "delete_ax_server"
 
-  # Delete resources using dummy values so credentials aren't required for deletion
+  run_kubectl -n ax delete --ignore-not-found \
+    replicaset/ax-server \
+    configmap/ax-server-config \
+    actortemplate/ax-harness-template \
+    workerpool/ax-harness-workerpool
+}
+
+# delete_all removes everything, including the namespace, which cascades to the
+# Postgres PVC and wipes all event-log data. Dummy values keep the manifest
+# parseable without requiring real credentials for deletion.
+delete_all() {
+  log_step "delete_all"
+
   sed -e "s|\${GEMINI_API_KEY}|dummy-key|g" \
       -e "s|\${BUCKET_NAME}|dummy-bucket|g" \
       -e "s|\${AX_IMAGE}|dummy-image|g" \
       -e "s|\${ATEOM_IMAGE}|dummy-image|g" \
+      -e "s|\${POSTGRES_PASSWORD}|dummy-pass|g" \
       internal/manifests/ax-deployment2.yaml \
       | run_kubectl delete --ignore-not-found -f -
 }
@@ -256,6 +291,7 @@ while [[ "$#" -gt 0 ]]; do
   case $1 in
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
+    --delete-all) delete_all ;;
     *)
       echo "Error: unknown option: $1" >&2
       echo ""

@@ -120,10 +120,17 @@ The weather in New York is sunny with a temperature of 25 degrees Celsius (77 de
 
 ## 🧹 How to Uninstall
 
-To remove AX resources from your cluster, run:
+To remove the AX server and its components while **preserving** the event-log
+database (so a later redeploy can reuse the data), run:
 
 ```bash
 ./internal/hack/install-ax.sh --delete-ax-server
+```
+
+To remove **everything**, including the event-log database, run:
+
+```bash
+./internal/hack/install-ax.sh --delete-all
 ```
 
 ---
