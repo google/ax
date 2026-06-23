@@ -27,13 +27,6 @@ import (
 // PostgreSQL implementations.
 type sqlEventLog struct {
 	db *sql.DB
-
-	// lockConversation guards the read-modify-write in Append.
-	// - SQLite leaves this nil. It is single-writer and opens transactions with
-	//   BEGIN IMMEDIATE (via _txlock=immediate), so no application-level lock is needed.
-	// - PostgreSQL allows concurrent writers, so it sets a transaction-scoped
-	//   advisory lock keyed on the conversation ID.
-	lockConversation func(ctx context.Context, tx *sql.Tx, conversationID string) error
 }
 
 // Append serializes the event to JSON and inserts it into the database.
@@ -46,11 +39,6 @@ func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent
 
 	seq := event.Seq
 	if seq == 0 {
-		if l.lockConversation != nil {
-			if err := l.lockConversation(ctx, tx, event.ConversationId); err != nil {
-				return 0, fmt.Errorf("eventlog: lock conversation: %w", err)
-			}
-		}
 		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq), 0) + 1 FROM conversation_log WHERE conversation_id = $1", event.ConversationId).Scan(&seq); err != nil {
 			return 0, fmt.Errorf("eventlog: compute seq: %w", err)
 		}

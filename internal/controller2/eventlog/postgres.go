@@ -24,7 +24,8 @@ import (
 )
 
 // OpenPostgresEventLog connects to the PostgreSQL database described by dsn and
-// initializes the event log schema. It is safe for concurrent use.
+// initializes the event log schema. Caller is responsible to ensure it is safe
+// for concurrent use.
 func OpenPostgresEventLog(dsn string) (EventLog, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -67,13 +68,5 @@ func OpenPostgresEventLog(dsn string) (EventLog, error) {
 		return nil, fmt.Errorf("postgres_eventlog: create index exec_id: %w", err)
 	}
 
-	return &sqlEventLog{db: db, lockConversation: pgAdvisoryLock}, nil
-}
-
-// pgAdvisoryLock takes a transaction-scoped advisory lock keyed on the
-// conversation ID. The lock is released automatically when the transaction
-// commits or rolls back.
-func pgAdvisoryLock(ctx context.Context, tx *sql.Tx, conversationID string) error {
-	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtext($1))", conversationID)
-	return err
+	return &sqlEventLog{db: db}, nil
 }

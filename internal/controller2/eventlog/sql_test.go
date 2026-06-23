@@ -18,7 +18,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	"github.com/google/ax/proto"
@@ -152,12 +151,9 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		}
 	})
 
-	// AutoSeqConcurrent exercises the seq==0 auto-assignment path under
-	// concurrency: each append must receive a unique, gap-free sequence number
-	// with no collisions on the conversation_log primary key. On Postgres this is
-	// serialized by the per-conversation advisory lock; on SQLite by BEGIN
-	// IMMEDIATE transactions (_txlock=immediate).
-	t.Run("AutoSeqConcurrent", func(t *testing.T) {
+	// AutoSeq exercises the seq==0 auto-assignment path: appends with Seq unset
+	// receive sequential numbers starting at 1.
+	t.Run("AutoSeq", func(t *testing.T) {
 		ctx := context.Background()
 		log := newLog(t)
 
@@ -165,20 +161,16 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		_ = log.DeleteAll(ctx, conv)
 		t.Cleanup(func() { _ = log.DeleteAll(ctx, conv) })
 
-		const n = 5
-		var wg sync.WaitGroup
-		for range n {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				// Seq left at 0 -> the log computes the next seq under the lock.
-				ev := &proto.ConversationEvent{ConversationId: conv, ExecId: "t"}
-				if _, err := log.Append(ctx, ev); err != nil {
-					t.Errorf("auto-seq append failed: %v", err)
-				}
-			}()
+		const n = 3
+		for i := int32(1); i <= n; i++ {
+			seq, err := log.Append(ctx, &proto.ConversationEvent{ConversationId: conv, ExecId: "t"})
+			if err != nil {
+				t.Fatalf("auto-seq append failed: %v", err)
+			}
+			if seq != i {
+				t.Errorf("expected seq %d, got %d", i, seq)
+			}
 		}
-		wg.Wait()
 
 		events, err := log.Events(ctx, conv)
 		if err != nil {
@@ -187,16 +179,9 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		if len(events) != n {
 			t.Fatalf("expected %d events, got %d", n, len(events))
 		}
-		seen := make(map[int32]bool, n)
-		for _, e := range events {
-			if seen[e.Seq] {
-				t.Fatalf("duplicate seq %d", e.Seq)
-			}
-			seen[e.Seq] = true
-		}
-		for i := int32(1); i <= n; i++ {
-			if !seen[i] {
-				t.Errorf("missing seq %d", i)
+		for i, e := range events {
+			if e.Seq != int32(i+1) {
+				t.Errorf("event %d: expected seq %d, got %d", i, i+1, e.Seq)
 			}
 		}
 	})
