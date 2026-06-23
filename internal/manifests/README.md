@@ -13,12 +13,25 @@ Substrate.
 The target Kubernetes cluster is assumed to have
 [Agent Substrate](https://github.com/agent-substrate/substrate) installed.
 
----
+### Substrate compatibility
 
-## Harnesses
+AX pins [Agent Substrate](https://github.com/agent-substrate/substrate) in
+`go.mod`, and the **ateom** worker image is built from that pinned version. The
+cluster's substrate **CRDs and control plane** must be compatible with the
+manifest AX applies.
 
-AX serves built-in harnesses (e.g. Antigravity) where the implementation
-and container image are provided by AX.
+When installing substrate, keep three things aligned: the ax `go.mod` pin = your
+local substrate checkout = the cluster's installed substrate.
+
+```bash
+# Get AX's pinned substrate commit:
+commit=$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')
+echo "$commit"   # e.g. fe93d160a1df
+
+# Check it out on a normal branch in your substrate clone (avoids a detached HEAD):
+git -C <substrate> fetch origin
+git -C <substrate> switch -C ax-pinned "$commit"
+```
 
 ---
 
@@ -50,15 +63,21 @@ auto-detects one (preferring a **running** docker, then podman); force a choice
 with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
 - **Docker** — Docker Desktop (macOS; cross-builds linux/amd64 via emulation) or
-  Docker Engine (Linux; native). Authenticate to your registry with
-  `gcloud auth configure-docker <region>-docker.pkg.dev` or `docker login`.
+  Docker Engine (Linux; native).
 - **Podman** — on macOS, start a machine first with `podman machine init &&
   podman machine start` (cross-builds linux/amd64 via emulation); on Linux it
-  runs natively (podman/buildah >= 4.0). Authenticate with a credential helper
-  or `podman login`.
+  runs natively (podman/buildah >= 4.0).
 
-Unlike `ko`, the container engine's `push` is not auto-authenticated, so make
-sure you are logged in to `$KO_DOCKER_REPO` first.
+#### Registry authentication
+
+`PROJECT_ID` sets `KO_DOCKER_REPO=gcr.io/$PROJECT_ID`. The deploy pushes two
+images — the **ax** image (via your container engine) and the **ateom** image
+(via `ko`) — and both authenticate through the gcloud credential helper:
+
+```bash
+gcloud auth login              # authenticate gcloud
+gcloud auth configure-docker   # set up the gcr.io credential helper
+```
 
 #### Deploy
 

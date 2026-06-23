@@ -205,12 +205,18 @@ deploy_ax_server() {
   ateom_image=$(build_ateom_image)
 
   # Render the manifest and apply it.
-  sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
+  if ! sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
       -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
       -e "s|\${AX_IMAGE}|${ax_image}|g" \
       -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
       internal/manifests/ax-deployment2.yaml \
-      | run_kubectl apply -f -
+      | run_kubectl apply -f -; then
+    echo >&2
+    echo "Error: cluster rejected the manifest. An \"unknown field\" error usually means the" >&2
+    echo "cluster's substrate is incompatible with AX's go.mod pin — see" >&2
+    echo "internal/manifests/README.md (\"Substrate compatibility\")." >&2
+    exit 1
+  fi
 
   # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
   log_step "wait for actortemplate/ax-harness-template to be Ready"
