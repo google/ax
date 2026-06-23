@@ -14,8 +14,6 @@ cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdB
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
-github.com/a2aproject/a2a-go/v2 v2.2.0 h1:eayiNXYpyTOLVhhQrGmIHlcy8GnOdnwaNdYQPvS84Ik=
-github.com/a2aproject/a2a-go/v2 v2.2.0/go.mod h1:htTxMwicNXXXEwwfjuB/Pd1g7UHDrswhSievncmTVcE=
 github.com/agent-substrate/substrate v0.0.0-20260617231801-9bd2be123328 h1:NzkT3ac0DBVqPfjYD5MUQdyoxog6/rzc2CURYiPvptw=
 github.com/agent-substrate/substrate v0.0.0-20260617231801-9bd2be123328/go.mod h1:TgdtEUV6iaflJTwmS8ONiGsyyJD+5okPZj2H6mM8WlA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=

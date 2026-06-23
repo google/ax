@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/auth"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,20 +100,8 @@ type RemoteAgentConfig struct {
 	Name        string            `yaml:"name"`               // Human-readable name
 	Description string            `yaml:"description"`        // Description
 	Address     string            `yaml:"address"`            // Remote agent address
-	Protocol    string            `yaml:"protocol,omitempty"` // "axp" (default) or "a2a"
-	Auth        auth.Auth         `yaml:"auth,omitempty"`     // Optional auth (cross-protocol; today honored only for a2a)
-	Headers     auth.Headers      `yaml:"headers,omitempty"`  // Optional headers (cross-protocol; today honored only for a2a)
-	A2A         A2AConfig         `yaml:"a2a,omitempty"`      // A2A-protocol-specific options
 	Metadata    map[string]string `yaml:"metadata,omitempty"` // Optional metadata
 }
-
-// A2AConfig holds A2A-protocol-specific options. Honored only when
-// RemoteAgentConfig.Protocol is "a2a".
-type A2AConfig struct {
-	Stateless bool `yaml:"stateless,omitempty"` // Send full history each turn (default: stateful)
-}
-
-
 
 type LocalAgentConfig struct {
 	ID          string            `yaml:"id"`                 // Unique agent identifier

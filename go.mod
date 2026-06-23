@@ -5,7 +5,6 @@ go 1.26.3
 require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
-	github.com/a2aproject/a2a-go/v2 v2.2.0
 	github.com/agent-substrate/substrate v0.0.0-20260617231801-9bd2be123328
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
 	github.com/google/uuid v1.6.0
@@ -67,7 +66,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect

@@ -330,7 +330,6 @@ invoked over a protocol boundary.
 
 - [Remote Agent](examples/remote_agent) implements AX's native `AgentService` directly.
 - [ADK Agent (Python)](examples/adk_agent) runs a Google ADK agent as a remote agent.
-- [A2A Agent](examples/a2a_agent) connects agents that speak the [A2A protocol](https://github.com/a2aproject/A2A) through AX's A2A bridge.
 
 Please note that AX is actively developing its resumable streaming and agent communication protocols; these interfaces will change before a stable release.
 
