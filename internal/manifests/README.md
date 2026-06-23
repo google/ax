@@ -17,18 +17,20 @@ The target Kubernetes cluster is assumed to have
 
 AX pins [Agent Substrate](https://github.com/agent-substrate/substrate) in
 `go.mod`, and the **ateom** worker image is built from that pinned version. The
-cluster's substrate **CRDs and control plane** must
-be compatible with the manifest AX applies. 
+cluster's substrate **CRDs and control plane** must be compatible with the
+manifest AX applies.
 
-When installing substrate, keep three things aligned: the
-ax `go.mod` pin = your local substrate checkout = the cluster's installed substrate.
+When installing substrate, keep three things aligned: the ax `go.mod` pin = your
+local substrate checkout = the cluster's installed substrate.
 
 ```bash
-# What version does AX pin?
-go list -m github.com/agent-substrate/substrate
+# Get AX's pinned substrate commit:
+commit=$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')
+echo "$commit"   # e.g. fe93d160a1df
 
-# Align a local substrate checkout to that commit (for reading/building):
-git -C <substrate> fetch && git checkout <pinned-commit>
+# Check it out on a normal branch in your substrate clone (avoids a detached HEAD):
+git -C <substrate> fetch origin
+git -C <substrate> switch -C ax-pinned "$commit"
 ```
 
 ---
