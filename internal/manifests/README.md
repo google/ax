@@ -120,18 +120,20 @@ The weather in New York is sunny with a temperature of 25 degrees Celsius (77 de
 
 ## 🧹 How to Uninstall
 
-To remove the AX server and its components while **preserving** the event-log
-database (so a later redeploy can reuse the data), run:
+To remove the AX server and its components, run:
 
 ```bash
 ./internal/hack/install-ax.sh --delete-ax-server
 ```
 
-To remove **everything**, including the event-log database, run:
-
-```bash
-./internal/hack/install-ax.sh --delete-all
-```
+> [!NOTE]
+> The event-log database is preserved by default. If you want to
+> delete everything including the data, after the command above, be careful and
+> run:
+>
+> ```bash
+> kubectl delete namespace ax
+> ```
 
 ---
 

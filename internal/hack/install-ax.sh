@@ -73,7 +73,6 @@ function usage() {
   echo "Options:"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
-  echo "  --delete-all                          Delete AX server, components, and the event-log database"
   echo "  -h, --help                            Show this help message"
 }
 
@@ -257,21 +256,6 @@ delete_ax_server() {
     workerpool/ax-harness-workerpool
 }
 
-# delete_all removes everything, including the namespace, which cascades to the
-# Postgres PVC and wipes all event-log data. Dummy values keep the manifest
-# parseable without requiring real credentials for deletion.
-delete_all() {
-  log_step "delete_all"
-
-  sed -e "s|\${GEMINI_API_KEY}|dummy-key|g" \
-      -e "s|\${BUCKET_NAME}|dummy-bucket|g" \
-      -e "s|\${AX_IMAGE}|dummy-image|g" \
-      -e "s|\${ATEOM_IMAGE}|dummy-image|g" \
-      -e "s|\${POSTGRES_PASSWORD}|dummy-pass|g" \
-      internal/manifests/ax-deployment2.yaml \
-      | run_kubectl delete --ignore-not-found -f -
-}
-
 if [ "$#" -eq 0 ]; then
   usage
   exit 1
@@ -291,7 +275,6 @@ while [[ "$#" -gt 0 ]]; do
   case $1 in
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
-    --delete-all) delete_all ;;
     *)
       echo "Error: unknown option: $1" >&2
       echo ""
