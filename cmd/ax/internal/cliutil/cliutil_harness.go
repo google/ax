@@ -110,11 +110,12 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 	return controller2.New(ctx, controller2.Config{
 		Registry: reg,
 		EventLogBuilder: func() (eventlog.EventLog, error) {
-			// Use Postgres for the event log on substrate; use SQLite for local/dev use.
-			if substrateMode {
-				if dsn := os.Getenv("AX_EVENTLOG_DSN"); dsn != "" {
-					return eventlog.OpenPostgresEventLog(dsn)
+			if cfg.EventLog.PostgresConfig.DSN != "" {
+				dsn := os.ExpandEnv(cfg.EventLog.PostgresConfig.DSN)
+				if dsn == "" {
+					return nil, fmt.Errorf("eventlog: postgres dsn %q expanded to empty", cfg.EventLog.PostgresConfig.DSN)
 				}
+				return eventlog.OpenPostgresEventLog(dsn)
 			}
 			return eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},

@@ -199,6 +199,9 @@ metadata:
   namespace: ax
 data:
   ax.yaml: |
+    eventlog:
+      postgres:
+        dsn: ${AX_EVENTLOG_DSN}
     harnesses:
       antigravity:
         default: true

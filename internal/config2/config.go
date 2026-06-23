@@ -48,9 +48,15 @@ type SQLiteConfig struct {
 	Filename string `yaml:"filename"` // SQLite file for event log storage
 }
 
+// PostgresConfig configures the Postgres event log.
+type PostgresConfig struct {
+	DSN string `yaml:"dsn"` // Postgres connection DSN
+}
+
 // EventLogConfig configures the event log storage.
 type EventLogConfig struct {
-	SQLiteConfig SQLiteConfig `yaml:"sqlite"`
+	SQLiteConfig   SQLiteConfig   `yaml:"sqlite,omitempty"`
+	PostgresConfig PostgresConfig `yaml:"postgres,omitempty"`
 }
 
 // HarnessesConfig groups harnesses to serve by type. There are two categories:
@@ -137,8 +143,8 @@ func (c *Config) Validate() error {
 	if c.Server.Address == "" {
 		return fmt.Errorf("server.address is required")
 	}
-	if c.EventLog.SQLiteConfig.Filename == "" {
-		return fmt.Errorf("eventlog.sqlite.filename is required")
+	if c.EventLog.PostgresConfig.DSN == "" && c.EventLog.SQLiteConfig.Filename == "" {
+		return fmt.Errorf("eventlog requires either postgres.dsn or sqlite.filename")
 	}
 
 	var defaultCount int
