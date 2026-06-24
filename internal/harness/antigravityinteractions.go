@@ -48,6 +48,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -260,6 +261,7 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler Hand
 	e.setPrevID(prevID)
 
 	for turn := 0; turn < e.harness.cfg.MaxTurns; turn++ {
+		e.harness.debugTurn(e.conversationID, turn+1, len(res.toolCalls))
 		if err := emitText(ctx, handler, e.id, res.modelText); err != nil {
 			return err
 		}
@@ -268,10 +270,10 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler Hand
 		// third-party tools alike are executed internally) and collect the
 		// results to send back.
 		var next []any
-		for _, call := range res.toolCalls {
-			e.harness.debugf("[harness] [%s] FC %s(%v)", e.conversationID, call.name, call.arguments)
+		for i, call := range res.toolCalls {
+			e.harness.debugCall(e.conversationID, i+1, len(res.toolCalls), call)
 			out := e.harness.executeTool(ctx, call)
-			e.harness.debugf("[harness] [%s] FR %s -> %v", e.conversationID, call.name, out)
+			e.harness.debugResult(e.conversationID, call.name, out)
 			next = append(next, toolResultStep{
 				Type:   "function_result",
 				CallID: call.callID,
@@ -395,11 +397,98 @@ type turnResult struct {
 	modelText     string
 }
 
-// debugf logs a concise debug line to stderr when Debug is enabled.
-func (h *AntigravityInteractionsHarness) debugf(format string, args ...any) {
-	if h.cfg.Debug {
-		fmt.Fprintf(os.Stderr, format+"\n", args...)
+// Debug output layout. When Debug is enabled, each Run turn is logged as a
+// hierarchical block so the function-call / function-result (FC/FR) exchange is
+// easy to follow:
+//
+//	[harness:e2e-conv] ==== turn 1 (2 function calls) ============
+//	[harness:e2e-conv]   FC 1/2  list_dir
+//	[harness:e2e-conv]            DirectoryPath: .
+//	[harness:e2e-conv]            explanation:  Listing the current directory.
+//	[harness:e2e-conv]   FR      list_dir
+//	[harness:e2e-conv]            results: [...]
+//	[harness:e2e-conv]   FC 2/2  run_command
+//	[harness:e2e-conv]            CommandLine: pwd
+//	[harness:e2e-conv]   FR      run_command
+//	[harness:e2e-conv]            ExitCode: 0
+//	[harness:e2e-conv]            Output:   /home/user/project
+const (
+	debugIndentCall   = "  "          // FC / FR lines, under the turn header
+	debugIndentDetail = "           " // params and result values, under FC / FR
+)
+
+// debugln writes a single debug line (prefixed with the conversation id) to
+// stderr when Debug is enabled.
+func (h *AntigravityInteractionsHarness) debugln(conversationID, line string) {
+	if !h.cfg.Debug {
+		return
 	}
+	fmt.Fprintf(os.Stderr, "[harness:%s] %s\n", conversationID, line)
+}
+
+// debugTurn logs the separator header that begins a turn.
+func (h *AntigravityInteractionsHarness) debugTurn(conversationID string, turn, numCalls int) {
+	if !h.cfg.Debug {
+		return
+	}
+	plural := "s"
+	if numCalls == 1 {
+		plural = ""
+	}
+	header := fmt.Sprintf("==== turn %d (%d function call%s) ", turn, numCalls, plural)
+	// Pad the header with '=' to a fixed width for an easy visual break.
+	if pad := 56 - len(header); pad > 0 {
+		header += strings.Repeat("=", pad)
+	}
+	h.debugln(conversationID, header)
+}
+
+// debugCall logs a function call (FC): a header line plus one indented line per
+// argument (keys sorted for stable output).
+func (h *AntigravityInteractionsHarness) debugCall(conversationID string, idx, total int, call capturedToolCall) {
+	if !h.cfg.Debug {
+		return
+	}
+	h.debugln(conversationID, fmt.Sprintf("%sFC %d/%d  %s", debugIndentCall, idx, total, call.name))
+	h.debugKeyValues(conversationID, call.arguments)
+}
+
+// debugResult logs a function result (FR): a header line plus the indented
+// result value(s).
+func (h *AntigravityInteractionsHarness) debugResult(conversationID, name string, result any) {
+	if !h.cfg.Debug {
+		return
+	}
+	h.debugln(conversationID, fmt.Sprintf("%sFR      %s", debugIndentCall, name))
+	if m, ok := result.(map[string]any); ok {
+		h.debugKeyValues(conversationID, m)
+		return
+	}
+	h.debugln(conversationID, debugIndentDetail+debugTruncate(fmt.Sprintf("%v", result)))
+}
+
+// debugKeyValues logs a map as one "key: value" line per entry, indented under
+// an FC/FR header, with keys sorted for stable output.
+func (h *AntigravityInteractionsHarness) debugKeyValues(conversationID string, m map[string]any) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.debugln(conversationID, fmt.Sprintf("%s%s: %s", debugIndentDetail, k, debugTruncate(fmt.Sprintf("%v", m[k]))))
+	}
+}
+
+// debugTruncate collapses newlines and caps very long values so a single debug
+// line stays readable.
+func debugTruncate(s string) string {
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	const max = 200
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
 }
 
 func (h *AntigravityInteractionsHarness) interactionsURL() string {

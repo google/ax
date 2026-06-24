@@ -101,15 +101,8 @@ func execRunCommand(ctx context.Context, call capturedToolCall) any {
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", cmdLine)
-
-	// Use the requested working directory only if it exists. The agent often
-	// assumes a sandbox dir (e.g. /workspace) that is not present on this host;
-	// rather than failing every command with a confusing "chdir: no such file or
-	// directory", fall back to the default working directory.
 	if cwd := stringArg(call.arguments, "Cwd"); cwd != "" {
-		if info, err := os.Stat(cwd); err == nil && info.IsDir() {
-			cmd.Dir = cwd
-		}
+		cmd.Dir = cwd
 	}
 
 	out, err := cmd.CombinedOutput()
