@@ -164,10 +164,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		t.Errorf("expected third event state to be COMPLETED, got %v", events[2].State)
 	}
 
-	// Verify that no Execution Events were logged (moving away from granular execution log)
-	if len(log.AllExecEvents) != 0 {
-		t.Errorf("expected 0 execution events in V2, got %d: %v", len(log.AllExecEvents), log.AllExecEvents)
-	}
+
 }
 
 func TestController2_ExecWithAgentID(t *testing.T) {

@@ -51,21 +51,6 @@ func OpenSQLiteEventLog(path string) (EventLog, error) {
 		return nil, fmt.Errorf("sqlite_eventlog: create conversation_log table: %w", err)
 	}
 
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS execution_log (
-			exec_id TEXT NOT NULL,
-			payload TEXT NOT NULL,
-			timestamp DATETIME NOT NULL
-		)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("sqlite_eventlog: create execution_log table: %w", err)
-	}
-
-	// Create indexes if they don't exist.
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_log_exec_id ON execution_log(exec_id)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("sqlite_eventlog: create index exec_id: %w", err)
-	}
 
 	return &sqlEventLog{db: db}, nil
 }

@@ -18,7 +18,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/google/ax/proto"
 )
@@ -63,30 +62,6 @@ func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent
 	return seq, nil
 }
 
-// AppendExec inserts an execution event into the database.
-// TODO(anj): Remove execution_log table and AppendExec when legacy controller is removed.
-func (l *sqlEventLog) AppendExec(ctx context.Context, event *proto.ExecutionEvent) error {
-	payload, err := marshalOpts.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("eventlog: marshal exec: %w", err)
-	}
-
-	var timestamp time.Time
-	if event.Timestamp != nil {
-		timestamp = event.Timestamp.AsTime()
-	} else {
-		timestamp = time.Now()
-	}
-
-	if _, err := l.db.ExecContext(ctx,
-		"INSERT INTO execution_log (exec_id, payload, timestamp) VALUES ($1, $2, $3)",
-		event.ExecId, string(payload), timestamp); err != nil {
-		return fmt.Errorf("eventlog: insert exec: %w", err)
-	}
-
-	return nil
-}
-
 // Events retrieves all events from the database for a conversation, ordered by seq.
 func (l *sqlEventLog) Events(ctx context.Context, conversationID string) ([]*proto.ConversationEvent, error) {
 	rows, err := l.db.QueryContext(ctx, "SELECT payload FROM conversation_log WHERE conversation_id = $1 ORDER BY seq", conversationID)
@@ -116,89 +91,11 @@ func (l *sqlEventLog) Events(ctx context.Context, conversationID string) ([]*pro
 	return events, nil
 }
 
-// ExecEvents retrieves all events from the database for a specific execution ID.
-func (l *sqlEventLog) ExecEvents(ctx context.Context, execID string) ([]*proto.ExecutionEvent, error) {
-	rows, err := l.db.QueryContext(ctx, "SELECT payload FROM execution_log WHERE exec_id = $1 ORDER BY timestamp", execID)
-	if err != nil {
-		return nil, fmt.Errorf("eventlog: query exec: %w", err)
-	}
-	defer rows.Close()
-
-	var events []*proto.ExecutionEvent
-	for rows.Next() {
-		var payload string
-		if err := rows.Scan(&payload); err != nil {
-			return nil, fmt.Errorf("eventlog: scan exec: %w", err)
-		}
-
-		ev := &proto.ExecutionEvent{}
-		if err := unmarshalOpts.Unmarshal([]byte(payload), ev); err != nil {
-			continue
-		}
-		events = append(events, ev)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("eventlog: iterate exec: %w", err)
-	}
-
-	return events, nil
-}
-
-// DeleteAll deletes all events for a specific conversation ID and its child executions.
+// DeleteAll deletes all events for a specific conversation ID.
 func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) error {
-	tx, err := l.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("eventlog: begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	// TODO(jbd): Update the schema to include conversation_id at every execution event.
-
-	// Get all exec_ids for this conversation.
-	rows, err := tx.QueryContext(ctx, "SELECT payload FROM conversation_log WHERE conversation_id = $1", conversationID)
-	if err != nil {
-		return fmt.Errorf("eventlog: query conversation: %w", err)
-	}
-	defer rows.Close()
-
-	var execIDs []string
-	for rows.Next() {
-		var payload string
-		if err := rows.Scan(&payload); err != nil {
-			return fmt.Errorf("eventlog: scan conversation: %w", err)
-		}
-
-		ev := &proto.ConversationEvent{}
-		if err := unmarshalOpts.Unmarshal([]byte(payload), ev); err != nil {
-			return fmt.Errorf("eventlog: unmarshal event: %w", err)
-		}
-		if ev.ExecId != "" {
-			execIDs = append(execIDs, ev.ExecId)
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("eventlog: iterate conversation: %w", err)
-	}
-	rows.Close()
-
-	// Delete from execution_log.
-	for _, execID := range execIDs {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM execution_log WHERE exec_id = $1", execID); err != nil {
-			return fmt.Errorf("eventlog: delete exec %s: %w", execID, err)
-		}
-	}
-
-	// Delete from conversation_log.
-	if _, err := tx.ExecContext(ctx, "DELETE FROM conversation_log WHERE conversation_id = $1", conversationID); err != nil {
+	if _, err := l.db.ExecContext(ctx, "DELETE FROM conversation_log WHERE conversation_id = $1", conversationID); err != nil {
 		return fmt.Errorf("eventlog: delete conversation: %w", err)
 	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("eventlog: commit tx: %w", err)
-	}
-
 	return nil
 }
 

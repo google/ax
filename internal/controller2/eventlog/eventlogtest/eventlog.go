@@ -26,7 +26,6 @@ import (
 type MemoryEventLog struct {
 	mu            sync.Mutex
 	AllEvents     []*proto.ConversationEvent
-	AllExecEvents []*proto.ExecutionEvent
 }
 
 func (m *MemoryEventLog) Append(_ context.Context, event *proto.ConversationEvent) (int32, error) {
@@ -48,14 +47,6 @@ func (m *MemoryEventLog) Append(_ context.Context, event *proto.ConversationEven
 	return seq, nil
 }
 
-func (m *MemoryEventLog) AppendExec(_ context.Context, event *proto.ExecutionEvent) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.AllExecEvents = append(m.AllExecEvents, event)
-	return nil
-}
-
 func (m *MemoryEventLog) Events(_ context.Context, conversationID string) ([]*proto.ConversationEvent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -63,19 +54,6 @@ func (m *MemoryEventLog) Events(_ context.Context, conversationID string) ([]*pr
 	out := make([]*proto.ConversationEvent, 0)
 	for _, ev := range m.AllEvents {
 		if ev.ConversationId == conversationID {
-			out = append(out, ev)
-		}
-	}
-	return out, nil
-}
-
-func (m *MemoryEventLog) ExecEvents(_ context.Context, execID string) ([]*proto.ExecutionEvent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	out := make([]*proto.ExecutionEvent, 0)
-	for _, ev := range m.AllExecEvents {
-		if ev.ExecId == execID {
 			out = append(out, ev)
 		}
 	}
@@ -101,33 +79,13 @@ func (m *MemoryEventLog) DeleteAll(_ context.Context, conversationID string) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var execIDs []string
 	var keptEvents []*proto.ConversationEvent
 	for _, ev := range m.AllEvents {
-		if ev.ConversationId == conversationID {
-			if ev.ExecId != "" {
-				execIDs = append(execIDs, ev.ExecId)
-			}
-		} else {
+		if ev.ConversationId != conversationID {
 			keptEvents = append(keptEvents, ev)
 		}
 	}
 	m.AllEvents = keptEvents
-
-	var keptExecEvents []*proto.ExecutionEvent
-	for _, ev := range m.AllExecEvents {
-		delete := false
-		for _, id := range execIDs {
-			if ev.ExecId == id {
-				delete = true
-				break
-			}
-		}
-		if !delete {
-			keptExecEvents = append(keptExecEvents, ev)
-		}
-	}
-	m.AllExecEvents = keptExecEvents
 
 	return nil
 }

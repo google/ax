@@ -32,14 +32,8 @@ type EventLog interface {
 	// Append adds a conversation event to the end of the log.
 	Append(ctx context.Context, event *proto.ConversationEvent) (int32, error)
 
-	// AppendExec adds an execution event to the end of the log.
-	AppendExec(ctx context.Context, event *proto.ExecutionEvent) error
-
 	// Events returns all events for the conversation.
 	Events(ctx context.Context, conversationID string) ([]*proto.ConversationEvent, error)
-
-	// ExecEvents returns all events for a specific execution ID.
-	ExecEvents(ctx context.Context, execID string) ([]*proto.ExecutionEvent, error)
 
 	// DeleteAll deletes all events for a specific conversation ID.
 	DeleteAll(ctx context.Context, conversationID string) error
