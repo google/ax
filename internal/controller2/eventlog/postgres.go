@@ -52,21 +52,6 @@ func OpenPostgresEventLog(dsn string) (EventLog, error) {
 		return nil, fmt.Errorf("postgres_eventlog: create conversation_log table: %w", err)
 	}
 
-	if _, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS execution_log (
-			exec_id TEXT NOT NULL,
-			payload TEXT NOT NULL,
-			timestamp TIMESTAMPTZ NOT NULL
-		)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("postgres_eventlog: create execution_log table: %w", err)
-	}
-
-	// Create indexes if they don't exist.
-	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_execution_log_exec_id ON execution_log(exec_id)`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("postgres_eventlog: create index exec_id: %w", err)
-	}
 
 	return &sqlEventLog{db: db}, nil
 }

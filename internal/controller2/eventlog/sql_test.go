@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/ax/proto"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // testEventLog runs the EventLog contract against a backend. newLog returns a
@@ -67,29 +66,7 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 			t.Errorf("conversation events mismatch: %q, %q", cEvents[0].ExecId, cEvents[1].ExecId)
 		}
 
-		// 2. Execution log.
-		ee1 := &proto.ExecutionEvent{
-			ExecId:    task1,
-			State:     proto.State_STATE_PENDING,
-			Timestamp: timestamppb.Now(),
-			Inputs: []*proto.Message{
-				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hello"}}}},
-			},
-		}
-		if err := log.AppendExec(ctx, ee1); err != nil {
-			t.Fatalf("failed to append ee1: %v", err)
-		}
 
-		eEvents, err := log.ExecEvents(ctx, task1)
-		if err != nil {
-			t.Fatalf("failed to read execution events: %v", err)
-		}
-		if len(eEvents) != 1 {
-			t.Fatalf("expected 1 execution event, got %d", len(eEvents))
-		}
-		if eEvents[0].ExecId != task1 || eEvents[0].State != proto.State_STATE_PENDING {
-			t.Errorf("execution event mismatch: %+v", eEvents[0])
-		}
 	})
 
 	t.Run("Empty", func(t *testing.T) {
@@ -126,12 +103,7 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		if _, err := log.Append(ctx, &proto.ConversationEvent{ConversationId: conv2, Seq: 1, ExecId: task3}); err != nil {
 			t.Fatalf("append: %v", err)
 		}
-		if err := log.AppendExec(ctx, &proto.ExecutionEvent{ExecId: task1, State: proto.State_STATE_PENDING}); err != nil {
-			t.Fatalf("append exec: %v", err)
-		}
-		if err := log.AppendExec(ctx, &proto.ExecutionEvent{ExecId: task3, State: proto.State_STATE_PENDING}); err != nil {
-			t.Fatalf("append exec: %v", err)
-		}
+
 
 		if err := log.DeleteAll(ctx, conv1); err != nil {
 			t.Fatalf("failed to delete events: %v", err)
@@ -143,12 +115,7 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		if ev, _ := log.Events(ctx, conv2); len(ev) != 1 {
 			t.Errorf("expected 1 event for conv2, got %d", len(ev))
 		}
-		if ee, _ := log.ExecEvents(ctx, task1); len(ee) != 0 {
-			t.Errorf("expected 0 exec events for task1, got %d", len(ee))
-		}
-		if ee, _ := log.ExecEvents(ctx, task3); len(ee) != 1 {
-			t.Errorf("expected 1 exec event for task3, got %d", len(ee))
-		}
+
 	})
 
 	// AutoSeq exercises the seq==0 auto-assignment path: appends with Seq unset
