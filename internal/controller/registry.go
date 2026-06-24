@@ -17,13 +17,10 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/google/ax/internal/agent"
 	"github.com/google/ax/internal/config"
-	"github.com/google/ax/internal/experimental/a2abridge"
-	expagent "github.com/google/ax/internal/experimental/agent"
 )
 
 // Registry manages a collection of local and remote agents.
@@ -73,11 +70,8 @@ func (r *Registry) RegisterLocal(cfg config.LocalAgentConfig) error {
 	return nil
 }
 
-// RegisterRemote registers a remote agent by creating a remote agent client.
-// The protocol field determines what kind of remote agent to register
-// (matched case-insensitively):
-//   - "axp" (default): AX's proto.AgentService.
-//   - "a2a":           A2A protocol.
+// RegisterRemote registers a remote agent by creating a remote agent client
+// for AX's proto.AgentService.
 func (r *Registry) RegisterRemote(ctx context.Context, cfg config.RemoteAgentConfig) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -89,17 +83,6 @@ func (r *Registry) RegisterRemote(ctx context.Context, cfg config.RemoteAgentCon
 		return fmt.Errorf("agent %s already registered", cfg.ID)
 	}
 
-	switch strings.ToLower(cfg.Protocol) {
-	case "", "axp":
-		return r.registerRemote(cfg)
-	case "a2a":
-		return r.registerA2A(ctx, cfg)
-	default:
-		return fmt.Errorf("remote agent %s: invalid protocol %q (want \"axp\" or \"a2a\")", cfg.ID, cfg.Protocol)
-	}
-}
-
-func (r *Registry) registerRemote(cfg config.RemoteAgentConfig) error {
 	remoteAgent, err := agent.NewRemoteAgent(agent.RemoteAgentConfig{
 		Address:    cfg.Address,
 		Reconnect:  true,
@@ -117,31 +100,6 @@ func (r *Registry) registerRemote(cfg config.RemoteAgentConfig) error {
 	}
 	return nil
 }
-
-// Creates an A2A-protocol agent client. The agent's AgentCard is resolved at
-// registration time and used to populate the agent's information.
-func (r *Registry) registerA2A(ctx context.Context, cfg config.RemoteAgentConfig) error {
-	a2aAgent, err := expagent.NewA2AAgent(ctx, expagent.A2AAgentConfig{
-		ID:        cfg.ID,
-		Address:   cfg.Address,
-		Auth:      cfg.Auth,
-		Headers:   cfg.Headers,
-		Stateless: cfg.A2A.Stateless,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create a2a agent: %w", err)
-	}
-	name, description := a2abridge.AgentMetadataFromCard(a2aAgent.Card(), cfg.Name, cfg.Description)
-	r.agents[cfg.ID] = a2aAgent
-	r.agentInfo[cfg.ID] = &agent.AgentInfo{
-		ID:          cfg.ID,
-		Name:        name,
-		Description: description,
-		Metadata:    cfg.Metadata,
-	}
-	return nil
-}
-
 
 // Get retrieves an agent by ID.
 func (r *Registry) Get(id string) (agent.Agent, error) {

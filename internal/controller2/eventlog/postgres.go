@@ -15,32 +15,33 @@
 package eventlog
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const sqliteBusyTimeout = 10 * time.Second
-
-// OpenSQLiteEventLog opens (or creates) a SQLite database at path and initializes the event log schema.
-func OpenSQLiteEventLog(path string) (EventLog, error) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("sqlite_eventlog: mkdir %s: %w", dir, err)
+// OpenPostgresEventLog connects to the PostgreSQL database described by dsn and
+// initializes the event log schema. Caller is responsible to ensure it is safe
+// for concurrent use.
+func OpenPostgresEventLog(dsn string) (EventLog, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("postgres_eventlog: open: %w", err)
 	}
 
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(%d)&_txlock=immediate", path, sqliteBusyTimeout.Milliseconds())
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("sqlite_eventlog: open %s: %w", dsn, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("postgres_eventlog: ping: %w", err)
 	}
 
 	// Create tables if they don't exist.
-	if _, err := db.Exec(`
+	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS conversation_log (
 			conversation_id TEXT NOT NULL,
 			seq INTEGER NOT NULL,
@@ -48,23 +49,23 @@ func OpenSQLiteEventLog(path string) (EventLog, error) {
 			PRIMARY KEY (conversation_id, seq)
 		)`); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite_eventlog: create conversation_log table: %w", err)
+		return nil, fmt.Errorf("postgres_eventlog: create conversation_log table: %w", err)
 	}
 
-	if _, err := db.Exec(`
+	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS execution_log (
 			exec_id TEXT NOT NULL,
 			payload TEXT NOT NULL,
-			timestamp DATETIME NOT NULL
+			timestamp TIMESTAMPTZ NOT NULL
 		)`); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite_eventlog: create execution_log table: %w", err)
+		return nil, fmt.Errorf("postgres_eventlog: create execution_log table: %w", err)
 	}
 
 	// Create indexes if they don't exist.
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_log_exec_id ON execution_log(exec_id)`); err != nil {
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_execution_log_exec_id ON execution_log(exec_id)`); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite_eventlog: create index exec_id: %w", err)
+		return nil, fmt.Errorf("postgres_eventlog: create index exec_id: %w", err)
 	}
 
 	return &sqlEventLog{db: db}, nil

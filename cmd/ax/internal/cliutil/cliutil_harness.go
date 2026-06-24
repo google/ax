@@ -22,8 +22,8 @@ import (
 	"os"
 
 	"github.com/google/ax/internal/config2"
-	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/internal/harness"
 )
 
@@ -110,6 +110,13 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 	return controller2.New(ctx, controller2.Config{
 		Registry: reg,
 		EventLogBuilder: func() (eventlog.EventLog, error) {
+			if cfg.EventLog.PostgresConfig.DSN != "" {
+				dsn := os.ExpandEnv(cfg.EventLog.PostgresConfig.DSN)
+				if dsn == "" {
+					return nil, fmt.Errorf("eventlog: postgres dsn %q expanded to empty", cfg.EventLog.PostgresConfig.DSN)
+				}
+				return eventlog.OpenPostgresEventLog(dsn)
+			}
 			return eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},
 	})

@@ -118,7 +118,8 @@ type harnessHandler struct {
 func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *proto.Message) error {
 	// Log every response received from the harness
 	// TODO(anj): The harness should send the full input sent to get this particular response.
-	if _, err := a.logger.LogOutputs(ctx, []*proto.Message{msg}, proto.State_STATE_PENDING); err != nil {
+	seq, err := a.logger.LogOutputs(ctx, []*proto.Message{msg}, proto.State_STATE_PENDING)
+	if err != nil {
 		slog.WarnContext(ctx, "Failed to log streamed message to event log",
 			slog.String("conversation_id", a.logger.conversationID),
 			slog.Any("error", err),
@@ -130,6 +131,7 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 	}
 	return a.execHandler(&proto.ExecResponse{
 		Outputs: []*proto.Message{msg},
+		Seq:     seq,
 	})
 }
 
