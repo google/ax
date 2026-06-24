@@ -56,7 +56,6 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/impersonate"
 )
 
 // cloudPlatformScope is the OAuth2 scope required to call Vertex AI.
@@ -84,11 +83,6 @@ type AntigravityInteractionsConfig struct {
 	// MaxTurns caps the number of interaction turns the harness will drive within
 	// a single Run before giving up.
 	MaxTurns int
-	// ImpersonateServiceAccount, if set, mints the access token by impersonating
-	// this service account (via google.golang.org/api/impersonate, using
-	// Application Default Credentials as the base principal). The base principal
-	// needs roles/iam.serviceAccountTokenCreator on the target.
-	ImpersonateServiceAccount string
 	// Debug, if true, logs concise per-conversation tool activity to stderr: a
 	// line for each function call (FC) the agent yields and each function result
 	// (FR) the harness produces. Useful for observing the FC/FR exchange that is
@@ -103,8 +97,7 @@ type AntigravityInteractionsConfig struct {
 	ThirdPartyExecutor ThirdPartyExecutor
 
 	// TokenSource overrides how the bearer token is obtained. If nil, the harness
-	// builds an auto-refreshing source from Application Default Credentials
-	// (honoring ImpersonateServiceAccount) -- see newTokenSource.
+	// builds an auto-refreshing source from Application Default Credentials.
 	TokenSource oauth2.TokenSource
 	// HTTPClient overrides the HTTP client. If nil, a default client with a long
 	// timeout is used.
@@ -362,8 +355,9 @@ type toolResultStep struct {
 	Result any    `json:"result"`
 }
 
-// functionTool is a client-declared function tool declaration.
-type functionTool struct {
+// FunctionTool is a client-declared function tool declaration. It is the element
+// type a ThirdPartyExecutor returns from Declarations.
+type FunctionTool struct {
 	Type   string `json:"type"` // "function"
 	Name   string `json:"name"`
 	Desc   string `json:"description,omitempty"`
@@ -384,7 +378,7 @@ type interactionRequest struct {
 	Environment           *environmentConfig `json:"environment,omitempty"`
 	PreviousInteractionID string             `json:"previous_interaction_id,omitempty"`
 	Input                 []any              `json:"input,omitempty"`
-	Tools                 []functionTool     `json:"tools,omitempty"`
+	Tools                 []FunctionTool     `json:"tools,omitempty"`
 }
 
 // capturedToolCall is a tool call the agent yielded during a turn.
@@ -421,7 +415,7 @@ func (h *AntigravityInteractionsHarness) token(ctx context.Context) (string, err
 			h.ts = h.cfg.TokenSource
 			return
 		}
-		h.ts, h.tsErr = newTokenSource(ctx, h.cfg.ImpersonateServiceAccount)
+		h.ts, h.tsErr = newTokenSource(ctx)
 	})
 	if h.tsErr != nil {
 		return "", h.tsErr
@@ -434,21 +428,8 @@ func (h *AntigravityInteractionsHarness) token(ctx context.Context) (string, err
 }
 
 // newTokenSource builds an auto-refreshing OAuth2 token source for Vertex AI
-// from Application Default Credentials. If impersonate is non-empty, it returns
-// a source that impersonates that service account (with ADC as the base
-// principal); otherwise it returns the ADC source directly. It never shells out
-// to the gcloud CLI.
-func newTokenSource(ctx context.Context, impersonateServiceAccount string) (oauth2.TokenSource, error) {
-	if impersonateServiceAccount != "" {
-		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-			TargetPrincipal: impersonateServiceAccount,
-			Scopes:          []string{cloudPlatformScope},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("creating impersonated token source for %q: %w", impersonateServiceAccount, err)
-		}
-		return ts, nil
-	}
+// from Application Default Credentials.
+func newTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	creds, err := google.FindDefaultCredentials(ctx, cloudPlatformScope)
 	if err != nil {
 		return nil, fmt.Errorf("finding application default credentials: %w", err)
@@ -461,7 +442,7 @@ func newTokenSource(ctx context.Context, impersonateServiceAccount string) (oaut
 // execute the agent's built-in env tools locally. Tools are re-declared on every
 // turn so they stay known to the agent across resumes.
 func (h *AntigravityInteractionsHarness) newRequest(input []any, previousID string) interactionRequest {
-	var tools []functionTool
+	var tools []FunctionTool
 	if h.cfg.ThirdPartyExecutor != nil {
 		tools = h.cfg.ThirdPartyExecutor.Declarations()
 	}

@@ -329,7 +329,7 @@ func applyReplacements(path, tool string, reps []replacement) any {
 // describe its tools and produce a result for a given call.
 type ThirdPartyExecutor interface {
 	// Declarations returns the tool declarations advertised to the agent.
-	Declarations() []functionTool
+	Declarations() []FunctionTool
 	// Execute runs the named tool with the given arguments and returns the result
 	// value to send back to the agent (wrapped into the function_result step).
 	Execute(ctx context.Context, name string, args map[string]any) any
