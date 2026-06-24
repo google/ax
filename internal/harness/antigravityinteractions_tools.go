@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // executeTool runs a tool call the agent yielded and returns the result value to
@@ -35,7 +36,7 @@ import (
 // (move/delete_dir/file_change family) require no success payload -- on success
 // they return an empty result; on failure they return {"error": <message>},
 // which marks the step as failed.
-func (h *InteractionsAPIHarness) executeTool(ctx context.Context, call capturedToolCall) any {
+func (h *AntigravityInteractionsHarness) executeTool(ctx context.Context, call capturedToolCall) any {
 	switch call.name {
 	case "view_file":
 		return execViewFile(call)
@@ -56,6 +57,9 @@ func (h *InteractionsAPIHarness) executeTool(ctx context.Context, call capturedT
 	case "delete_file":
 		return execDeleteFile(call)
 	default:
+		if h.cfg.ThirdPartyExecutor == nil {
+			return map[string]any{"error": fmt.Sprintf("no executor configured for third-party tool %q", call.name)}
+		}
 		return h.cfg.ThirdPartyExecutor.Execute(ctx, call.name, call.arguments)
 	}
 }
@@ -82,22 +86,48 @@ func execViewFile(call capturedToolCall) any {
 	return map[string]any{"content": string(data)}
 }
 
+// runCommandTimeout bounds how long a single run_command may take, so a runaway
+// command (e.g. `find /`, or `ping` without a count) cannot wedge the harness.
+const runCommandTimeout = 60 * time.Second
+
 func execRunCommand(ctx context.Context, call capturedToolCall) any {
 	cmdLine := stringArg(call.arguments, "CommandLine")
 	if cmdLine == "" {
 		return map[string]any{"error": "run_command: missing required argument 'CommandLine'"}
 	}
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", cmdLine)
+
+	// Bound the command's runtime so it cannot hang the harness.
+	runCtx, cancel := context.WithTimeout(ctx, runCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", cmdLine)
+
+	// Use the requested working directory only if it exists. The agent often
+	// assumes a sandbox dir (e.g. /workspace) that is not present on this host;
+	// rather than failing every command with a confusing "chdir: no such file or
+	// directory", fall back to the default working directory.
 	if cwd := stringArg(call.arguments, "Cwd"); cwd != "" {
-		cmd.Dir = cwd
+		if info, err := os.Stat(cwd); err == nil && info.IsDir() {
+			cmd.Dir = cwd
+		}
 	}
+
 	out, err := cmd.CombinedOutput()
+
+	// Timed out: report a clear, non-zero result rather than blocking.
+	if runCtx.Err() == context.DeadlineExceeded {
+		return map[string]any{
+			"Output":   fmt.Sprintf("%scommand timed out after %s", out, runCommandTimeout),
+			"ExitCode": 124, // conventional timeout exit code
+		}
+	}
+
 	exitCode := 0
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			exitCode = ee.ExitCode()
 		} else {
-			// Failed to start (e.g. bad cwd): surface as a non-zero exit + output.
+			// Failed to start: surface as a non-zero exit + output.
 			return map[string]any{"Output": fmt.Sprintf("%s%v", out, err), "ExitCode": 1}
 		}
 	}
@@ -288,10 +318,10 @@ func applyReplacements(path, tool string, reps []replacement) any {
 // ThirdPartyExecutor. The executor both declares the tools (advertised to the
 // agent in the request's "tools" field) and executes calls to them.
 //
-// TODO: this is the seam for the controller to inject the caller's own executor.
-// Until that interface method exists, the harness defaults to bankingExecutor, a
-// small BANKING EXAMPLE (check_balance / transfer_funds) so the end-to-end loop
-// is demonstrable.
+// The executor is the seam for the controller to inject the caller's own tool
+// implementations (and their declarations). If no executor is configured, the
+// harness advertises no third-party tools and reports an error result for any
+// non-built-in call the agent attempts.
 // ---------------------------------------------------------------------------
 
 // ThirdPartyExecutor declares and executes third-party (non-built-in) function
@@ -303,63 +333,6 @@ type ThirdPartyExecutor interface {
 	// Execute runs the named tool with the given arguments and returns the result
 	// value to send back to the agent (wrapped into the function_result step).
 	Execute(ctx context.Context, name string, args map[string]any) any
-}
-
-// bankingExecutor is the hardcoded placeholder ThirdPartyExecutor: a tiny
-// banking example used until the controller injects a real executor.
-type bankingExecutor struct{}
-
-var _ ThirdPartyExecutor = bankingExecutor{}
-
-func (bankingExecutor) Declarations() []functionTool {
-	objSchema := func(props map[string]any, required []string) map[string]any {
-		s := map[string]any{"type": "object", "properties": props}
-		if len(required) > 0 {
-			s["required"] = required
-		}
-		return s
-	}
-	strProp := func(desc string) map[string]any {
-		return map[string]any{"type": "string", "description": desc}
-	}
-	numProp := func(desc string) map[string]any {
-		return map[string]any{"type": "number", "description": desc}
-	}
-	return []functionTool{
-		{
-			Type:   "function",
-			Name:   "check_balance",
-			Desc:   "Returns the customer's current account balance in USD.",
-			Params: objSchema(map[string]any{}, nil),
-		},
-		{
-			Type: "function",
-			Name: "transfer_funds",
-			Desc: "Transfers the given USD amount to a single recipient. Call once per recipient.",
-			Params: objSchema(map[string]any{
-				"recipient":  strProp("The name of the recipient (e.g., 'Alice')."),
-				"amount_usd": numProp("The amount to transfer, in USD."),
-			}, []string{"recipient", "amount_usd"}),
-		},
-	}
-}
-
-func (bankingExecutor) Execute(ctx context.Context, name string, args map[string]any) any {
-	switch name {
-	case "check_balance":
-		return map[string]any{"result": `{"balance_usd": 500.00, "currency": "USD"}`}
-	case "transfer_funds":
-		recipient := stringArg(args, "recipient")
-		amount := numArg(args, "amount_usd")
-		if recipient == "" {
-			return map[string]any{"result": `{"status":"failed","error":"missing recipient"}`}
-		}
-		return map[string]any{"result": fmt.Sprintf(
-			`{"status":"completed","recipient":%q,"amount_usd":%.2f,"confirmation_id":"MOCK-%s-%.0f"}`,
-			recipient, amount, recipient, amount)}
-	default:
-		return map[string]any{"result": fmt.Sprintf(`{"status":"ok","function":%q}`, name)}
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -374,19 +347,6 @@ func stringArg(args map[string]any, name string) string {
 		return v
 	}
 	return ""
-}
-
-func numArg(args map[string]any, name string) float64 {
-	if args == nil {
-		return 0
-	}
-	switch v := args[name].(type) {
-	case float64:
-		return v
-	case int:
-		return float64(v)
-	}
-	return 0
 }
 
 func boolArg(args map[string]any, name string) bool {

@@ -14,8 +14,8 @@
 
 package harness
 
-// InteractionsAPIHarness drives an Antigravity agent through the Vertex GenAI
-// Interactions API over HTTPS + Server-Sent Events, using the steps-based
+// AntigravityInteractionsHarness drives an Antigravity agent through the Vertex
+// GenAI Interactions API over HTTPS + Server-Sent Events, using the steps-based
 // ("step_list") request format. It implements the Harness interface for the
 // client-side ("local") environment: the agent runs server-side as the brain
 // while the harness, on the client, drives the turn loop and executes every tool
@@ -25,9 +25,9 @@ package harness
 //
 //   - Built-in environment tools (view_file, run_command, list_dir, ...) are
 //     executed against the local filesystem/shell.
-//   - Third-party / MCP tools are executed via a ThirdPartyExecutor. Today the
-//     harness hardcodes a banking example executor; in the future the executor
-//     will be injected by the controller (see the TODO on the seam).
+//   - Third-party / MCP tools are executed via a ThirdPartyExecutor, the seam
+//     through which the controller injects the caller's tool implementations. If
+//     no executor is configured, no third-party tools are advertised.
 //
 // Neither kind of tool call is surfaced to the caller: Run drives the whole
 // interaction to completion (initial turn -> resume -> resume -> ... -> final
@@ -48,24 +48,29 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/impersonate"
 )
 
+// cloudPlatformScope is the OAuth2 scope required to call Vertex AI.
+const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
 // Compile-time interface assertions.
-var _ Harness = (*InteractionsAPIHarness)(nil)
-var _ Execution = (*interactionsExecution)(nil)
+var _ Harness = (*AntigravityInteractionsHarness)(nil)
+var _ Execution = (*antigravityInteractionsExecution)(nil)
 
 const interactionsAPIVersion = "v1beta1"
 
-// InteractionsAPIConfig configures an InteractionsAPIHarness. Use
-// NewInteractionsAPIHarness, which fills sensible defaults.
-type InteractionsAPIConfig struct {
+// AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
+// Use NewAntigravityInteractionsHarness, which fills sensible defaults.
+type AntigravityInteractionsConfig struct {
 	// Endpoint is the Vertex GenAI dataplane HTTPS endpoint, e.g.
 	// "https://aiplatform.googleapis.com".
 	Endpoint string
@@ -80,7 +85,9 @@ type InteractionsAPIConfig struct {
 	// a single Run before giving up.
 	MaxTurns int
 	// ImpersonateServiceAccount, if set, mints the access token by impersonating
-	// this service account.
+	// this service account (via google.golang.org/api/impersonate, using
+	// Application Default Credentials as the base principal). The base principal
+	// needs roles/iam.serviceAccountTokenCreator on the target.
 	ImpersonateServiceAccount string
 	// Debug, if true, logs concise per-conversation tool activity to stderr: a
 	// line for each function call (FC) the agent yields and each function result
@@ -88,23 +95,23 @@ type InteractionsAPIConfig struct {
 	// otherwise internal to the harness.
 	Debug bool
 
-	// ThirdPartyExecutor executes third-party (non-built-in) function tool calls.
-	// If nil, a hardcoded banking example executor is used.
-	//
-	// TODO: this is the seam for the controller to inject the caller's tool
-	// implementations (and their declarations). For now it defaults to the
-	// banking example.
+	// ThirdPartyExecutor executes third-party (non-built-in) function tool calls
+	// and declares them to the agent. It is the seam for the controller to inject
+	// the caller's tool implementations. If nil, the harness advertises no
+	// third-party tools and any non-built-in call the agent attempts yields an
+	// error result.
 	ThirdPartyExecutor ThirdPartyExecutor
 
 	// TokenSource overrides how the bearer token is obtained. If nil, the harness
-	// shells out to gcloud (honoring ImpersonateServiceAccount).
-	TokenSource func(ctx context.Context) (string, error)
+	// builds an auto-refreshing source from Application Default Credentials
+	// (honoring ImpersonateServiceAccount) -- see newTokenSource.
+	TokenSource oauth2.TokenSource
 	// HTTPClient overrides the HTTP client. If nil, a default client with a long
 	// timeout is used.
 	HTTPClient *http.Client
 }
 
-func (c *InteractionsAPIConfig) withDefaults() {
+func (c *AntigravityInteractionsConfig) withDefaults() {
 	if c.Endpoint == "" {
 		c.Endpoint = "https://aiplatform.googleapis.com"
 	}
@@ -114,44 +121,48 @@ func (c *InteractionsAPIConfig) withDefaults() {
 	if c.MaxTurns == 0 {
 		c.MaxTurns = 20
 	}
-	if c.ThirdPartyExecutor == nil {
-		c.ThirdPartyExecutor = bankingExecutor{}
-	}
 }
 
-// InteractionsAPIHarness implements Harness by talking to the public Vertex
-// Interactions API.
-type InteractionsAPIHarness struct {
-	cfg        InteractionsAPIConfig
+// AntigravityInteractionsHarness implements Harness by talking to the public
+// Vertex GenAI Interactions API.
+type AntigravityInteractionsHarness struct {
+	cfg        AntigravityInteractionsConfig
 	httpClient *http.Client
+
+	// tsOnce guards lazy initialization of ts, the resolved OAuth2 token source.
+	// It is resolved on first use (rather than in the constructor) so credential
+	// errors surface to the caller of Run instead of at construction time.
+	tsOnce sync.Once
+	ts     oauth2.TokenSource
+	tsErr  error
 }
 
-// NewInteractionsAPIHarness creates a harness from the given config, filling in
-// defaults for unset fields.
-func NewInteractionsAPIHarness(cfg InteractionsAPIConfig) *InteractionsAPIHarness {
+// NewAntigravityInteractionsHarness creates a harness from the given config,
+// filling in defaults for unset fields.
+func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) *AntigravityInteractionsHarness {
 	cfg.withDefaults()
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Minute}
 	}
-	return &InteractionsAPIHarness{cfg: cfg, httpClient: hc}
+	return &AntigravityInteractionsHarness{cfg: cfg, httpClient: hc}
 }
 
 // Start implements Harness.Start.
-func (h *InteractionsAPIHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
-	return &interactionsExecution{
+func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
+	return &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
 	}, nil
 }
 
-// interactionsExecution implements Execution. It is long-lived across Run calls
-// and owns the interaction chain (prevInteractionID). Queue may be called
-// concurrently with Run to inject steering input, which is drained at each
-// interaction gap.
-type interactionsExecution struct {
-	harness        *InteractionsAPIHarness
+// antigravityInteractionsExecution implements Execution. It is long-lived
+// across Run calls and owns the interaction chain (prevInteractionID). Queue
+// may be called concurrently with Run to inject steering input, which is
+// drained at each interaction gap.
+type antigravityInteractionsExecution struct {
+	harness        *AntigravityInteractionsHarness
 	conversationID string
 	id             string
 
@@ -167,13 +178,13 @@ type interactionsExecution struct {
 }
 
 // ID implements Execution.ID.
-func (e *interactionsExecution) ID() string { return e.id }
+func (e *antigravityInteractionsExecution) ID() string { return e.id }
 
 // Queue implements Execution.Queue. It carries human input only: the initial
 // prompt, or steering messages injected mid-run. Tool results are NOT queued by
 // the caller -- the harness executes all tools itself. Queued messages are
 // drained at the next interaction gap within Run.
-func (e *interactionsExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (e *antigravityInteractionsExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
@@ -184,7 +195,7 @@ func (e *interactionsExecution) Queue(ctx context.Context, msg ...*proto.Message
 }
 
 // Close implements Execution.Close.
-func (e *interactionsExecution) Close(ctx context.Context) error {
+func (e *antigravityInteractionsExecution) Close(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.closed = true
@@ -194,7 +205,7 @@ func (e *interactionsExecution) Close(ctx context.Context) error {
 // drainQueue removes and returns any queued human input, converting it to
 // user_input steps. Called at each interaction gap so newly-queued steering
 // messages are folded into the next interaction.
-func (e *interactionsExecution) drainQueue() []any {
+func (e *antigravityInteractionsExecution) drainQueue() []any {
 	e.mu.Lock()
 	msgs := e.queued
 	e.queued = nil
@@ -202,7 +213,7 @@ func (e *interactionsExecution) drainQueue() []any {
 	return messagesToInputSteps(msgs)
 }
 
-func (e *interactionsExecution) setPrevID(id string) {
+func (e *antigravityInteractionsExecution) setPrevID(id string) {
 	if id == "" {
 		return
 	}
@@ -219,7 +230,7 @@ func (e *interactionsExecution) setPrevID(id string) {
 // The agent's text output is forwarded via handler.OnMessage; handler.OnComplete
 // is called once when the conversation finishes. At each interaction gap, any
 // human input queued via Queue (steering) is folded into the next turn.
-func (e *interactionsExecution) Run(ctx context.Context, handler Handler) error {
+func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler Handler) error {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -391,38 +402,69 @@ type turnResult struct {
 }
 
 // debugf logs a concise debug line to stderr when Debug is enabled.
-func (h *InteractionsAPIHarness) debugf(format string, args ...any) {
+func (h *AntigravityInteractionsHarness) debugf(format string, args ...any) {
 	if h.cfg.Debug {
 		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 }
 
-func (h *InteractionsAPIHarness) interactionsURL() string {
+func (h *AntigravityInteractionsHarness) interactionsURL() string {
 	return fmt.Sprintf("%s/%s/projects/%s/locations/%s/interactions",
 		h.cfg.Endpoint, interactionsAPIVersion, h.cfg.Project, h.cfg.Location)
 }
 
-// token obtains a bearer token from the configured TokenSource, or via gcloud.
-func (h *InteractionsAPIHarness) token(ctx context.Context) (string, error) {
-	if h.cfg.TokenSource != nil {
-		return h.cfg.TokenSource(ctx)
+// token returns a bearer access token from the harness's OAuth2 token source.
+// The source is resolved once (lazily) and auto-refreshes thereafter.
+func (h *AntigravityInteractionsHarness) token(ctx context.Context) (string, error) {
+	h.tsOnce.Do(func() {
+		if h.cfg.TokenSource != nil {
+			h.ts = h.cfg.TokenSource
+			return
+		}
+		h.ts, h.tsErr = newTokenSource(ctx, h.cfg.ImpersonateServiceAccount)
+	})
+	if h.tsErr != nil {
+		return "", h.tsErr
 	}
-	args := []string{"auth", "print-access-token"}
-	if h.cfg.ImpersonateServiceAccount != "" {
-		args = append(args, "--impersonate-service-account="+h.cfg.ImpersonateServiceAccount)
-	}
-	out, err := exec.CommandContext(ctx, "gcloud", args...).Output()
+	tok, err := h.ts.Token()
 	if err != nil {
-		return "", fmt.Errorf("gcloud %s failed: %w", strings.Join(args, " "), err)
+		return "", fmt.Errorf("obtaining access token: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return tok.AccessToken, nil
+}
+
+// newTokenSource builds an auto-refreshing OAuth2 token source for Vertex AI
+// from Application Default Credentials. If impersonate is non-empty, it returns
+// a source that impersonates that service account (with ADC as the base
+// principal); otherwise it returns the ADC source directly. It never shells out
+// to the gcloud CLI.
+func newTokenSource(ctx context.Context, impersonateServiceAccount string) (oauth2.TokenSource, error) {
+	if impersonateServiceAccount != "" {
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: impersonateServiceAccount,
+			Scopes:          []string{cloudPlatformScope},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("creating impersonated token source for %q: %w", impersonateServiceAccount, err)
+		}
+		return ts, nil
+	}
+	creds, err := google.FindDefaultCredentials(ctx, cloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("finding application default credentials: %w", err)
+	}
+	return creds.TokenSource, nil
 }
 
 // newRequest builds an interactionRequest common to every turn. The environment
 // is always the client-side ("local") environment -- this harness exists to
 // execute the agent's built-in env tools locally. Tools are re-declared on every
 // turn so they stay known to the agent across resumes.
-func (h *InteractionsAPIHarness) newRequest(input []any, previousID string) interactionRequest {
+func (h *AntigravityInteractionsHarness) newRequest(input []any, previousID string) interactionRequest {
+	var tools []functionTool
+	if h.cfg.ThirdPartyExecutor != nil {
+		tools = h.cfg.ThirdPartyExecutor.Declarations()
+	}
 	return interactionRequest{
 		Stream:                true,
 		Background:            true,
@@ -431,12 +473,12 @@ func (h *InteractionsAPIHarness) newRequest(input []any, previousID string) inte
 		Environment:           &environmentConfig{Type: "local"},
 		PreviousInteractionID: previousID,
 		Input:                 input,
-		Tools:                 h.cfg.ThirdPartyExecutor.Declarations(),
+		Tools:                 tools,
 	}
 }
 
 // postTurn POSTs the request and streams the SSE response for one turn.
-func (h *InteractionsAPIHarness) postTurn(ctx context.Context, token string, reqBody interactionRequest) (*turnResult, error) {
+func (h *AntigravityInteractionsHarness) postTurn(ctx context.Context, token string, reqBody interactionRequest) (*turnResult, error) {
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
@@ -476,7 +518,7 @@ func (h *InteractionsAPIHarness) postTurn(ctx context.Context, token string, req
 // So we track state per step index, always REPLACING the latest arguments
 // snapshot, then dedupe by id at the end -- concatenating snapshots would
 // corrupt the JSON.
-func (h *InteractionsAPIHarness) parseStreamedTurn(body io.Reader) (*turnResult, error) {
+func (h *AntigravityInteractionsHarness) parseStreamedTurn(body io.Reader) (*turnResult, error) {
 	turn := &turnResult{}
 
 	// pendingCall accumulates one function call as it streams in.
@@ -550,7 +592,16 @@ func (h *InteractionsAPIHarness) parseStreamedTurn(body io.Reader) (*turnResult,
 					}
 				case "text":
 					if textChunk, ok := delta["text"].(string); ok {
-						turn.modelText += textChunk
+						// Text deltas are mostly incremental, but the server
+						// periodically re-sends a full cumulative restatement of the
+						// text so far (e.g. when finalizing a turn before a tool
+						// call). Detect that case and replace rather than append, so
+						// the restated text is not duplicated.
+						if strings.HasPrefix(textChunk, turn.modelText) && turn.modelText != "" {
+							turn.modelText = textChunk
+						} else {
+							turn.modelText += textChunk
+						}
 					}
 				}
 			}
