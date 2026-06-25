@@ -1,5 +1,3 @@
-//go:build !harness
-
 // Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +30,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/controller2"
 	"github.com/google/ax/proto"
 )
 
@@ -41,14 +39,14 @@ type Server struct {
 	proto.UnimplementedControllerServiceServer
 	proto.UnimplementedConversationServiceServer
 
-	controller *controller.Controller
+	controller *controller2.Controller
 	grpcServer *grpc.Server
 	inFlight   map[string]struct{}
 	inFlightMu sync.Mutex
 }
 
 // New creates a new controller server.
-func New(c *controller.Controller) *Server {
+func New(c *controller2.Controller) *Server {
 	return &Server{
 		controller: c,
 		inFlight:   make(map[string]struct{}),
@@ -68,13 +66,12 @@ func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[
 	}
 	defer cleanup()
 
-	outputHandler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
+	outputHandler := controller2.ExecHandler(func(resp *proto.ExecResponse) error {
 		return stream.Send(resp)
 	})
-	err := s.controller.Exec(ctx, req, outputHandler)
-	go suspendActor(req.ConversationId) // TODO(jbd): Move to an interceptor.
-	return err
+	return s.controller.Exec(ctx, req, outputHandler)
 }
+
 
 func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConversationRequest) (*proto.DeleteConversationResponse, error) {
 	slog.InfoContext(ctx, "Deleting conversation...",
@@ -92,7 +89,6 @@ func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConver
 	if err := s.controller.Delete(ctx, req.ConversationId); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to delete conversation: %v", err)
 	}
-	go suspendActor(req.ConversationId) // TODO(jbd): Move to an interceptor.
 	return &proto.DeleteConversationResponse{}, nil
 }
 
@@ -112,7 +108,7 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	proto.RegisterControllerServiceServer(s.grpcServer, s)
 	proto.RegisterConversationServiceServer(s.grpcServer, s)
 
-	// Register standard gRPC Health Check server
+	// Register standard gRPC Health Check server.
 	hs := health.NewServer()
 	hs.SetServingStatus("AX", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(s.grpcServer, hs)

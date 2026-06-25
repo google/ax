@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
-	"github.com/google/ax/internal/controller/executor"
+	"github.com/google/ax/internal/controller2/eventlog"
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
@@ -373,8 +373,8 @@ func loadTraceData(ctx context.Context, cfg *cliutil.Config, convID string) (*Tr
 	}, nil
 }
 
-func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.ExecutionEvent, string, []string, error) {
-	evLog, err := executor.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
+func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.ConversationEvent, string, []string, error) {
+	evLog, err := eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("could not open sqlite eventlog: %w", err)
 	}
@@ -398,26 +398,21 @@ func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.Ex
 		return nil, "", nil, fmt.Errorf("no executions found for conversation: %s", convID)
 	}
 
-	var allEvents []*proto.ExecutionEvent
-	for _, eID := range execIDs {
-		events, err := evLog.ExecEvents(ctx, eID)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("failed to query events for exec %s: %w", eID, err)
-		}
-		allEvents = append(allEvents, events...)
-	}
-
 	// Use the first execID as the rootExecID as requested by user
 	rootExecID := execIDs[0]
 
-	return allEvents, rootExecID, execIDs, nil
+	return convEvents, rootExecID, execIDs, nil
 }
 
-func buildExecTraces(execIDs []string, events []*proto.ExecutionEvent) []ExecTrace {
+func buildExecTraces(execIDs []string, events []*proto.ConversationEvent) []ExecTrace {
 	execsMap := make(map[string][]ExecutionEvent)
+	harnessIDs := make(map[string]string)
 
 	for _, protoEv := range events {
 		exID := protoEv.ExecId
+		if protoEv.HarnessId != "" {
+			harnessIDs[exID] = protoEv.HarnessId
+		}
 		ev := extractExecutionEvent(exID, protoEv)
 		execsMap[exID] = append(execsMap[exID], ev)
 	}
@@ -425,13 +420,7 @@ func buildExecTraces(execIDs []string, events []*proto.ExecutionEvent) []ExecTra
 	var execs []ExecTrace
 	for _, execID := range execIDs {
 		if evs, ok := execsMap[execID]; ok {
-			agentID := ""
-			for _, ev := range evs {
-				if ev.AgentID != "" {
-					agentID = ev.AgentID
-					break
-				}
-			}
+			agentID := harnessIDs[execID]
 			execs = append(execs, ExecTrace{
 				ExecID:  execID,
 				AgentID: agentID,
@@ -473,18 +462,18 @@ func extractMsgs(protoContents []*proto.Message) []Content {
 	return results
 }
 
-func extractExecutionEvent(execID string, protoEv *proto.ExecutionEvent) ExecutionEvent {
+func extractExecutionEvent(execID string, protoEv *proto.ConversationEvent) ExecutionEvent {
 	ev := ExecutionEvent{
 		ExecID:  execID,
-		AgentID: protoEv.AgentId,
-	}
-	if protoEv.Timestamp != nil {
-		ev.Timestamp = protoEv.Timestamp.AsTime()
+		AgentID: protoEv.HarnessId,
 	}
 
 	ev.State = fmt.Sprint(protoEv.State)
-	ev.Outputs = extractMsgs(protoEv.Outputs)
-	ev.Inputs = extractMsgs(protoEv.Inputs)
+	if protoEv.HarnessId != "" {
+		ev.Inputs = extractMsgs(protoEv.Messages)
+	} else {
+		ev.Outputs = extractMsgs(protoEv.Messages)
+	}
 
 	return ev
 }

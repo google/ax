@@ -1,4 +1,4 @@
-.PHONY: all build build-harness proto test clean install install-harness install-ate images
+.PHONY: all build proto test clean install images
 
 # Default container registry for docker
 export KO_DOCKER_REPO ?= gcr.io/ax-container-images
@@ -15,12 +15,6 @@ build:
 	@go build -o bin/remote_agent ./examples/remote_agent
 	@echo "Build complete!"
 
-# (Dev-only) Build ax with the `harness` build tag.
-build-harness:
-	@echo "Building ax (harness path)..."
-	@mkdir -p bin
-	@go build -tags harness -o bin/ax ./cmd/ax
-	@echo "Build complete!"
 
 # Generate protobuf code
 proto:
@@ -35,8 +29,6 @@ proto:
 test:
 	@echo "Running tests..."
 	@go test -v ./...
-	@echo "Running tests (harness path)..."
-	@go test -v -tags harness ./...
 
 # Clean build artifacts
 clean:
@@ -49,18 +41,6 @@ clean:
 install:
 	@echo "Installing ax..."
 	@go install ./cmd/ax
-	@echo "Install complete!"
-
-# Install ax with the `harness` build tag.
-install-harness:
-	@echo "Installing ax (harness path)..."
-	@go install -tags harness ./cmd/ax
-	@echo "Install complete!"
-
-# Install ax with ATE support to GOPATH/bin
-install-ate:
-	@echo "Installing ax with ATE support..."
-	@go install -tags ate ./cmd/ax
 	@echo "Install complete!"
 
 
@@ -86,8 +66,8 @@ ax-image:
 	ko build --base-import-paths ./cmd/ax
 
 ax-server-image:
-	@echo "Building ax-server (harness path) container image with ko..."
-	GOFLAGS="-tags=harness" ko build --base-import-paths ./cmd/ax
+	@echo "Building ax-server container image with ko..."
+	ko build --base-import-paths ./cmd/ax
 
 axepp-image:
 	@echo "Building axepp container image with ko..."

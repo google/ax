@@ -1,5 +1,3 @@
-//go:build !harness
-
 // Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,20 +16,111 @@ package cliutil
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/config"
+	"github.com/google/ax/internal/config2"
 )
 
-func TestNewControllerFromConfig_UnknownPlanner(t *testing.T) {
-	cfg := &config.Config{
-		Planner: config.PlannerConfig{
-			Type: "unknown",
+func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Antigravity: config2.AntigravityHarnessConfig{
+				Default:  true,
+				Endpoint: "localhost:50053",
+			},
+		},
+	}
+
+	c, err := NewControllerFromConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewControllerFromConfig: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil controller")
+	}
+	c.Close()
+}
+
+func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "1")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Antigravity: config2.AntigravityHarnessConfig{
+				Default: true,
+			},
+		},
+	}
+
+	c, err := NewControllerFromConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewControllerFromConfig: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil controller")
+	}
+	c.Close()
+}
+
+func TestNewControllerFromConfig_CustomHarnessRequiresSubstrateMode(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Substrate: []config2.SubstrateHarnessConfig{
+				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
+			},
 		},
 	}
 
 	_, err := NewControllerFromConfig(context.Background(), cfg)
 	if err == nil {
-		t.Fatal("expected error for unknown planner type, got nil")
+		t.Fatal("expected error for custom substrate harness without AX_SUBSTRATE=1, got nil")
 	}
+	if !strings.Contains(err.Error(), "AX_SUBSTRATE=1") {
+		t.Errorf("expected error to mention AX_SUBSTRATE=1, got: %v", err)
+	}
+}
+
+func TestNewControllerFromConfig_CustomHarnessInSubstrateMode(t *testing.T) {
+	t.Setenv("AX_SUBSTRATE", "1")
+
+	cfg := &config2.Config{
+		EventLog: config2.EventLogConfig{
+			SQLiteConfig: config2.SQLiteConfig{
+				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
+			},
+		},
+		Harnesses: config2.HarnessesConfig{
+			Substrate: []config2.SubstrateHarnessConfig{
+				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
+			},
+		},
+	}
+
+	c, err := NewControllerFromConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewControllerFromConfig: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil controller")
+	}
+	c.Close()
 }
