@@ -54,7 +54,8 @@ spec:
       # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
       # environment are specified here. `ax harness` forks the Antigravity Python
       # sidecar, which serves on port 80 because substrate DNATs workerPodIP:80.
-      command: ["/ax", "harness",
+      workingDir: /ax
+      command: ["ax", "harness",
                 "--antigravity-agent-file", "/app/examples/antigravity_agent/agent.py",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
@@ -171,7 +172,7 @@ spec:
       containers:
         - name: ax-server
           image: ${AX_IMAGE}
-          command: ["/ax", "serve", "--config", "/etc/ax/ax.yaml"]
+          command: ["ax", "serve", "--config", "/etc/ax/ax.yaml"]
           ports:
             - containerPort: 8494
           env:

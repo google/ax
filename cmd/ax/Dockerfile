@@ -47,7 +47,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # binary built in stage 1.
 COPY python/ /app/python
 COPY examples/antigravity_agent/ /app/examples/antigravity_agent
-COPY --from=build /out/ax /ax
+COPY --from=build /out/ax /usr/local/bin/ax
 
 # `from python.proto import ...` needs /app on the path; the generated stubs do
 # `from proto import ...`, which needs /app/python.
@@ -56,11 +56,14 @@ ENV PYTHONPATH=/app:/app/python
 # Flush stdout/stderr immediately so server logs surface in container logs.
 ENV PYTHONUNBUFFERED=1
 
+# Change working directory so that AGY doesn't pick up its own source code
+WORKDIR /ax
+
 EXPOSE 80
 
 # Default command for local docker runs. Substrate ignores the image CMD and runs
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
-CMD ["/ax", "harness", \
+CMD ["ax", "harness", \
      "--antigravity-agent-file", "/app/examples/antigravity_agent/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]
