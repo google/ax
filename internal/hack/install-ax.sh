@@ -20,11 +20,6 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
-# Add GOPATH/bin to PATH so that go-installed tools (like ko) can be found.
-if command -v go >/dev/null 2>&1; then
-  export PATH="${PATH}:$(go env GOPATH)/bin"
-fi
-
 if [[ -n "${PROJECT_ID:-}" ]]; then
   export KO_DOCKER_REPO="gcr.io/${PROJECT_ID}"
   echo "Using KO_DOCKER_REPO: ${KO_DOCKER_REPO}" >&2
@@ -109,55 +104,6 @@ detect_container_engine() {
   fi
 }
 
-maybe_login_podman() {
-  if [[ "${CONTAINER_ENGINE}" != *podman* ]]; then
-    return
-  fi
-  if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
-    return
-  fi
-
-  local registry
-  registry=$(echo "${KO_DOCKER_REPO}" | cut -d/ -f1)
-
-  if [[ "${registry}" != *gcr.io && "${registry}" != *pkg.dev ]]; then
-    return
-  fi
-
-  if ! command -v docker-credential-gcloud >/dev/null 2>&1; then
-    echo "Warning: docker-credential-gcloud not found. Podman push might fail if not authenticated." >&2
-    return
-  fi
-
-  log_step "Authenticating podman for ${registry} using gcloud credential helper..." >&2
-
-  local creds username="" secret=""
-  # gcloud credential helper is executed on the host, and the token is passed to podman login.
-  # This authenticates the podman VM which cannot run the macOS credential helper natively.
-  if creds=$(echo "${registry}" | docker-credential-gcloud get 2>/dev/null); then
-    if command -v jq >/dev/null 2>&1; then
-      username=$(echo "${creds}" | jq -r '.Username')
-      secret=$(echo "${creds}" | jq -r '.Secret')
-    elif command -v python3 >/dev/null 2>&1; then
-      username=$(echo "${creds}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('Username', ''))")
-      secret=$(echo "${creds}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('Secret', ''))")
-    else
-      username=$(echo "${creds}" | grep '"Username":' | cut -d'"' -f4)
-      secret=$(echo "${creds}" | grep '"Secret":' | cut -d'"' -f4)
-    fi
-
-    if [[ -n "${username}" && -n "${secret}" ]]; then
-      if echo "${secret}" | podman login -u "${username}" --password-stdin "${registry}" >/dev/null; then
-        echo "Podman logged into ${registry} successfully." >&2
-      else
-        echo "Warning: Podman login to ${registry} failed." >&2
-      fi
-    fi
-  else
-    echo "Warning: Failed to get credentials from docker-credential-gcloud." >&2
-  fi
-}
-
 # build_ax_image builds and pushes the comprehensive ax image (the Go ax binary
 # plus the Antigravity Python sidecar) and echoes its digest-pinned reference on
 # stdout. Requires KO_DOCKER_REPO and a container engine.
@@ -167,7 +113,6 @@ build_ax_image() {
     exit 1
   fi
   detect_container_engine
-  maybe_login_podman
   if ! command -v "${CONTAINER_ENGINE}" >/dev/null 2>&1; then
     echo "Error: container engine '${CONTAINER_ENGINE}' not found in PATH." >&2
     echo "Install it or set CONTAINER_ENGINE to an available builder." >&2
@@ -176,17 +121,7 @@ build_ax_image() {
 
   local repo tag image digest
   repo="${KO_DOCKER_REPO}/ax"
-  
-  # Use current git branch name as tag, replacing slashes with dashes.
-  # Fall back to commit hash if in detached HEAD state.
-  local branch
-  branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ "${branch}" == "HEAD" ]]; then
-    tag="$(git rev-parse --short HEAD)"
-  else
-    tag=$(echo "${branch}" | tr '/' '-')
-  fi
-  
+  tag="$(git rev-parse --short HEAD)"
   image="${repo}:${tag}"
 
   log_step "build_ax_image -> ${image}" >&2
