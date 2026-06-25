@@ -66,9 +66,7 @@ func init() {
 // TODO(jbd): Add multimodal input flags, e.g. --input-image.
 
 var (
-	// The concrete type depends on the build tag:
-	// - Default: *controller.Controller
-	// - With -tags harness: *controller2.Controller
+	// The concrete type is *controller.Controller
 	execController   cliutil.Controller
 	interruptHandler = NewInterruptHandler()
 )

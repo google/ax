@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
-	"github.com/google/ax/internal/controller2/eventlog"
+	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/proto"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"

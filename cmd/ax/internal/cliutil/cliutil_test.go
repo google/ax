@@ -20,18 +20,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/config2"
+	"github.com/google/ax/internal/config"
 )
 
 func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
-	cfg := &config2.Config{
-		EventLog: config2.EventLogConfig{
-			SQLiteConfig: config2.SQLiteConfig{
+	cfg := &config.Config{
+		EventLog: config.EventLogConfig{
+			SQLiteConfig: config.SQLiteConfig{
 				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
 			},
 		},
-		Harnesses: config2.HarnessesConfig{
-			Antigravity: config2.AntigravityHarnessConfig{
+		Harnesses: config.HarnessesConfig{
+			Antigravity: config.AntigravityHarnessConfig{
 				Default:  true,
 				Endpoint: "localhost:50053",
 			},
@@ -51,14 +51,14 @@ func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
 func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "1")
 
-	cfg := &config2.Config{
-		EventLog: config2.EventLogConfig{
-			SQLiteConfig: config2.SQLiteConfig{
+	cfg := &config.Config{
+		EventLog: config.EventLogConfig{
+			SQLiteConfig: config.SQLiteConfig{
 				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
 			},
 		},
-		Harnesses: config2.HarnessesConfig{
-			Antigravity: config2.AntigravityHarnessConfig{
+		Harnesses: config.HarnessesConfig{
+			Antigravity: config.AntigravityHarnessConfig{
 				Default: true,
 			},
 		},
@@ -77,14 +77,14 @@ func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 func TestNewControllerFromConfig_CustomHarnessRequiresSubstrateMode(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "")
 
-	cfg := &config2.Config{
-		EventLog: config2.EventLogConfig{
-			SQLiteConfig: config2.SQLiteConfig{
+	cfg := &config.Config{
+		EventLog: config.EventLogConfig{
+			SQLiteConfig: config.SQLiteConfig{
 				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
 			},
 		},
-		Harnesses: config2.HarnessesConfig{
-			Substrate: []config2.SubstrateHarnessConfig{
+		Harnesses: config.HarnessesConfig{
+			Substrate: []config.SubstrateHarnessConfig{
 				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
 			},
 		},
@@ -102,14 +102,14 @@ func TestNewControllerFromConfig_CustomHarnessRequiresSubstrateMode(t *testing.T
 func TestNewControllerFromConfig_CustomHarnessInSubstrateMode(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "1")
 
-	cfg := &config2.Config{
-		EventLog: config2.EventLogConfig{
-			SQLiteConfig: config2.SQLiteConfig{
+	cfg := &config.Config{
+		EventLog: config.EventLogConfig{
+			SQLiteConfig: config.SQLiteConfig{
 				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
 			},
 		},
-		Harnesses: config2.HarnessesConfig{
-			Substrate: []config2.SubstrateHarnessConfig{
+		Harnesses: config.HarnessesConfig{
+			Substrate: []config.SubstrateHarnessConfig{
 				{ID: "custom", Namespace: "team-ns", Template: "custom-template"},
 			},
 		},

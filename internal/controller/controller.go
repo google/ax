@@ -14,14 +14,14 @@
 
 // Package controller implements the single-writer orchestrator that coordinates
 // agentic loops, manages executions, and communicates with local and remote agents.
-package controller2
+package controller
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 
-	"github.com/google/ax/internal/controller2/eventlog"
+	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/proto"
 )
 

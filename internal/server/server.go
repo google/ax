@@ -30,7 +30,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/proto"
 )
 
@@ -39,14 +39,14 @@ type Server struct {
 	proto.UnimplementedControllerServiceServer
 	proto.UnimplementedConversationServiceServer
 
-	controller *controller2.Controller
+	controller *controller.Controller
 	grpcServer *grpc.Server
 	inFlight   map[string]struct{}
 	inFlightMu sync.Mutex
 }
 
 // New creates a new controller server.
-func New(c *controller2.Controller) *Server {
+func New(c *controller.Controller) *Server {
 	return &Server{
 		controller: c,
 		inFlight:   make(map[string]struct{}),
@@ -66,7 +66,7 @@ func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[
 	}
 	defer cleanup()
 
-	outputHandler := controller2.ExecHandler(func(resp *proto.ExecResponse) error {
+	outputHandler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
 		return stream.Send(resp)
 	})
 	return s.controller.Exec(ctx, req, outputHandler)

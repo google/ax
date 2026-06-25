@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package config2 provides configuration for the controller2 server path.
-package config2
+// Package config provides configuration for the controller server path.
+package config
 
 import (
 	"fmt"

@@ -33,9 +33,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/ax/internal/controller2/eventlog"
-	"github.com/google/ax/internal/controller2/eventlog/eventlogtest"
-	"github.com/google/ax/internal/controller2"
+	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/controller/eventlog"
+	"github.com/google/ax/internal/controller/eventlog/eventlogtest"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 )
@@ -51,7 +51,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	fmt.Println("\n--- Demo 1: Unregistered Harness ---")
 	fmt.Println("Requesting 'unregistered-agent'. Exec should fail since no harness is registered.")
-	runDemo(ctx, "unregistered-agent", func(reg *controller2.Registry) {
+	runDemo(ctx, "unregistered-agent", func(reg *controller.Registry) {
 		// Do not register any harness
 	})
 
@@ -63,7 +63,7 @@ func main() {
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		fmt.Println("WARNING: GEMINI_API_KEY is not set. Execution will likely fail if dependencies are missing, but we will try anyway.")
 	}
-	runDemo(ctx, "antigravity", func(reg *controller2.Registry) {
+	runDemo(ctx, "antigravity", func(reg *controller.Registry) {
 		// With the new stateful gRPC-based streaming harness, connectivity checks on the
 		// server address replace the build-time checks for local script file presence.
 		address := "localhost:50053"
@@ -78,12 +78,12 @@ func main() {
 	})
 }
 
-func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *controller2.Registry)) {
-	reg := controller2.NewRegistry()
+func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *controller.Registry)) {
+	reg := controller.NewRegistry()
 	setupRegistry(reg)
 
 	log := &eventlogtest.MemoryEventLog{}
-	c, err := controller2.New(ctx, controller2.Config{
+	c, err := controller.New(ctx, controller.Config{
 		Registry: reg,
 		EventLogBuilder: func() (eventlog.EventLog, error) {
 			return log, nil
@@ -95,7 +95,7 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 	}
 	defer c.Close()
 
-	handler := controller2.ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
 		for _, out := range resp.Outputs {
 			if textContent := out.GetContent().GetText().GetText(); textContent != "" {
 				fmt.Printf("Agent Output: %s\n", textContent)

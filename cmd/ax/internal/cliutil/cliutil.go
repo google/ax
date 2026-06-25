@@ -19,36 +19,36 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/google/ax/internal/config2"
-	"github.com/google/ax/internal/controller2"
-	"github.com/google/ax/internal/controller2/eventlog"
+	"github.com/google/ax/internal/config"
+	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/internal/harness"
 )
 
 const antigravityHarnessID = "antigravity"
 
 // Controller is the active controller type for this build.
-type Controller = *controller2.Controller
+type Controller = *controller.Controller
 
 // ExecHandler is the handler type accepted by Controller.Exec.
-type ExecHandler = controller2.ExecHandler
+type ExecHandler = controller.ExecHandler
 
 // Config is the configuration type for this build.
-type Config = config2.Config
+type Config = config.Config
 
 // LoadFromFile loads configuration from a YAML file.
 func LoadFromFile(path string) (*Config, error) {
-	return config2.LoadFromFile(path)
+	return config.LoadFromFile(path)
 }
 
 // DefaultConfig returns a configuration with default values set.
 func DefaultConfig() *Config {
-	return config2.DefaultConfig()
+	return config.DefaultConfig()
 }
 
-// NewControllerFromConfig creates a controller2.Controller instance based on the provided configuration.
-func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Controller, error) {
-	reg := controller2.NewRegistry()
+// NewControllerFromConfig creates a controller.Controller instance based on the provided configuration.
+func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Controller, error) {
+	reg := controller.NewRegistry()
 
 	// AX_SUBSTRATE selects how built-in harnesses run: locally (unset) or as
 	// substrate actors ("1").
@@ -105,7 +105,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller2.Con
 		}
 	}
 
-	return controller2.New(ctx, controller2.Config{
+	return controller.New(ctx, controller.Config{
 		Registry: reg,
 		EventLogBuilder: func() (eventlog.EventLog, error) {
 			if cfg.EventLog.PostgresConfig.DSN != "" {

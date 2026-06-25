@@ -74,22 +74,6 @@ message ConversationEvent {
   State state = 7;
 }
 
-// ExecutionEvent is the entry in the event log. ExecutionEvents are used
-// to record the actions taken place in the executor.
-// The executor can replay the events for resumability.
-message ExecutionEvent {
-  string exec_id = 1;
-  string agent_id = 2;
-  bytes agent_config = 3;
-  repeated Message inputs = 4;
-  repeated Message outputs = 5;
-  State state = 6;
-  google.protobuf.Timestamp timestamp = 7;
-
-  // TODO(jbd): Remove agent_id and agent_config once controller2 is in place.
-  // These fields are supplied from the ConversationEvent log.
-}
-
 // HealthCheckRequest for agent health checks
 message HealthCheckRequest {}
 

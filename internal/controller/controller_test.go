@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package controller2
+package controller
 
 import (
 	"context"
 	"fmt"
 	"testing"
 
-	"github.com/google/ax/internal/controller2/eventlog"
-	"github.com/google/ax/internal/controller2/eventlog/eventlogtest"
+	"github.com/google/ax/internal/controller/eventlog"
+	"github.com/google/ax/internal/controller/eventlog/eventlogtest"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 )
