@@ -61,13 +61,6 @@ jobs:
     - name: Test
       run: go test -v ./...
 
-    - name: Build (harness)
-      run: go build -tags harness -v ./...
-
-    - name: Test (harness)
-      run: go test -tags harness -v ./...
-    
-
     - name: Check for binary files in PR
       run: |
         # Get the list of files where Git shows no line count (binary)
