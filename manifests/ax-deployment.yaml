@@ -64,6 +64,8 @@ spec:
           value: "/app:/app/python"
         - name: PYTHONUNBUFFERED
           value: "1"
+        - name: SKILLS_DIR
+          value: "/app/skills"
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/antigravity/
 ---

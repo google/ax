@@ -40,7 +40,7 @@ git -C <substrate> switch -C ax-pinned "$commit"
 ### 1. Build and Deploy
 
 > [!NOTE]
-> Do not manually edit `internal/manifests/ax-deployment2.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
+> Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
 
 The installation script builds the required images and applies the resolved
 manifests to your cluster:
@@ -86,7 +86,7 @@ export PROJECT_ID="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
 export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
 
-./internal/hack/install-ax.sh --deploy-ax-server
+./hack/install-ax.sh --deploy-ax-server
 ```
 
 ### 2. Port-Forward Services
@@ -123,7 +123,7 @@ The weather in New York is sunny with a temperature of 25 degrees Celsius (77 de
 To remove the AX server and its components, run:
 
 ```bash
-./internal/hack/install-ax.sh --delete-ax-server
+./hack/install-ax.sh --delete-ax-server
 ```
 
 > [!NOTE]
@@ -146,4 +146,11 @@ active actors and allocated standby worker pool instances:
 kubectl ate get actors
 
 kubectl ate get workers
+```
+
+List the pods running in the `ax` namespace:
+
+```bash
+# Add `-o wide` to see node/IP assignments, or `-w` to watch status changes.
+kubectl get pods -n ax
 ```
