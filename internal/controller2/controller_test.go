@@ -165,7 +165,6 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		t.Errorf("expected third event state to be COMPLETED, got %v", events[2].State)
 	}
 
-
 }
 
 func TestController2_ExecWithAgentID(t *testing.T) {
@@ -278,7 +277,7 @@ func (c *testHarness) Start(ctx context.Context, conversationID string) (harness
 	return c.startFunc(ctx, conversationID)
 }
 
-type configurableExecution struct {
+type testExecution struct {
 	id         string
 	queueCalls int
 	runCalls   int
@@ -287,17 +286,17 @@ type configurableExecution struct {
 	runFunc    func(ctx context.Context, execID string, handler harness.Handler) error
 }
 
-func (c *configurableExecution) ID() string {
+func (c *testExecution) ID() string {
 	return c.id
 }
 
-func (c *configurableExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (c *testExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
 	c.queueCalls++
 	c.queued = append(c.queued, msg...)
 	return nil
 }
 
-func (c *configurableExecution) Run(ctx context.Context, handler harness.Handler) error {
+func (c *testExecution) Run(ctx context.Context, handler harness.Handler) error {
 	c.runCalls++
 	if c.runFunc != nil {
 		return c.runFunc(ctx, c.id, handler)
@@ -305,7 +304,7 @@ func (c *configurableExecution) Run(ctx context.Context, handler harness.Handler
 	return nil
 }
 
-func (c *configurableExecution) Close(ctx context.Context) error {
+func (c *testExecution) Close(ctx context.Context) error {
 	c.closeCalls++
 	return nil
 }
@@ -319,10 +318,10 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		log := &eventlogtest.MemoryEventLog{}
 		reg := NewRegistry()
 
-		var exec *configurableExecution
+		var exec *testExecution
 		h := &testHarness{
 			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
-				exec = &configurableExecution{
+				exec = &testExecution{
 					id: "exec-new",
 					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
 						return handler.OnComplete(ctx, execID)
@@ -336,7 +335,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 
 		c, err := New(ctx, Config{
-			Registry: reg,
+			Registry:        reg,
 			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
 		})
 		if err != nil {
@@ -387,10 +386,10 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		reg := NewRegistry()
 
-		var exec *configurableExecution
+		var exec *testExecution
 		h := &testHarness{
 			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
-				exec = &configurableExecution{
+				exec = &testExecution{
 					id: "exec-pending",
 					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
 						return handler.OnComplete(ctx, execID)
@@ -404,7 +403,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 
 		c, err := New(ctx, Config{
-			Registry: reg,
+			Registry:        reg,
 			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
 		})
 		if err != nil {
@@ -453,10 +452,10 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		reg := NewRegistry()
 
-		var execs []*configurableExecution
+		var execs []*testExecution
 		h := &testHarness{
 			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
-				exec := &configurableExecution{
+				exec := &testExecution{
 					id: fmt.Sprintf("exec-%d", len(execs)+1),
 					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
 						return handler.OnComplete(ctx, execID)
@@ -471,7 +470,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 
 		c, err := New(ctx, Config{
-			Registry: reg,
+			Registry:        reg,
 			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
 		})
 		if err != nil {
