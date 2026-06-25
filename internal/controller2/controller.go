@@ -75,38 +75,54 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	if err != nil {
 		return fmt.Errorf("failed to get harness for agent %q: %w", req.AgentId, err)
 	}
-	exec, err := h.Start(ctx, req.ConversationId)
+
+	l := newLogger(d.eventLog, req.ConversationId, req.AgentId)
+	state, err := l.ResumptionState(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to start harness session: %w", err)
-	}
-	defer exec.Close(ctx)
-
-	l := newLogger(d.eventLog, req.ConversationId, exec.ID(), req.AgentId)
-	if _, err := l.ResumptionState(ctx); err != nil {
 		return fmt.Errorf("failed to check resumption state: %w", err)
-	}
-
-	// TODO(jbd): If the state is pending, first try to resume the
-	// pending execution. If the state is COMPLETED or FAILED, start
-	// a new execution.
-
-	if err := exec.Queue(ctx, req.Inputs...); err != nil {
-		return fmt.Errorf("failed to queue inputs: %w", err)
-	}
-
-	// Log inputs before running harness
-	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
-		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 
 	hhandler := &harnessHandler{
 		logger:      l,
 		execHandler: handler,
 	}
-	if err := exec.Run(ctx, hhandler); err != nil {
-		return fmt.Errorf("harness execution turn failed: %w", err)
+
+	if state == proto.State_STATE_PENDING {
+		// If the state is pending, first try to resume the
+		// pending execution. If the state is COMPLETED or FAILED, start
+		// a new execution.
+		exec, err := h.Start(ctx, req.ConversationId)
+		if err != nil {
+			return fmt.Errorf("failed to start harness session: %w", err)
+		}
+		defer exec.Close(ctx)
+
+		if err := exec.Run(ctx, hhandler); err != nil {
+			return fmt.Errorf("harness execution failed: %w", err)
+		}
 	}
 
+	if len(req.Inputs) == 0 {
+		// No more inputs, just return.
+		return nil
+	}
+
+	exec, err := h.Start(ctx, req.ConversationId)
+	if err != nil {
+		return fmt.Errorf("failed to start harness session: %w", err)
+	}
+	defer exec.Close(ctx)
+
+	if err := exec.Queue(ctx, req.Inputs...); err != nil {
+		return fmt.Errorf("failed to queue inputs: %w", err)
+	}
+	// Log inputs before running harness
+	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
+		return fmt.Errorf("failed to log inputs: %w", err)
+	}
+	if err := exec.Run(ctx, hhandler); err != nil {
+		return fmt.Errorf("harness execution failed: %w", err)
+	}
 	return nil
 }
 
@@ -174,12 +190,10 @@ func (d *Controller) Close() error {
 func newLogger(
 	el eventlog.EventLog,
 	conversationID string,
-	execID string,
 	harnessID string) *logger {
 	return &logger{
 		el:             el,
 		conversationID: conversationID,
-		execID:         execID,
 		harnessID:      harnessID,
 	}
 }

@@ -16,6 +16,7 @@ package controller2
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/google/ax/internal/controller2/eventlog"
@@ -164,7 +165,6 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		t.Errorf("expected third event state to be COMPLETED, got %v", events[2].State)
 	}
 
-
 }
 
 func TestController2_ExecWithAgentID(t *testing.T) {
@@ -265,4 +265,252 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error requesting unregistered agent, got nil")
 	}
+}
+
+type testHarness struct {
+	startCalls int
+	startFunc  func(ctx context.Context, conversationID string) (harness.Execution, error)
+}
+
+func (c *testHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+	c.startCalls++
+	return c.startFunc(ctx, conversationID)
+}
+
+type testExecution struct {
+	id         string
+	queueCalls int
+	runCalls   int
+	closeCalls int
+	queued     []*proto.Message
+	runFunc    func(ctx context.Context, execID string, handler harness.Handler) error
+}
+
+func (c *testExecution) ID() string {
+	return c.id
+}
+
+func (c *testExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+	c.queueCalls++
+	c.queued = append(c.queued, msg...)
+	return nil
+}
+
+func (c *testExecution) Run(ctx context.Context, handler harness.Handler) error {
+	c.runCalls++
+	if c.runFunc != nil {
+		return c.runFunc(ctx, c.id, handler)
+	}
+	return nil
+}
+
+func (c *testExecution) Close(ctx context.Context) error {
+	c.closeCalls++
+	return nil
+}
+
+func TestController2_ExecResumptionFlow(t *testing.T) {
+	// Subtest 1: New Execution with Inputs
+	t.Run("NewExecutionWithInputs", func(t *testing.T) {
+		ctx := context.Background()
+		cid := "new-conv"
+
+		log := &eventlogtest.MemoryEventLog{}
+		reg := NewRegistry()
+
+		var exec *testExecution
+		h := &testHarness{
+			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
+				exec = &testExecution{
+					id: "exec-new",
+					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
+						return handler.OnComplete(ctx, execID)
+					},
+				}
+				return exec, nil
+			},
+		}
+		if err := reg.RegisterHarness("test-agent", h); err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := New(ctx, Config{
+			Registry:        reg,
+			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+
+		err = c.Exec(ctx, &proto.ExecRequest{
+			ConversationId: cid,
+			AgentId:        "test-agent",
+			Inputs: []*proto.Message{
+				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Hello"}}}},
+			},
+		}, func(resp *proto.ExecResponse) error { return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if h.startCalls != 1 {
+			t.Errorf("expected 1 Start call, got %d", h.startCalls)
+		}
+		if exec.queueCalls != 1 {
+			t.Errorf("expected 1 Queue call, got %d", exec.queueCalls)
+		}
+		if exec.runCalls != 1 {
+			t.Errorf("expected 1 Run call, got %d", exec.runCalls)
+		}
+	})
+
+	// Subtest 2: Pending Execution with NO New Inputs
+	t.Run("PendingExecutionWithoutNewInputs", func(t *testing.T) {
+		ctx := context.Background()
+		cid := "pending-no-inputs"
+
+		log := &eventlogtest.MemoryEventLog{}
+		// Seed the event log with a pending event
+		_, err := log.Append(ctx, &proto.ConversationEvent{
+			ConversationId: cid,
+			HarnessId:      "test-agent",
+			State:          proto.State_STATE_PENDING,
+			Messages: []*proto.Message{
+				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		reg := NewRegistry()
+
+		var exec *testExecution
+		h := &testHarness{
+			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
+				exec = &testExecution{
+					id: "exec-pending",
+					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
+						return handler.OnComplete(ctx, execID)
+					},
+				}
+				return exec, nil
+			},
+		}
+		if err := reg.RegisterHarness("test-agent", h); err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := New(ctx, Config{
+			Registry:        reg,
+			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+
+		err = c.Exec(ctx, &proto.ExecRequest{
+			ConversationId: cid,
+			AgentId:        "test-agent",
+			Inputs:         nil, // NO new inputs
+		}, func(resp *proto.ExecResponse) error { return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if h.startCalls != 1 {
+			t.Errorf("expected 1 Start call, got %d", h.startCalls)
+		}
+		if exec.queueCalls != 0 {
+			t.Errorf("expected 0 Queue calls, got %d", exec.queueCalls)
+		}
+		if exec.runCalls != 1 {
+			t.Errorf("expected 1 Run call, got %d", exec.runCalls)
+		}
+	})
+
+	// Subtest 3: Pending Execution WITH New Inputs
+	t.Run("PendingExecutionWithNewInputs", func(t *testing.T) {
+		ctx := context.Background()
+		cid := "pending-with-inputs"
+
+		log := &eventlogtest.MemoryEventLog{}
+		// Seed the event log with a pending event
+		_, err := log.Append(ctx, &proto.ConversationEvent{
+			ConversationId: cid,
+			HarnessId:      "test-agent",
+			State:          proto.State_STATE_PENDING,
+			Messages: []*proto.Message{
+				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		reg := NewRegistry()
+
+		var execs []*testExecution
+		h := &testHarness{
+			startFunc: func(ctx context.Context, conversationID string) (harness.Execution, error) {
+				exec := &testExecution{
+					id: fmt.Sprintf("exec-%d", len(execs)+1),
+					runFunc: func(ctx context.Context, execID string, handler harness.Handler) error {
+						return handler.OnComplete(ctx, execID)
+					},
+				}
+				execs = append(execs, exec)
+				return exec, nil
+			},
+		}
+		if err := reg.RegisterHarness("test-agent", h); err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := New(ctx, Config{
+			Registry:        reg,
+			EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+
+		err = c.Exec(ctx, &proto.ExecRequest{
+			ConversationId: cid,
+			AgentId:        "test-agent",
+			Inputs: []*proto.Message{
+				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "New input"}}}},
+			},
+		}, func(resp *proto.ExecResponse) error { return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// It should start the harness twice: once for resumption, once for new inputs.
+		if h.startCalls != 2 {
+			t.Errorf("expected 2 Start calls, got %d", h.startCalls)
+		}
+		if len(execs) != 2 {
+			t.Fatalf("expected 2 execution sessions, got %d", len(execs))
+		}
+
+		// The first session (resumption) should NOT have queued inputs and should run.
+		if execs[0].queueCalls != 0 {
+			t.Errorf("expected first session to have 0 Queue calls, got %d", execs[0].queueCalls)
+		}
+		if execs[0].runCalls != 1 {
+			t.Errorf("expected first session to have 1 Run call, got %d", execs[0].runCalls)
+		}
+
+		// The second session (new inputs) should have queued inputs and run.
+		if execs[1].queueCalls != 1 {
+			t.Errorf("expected second session to have 1 Queue call, got %d", execs[1].queueCalls)
+		}
+		if execs[1].runCalls != 1 {
+			t.Errorf("expected second session to have 1 Run call, got %d", execs[1].runCalls)
+		}
+	})
 }
