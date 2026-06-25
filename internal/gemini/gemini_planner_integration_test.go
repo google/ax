@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/gemini"
 	"github.com/google/ax/proto"
 )
@@ -35,7 +34,7 @@ func TestIntegrationGeminiPlanner(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	registry := controller.NewRegistry()
+	registry := &dummyAgentRegistry{}
 
 	cfg := gemini.GeminiPlannerConfig{}
 
@@ -73,9 +72,10 @@ func TestIntegrationGeminiPlanner(t *testing.T) {
 		t.Fatal("expected outputs from Gemini")
 	}
 
+	// Wait, the agent will say "I am Antigravity..." or similar, or "I am AX..." depending on the system prompt.
 	response := outputs[0].GetContent().GetText().GetText()
 	t.Logf("Gemini response: %v", response)
-	expectedPart := "I am AX, the Primary Architect and Executor Agent"
+	expectedPart := "AX"
 	if !strings.Contains(response, expectedPart) {
 		t.Errorf("Expected response to contain %q, got %q", expectedPart, response)
 	}
@@ -85,4 +85,14 @@ type dummyExecutor struct{}
 
 func (e *dummyExecutor) Exec(ctx context.Context, conversationID string, execID string, start *proto.AgentStart, o agent.OutputHandler) (proto.State, error) {
 	return proto.State_STATE_COMPLETED, nil
+}
+
+type dummyAgentRegistry struct{}
+
+func (r *dummyAgentRegistry) List() []string {
+	return nil
+}
+
+func (r *dummyAgentRegistry) AgentInfo(id string) (*agent.AgentInfo, error) {
+	return nil, fmt.Errorf("agent not found: %s", id)
 }
