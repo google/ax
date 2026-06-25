@@ -68,17 +68,25 @@ var _ Execution = (*antigravityInteractionsExecution)(nil)
 
 const interactionsAPIVersion = "v1beta1"
 
+// interactionsEndpoint is the public Vertex GenAI dataplane endpoint.
+const interactionsEndpoint = "https://aiplatform.googleapis.com"
+
+// Cloud project and location are read from these standard environment variables
+// (see https://github.com/google/ax#authentication).
+const (
+	envCloudProject  = "GOOGLE_CLOUD_PROJECT"
+	envCloudLocation = "GOOGLE_CLOUD_LOCATION"
+)
+
+// defaultLocation is used when GOOGLE_CLOUD_LOCATION is unset.
+const defaultLocation = "global"
+
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
 // Use NewAntigravityInteractionsHarness, which fills sensible defaults.
+//
+// Cloud project and location come from the standard GOOGLE_CLOUD_PROJECT and
+// GOOGLE_CLOUD_LOCATION environment variables.
 type AntigravityInteractionsConfig struct {
-	// Endpoint is the Vertex GenAI dataplane HTTPS endpoint, e.g.
-	// "https://aiplatform.googleapis.com".
-	Endpoint string
-	// Project is the Cloud project id for the parent resource and the
-	// X-Goog-User-Project header.
-	Project string
-	// Location is the Cloud location (the agent path supports "global").
-	Location string
 	// Agent is the Interactions API agent name to run.
 	Agent string
 	// SystemInstruction, if set, is sent as the interaction's system_instruction
@@ -110,15 +118,23 @@ type AntigravityInteractionsConfig struct {
 }
 
 func (c *AntigravityInteractionsConfig) withDefaults() {
-	if c.Endpoint == "" {
-		c.Endpoint = "https://aiplatform.googleapis.com"
-	}
-	if c.Location == "" {
-		c.Location = "global"
-	}
 	if c.MaxTurns == 0 {
 		c.MaxTurns = 20
 	}
+}
+
+// cloudProject returns the Cloud project id from GOOGLE_CLOUD_PROJECT.
+func cloudProject() string {
+	return os.Getenv(envCloudProject)
+}
+
+// cloudLocation returns the Cloud location from GOOGLE_CLOUD_LOCATION, falling
+// back to the default ("global").
+func cloudLocation() string {
+	if loc := os.Getenv(envCloudLocation); loc != "" {
+		return loc
+	}
+	return defaultLocation
 }
 
 // AntigravityInteractionsHarness implements Harness by talking to the public
@@ -498,7 +514,7 @@ func debugTruncate(s string) string {
 
 func (h *AntigravityInteractionsHarness) interactionsURL() string {
 	return fmt.Sprintf("%s/%s/projects/%s/locations/%s/interactions",
-		h.cfg.Endpoint, interactionsAPIVersion, h.cfg.Project, h.cfg.Location)
+		interactionsEndpoint, interactionsAPIVersion, cloudProject(), cloudLocation())
 }
 
 // token returns a bearer access token from the harness's OAuth2 token source.
@@ -565,7 +581,7 @@ func (h *AntigravityInteractionsHarness) postTurn(ctx context.Context, token str
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Goog-User-Project", h.cfg.Project)
+	httpReq.Header.Set("X-Goog-User-Project", cloudProject())
 
 	resp, err := h.httpClient.Do(httpReq)
 	if err != nil {
