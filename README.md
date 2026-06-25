@@ -98,7 +98,7 @@ AX is natively supported on
 [Agent Substrate](https://github.com/agent-substrate/substrate)
 on Kubernetes and it's the recommended deployment option for production
 use. For more details on setup and configuration, see the
-[deployment guide](./manifests/README.md).
+[deployment guide](./internal/manifests/README.md).
 
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
