@@ -81,6 +81,10 @@ type AntigravityInteractionsConfig struct {
 	Location string
 	// Agent is the Interactions API agent name to run.
 	Agent string
+	// SystemInstruction, if set, is sent as the interaction's system_instruction
+	// (a free-form system prompt prepended to the agent's own instructions). It
+	// is sent on every turn so it persists across resumes.
+	SystemInstruction string
 	// MaxTurns caps the number of interaction turns the harness will drive within
 	// a single Run before giving up.
 	MaxTurns int
@@ -377,6 +381,7 @@ type interactionRequest struct {
 	Background            bool               `json:"background"`
 	Store                 bool               `json:"store"`
 	Agent                 string             `json:"agent"`
+	SystemInstruction     string             `json:"system_instruction,omitempty"`
 	Environment           *environmentConfig `json:"environment,omitempty"`
 	PreviousInteractionID string             `json:"previous_interaction_id,omitempty"`
 	Input                 []any              `json:"input,omitempty"`
@@ -540,6 +545,7 @@ func (h *AntigravityInteractionsHarness) newRequest(input []any, previousID stri
 		Background:            true,
 		Store:                 true,
 		Agent:                 h.cfg.Agent,
+		SystemInstruction:     h.cfg.SystemInstruction,
 		Environment:           &environmentConfig{Type: "local"},
 		PreviousInteractionID: previousID,
 		Input:                 input,
