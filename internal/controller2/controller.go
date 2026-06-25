@@ -98,7 +98,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		defer exec.Close(ctx)
 
 		if err := exec.Run(ctx, hhandler); err != nil {
-			return fmt.Errorf("harness execution turn failed: %w", err)
+			return fmt.Errorf("harness execution failed: %w", err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
-		return fmt.Errorf("harness execution turn failed: %w", err)
+		return fmt.Errorf("harness execution failed: %w", err)
 	}
 	return nil
 }
