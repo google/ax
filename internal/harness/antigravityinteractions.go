@@ -94,7 +94,7 @@ type AntigravityInteractionsConfig struct {
 	// is sent on every turn so it persists across resumes.
 	SystemInstruction string
 	// MaxTurns caps the number of interaction turns the harness will drive within
-	// a single Run before giving up.
+	// a single Run before giving up. Defaults to 100.
 	MaxTurns int
 	// Debug, if true, logs concise per-conversation tool activity to stderr: a
 	// line for each function call (FC) the agent yields and each function result
@@ -119,7 +119,7 @@ type AntigravityInteractionsConfig struct {
 
 func (c *AntigravityInteractionsConfig) withDefaults() {
 	if c.MaxTurns == 0 {
-		c.MaxTurns = 20
+		c.MaxTurns = 100
 	}
 }
 
