@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/skills"
 	"github.com/google/ax/proto"
 	"google.golang.org/genai"
@@ -42,15 +41,15 @@ func NewGeminiAgent() *GeminiAgent {
 	return &GeminiAgent{}
 }
 
-func (a *GeminiAgent) config(start *proto.AgentStart) (*config.GeminiConfig, error) {
+func (a *GeminiAgent) config(start *proto.AgentStart) (*GeminiConfig, error) {
 	if len(start.AgentConfig) == 0 {
-		return &config.GeminiConfig{
+		return &GeminiConfig{
 			Model:   "gemini-3.5-flash",
 			Timeout: 30 * time.Second,
 		}, nil
 	}
 
-	var cfg config.GeminiConfig
+	var cfg GeminiConfig
 	if err := json.Unmarshal(start.AgentConfig, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Gemini config: %w", err)
 	}

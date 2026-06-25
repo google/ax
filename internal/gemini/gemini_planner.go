@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/config"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 	"google.golang.org/genai"
@@ -56,7 +55,7 @@ func (g *realContentGenerator) GenerateContent(ctx context.Context, model string
 
 // GeminiPlannerConfig configures the Gemini-based planner.
 type GeminiPlannerConfig struct {
-	GeminiConfig *config.GeminiConfig
+	GeminiConfig *GeminiConfig
 	SkillsDir    string // Directory for discovering skills (optional)
 }
 
@@ -72,7 +71,7 @@ type geminiPlannerAgent struct {
 // NewGeminiPlannerAgent creates a new Gemini-based agent.
 func NewGeminiPlannerAgent(ctx context.Context, registry AgentRegistry, cfg GeminiPlannerConfig) (agent.Agent, error) {
 	if cfg.GeminiConfig == nil {
-		cfg.GeminiConfig = &config.GeminiConfig{}
+		cfg.GeminiConfig = &GeminiConfig{}
 	}
 	if cfg.GeminiConfig.Timeout == 0 {
 		cfg.GeminiConfig.Timeout = 30 * time.Second

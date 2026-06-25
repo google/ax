@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/google/ax/internal/agent"
-	"github.com/google/ax/internal/config"
 	"github.com/google/ax/proto"
 	"google.golang.org/genai"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -282,7 +281,7 @@ func TestHandleSubagentCall_Success(t *testing.T) {
 	p := &geminiPlannerAgent{
 		client: mockGen,
 		config: GeminiPlannerConfig{
-			GeminiConfig: &config.GeminiConfig{Model: "test-model"},
+			GeminiConfig: &GeminiConfig{Model: "test-model"},
 		},
 	}
 
@@ -445,7 +444,7 @@ func TestNewGeminiPlannerAgent_NoSkillsPrompt(t *testing.T) {
 
 	registry := &mockAgentRegistry{}
 	cfg := GeminiPlannerConfig{
-		GeminiConfig: &config.GeminiConfig{
+		GeminiConfig: &GeminiConfig{
 			SystemPrompt: "You are AX.",
 		},
 		SkillsDir: "",
