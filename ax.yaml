@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Sample LOCAL configuration for the AX *harness* build (compiled with -tags=harness).
+# Usage:  ax serve --config ax.yaml
+#         ax exec  --config ax.yaml --input "hello"   # uses harnesses.default
+
 server:
   address: ":8494"
 
@@ -19,30 +23,6 @@ eventlog:
   sqlite:
     filename: "eventlog/log.sqlite"
 
-planner:
-  # Type of planner to use: "gemini" (default: "gemini")
-  type: "gemini"
-
-  # The Gemini planner uses Google's Gemini models for planning.
-  gemini:
-    model: "gemini-3.5-flash"
-    timeout: "60s"
-    # skills_dir: "./examples/skills"
-
-# Remote agents configuration (optional)
-# List of remote or sandbox agents to register on startup.
-registry:
-  # remote_agents:
-  #   - id: "medical-deep-researcher"
-  #     name: "Medical Deep Researcher"
-  #     description: "Performs deep medical research using various resources like pubmed and clinicaltrials.gov"
-  #     address: "localhost:50051"
-  #     metadata:
-  #       version: "1.0"
-
-  #   - id: "weather-agent"
-  #     name: "Weather agent"
-  #     description: "Agent to answer questions about the weather in a city."
-  #     address: "localhost:50051"
-  #     metadata:
-  #       version: "1.0"
+harnesses:
+  antigravity:
+    default: true
