@@ -29,13 +29,14 @@ import (
 // send back as a function_result step. The built-in environment tools enumerated
 // in the switch below (file reads, command execution, and the file-mutation
 // family) are executed internally against the local filesystem/shell; every
-// other tool is dispatched to the configured ThirdPartyExecutor. All execution
-// is internal to the harness -- no tool call is surfaced to the caller.
+// other tool is dispatched to the configured ThirdPartyExecutor, or, if none is
+// configured, returned as an error result. All execution is internal to the
+// harness -- no tool call is surfaced to the caller.
 //
 // Argument names match the agent's tool schema (PascalCase). Mutation tools
-// (move/delete_dir/file_change family) require no success payload -- on success
-// they return an empty result; on failure they return {"error": <message>},
-// which marks the step as failed.
+// (move, delete_dir, create_file, edit_file, multi_edit_file, delete_file)
+// require no success payload -- on success they return an empty result; on
+// failure they return {"error": <message>}, which marks the step as failed.
 func (h *AntigravityInteractionsHarness) executeTool(ctx context.Context, call capturedToolCall) any {
 	switch call.name {
 	case "view_file":
@@ -70,7 +71,7 @@ func (h *AntigravityInteractionsHarness) executeTool(ctx context.Context, call c
 // These run against the actual local filesystem/shell because they ARE the
 // client-side environment. Argument names follow the agent's tool schema
 // (view_file -> AbsolutePath, run_command -> CommandLine, list_dir ->
-// DirectoryPath), and result field names follow what the proxy maps back into
+// DirectoryPath), and result field names follow what the server maps back into
 // the step's own output (content, Output/ExitCode, results).
 // ---------------------------------------------------------------------------
 
