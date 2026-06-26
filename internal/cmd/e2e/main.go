@@ -23,7 +23,7 @@
 //
 // Step 2: Run this Go E2E client:
 //
-//	go run cmd/e2e/main.go
+//	go run internal/cmd/e2e/main.go
 package main
 
 import (
