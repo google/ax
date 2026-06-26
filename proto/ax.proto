@@ -28,10 +28,6 @@ option go_package = "github.com/google/ax/proto";
 message Message {
   string role = 1;     // user, assistant, or model
   Content content = 2; // content of the message
-  // If true, the message is stored only in the execution log
-  // (for resumption) but not in the conversation history,
-  // and not emitted to the client or any agent.
-  bool internal_only = 3;
 }
 
 // A conversation is the historical session that consist of

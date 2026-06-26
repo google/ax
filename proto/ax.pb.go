@@ -147,13 +147,9 @@ func (CancelReason) EnumDescriptor() ([]byte, []int) {
 
 // Message is a message in the history.
 type Message struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	Role    string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`       // user, assistant, or model
-	Content *Content               `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"` // content of the message
-	// If true, the message is stored only in the execution log
-	// (for resumption) but not in the conversation history,
-	// and not emitted to the client or any agent.
-	InternalOnly  bool `protobuf:"varint,3,opt,name=internal_only,json=internalOnly,proto3" json:"internal_only,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`       // user, assistant, or model
+	Content       *Content               `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"` // content of the message
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -200,13 +196,6 @@ func (x *Message) GetContent() *Content {
 		return x.Content
 	}
 	return nil
-}
-
-func (x *Message) GetInternalOnly() bool {
-	if x != nil {
-		return x.InternalOnly
-	}
-	return false
 }
 
 // A conversation is the historical session that consist of
@@ -992,11 +981,10 @@ var File_proto_ax_proto protoreflect.FileDescriptor
 
 const file_proto_ax_proto_rawDesc = "" +
 	"\n" +
-	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"i\n" +
+	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"D\n" +
 	"\aMessage\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12%\n" +
-	"\acontent\x18\x02 \x01(\v2\v.ax.ContentR\acontent\x12#\n" +
-	"\rinternal_only\x18\x03 \x01(\bR\finternalOnly\"\x90\x02\n" +
+	"\acontent\x18\x02 \x01(\v2\v.ax.ContentR\acontent\"\x90\x02\n" +
 	"\x11ConversationEvent\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12\x17\n" +
