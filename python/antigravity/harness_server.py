@@ -32,7 +32,7 @@ from python.proto import ax_pb2
 from python.proto import ax_pb2_grpc
 from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig
-from google.antigravity.types import Step, StepType, StepSource, StepTarget, StepStatus, Text, Thought, ToolCall
+from google.antigravity.types import Text, Thought, ToolCall
 
 # Global placeholder for loaded agent config
 loaded_config: AgentConfig | None = None
@@ -50,50 +50,6 @@ def load_agent_config(agent_file: str) -> AgentConfig:
         raise ValueError(f"No 'agent_config' found in {agent_file}")
     print("Agent config loaded successfully.")
     return config
-
-def hydrate_ax_history_to_steps(historical_messages) -> list[Step]:
-    steps = []
-    for i, msg in enumerate(historical_messages):
-        source = StepSource.UNKNOWN
-        target = StepTarget.UNSPECIFIED
-        step_type = StepType.TEXT_RESPONSE
-        content = ""
-        thinking = ""
-        
-        # Determine source and target based on role
-        if msg.role == "user":
-            source = StepSource.USER
-            target = StepTarget.ENVIRONMENT
-        elif msg.role in ("assistant", "model"):
-            source = StepSource.MODEL
-            target = StepTarget.USER
-            
-        # Extract content/thinking
-        active_type = msg.content.WhichOneof('type')
-        if active_type == 'text':
-            content = msg.content.text.text
-        elif active_type == 'thought':
-            step_type = StepType.TEXT_RESPONSE
-            if msg.content.thought.summary:
-                texts = []
-                for s in msg.content.thought.summary:
-                    if s.WhichOneof('type') == 'text':
-                        texts.append(s.text.text)
-                thinking = "".join(texts)
-                
-        step = Step(
-            id=f"hist-{i}",
-            step_index=i,
-            type=step_type,
-            source=source,
-            target=target,
-            status=StepStatus.DONE,
-            content=content,
-            thinking=thinking,
-            is_complete_response=True
-        )
-        steps.append(step)
-    return steps
 
 def _has_credentials(config: AgentConfig | None) -> bool:
     """Checks if Gemini credentials are set either in env or config."""
@@ -177,7 +133,6 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
             
-        historical_messages = ax_messages[:-1]
         latest_message = ax_messages[-1]
         
         if latest_message.content.WhichOneof('type') != 'text':
@@ -214,13 +169,10 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             agent = await self._get_or_create_agent(request.conversation_id)
             conversation = agent.conversation
             
-            # Hydrate history (clear first to prevent duplication)
-            print(f"[gRPC] Hydrating {len(historical_messages)} historical messages...")
-            history_steps = hydrate_ax_history_to_steps(historical_messages)
-            conversation._steps.clear()
-            conversation._steps.extend(history_steps)
-            
-            # Run the turn with streaming
+            # The harness is stateful: the SDK's cached Agent (per conversation_id)
+            # holds the conversation history across turns within this process
+            # lifetime. The controller only sends the new turn's input; no history
+            # hydration from the client side.
             print(f"[gRPC] Running chat query: {latest_query_text}")
             response = await conversation.chat(latest_query_text)
             
