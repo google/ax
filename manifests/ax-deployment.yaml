@@ -54,18 +54,20 @@ spec:
       # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
       # environment are specified here. `ax harness` forks the Antigravity Python
       # sidecar, which serves on port 80 because substrate DNATs workerPodIP:80.
-      command: ["/ax", "harness",
-                "--antigravity-agent-file", "/app/examples/antigravity_agent/agent.py",
+      command: ["/ax-app/ax", "harness",
+                "--antigravity-agent-file", "/ax-app/examples/antigravity_agent/agent.py",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
         - name: GEMINI_API_KEY
           value: "${GEMINI_API_KEY}"
         - name: PYTHONPATH
-          value: "/app:/app/python"
+          value: "/ax-app:/ax-app/python"
         - name: PYTHONUNBUFFERED
           value: "1"
         - name: SKILLS_DIR
-          value: "/app/skills"
+          value: "/ax-app/skills"
+        - name: AX_HARNESS_WORKDIR
+          value: "/ax"
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/antigravity/
 ---
@@ -173,7 +175,7 @@ spec:
       containers:
         - name: ax-server
           image: ${AX_IMAGE}
-          command: ["/ax", "serve", "--config", "/etc/ax/ax.yaml"]
+          command: ["/ax-app/ax", "serve", "--config", "/etc/ax/ax.yaml"]
           ports:
             - containerPort: 8494
           env:

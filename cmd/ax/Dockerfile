@@ -37,7 +37,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # already ships bash, git, curl, wget, ca-certificates, build-essential, and the
 # common CLIs (find/ps/less/grep/sed/...).
 FROM python:3.13
-WORKDIR /app
+WORKDIR /ax
 
 # Antigravity runtime deps, installed from PyPI at build time.
 COPY python/antigravity/requirements.txt /tmp/requirements.txt
@@ -45,15 +45,15 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
-COPY python/ /app/python
-COPY examples/antigravity_agent/ /app/examples/antigravity_agent
-COPY examples/skills/ /app/skills/
-ENV SKILLS_DIR=/app/skills
-COPY --from=build /out/ax /ax
+COPY python/ /ax-app/python
+COPY examples/antigravity_agent/ /ax-app/examples/antigravity_agent
+COPY examples/skills/ /ax-app/skills/
+ENV SKILLS_DIR=/ax-app/skills
+COPY --from=build /out/ax /ax-app/ax
 
-# `from python.proto import ...` needs /app on the path; the generated stubs do
-# `from proto import ...`, which needs /app/python.
-ENV PYTHONPATH=/app:/app/python
+# `from python.proto import ...` needs /ax-app on the path; the generated stubs do
+# `from proto import ...`, which needs /ax-app/python.
+ENV PYTHONPATH=/ax-app:/ax-app/python
 
 # Flush stdout/stderr immediately so server logs surface in container logs.
 ENV PYTHONUNBUFFERED=1
@@ -63,6 +63,6 @@ EXPOSE 80
 # Default command for local docker runs. Substrate ignores the image CMD and runs
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
-CMD ["/ax", "harness", \
-     "--antigravity-agent-file", "/app/examples/antigravity_agent/agent.py", \
+CMD ["/ax-app/ax", "harness", \
+     "--antigravity-agent-file", "/ax-app/examples/antigravity_agent/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]

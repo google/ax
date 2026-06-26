@@ -49,10 +49,29 @@ func init() {
 	rootCmd.AddCommand(harnessCmd)
 }
 
+// setHarnessWorkDir changes the process working directory to AX_HARNESS_WORKDIR
+// when it is set. The forked Python sidecar inherits it, which scopes the agent's
+// default workspace (os.getcwd()) away from its own source tree.
+func setHarnessWorkDir() error {
+	dir := os.Getenv("AX_HARNESS_WORKDIR")
+	if dir == "" {
+		return nil
+	}
+	if err := os.Chdir(dir); err != nil {
+		return fmt.Errorf("set harness working directory %q: %w", dir, err)
+	}
+	log.Printf("harness working directory set to %s", dir)
+	return nil
+}
+
 // runHarness forks the Antigravity Python sidecar server, which serves the
 // HarnessService (and gRPC health) on the configured port. ax harness supervises
 // the child: it forwards termination signals and exits with the child's status.
 func runHarness(cmd *cobra.Command, args []string) error {
+	if err := setHarnessWorkDir(); err != nil {
+		return err
+	}
+
 	py := exec.Command("python3", "-m", "python.antigravity.harness_server",
 		"--host", harnessHost,
 		"--port", strconv.Itoa(harnessPort),
