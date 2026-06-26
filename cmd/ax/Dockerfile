@@ -32,18 +32,17 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian-slim + Python + Antigravity) ------
-# Python-slim image: a minimal Debian base. We explicitly install the required
-# shell tooling (git, curl, wget, ca-certificates, and procps for ps) to support
-# skills/code execution while keeping the image size small.
-FROM python:3.13-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# --- Stage 2: comprehensive runtime (Alpine + Python + Antigravity) -----------
+# Python-alpine image: an extremely minimal base. We install bash, git, curl,
+# wget, ca-certificates, and procps to support skills/code execution.
+FROM python:3.13-alpine
+RUN apk add --no-cache \
+    bash \
     git \
     curl \
     wget \
     ca-certificates \
-    procps \
-    && rm -rf /var/lib/apt/lists/*
+    procps
 WORKDIR /app
 
 # Antigravity runtime deps, installed from PyPI at build time.
