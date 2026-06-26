@@ -32,11 +32,18 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian + Python + Antigravity) -----------
-# Python image: a full Debian base (buildpack-deps) that
-# already ships bash, git, curl, wget, ca-certificates, build-essential, and the
-# common CLIs (find/ps/less/grep/sed/...).
-FROM python:3.13
+# --- Stage 2: comprehensive runtime (Debian-slim + Python + Antigravity) ------
+# Python-slim image: a minimal Debian base. We explicitly install the required
+# shell tooling (git, curl, wget, ca-certificates, and procps for ps) to support
+# skills/code execution while keeping the image size small.
+FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    wget \
+    ca-certificates \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Antigravity runtime deps, installed from PyPI at build time.
@@ -47,6 +54,8 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # binary built in stage 1.
 COPY python/ /app/python
 COPY examples/antigravity_agent/ /app/examples/antigravity_agent
+
+# TODO(jbd): Remove example skills from the image.
 COPY examples/skills/ /app/skills/
 ENV SKILLS_DIR=/app/skills
 COPY --from=build /out/ax /ax
