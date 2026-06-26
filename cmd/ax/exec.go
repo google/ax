@@ -35,7 +35,7 @@ import (
 
 var (
 	execConversationID string
-	execAgentID        string
+	execHarnessID      string
 	execInput          string
 	execServerAddr     string
 	execConfigFile     string
@@ -54,7 +54,7 @@ If no conversation ID is provided, a new UUID will be generated.`,
 
 func init() {
 	execCmd.Flags().StringVar(&execConversationID, "conversation", "", "Conversation ID (optional, generates UUID if not provided)")
-	execCmd.Flags().StringVar(&execAgentID, "agent", "", "Agent ID (optional, planner is used if not specified)")
+	execCmd.Flags().StringVar(&execHarnessID, "harness", "", "Harness ID (optional, planner is used if not specified)")
 	execCmd.Flags().StringVar(&execInput, "input", "", "Input message to send (optional)")
 	execCmd.Flags().StringVar(&execServerAddr, "server", "", "gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)")
 	execCmd.Flags().StringVar(&execConfigFile, "config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
@@ -118,10 +118,10 @@ func runExec(cmd *cobra.Command, args []string) error {
 		execController = c
 	}
 
-	return execLoop(ctx, execConversationID, execAgentID, execInput, execLastSeq)
+	return execLoop(ctx, execConversationID, execHarnessID, execInput, execLastSeq)
 }
 
-func execLoop(ctx context.Context, id string, agentID string, input string, lastSeq int32) error {
+func execLoop(ctx context.Context, id string, harnessID string, input string, lastSeq int32) error {
 	d := internal.NewDisplay(id, os.Stdout)
 	d.DisplayHeader()
 
@@ -156,7 +156,7 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 
 		conf, err := runAutoExec(reqCtx, d, &proto.ExecRequest{
 			ConversationId: id,
-			AgentId:        agentID,
+			HarnessId:      harnessID,
 			Inputs:         inputs,
 			LastSeq:        lastSeq,
 		})
@@ -169,7 +169,7 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 			if errors.Is(err, context.Canceled) {
 				fmt.Println("Request canceled.")
 				inputs = nil
-				agentID = ""
+				harnessID = ""
 				continue
 			}
 			return err
@@ -223,7 +223,7 @@ func execLoop(ctx context.Context, id string, agentID string, input string, last
 
 				conf, err = runAutoExec(reqCtx, d, &proto.ExecRequest{
 					ConversationId: id,
-					AgentId:        agentID,
+					HarnessId:      harnessID,
 					Inputs:         decision,
 				})
 

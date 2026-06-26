@@ -216,7 +216,7 @@ Executes a new agentic execution or automatically resumes an existing one. If th
 Options:
 - `--input`: Input message to send to agents (optional if `--resume` is set, otherwise required)
 - `--conversation`: Conversation ID (optional, generates UUID if not provided, or resumes if exists)
-- `--agent`: Agent ID to use (optional, defaults to planner)
+- `--harness`: Harness ID to use (optional, defaults to planner)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
@@ -234,8 +234,8 @@ ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let
 # Execute using server mode
 ax exec --server localhost:8494 --input "Hello agents!"
 
-# Execute using a custom agent
-ax exec --agent coding --input "Hello coding agent, write me a cool Go program!"
+# Execute using a custom harness
+ax exec --harness coding --input "Hello coding agent, write me a cool Go program!"
 ```
 
 ### Serve
@@ -258,18 +258,9 @@ eventlog:
   sqlite:
     filename: "eventlog/log.sqlite"
 
-planner:
-  gemini:
-    model: "gemini-3.5-flash"
-    timeout: "60s"
-    skills_dir: "./examples/skills"
-
-registry:
-  remote_agents:
-    - id: "medical-deep-researcher"
-      name: "Medical Deep Researcher"
-      description: "Performs deep medical research using various resources like pubmed and clinicaltrials.gov"
-      address: "localhost:50051"
+harnesses:
+  antigravity:
+    default: true
 ```
 
 Example:

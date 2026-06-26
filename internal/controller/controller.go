@@ -69,14 +69,14 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 
 	// TODO(jbd): Resume an incomplete execution if there exists one.
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
-	// TODO(anj): We need to consolidate agents and harness registration.
+	// TODO(anj): We need to consolidate harness registration.
 	// Adding harness registration support temporarily.
-	h, err := d.registry.Harness(req.AgentId)
+	h, err := d.registry.Harness(req.HarnessId)
 	if err != nil {
-		return fmt.Errorf("failed to get harness for agent %q: %w", req.AgentId, err)
+		return fmt.Errorf("failed to get harness %q: %w", req.HarnessId, err)
 	}
 
-	l := newLogger(d.eventLog, req.ConversationId, req.AgentId)
+	l := newLogger(d.eventLog, req.ConversationId, req.HarnessId)
 	state, err := l.ResumptionState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check resumption state: %w", err)
@@ -117,7 +117,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 	// Log inputs before running harness
-	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
+	if _, err := l.LogInputs(ctx, req.Inputs, req.HarnessConfig); err != nil {
 		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
@@ -171,7 +171,7 @@ func (d *Controller) Delete(ctx context.Context, conversationID string) error {
 	return d.eventLog.DeleteAll(ctx, conversationID)
 }
 
-// Registry returns the agent registry.
+// Registry returns the harness registry.
 func (d *Controller) Registry() *Registry {
 	return d.registry
 }

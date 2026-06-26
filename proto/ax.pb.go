@@ -1082,8 +1082,8 @@ type ExecRequest struct {
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"` // Unique conversation identifier
 	Inputs         []*Message             `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`                                       // New inputs
 	LastSeq        int32                  `protobuf:"varint,3,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`                     // Last sequence number seen by the client
-	AgentId        string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                      // Agent ID, if empty planner is used
-	AgentConfig    []byte                 `protobuf:"bytes,5,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`          // Agent configuration if any
+	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`                // Harness ID, if empty planner is used
+	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`    // Harness configuration if any
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1139,16 +1139,16 @@ func (x *ExecRequest) GetLastSeq() int32 {
 	return 0
 }
 
-func (x *ExecRequest) GetAgentId() string {
+func (x *ExecRequest) GetHarnessId() string {
 	if x != nil {
-		return x.AgentId
+		return x.HarnessId
 	}
 	return ""
 }
 
-func (x *ExecRequest) GetAgentConfig() []byte {
+func (x *ExecRequest) GetHarnessConfig() []byte {
 	if x != nil {
-		return x.AgentConfig
+		return x.HarnessConfig
 	}
 	return nil
 }
@@ -1349,13 +1349,14 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12.\n" +
 	"\aoutputs\x18\x02 \x01(\v2\x12.ax.HarnessOutputsH\x00R\aoutputs\x12\"\n" +
 	"\x03end\x18\x03 \x01(\v2\x0e.ax.HarnessEndH\x00R\x03endB\x06\n" +
-	"\x04type\"\xb4\x01\n" +
+	"\x04type\"\xbc\x01\n" +
 	"\vExecRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12#\n" +
 	"\x06inputs\x18\x02 \x03(\v2\v.ax.MessageR\x06inputs\x12\x19\n" +
-	"\blast_seq\x18\x03 \x01(\x05R\alastSeq\x12\x19\n" +
-	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12!\n" +
-	"\fagent_config\x18\x05 \x01(\fR\vagentConfig\"G\n" +
+	"\blast_seq\x18\x03 \x01(\x05R\alastSeq\x12\x1d\n" +
+	"\n" +
+	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
+	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfig\"G\n" +
 	"\fExecResponse\x12%\n" +
 	"\aoutputs\x18\x01 \x03(\v2\v.ax.MessageR\aoutputs\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\"D\n" +

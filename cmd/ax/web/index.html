@@ -305,7 +305,7 @@ body {
   font-weight: 500;
 }
 
-.agent-badge-table {
+.harness-badge-table {
   font-family: 'Fira Code', monospace;
   font-size: 12px;
   padding: 4px 8px;
@@ -571,7 +571,7 @@ body {
   font-weight: 600;
 }
 
-.agent-badge {
+.harness-badge {
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 6px;
@@ -809,7 +809,7 @@ body {
     <!-- Controls -->
     <div class="controls-bar">
       <div class="search-wrapper">
-        <input type="text" id="search-input" class="search-input" placeholder="Search conversations by ID or Agent...">
+        <input type="text" id="search-input" class="search-input" placeholder="Search conversations by ID or Harness...">
       </div>
       <select id="filter-select" class="filter-select">
         <option value="ALL">All Statuses</option>
@@ -829,7 +829,7 @@ body {
         <thead>
           <tr>
             <th>Conversation ID</th>
-            <th>Agent</th>
+            <th>Harness</th>
             <th>Status</th>
             <th>Last Seq</th>
             <th>Duration</th>
@@ -854,20 +854,12 @@ body {
         ← Back to Dashboard
       </button>
       <div class="trace-title-info">
-        <h2 id="trace-title">Execution Trace</h2>
+        <h2 id="trace-title">Conversation Trace</h2>
         <p id="trace-conv-id"></p>
       </div>
     </div>
 
-    <!-- Timeline Card -->
-    <div class="timeline-card" id="timeline-card">
-      <div class="timeline-title">Execution Timeline</div>
-      <div class="tl-rows" id="tl-rows">
-        <!-- Dynamically populated timeline bars -->
-      </div>
-    </div>
-
-    <!-- Execution Details Cards List -->
+    <!-- Details Cards List -->
     <div class="exec-list" id="exec-list">
       <!-- Dynamically populated cards -->
     </div>
@@ -899,31 +891,10 @@ function init() {
   fetchConversations();
   setupPolling();
   
+  // Attach event listeners
   searchInput.addEventListener('input', renderDashboard);
   filterSelect.addEventListener('change', renderDashboard);
   pollEnable.addEventListener('change', setupPolling);
-}
-
-// Fetch lists of conversations from the API
-async function fetchConversations() {
-  try {
-    statusDot.className = 'status-dot loading';
-    statusText.textContent = 'Updating...';
-    
-    const response = await fetch('/api/conversations');
-    if (!response.ok) throw new Error('API request failed');
-    conversations = await response.json() || [];
-    
-    statusDot.className = 'status-dot';
-    statusText.textContent = 'Connected';
-    
-    updateMetrics();
-    renderDashboard();
-  } catch (error) {
-    console.error('Error fetching conversations:', error);
-    statusDot.className = 'status-dot loading';
-    statusText.textContent = 'Connection Error';
-  }
 }
 
 function setupPolling() {
@@ -934,19 +905,42 @@ function setupPolling() {
   
   if (pollEnable.checked) {
     pollInterval = setInterval(() => {
-      // If we are looking at a trace, poll that trace, otherwise poll the main list
+      fetchConversations(true);
       if (activeConversationId) {
         fetchTrace(activeConversationId, true);
-      } else {
-        fetchConversations();
       }
     }, 3000);
   }
 }
 
+// Conversations Fetching and Rendering
+async function fetchConversations(quiet = false) {
+  try {
+    if (!quiet) {
+      statusDot.className = 'status-dot loading';
+      statusText.textContent = 'Connecting...';
+    }
+    
+    const response = await fetch('/api/conversations');
+    if (!response.ok) throw new Error('Failed to fetch conversations');
+    
+    conversations = await response.json();
+    
+    statusDot.className = 'status-dot';
+    statusText.textContent = 'Connected';
+    
+    updateMetrics();
+    renderDashboard();
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    statusDot.className = 'status-dot disconnected';
+    statusText.textContent = 'Disconnected';
+  }
+}
+
 function updateMetrics() {
   metricTotal.textContent = conversations.length;
-  metricActive.textContent = conversations.filter(c => c.status === 'RUNNING' || c.status === 'PENDING').length;
+  metricActive.textContent = conversations.filter(c => c.status === 'RUNNING').length;
   metricCompleted.textContent = conversations.filter(c => c.status === 'COMPLETED').length;
   metricFailed.textContent = conversations.filter(c => c.status === 'FAILED').length;
 }
@@ -956,7 +950,7 @@ function renderDashboard() {
   const filter = filterSelect.value;
   
   const filtered = conversations.filter(c => {
-    const matchesSearch = c.id.toLowerCase().includes(query) || c.agent.toLowerCase().includes(query);
+    const matchesSearch = c.id.toLowerCase().includes(query) || c.harness.toLowerCase().includes(query);
     const matchesFilter = filter === 'ALL' || c.status === filter;
     return matchesSearch && matchesFilter;
   });
@@ -977,7 +971,7 @@ function renderDashboard() {
     return `
       <tr>
         <td class="conv-id">${esc(c.id)}</td>
-        <td><span class="agent-badge-table">${esc(c.agent)}</span></td>
+        <td><span class="harness-badge-table">${esc(c.harness)}</span></td>
         <td>
           <span class="badge ${statusClass}">
             <span class="badge-dot"></span>
@@ -1000,9 +994,7 @@ function renderDashboard() {
 async function openTraceView(conversationId) {
   activeConversationId = conversationId;
   document.getElementById('trace-conv-id').textContent = conversationId;
-  document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Loading execution trace...</div>';
-  document.getElementById('tl-rows').innerHTML = '';
-  document.getElementById('timeline-card').style.display = 'none';
+  document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">Loading conversation trace...</div>';
   
   document.getElementById('trace-view').classList.add('active');
   document.getElementById('dashboard-view').classList.add('hidden');
@@ -1014,7 +1006,7 @@ function closeTraceView() {
   activeConversationId = null;
   document.getElementById('trace-view').classList.remove('active');
   document.getElementById('dashboard-view').classList.remove('hidden');
-  fetchConversations(); // Update list immediately when coming back
+  fetchConversations();
 }
 
 async function fetchTrace(conversationId, quiet = false) {
@@ -1041,22 +1033,16 @@ async function fetchTrace(conversationId, quiet = false) {
   }
 }
 
-// Ported trace rendering logic from trace.go
 function esc(s){
   if(s==null)return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function fmtTime(ts){
-  const d=new Date(ts);
-  return d.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
-}
-
-const BT=String.fromCharCode(96);
-const FENCE=BT+BT+BT;
-const reSplit=new RegExp('('+FENCE+'(?:[^\\n]*)?\\n[\\s\\S]*?'+FENCE+')');
-const reMatch=new RegExp('^'+FENCE+'([^\\n]*)?\\n([\\s\\S]*)'+FENCE+'$');
 function renderText(raw){
+  const BT=String.fromCharCode(96);
+  const FENCE=BT+BT+BT;
+  const reSplit=new RegExp('('+FENCE+'(?:[^\\n]*)?\\n[\\s\\S]*?'+FENCE+')');
+  const reMatch=new RegExp('^'+FENCE+'([^\\n]*)?\\n([\\s\\S]*)'+FENCE+'$');
   const parts=raw.split(reSplit);
   return parts.map(part=>{
     const m=part.match(reMatch);
@@ -1083,135 +1069,61 @@ function renderContent(c){
   return '<div class="content-item role-'+esc(role)+'"><div class="c-hdr">'+esc(role)+'</div>'+body+'</div>';
 }
 
-function renderEvent(ev){
-  const time=fmtTime(ev.timestamp);
-  const hasIn=ev.inputs&&ev.inputs.length>0;
-  const hasOut=ev.outputs&&ev.outputs.length>0;
-
-  if(!hasIn&&!hasOut&&ev.state){
-    return `<div class="event"><div class="state-evt"><span class="etime">${esc(time)}</span>State → ${esc(ev.state)}</div></div>`;
+function renderEvent(ev) {
+  let harnessBadge = '';
+  if (ev.harness_id) {
+    harnessBadge = `<span class="harness-badge" style="margin-left: 10px;">${esc(ev.harness_id)}</span>`;
   }
 
-  let html=`<div class="event"><div class="evt-meta"><span class="etime">${esc(time)}</span></div>`;
-  if(hasIn){
-    html+='<div class="content-list">';
-    ev.inputs.forEach(c=>{html+=renderContent(c);});
-    html+='</div>';
+  let stateBadge = '';
+  if (ev.state) {
+    let statusClass = 'badge-running';
+    if (ev.state === 'STATE_COMPLETED') statusClass = 'badge-completed';
+    if (ev.state === 'STATE_FAILED') statusClass = 'badge-failed';
+    stateBadge = `<span class="badge ${statusClass}" style="margin-left: 10px;"><span class="badge-dot"></span>${esc(ev.state.replace('STATE_',''))}</span>`;
   }
-  if(hasOut){
-    html+='<div class="content-list">';
-    ev.outputs.forEach(c=>{html+=renderContent(c);});
-    html+='</div>';
+
+  let html = `
+    <div class="exec-card" style="margin-bottom: 20px;">
+      <div class="exec-card-hdr" style="cursor: default;">
+        <span class="exec-name">Event #${ev.seq}</span>
+        ${harnessBadge}
+        ${stateBadge}
+      </div>
+      <div class="exec-card-body">
+        <div class="exec-card-body-content">
+  `;
+
+  if (ev.messages && ev.messages.length > 0) {
+    html += '<div class="content-list">';
+    ev.messages.forEach(c => {
+      html += renderContent(c);
+    });
+    html += '</div>';
+  } else {
+    html += '<div style="color: var(--text-secondary); font-style: italic;">No message content in this event.</div>';
   }
-  html+='</div>';
+
+  html += `
+        </div>
+      </div>
+    </div>
+  `;
   return html;
 }
 
-function getLastState(events){
-  for(let i=events.length-1;i>=0;i--){
-    if(events[i].state)return events[i].state;
-  }
-  return null;
-}
-
 function renderTrace(data) {
-  if (!data.execs || data.execs.length === 0) {
-    document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">No executions recorded for this conversation yet.</div>';
-    document.getElementById('timeline-card').style.display = 'none';
+  if (!data.events || data.events.length === 0) {
+    document.getElementById('exec-list').innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-secondary);">No events recorded for this conversation yet.</div>';
     return;
   }
 
-  // Build timeline
-  const execTimes=data.execs.map(e=>{
-    const ts=e.events.map(ev=>new Date(ev.timestamp).getTime());
-    const start=ts.length?Math.min(...ts):null;
-    const end=ts.length?Math.max(...ts):null;
-    return{execID:e.exec_id,start,end};
-  });
-  execTimes.sort((a,b)=>{
-    if(a.start==null)return 1;
-    if(b.start==null)return -1;
-    return a.start-b.start;
-  });
-  let minT=null,maxT=null;
-  execTimes.forEach(({start,end})=>{
-    if(start!=null){
-      if(minT==null||start<minT)minT=start;
-      if(maxT==null||end>maxT)maxT=end;
-    }
-  });
-  const span=maxT-minT||1;
-
-  document.getElementById('timeline-card').style.display = 'block';
-  
-  let tlHtml = '';
-  execTimes.forEach(({execID,start,end},i)=>{
-    const shortName=execID===data.root_exec_id?'root':execID.slice(data.root_exec_id.length+1);
-    const left=start!=null?((start-minT)/span*100).toFixed(2):0;
-    const width=start!=null?Math.max((end-start)/span*100,0.4).toFixed(2):0;
-    const dur=end-start;
-    const durStr=dur<1000?dur+'ms':(dur/1000).toFixed(2)+'s';
-    const colorCls='c'+(i%7);
-    tlHtml+=`
-      <div class="tl-row">
-        <div class="tl-label" title="${esc(execID)}">${esc(shortName)}</div>
-        <div class="tl-track">
-          <div class="tl-bar ${colorCls}" style="left:${left}%;width:${width}%;" title="${esc(durStr)}" onclick="scrollToCard('${esc(execID)}')">
-            <span>${esc(durStr)}</span>
-          </div>
-        </div>
-      </div>
-    `;
-  });
-  document.getElementById('tl-rows').innerHTML = tlHtml;
-
-  // Render execution details cards
-  let execListHtml = '';
-  data.execs.forEach((exec,i)=>{
-    const shortName=exec.exec_id===data.root_exec_id?'root':exec.exec_id.slice(data.root_exec_id.length+1);
-    const lastState=getLastState(exec.events);
-    
-    let statusClass = 'badge-running';
-    if (lastState === 'STATE_COMPLETED') statusClass = 'badge-completed';
-    if (lastState === 'STATE_FAILED') statusClass = 'badge-failed';
-    
-    const stateBadge=lastState?`<span class="badge ${statusClass}"><span class="badge-dot"></span>${esc(lastState.replace('STATE_',''))}</span>`:'';
-
-    execListHtml+=`
-      <div class="exec-card" id="card-${esc(exec.exec_id)}">
-        <div class="exec-card-hdr collapsed" onclick="toggleCard(this)">
-          <span class="expand-ico">▼</span>
-          <span class="exec-name">${esc(shortName)}</span>
-          <span class="agent-badge">${esc(exec.agent_id||'—')}</span>
-          ${stateBadge}
-        </div>
-        <div class="exec-card-body hidden">
-          <div class="exec-card-body-content">
-            ${exec.events.map(ev => renderEvent(ev)).join('')}
-          </div>
-        </div>
-      </div>
-    `;
+  let html = '';
+  data.events.forEach(ev => {
+    html += renderEvent(ev);
   });
   
-  document.getElementById('exec-list').innerHTML = execListHtml;
-}
-
-function scrollToCard(execID){
-  const el=document.getElementById('card-'+execID);
-  if(!el)return;
-  const hdr=el.querySelector('.exec-card-hdr');
-  const body=el.querySelector('.exec-card-body');
-  if(hdr&&hdr.classList.contains('collapsed')){
-    hdr.classList.remove('collapsed');
-    body.classList.remove('hidden');
-  }
-  el.scrollIntoView({behavior:'smooth',block:'start'});
-}
-
-function toggleCard(hdr){
-  hdr.classList.toggle('collapsed');
-  hdr.nextElementSibling.classList.toggle('hidden');
+  document.getElementById('exec-list').innerHTML = html;
 }
 
 // Initial boot

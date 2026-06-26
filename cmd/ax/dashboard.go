@@ -27,7 +27,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/controller/eventlog"
@@ -58,7 +57,7 @@ func init() {
 
 type ConversationResponse struct {
 	ID       string `json:"id"`
-	Agent    string `json:"agent"`
+	Harness  string `json:"harness"`
 	Status   string `json:"status"`
 	LastSeq  int32  `json:"last_seq"`
 	Duration string `json:"duration"`
@@ -100,19 +99,6 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 			PRIMARY KEY (conversation_id, seq)
 		)`); err != nil {
 		return fmt.Errorf("failed to initialize conversation_log table: %w", err)
-	}
-
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS execution_log (
-			exec_id TEXT NOT NULL,
-			payload TEXT NOT NULL,
-			timestamp DATETIME NOT NULL
-		)`); err != nil {
-		return fmt.Errorf("failed to initialize execution_log table: %w", err)
-	}
-
-	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_execution_log_exec_id ON execution_log(exec_id)`); err != nil {
-		return fmt.Errorf("failed to create index on execution_log: %w", err)
 	}
 
 	// Setup API handlers
@@ -193,32 +179,16 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 func fetchConversations(ctx context.Context, db *sql.DB) ([]ConversationResponse, error) {
 	query := `
 SELECT 
-    c.conversation_id,
-    c.last_seq,
-    c.state,
-    e.agent_id,
-    e.start_time,
-    e.end_time
-FROM (
-    SELECT conversation_id, seq AS last_seq,
-           json_extract(payload, '$.exec_id') AS exec_id,
-           json_extract(payload, '$.state') AS state
+    conversation_id,
+    seq AS last_seq,
+    json_extract(payload, '$.state') AS state,
+    json_extract(payload, '$.harness_id') AS harness_id
+FROM conversation_log
+WHERE (conversation_id, seq) IN (
+    SELECT conversation_id, MAX(seq)
     FROM conversation_log
-    WHERE (conversation_id, seq) IN (
-        SELECT conversation_id, MAX(seq)
-        FROM conversation_log
-        GROUP BY conversation_id
-    )
-) c
-LEFT JOIN (
-    SELECT 
-        exec_id,
-        json_extract(payload, '$.agent_id') AS agent_id,
-        MIN(timestamp) AS start_time,
-        MAX(timestamp) AS end_time
-    FROM execution_log
-    GROUP BY exec_id
-) e ON c.exec_id = e.exec_id;
+    GROUP BY conversation_id
+);
 `
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -231,32 +201,19 @@ LEFT JOIN (
 		var id string
 		var lastSeq int32
 		var state string
-		var agentID sql.NullString
-		var startTimeStr, endTimeStr sql.NullString
+		var harnessID sql.NullString
 
-		err := rows.Scan(&id, &lastSeq, &state, &agentID, &startTimeStr, &endTimeStr)
+		err := rows.Scan(&id, &lastSeq, &state, &harnessID)
 		if err != nil {
 			return nil, err
 		}
 
-		agent := "unknown"
-		if agentID.Valid && agentID.String != "" {
-			agent = agentID.String
+		harnessName := "unknown"
+		if harnessID.Valid && harnessID.String != "" {
+			harnessName = harnessID.String
 			// Strip special prefix if it starts with "__"
-			if len(agent) > 2 && agent[:2] == "__" {
-				agent = agent[2:]
-			}
-		}
-
-		durationStr := "N/A"
-		if startTimeStr.Valid && endTimeStr.Valid {
-			startTime, err1 := parseSQLiteTime(startTimeStr.String)
-			endTime, err2 := parseSQLiteTime(endTimeStr.String)
-			if err1 == nil && err2 == nil {
-				duration := endTime.Sub(startTime)
-				durationStr = fmt.Sprintf("%.1fs", duration.Seconds())
-			} else {
-				slog.WarnContext(ctx, "Failed to parse sqlite timestamps", slog.String("start", startTimeStr.String), slog.String("end", endTimeStr.String), slog.Any("err1", err1), slog.Any("err2", err2))
+			if len(harnessName) > 2 && harnessName[:2] == "__" {
+				harnessName = harnessName[2:]
 			}
 		}
 
@@ -270,34 +227,14 @@ LEFT JOIN (
 
 		convs = append(convs, ConversationResponse{
 			ID:       id,
-			Agent:    agent,
+			Harness:  harnessName,
 			Status:   status,
 			LastSeq:  lastSeq,
-			Duration: durationStr,
+			Duration: "N/A",
 		})
 	}
 
 	return convs, nil
-}
-
-func parseSQLiteTime(s string) (time.Time, error) {
-	layouts := []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02 15:04:05.999999999-07:00",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05.999999999 -0700 MST",
-		"2006-01-02 15:04:05",
-	}
-	var err error
-	var t time.Time
-	for _, layout := range layouts {
-		t, err = time.Parse(layout, s)
-		if err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, err
 }
 
 func openBrowser(url string) {
@@ -335,101 +272,44 @@ type Content struct {
 	Confirmation *Confirmation `json:"confirmation,omitempty"`
 }
 
-type ExecutionEvent struct {
-	ExecID    string    `json:"exec_id"`
-	AgentID   string    `json:"agent_id"`
-	Inputs    []Content `json:"inputs"`
-	Outputs   []Content `json:"outputs"`
+type EventResponse struct {
+	Seq       int32     `json:"seq"`
+	HarnessID string    `json:"harness_id,omitempty"`
 	State     string    `json:"state"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-type ExecTrace struct {
-	ExecID  string           `json:"exec_id"`
-	AgentID string           `json:"agent_id"`
-	Events  []ExecutionEvent `json:"events"`
+	Messages  []Content `json:"messages"`
 }
 
 type TraceData struct {
-	ConversationID string      `json:"conversation_id"`
-	RootExecID     string      `json:"root_exec_id"`
-	Execs          []ExecTrace `json:"execs"`
+	ConversationID string          `json:"conversation_id"`
+	Events         []EventResponse `json:"events"`
 }
 
 func loadTraceData(ctx context.Context, cfg *cliutil.Config, convID string) (*TraceData, error) {
-	events, rootExecID, execIDs, err := fetch(ctx, cfg, convID)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO(jbd): Trace view incorrectly displays graph executions. We are not
-	// changing the EventLog interface to fix this because the executor is being
-	// removed soon in favor of a linear execution model. We will adopt a different
-	// style of visualization once that's done.
-	return &TraceData{
-		ConversationID: convID,
-		RootExecID:     rootExecID,
-		Execs:          buildExecTraces(execIDs, events),
-	}, nil
-}
-
-func fetch(ctx context.Context, cfg *cliutil.Config, convID string) ([]*proto.ConversationEvent, string, []string, error) {
 	evLog, err := eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("could not open sqlite eventlog: %w", err)
+		return nil, fmt.Errorf("could not open sqlite eventlog: %w", err)
 	}
 	defer evLog.Close()
 
 	convEvents, err := evLog.Events(ctx, convID)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to query conversation events: %w", err)
+		return nil, fmt.Errorf("failed to query conversation events: %w", err)
 	}
 
-	var execIDs []string
-	seen := make(map[string]bool)
-	for _, ev := range convEvents {
-		if ev.ExecId != "" && !seen[ev.ExecId] {
-			execIDs = append(execIDs, ev.ExecId)
-			seen[ev.ExecId] = true
-		}
+	var events []EventResponse
+	for _, protoEv := range convEvents {
+		events = append(events, EventResponse{
+			Seq:       protoEv.Seq,
+			HarnessID: protoEv.HarnessId,
+			State:     fmt.Sprint(protoEv.State),
+			Messages:  extractMsgs(protoEv.Messages),
+		})
 	}
 
-	if len(execIDs) == 0 {
-		return nil, "", nil, fmt.Errorf("no executions found for conversation: %s", convID)
-	}
-
-	// Use the first execID as the rootExecID as requested by user
-	rootExecID := execIDs[0]
-
-	return convEvents, rootExecID, execIDs, nil
-}
-
-func buildExecTraces(execIDs []string, events []*proto.ConversationEvent) []ExecTrace {
-	execsMap := make(map[string][]ExecutionEvent)
-	harnessIDs := make(map[string]string)
-
-	for _, protoEv := range events {
-		exID := protoEv.ExecId
-		if protoEv.HarnessId != "" {
-			harnessIDs[exID] = protoEv.HarnessId
-		}
-		ev := extractExecutionEvent(exID, protoEv)
-		execsMap[exID] = append(execsMap[exID], ev)
-	}
-
-	var execs []ExecTrace
-	for _, execID := range execIDs {
-		if evs, ok := execsMap[execID]; ok {
-			agentID := harnessIDs[execID]
-			execs = append(execs, ExecTrace{
-				ExecID:  execID,
-				AgentID: agentID,
-				Events:  evs,
-			})
-		}
-	}
-
-	return execs
+	return &TraceData{
+		ConversationID: convID,
+		Events:         events,
+	}, nil
 }
 
 func extractMsgs(protoContents []*proto.Message) []Content {
@@ -460,20 +340,4 @@ func extractMsgs(protoContents []*proto.Message) []Content {
 		results = append(results, content)
 	}
 	return results
-}
-
-func extractExecutionEvent(execID string, protoEv *proto.ConversationEvent) ExecutionEvent {
-	ev := ExecutionEvent{
-		ExecID:  execID,
-		AgentID: protoEv.HarnessId,
-	}
-
-	ev.State = fmt.Sprint(protoEv.State)
-	if protoEv.HarnessId != "" {
-		ev.Inputs = extractMsgs(protoEv.Messages)
-	} else {
-		ev.Outputs = extractMsgs(protoEv.Messages)
-	}
-
-	return ev
 }

@@ -50,8 +50,8 @@ func main() {
 	// Demo 1: Unregistered Harness (Should fail)
 	// -------------------------------------------------------------------------
 	fmt.Println("\n--- Demo 1: Unregistered Harness ---")
-	fmt.Println("Requesting 'unregistered-agent'. Exec should fail since no harness is registered.")
-	runDemo(ctx, "unregistered-agent", func(reg *controller.Registry) {
+	fmt.Println("Requesting 'unregistered-harness'. Exec should fail since no harness is registered.")
+	runDemo(ctx, "unregistered-harness", func(reg *controller.Registry) {
 		// Do not register any harness
 	})
 
@@ -78,7 +78,7 @@ func main() {
 	})
 }
 
-func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *controller.Registry)) {
+func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *controller.Registry)) {
 	reg := controller.NewRegistry()
 	setupRegistry(reg)
 
@@ -98,9 +98,9 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 	handler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
 		for _, out := range resp.Outputs {
 			if textContent := out.GetContent().GetText().GetText(); textContent != "" {
-				fmt.Printf("Agent Output: %s\n", textContent)
+				fmt.Printf("Harness Output: %s\n", textContent)
 			} else if toolCall := out.GetContent().GetToolCall(); toolCall != nil {
-				fmt.Printf("Agent Triggered Tool Call: %s (ID: %s)\n", toolCall.GetFunctionCall().Name, toolCall.Id)
+				fmt.Printf("Harness Triggered Tool Call: %s (ID: %s)\n", toolCall.GetFunctionCall().Name, toolCall.Id)
 			}
 		}
 		return nil
@@ -120,7 +120,7 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: "e2e-conv",
 		Inputs:         inputs,
-		AgentId:        agentID,
+		HarnessId:      harnessID,
 	}, handler)
 
 	if err != nil {

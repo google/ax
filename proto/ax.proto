@@ -168,8 +168,8 @@ message ExecRequest {
   repeated Message inputs = 2;           // New inputs
   int32 last_seq = 3;                    // Last sequence number seen by the client
 
-  string agent_id = 4;                   // Agent ID, if empty planner is used
-  bytes agent_config = 5;                // Agent configuration if any
+  string harness_id = 4;                 // Harness ID, if empty planner is used
+  bytes harness_config = 5;              // Harness configuration if any
 }
 
 // ExecResponse contains the result of an execution.

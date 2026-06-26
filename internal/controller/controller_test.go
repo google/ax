@@ -167,13 +167,13 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 
 }
 
-func TestController2_ExecWithAgentID(t *testing.T) {
+func TestController_ExecWithHarnessID(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
 	log := &eventlogtest.MemoryEventLog{}
 	reg := NewRegistry()
-	if err := reg.RegisterHarness("my-agent", &fakeHarness{}); err != nil {
+	if err := reg.RegisterHarness("my-harness", &fakeHarness{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -207,11 +207,11 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
-		AgentId:        "my-agent",
+		HarnessId:      "my-harness",
 		Inputs:         inputs,
 	}, handler)
 	if err != nil {
-		t.Fatalf("Controller2.Exec failed: %v", err)
+		t.Fatalf("Controller.Exec failed: %v", err)
 	}
 
 	if len(outputs) != 1 {
@@ -224,12 +224,12 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 	}
 }
 
-func TestController2_ExecHarnessNotFound(t *testing.T) {
+func TestController_ExecHarnessNotFound(t *testing.T) {
 	ctx := context.Background()
 	cid := "test-conversation-id"
 
 	log := &eventlogtest.MemoryEventLog{}
-	reg := NewRegistry() // Empty registry, will force error for any requested agent
+	reg := NewRegistry() // Empty registry, will force error for any requested harness
 
 	c, err := New(ctx, Config{
 		Registry: reg,
@@ -260,7 +260,7 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
 		Inputs:         inputs,
-		AgentId:        "antigravity",
+		HarnessId:      "antigravity",
 	}, handler)
 	if err == nil {
 		t.Fatal("expected error requesting unregistered agent, got nil")
@@ -330,7 +330,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 				return exec, nil
 			},
 		}
-		if err := reg.RegisterHarness("test-agent", h); err != nil {
+		if err := reg.RegisterHarness("test-harness", h); err != nil {
 			t.Fatal(err)
 		}
 
@@ -345,7 +345,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-harness",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Hello"}}}},
 			},
@@ -374,7 +374,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		// Seed the event log with a pending event
 		_, err := log.Append(ctx, &proto.ConversationEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			HarnessId:      "test-harness",
 			State:          proto.State_STATE_PENDING,
 			Messages: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
@@ -398,7 +398,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 				return exec, nil
 			},
 		}
-		if err := reg.RegisterHarness("test-agent", h); err != nil {
+		if err := reg.RegisterHarness("test-harness", h); err != nil {
 			t.Fatal(err)
 		}
 
@@ -413,7 +413,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-harness",
 			Inputs:         nil, // NO new inputs
 		}, func(resp *proto.ExecResponse) error { return nil })
 		if err != nil {
@@ -440,7 +440,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		// Seed the event log with a pending event
 		_, err := log.Append(ctx, &proto.ConversationEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			HarnessId:      "test-harness",
 			State:          proto.State_STATE_PENDING,
 			Messages: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
@@ -465,7 +465,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 				return exec, nil
 			},
 		}
-		if err := reg.RegisterHarness("test-agent", h); err != nil {
+		if err := reg.RegisterHarness("test-harness", h); err != nil {
 			t.Fatal(err)
 		}
 
@@ -480,7 +480,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-harness",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "New input"}}}},
 			},

@@ -39,48 +39,28 @@ func TestFetchConversations(t *testing.T) {
 		timestamp DATETIME,
 		payload TEXT
 	);
-
-	CREATE TABLE execution_log (
-		exec_id TEXT,
-		timestamp DATETIME,
-		payload TEXT
-	);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 
 	// Insert test data
-	// Conversation 1: Only conversation_log (V2 execution without execution_log)
+	// Conversation 1: Running conversation with test-harness
 	_, err = db.Exec(`
 		INSERT INTO conversation_log (conversation_id, seq, timestamp, payload) 
-		VALUES ('conv-1', 1, ?, '{"exec_id": "exec-1", "state": "STATE_PENDING"}')
+		VALUES ('conv-1', 1, ?, '{"exec_id": "exec-1", "state": "STATE_PENDING", "harness_id": "test-harness"}')
 	`, time.Now().Format(time.RFC3339))
 	if err != nil {
 		t.Fatalf("failed to insert conv-1: %v", err)
 	}
 
-	// Conversation 2: Both conversation_log and execution_log (V1 execution)
-	now := time.Now()
-	start := now.Add(-5 * time.Second)
-	end := now
-
+	// Conversation 2: Completed conversation with my-harness
 	_, err = db.Exec(`
 		INSERT INTO conversation_log (conversation_id, seq, timestamp, payload) 
-		VALUES ('conv-2', 5, ?, '{"exec_id": "exec-2", "state": "STATE_COMPLETED"}')
-	`, end.Format(time.RFC3339))
+		VALUES ('conv-2', 5, ?, '{"exec_id": "exec-2", "state": "STATE_COMPLETED", "harness_id": "my-harness"}')
+	`, time.Now().Format(time.RFC3339))
 	if err != nil {
 		t.Fatalf("failed to insert conv-2: %v", err)
-	}
-
-	_, err = db.Exec(`
-		INSERT INTO execution_log (exec_id, timestamp, payload) 
-		VALUES 
-		('exec-2', ?, '{"agent_id": "my-agent"}'),
-		('exec-2', ?, '{"agent_id": "my-agent"}')
-	`, start.Format(time.RFC3339), end.Format(time.RFC3339))
-	if err != nil {
-		t.Fatalf("failed to insert exec-2: %v", err)
 	}
 
 	// Fetch the conversations
@@ -108,8 +88,8 @@ func TestFetchConversations(t *testing.T) {
 	if c1.Status != "RUNNING" { // STATE_PENDING -> RUNNING
 		t.Errorf("conv-1 expected status RUNNING, got %q", c1.Status)
 	}
-	if c1.Agent != "unknown" {
-		t.Errorf("conv-1 expected agent unknown, got %q", c1.Agent)
+	if c1.Harness != "test-harness" {
+		t.Errorf("conv-1 expected harness test-harness, got %q", c1.Harness)
 	}
 	if c1.Duration != "N/A" {
 		t.Errorf("conv-1 expected duration N/A, got %q", c1.Duration)
@@ -126,12 +106,11 @@ func TestFetchConversations(t *testing.T) {
 	if c2.Status != "COMPLETED" { // STATE_COMPLETED -> COMPLETED
 		t.Errorf("conv-2 expected status COMPLETED, got %q", c2.Status)
 	}
-	if c2.Agent != "my-agent" {
-		t.Errorf("conv-2 expected agent my-agent, got %q", c2.Agent)
+	if c2.Harness != "my-harness" {
+		t.Errorf("conv-2 expected harness my-harness, got %q", c2.Harness)
 	}
-	// Duration should be roughly 5.0s
-	if c2.Duration != "5.0s" {
-		t.Errorf("conv-2 expected duration 5.0s, got %q", c2.Duration)
+	if c2.Duration != "N/A" {
+		t.Errorf("conv-2 expected duration N/A, got %q", c2.Duration)
 	}
 	if c2.LastSeq != 5 {
 		t.Errorf("conv-2 expected last_seq 5, got %d", c2.LastSeq)
