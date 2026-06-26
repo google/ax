@@ -23,6 +23,7 @@ package proto
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	_ "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -516,7 +517,7 @@ type ConversationEvent struct {
 	Seq            int32                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	ExecId         string                 `protobuf:"bytes,3,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
 	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
-	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
+	HarnessConfig  *structpb.Struct       `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
 	Messages       []*Message             `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
 	State          State                  `protobuf:"varint,7,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -581,7 +582,7 @@ func (x *ConversationEvent) GetHarnessId() string {
 	return ""
 }
 
-func (x *ConversationEvent) GetHarnessConfig() []byte {
+func (x *ConversationEvent) GetHarnessConfig() *structpb.Struct {
 	if x != nil {
 		return x.HarnessConfig
 	}
@@ -1082,8 +1083,8 @@ type ExecRequest struct {
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"` // Unique conversation identifier
 	Inputs         []*Message             `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`                                       // New inputs
 	LastSeq        int32                  `protobuf:"varint,3,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`                     // Last sequence number seen by the client
-	AgentId        string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                      // Agent ID, if empty planner is used
-	AgentConfig    []byte                 `protobuf:"bytes,5,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`          // Agent configuration if any
+	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`                // Harness ID, empty selects the default harness
+	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`    // Per-request harness configuration (opaque JSON), if any
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1139,16 +1140,16 @@ func (x *ExecRequest) GetLastSeq() int32 {
 	return 0
 }
 
-func (x *ExecRequest) GetAgentId() string {
+func (x *ExecRequest) GetHarnessId() string {
 	if x != nil {
-		return x.AgentId
+		return x.HarnessId
 	}
 	return ""
 }
 
-func (x *ExecRequest) GetAgentConfig() []byte {
+func (x *ExecRequest) GetHarnessConfig() []byte {
 	if x != nil {
-		return x.AgentConfig
+		return x.HarnessConfig
 	}
 	return nil
 }
@@ -1290,7 +1291,7 @@ var File_proto_ax_proto protoreflect.FileDescriptor
 
 const file_proto_ax_proto_rawDesc = "" +
 	"\n" +
-	"\x0eproto/ax.proto\x12\x02ax\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13proto/content.proto\"s\n" +
+	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x13proto/content.proto\"s\n" +
 	"\n" +
 	"AgentStart\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12!\n" +
@@ -1313,14 +1314,14 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\aMessage\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12%\n" +
 	"\acontent\x18\x02 \x01(\v2\v.ax.ContentR\acontent\x12#\n" +
-	"\rinternal_only\x18\x03 \x01(\bR\finternalOnly\"\xf7\x01\n" +
+	"\rinternal_only\x18\x03 \x01(\bR\finternalOnly\"\x90\x02\n" +
 	"\x11ConversationEvent\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\x12\x17\n" +
 	"\aexec_id\x18\x03 \x01(\tR\x06execId\x12\x1d\n" +
 	"\n" +
-	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
-	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfig\x12'\n" +
+	"harness_id\x18\x04 \x01(\tR\tharnessId\x12>\n" +
+	"\x0eharness_config\x18\x05 \x01(\v2\x17.google.protobuf.StructR\rharnessConfig\x12'\n" +
 	"\bmessages\x18\x06 \x03(\v2\v.ax.MessageR\bmessages\x12\x1f\n" +
 	"\x05state\x18\a \x01(\x0e2\t.ax.StateR\x05state\"\x14\n" +
 	"\x12HealthCheckRequest\"I\n" +
@@ -1349,13 +1350,14 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12.\n" +
 	"\aoutputs\x18\x02 \x01(\v2\x12.ax.HarnessOutputsH\x00R\aoutputs\x12\"\n" +
 	"\x03end\x18\x03 \x01(\v2\x0e.ax.HarnessEndH\x00R\x03endB\x06\n" +
-	"\x04type\"\xb4\x01\n" +
+	"\x04type\"\xbc\x01\n" +
 	"\vExecRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12#\n" +
 	"\x06inputs\x18\x02 \x03(\v2\v.ax.MessageR\x06inputs\x12\x19\n" +
-	"\blast_seq\x18\x03 \x01(\x05R\alastSeq\x12\x19\n" +
-	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12!\n" +
-	"\fagent_config\x18\x05 \x01(\fR\vagentConfig\"G\n" +
+	"\blast_seq\x18\x03 \x01(\x05R\alastSeq\x12\x1d\n" +
+	"\n" +
+	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
+	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfig\"G\n" +
 	"\fExecResponse\x12%\n" +
 	"\aoutputs\x18\x01 \x03(\v2\v.ax.MessageR\aoutputs\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq\"D\n" +
@@ -1417,6 +1419,7 @@ var file_proto_ax_proto_goTypes = []any{
 	(*DeleteConversationRequest)(nil),  // 19: ax.DeleteConversationRequest
 	(*DeleteConversationResponse)(nil), // 20: ax.DeleteConversationResponse
 	(*Content)(nil),                    // 21: ax.Content
+	(*structpb.Struct)(nil),            // 22: google.protobuf.Struct
 }
 var file_proto_ax_proto_depIdxs = []int32{
 	7,  // 0: ax.AgentStart.messages:type_name -> ax.Message
@@ -1425,29 +1428,30 @@ var file_proto_ax_proto_depIdxs = []int32{
 	3,  // 3: ax.AgentResponse.outputs:type_name -> ax.AgentOutputs
 	4,  // 4: ax.AgentResponse.end:type_name -> ax.AgentEnd
 	21, // 5: ax.Message.content:type_name -> ax.Content
-	7,  // 6: ax.ConversationEvent.messages:type_name -> ax.Message
-	0,  // 7: ax.ConversationEvent.state:type_name -> ax.State
-	7,  // 8: ax.HarnessStart.messages:type_name -> ax.Message
-	1,  // 9: ax.HarnessCancel.reason:type_name -> ax.CancelReason
-	11, // 10: ax.HarnessRequest.start:type_name -> ax.HarnessStart
-	12, // 11: ax.HarnessRequest.cancel:type_name -> ax.HarnessCancel
-	7,  // 12: ax.HarnessOutputs.messages:type_name -> ax.Message
-	0,  // 13: ax.HarnessEnd.state:type_name -> ax.State
-	14, // 14: ax.HarnessResponse.outputs:type_name -> ax.HarnessOutputs
-	15, // 15: ax.HarnessResponse.end:type_name -> ax.HarnessEnd
-	7,  // 16: ax.ExecRequest.inputs:type_name -> ax.Message
-	7,  // 17: ax.ExecResponse.outputs:type_name -> ax.Message
-	13, // 18: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
-	17, // 19: ax.ControllerService.Exec:input_type -> ax.ExecRequest
-	19, // 20: ax.ConversationService.DeleteConversation:input_type -> ax.DeleteConversationRequest
-	16, // 21: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
-	18, // 22: ax.ControllerService.Exec:output_type -> ax.ExecResponse
-	20, // 23: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
-	21, // [21:24] is the sub-list for method output_type
-	18, // [18:21] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	22, // 6: ax.ConversationEvent.harness_config:type_name -> google.protobuf.Struct
+	7,  // 7: ax.ConversationEvent.messages:type_name -> ax.Message
+	0,  // 8: ax.ConversationEvent.state:type_name -> ax.State
+	7,  // 9: ax.HarnessStart.messages:type_name -> ax.Message
+	1,  // 10: ax.HarnessCancel.reason:type_name -> ax.CancelReason
+	11, // 11: ax.HarnessRequest.start:type_name -> ax.HarnessStart
+	12, // 12: ax.HarnessRequest.cancel:type_name -> ax.HarnessCancel
+	7,  // 13: ax.HarnessOutputs.messages:type_name -> ax.Message
+	0,  // 14: ax.HarnessEnd.state:type_name -> ax.State
+	14, // 15: ax.HarnessResponse.outputs:type_name -> ax.HarnessOutputs
+	15, // 16: ax.HarnessResponse.end:type_name -> ax.HarnessEnd
+	7,  // 17: ax.ExecRequest.inputs:type_name -> ax.Message
+	7,  // 18: ax.ExecResponse.outputs:type_name -> ax.Message
+	13, // 19: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
+	17, // 20: ax.ControllerService.Exec:input_type -> ax.ExecRequest
+	19, // 21: ax.ConversationService.DeleteConversation:input_type -> ax.DeleteConversationRequest
+	16, // 22: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
+	18, // 23: ax.ControllerService.Exec:output_type -> ax.ExecResponse
+	20, // 24: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
+	22, // [22:25] is the sub-list for method output_type
+	19, // [19:22] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_proto_ax_proto_init() }
