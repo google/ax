@@ -83,20 +83,6 @@ message HealthCheckResponse {
   string message = 2;
 }
 
-// AgentService defines the gRPC service for agent communication.
-// This protocol enables a bidirectional communication between the
-// controller and the agent. Agents can start new agentic calls via
-// the controller within the same execution boundary by using the channel.
-//
-// WARNING: There will be significant changes to this protocol as
-// we are solidifying resumption on the wire.
-service AgentService {
-  // Connect is used by agents to connect to the controller.
-  rpc Connect(AgentRequest) returns (stream AgentResponse);
-
-  // HealthCheck checks if the agent is healthy and responsive
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
-}
 
 message HarnessStart {
   // Per-execution harness configuration.

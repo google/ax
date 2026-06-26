@@ -11,8 +11,6 @@ build:
 	@echo "Building ax..."
 	@mkdir -p bin
 	@go build -o bin/ax ./cmd/ax
-	@echo "Building remote agent example..."
-	@go build -o bin/remote_agent ./examples/remote_agent
 	@echo "Build complete!"
 
 

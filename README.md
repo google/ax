@@ -47,13 +47,11 @@ graph LR
     Client
     Router["Router"]
     Controller["AX Controller<br/>(executor, event log, registry)"]
-    RemoteAgent["Agent<br/>(isolated actor)"]
     Tool["Tool<br/>(MCP server)"]
     Env["Environment with<br/>skills, built-in tools<br/>(isolated actor)"]
 
     Client -->|resumable stream| Router
     Router --> Controller
-    Controller <-->|resumable stream| RemoteAgent
     Controller --> Env
     Controller --> Tool
 ```
@@ -157,42 +155,6 @@ ax exec \
   --resume
 ```
 
-### 2. Execute with Custom Agents
-
-Most developers want to build their own agents. AX allows running custom agents as remote
-or sandbox agents. See [Custom Agents](#custom-agents) for a full list of supported agents.
-
-This example demonstrates how the AX server executes remote agents
-through the `AgentService.Connect` RPC.
-
-**Terminal 1** - Start the remote agent server:
-```bash
-go run examples/remote_agent/main.go
-```
-The remote agent runs as a gRPC server implementing `AgentService` on port `:50051`.
-
-**Terminal 2** - Start the AX controller server:
-```bash
-# Ensure the agent is registered as a remote agent in ax.yaml.
-cat ax.yaml
-# ...
-registry:
-  remote_agents:
-    - id: "lowercase"
-      name: "Lowercase Agent"
-      description: "Converts text to lowercase."
-      address: "localhost:50051"
-
-ax serve
-```
-The server exposes the service on port `:8494` by default.
-
-**Terminal 3** - Register the remote agent and execute:
-```bash
-ax exec \
-    --server localhost:8494 \
-    --input "HELLO, CAN YOU LOWERCASE WHAT I JUST SAID?"
-```
 
 ## Usage
 
@@ -264,12 +226,6 @@ planner:
     timeout: "60s"
     skills_dir: "./examples/skills"
 
-registry:
-  remote_agents:
-    - id: "medical-deep-researcher"
-      name: "Medical Deep Researcher"
-      description: "Performs deep medical research using various resources like pubmed and clinicaltrials.gov"
-      address: "localhost:50051"
 ```
 
 Example:
@@ -319,29 +275,12 @@ adapts to the user's operating system.
 For safety and control, any execution initiated by the bash tool
 requires explicit user approval via a confirmation flow before running.
 
-### Custom Agents
-
-AX supports multiple ways to bring your own agents into the runtime.
-
-#### Remote agents
-
-Remote agents run outside the AX controller and are
-invoked over a protocol boundary.
-
-- [Remote Agent](examples/remote_agent) implements AX's native `AgentService` directly.
-- [ADK Agent (Python)](examples/adk_agent) runs a Google ADK agent as a remote agent.
-
-Please note that AX is actively developing its resumable streaming and agent communication protocols; these interfaces will change before a stable release.
-
-If you are implementing an AX-native remote agent, see `AgentService` in `proto/ax.proto`.
 
 ## What AX is NOT?
 * A managed service. AX is self-hosted and not a managed service.
   We aim to make it easy for users to deploy and operate it on
   their Kubernetes clusters.
 * An agentic framework. AX is agnostic of the framework used to build agents.
-  We are working with other framework authors (e.g., [ADK](examples/adk_agent))
-  to provide easy integration with them.
 * A specific harness like a specific coding agent, e.g. Antigravity.
   AX provides the serving layer around harnesses and is agnostic of the
   harness implementation. Soon, we will allow users to bring their own
