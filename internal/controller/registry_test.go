@@ -23,7 +23,7 @@ import (
 
 type dummyHarness struct{}
 
-func (d *dummyHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+func (d *dummyHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	return nil, nil
 }
 

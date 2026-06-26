@@ -163,11 +163,12 @@ func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) *Antig
 }
 
 // Start implements Harness.Start.
-func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
+func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
 	return &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
+		harnessConfig:  harnessConfig,
 	}, nil
 }
 
@@ -179,6 +180,7 @@ type antigravityInteractionsExecution struct {
 	harness        *AntigravityInteractionsHarness
 	conversationID string
 	id             string
+	harnessConfig  []byte
 
 	mu     sync.Mutex
 	queued []*proto.Message

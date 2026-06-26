@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package ax;
 
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "proto/content.proto";
 
@@ -69,7 +70,7 @@ message ConversationEvent {
   int32 seq = 2;
   string exec_id = 3;
   string harness_id = 4;
-  bytes harness_config = 5;
+  google.protobuf.Struct harness_config = 5;
   repeated Message messages = 6;
   State state = 7;
 }
@@ -168,8 +169,8 @@ message ExecRequest {
   repeated Message inputs = 2;           // New inputs
   int32 last_seq = 3;                    // Last sequence number seen by the client
 
-  string agent_id = 4;                   // Agent ID, if empty planner is used
-  bytes agent_config = 5;                // Agent configuration if any
+  string harness_id = 4;                 // Harness ID, empty selects the default harness
+  bytes harness_config = 5;              // Per-request harness configuration (opaque JSON), if any
 }
 
 // ExecResponse contains the result of an execution.

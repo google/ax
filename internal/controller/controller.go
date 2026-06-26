@@ -23,6 +23,8 @@ import (
 
 	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/proto"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ExecHandler func(resp *proto.ExecResponse) error
@@ -71,12 +73,12 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
-	h, err := d.registry.Harness(req.AgentId)
+	h, err := d.registry.Harness(req.HarnessId)
 	if err != nil {
-		return fmt.Errorf("failed to get harness for agent %q: %w", req.AgentId, err)
+		return fmt.Errorf("failed to get harness %q: %w", req.HarnessId, err)
 	}
 
-	l := newLogger(d.eventLog, req.ConversationId, req.AgentId)
+	l := newLogger(d.eventLog, req.ConversationId, req.HarnessId)
 	state, err := l.ResumptionState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check resumption state: %w", err)
@@ -91,7 +93,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		// If the state is pending, first try to resume the
 		// pending execution. If the state is COMPLETED or FAILED, start
 		// a new execution.
-		exec, err := h.Start(ctx, req.ConversationId)
+		exec, err := h.Start(ctx, req.ConversationId, req.HarnessConfig)
 		if err != nil {
 			return fmt.Errorf("failed to start harness session: %w", err)
 		}
@@ -107,7 +109,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return nil
 	}
 
-	exec, err := h.Start(ctx, req.ConversationId)
+	exec, err := h.Start(ctx, req.ConversationId, req.HarnessConfig)
 	if err != nil {
 		return fmt.Errorf("failed to start harness session: %w", err)
 	}
@@ -117,7 +119,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 	// Log inputs before running harness
-	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
+	if _, err := l.LogInputs(ctx, req.Inputs, req.HarnessConfig); err != nil {
 		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
@@ -226,11 +228,23 @@ func (l *logger) ResumptionState(ctx context.Context) (proto.State, error) {
 }
 
 func (l *logger) LogInputs(ctx context.Context, inputs []*proto.Message, harnessConfig []byte) (int32, error) {
+	// Parse the harness config into a human-readable struct for logging.
+	var cfg *structpb.Struct
+	if len(harnessConfig) > 0 {
+		cfg = &structpb.Struct{}
+		if err := protojson.Unmarshal(harnessConfig, cfg); err != nil {
+			slog.WarnContext(ctx, "Failed to parse harness config for logging",
+				slog.String("conversation_id", l.conversationID),
+				slog.Any("error", err),
+			)
+			cfg = nil
+		}
+	}
 	ev := &proto.ConversationEvent{
 		ConversationId: l.conversationID,
 		ExecId:         l.execID,
 		HarnessId:      l.harnessID,
-		HarnessConfig:  harnessConfig,
+		HarnessConfig:  cfg,
 		Messages:       inputs,
 		State:          proto.State_STATE_PENDING,
 	}

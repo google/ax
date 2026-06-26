@@ -18,12 +18,13 @@
 // TO RUN THIS E2E DEMONSTRATION:
 //
 // Step 1: Start the Python gRPC Harness Server (in a separate terminal or background):
-//   PYTHONPATH=python:. /Users/anjalisridhar/.gemini/jetski/worktrees/harness-interface-3/implement-agy-sdk-streaming-20260528/.venv/bin/python python/antigravity/harness_server.py --port 50053
+//
+//	PYTHONPATH=python:. /Users/anjalisridhar/.gemini/jetski/worktrees/harness-interface-3/implement-agy-sdk-streaming-20260528/.venv/bin/python python/antigravity/harness_server.py --port 50053
 //
 // Step 2: Run this Go E2E client:
-//   go run cmd/e2e/main.go
+//
+//	go run cmd/e2e/main.go
 package main
-
 
 import (
 	"context"
@@ -78,7 +79,7 @@ func main() {
 	})
 }
 
-func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *controller.Registry)) {
+func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *controller.Registry)) {
 	reg := controller.NewRegistry()
 	setupRegistry(reg)
 
@@ -120,7 +121,7 @@ func runDemo(ctx context.Context, agentID string, setupRegistry func(reg *contro
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: "e2e-conv",
 		Inputs:         inputs,
-		AgentId:        agentID,
+		HarnessId:      harnessID,
 	}, handler)
 
 	if err != nil {

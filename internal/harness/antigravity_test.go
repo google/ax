@@ -15,6 +15,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -22,13 +23,15 @@ import (
 	"github.com/google/ax/proto"
 )
 
+var antigravityHarnessConfig = []byte(`{"system_instructions":"be terse"}`)
+
 func TestAntigravityHarness_Run_Success(t *testing.T) {
 	srv := &mockHarnessServer{
 		outputs: []*proto.Message{thoughtText("Analyzing"), assistantText("Hello world")},
 	}
 	harnessClient := NewAntigravityHarness(startHarnessServer(t, srv))
 
-	exec, err := harnessClient.Start(context.Background(), "conv-test")
+	exec, err := harnessClient.Start(context.Background(), "conv-test", antigravityHarnessConfig)
 	if err != nil {
 		t.Fatalf("failed to start execution: %v", err)
 	}
@@ -56,9 +59,13 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 	if got := msgs[1].GetContent().GetText().GetText(); got != "Hello world" {
 		t.Errorf("expected 'Hello world', got %q", got)
 	}
-	// The harness propagated the conversation id to the server.
-	if convID, _, _ := srv.received(); convID != "conv-test" {
+	// The harness propagated the conversation id and config to the server.
+	convID, _, harnessConfig, _ := srv.received()
+	if convID != "conv-test" {
 		t.Errorf("server got convID=%q, want conv-test", convID)
+	}
+	if !bytes.Equal(harnessConfig, antigravityHarnessConfig) {
+		t.Errorf("server got harnessConfig=%q, want %q", harnessConfig, antigravityHarnessConfig)
 	}
 }
 
@@ -66,7 +73,7 @@ func TestAntigravityHarness_Run_ErrorFrame(t *testing.T) {
 	srv := &mockHarnessServer{failConnect: true, errMessage: "internal mock server crash"}
 	harnessClient := NewAntigravityHarness(startHarnessServer(t, srv))
 
-	exec, _ := harnessClient.Start(context.Background(), "conv-test")
+	exec, _ := harnessClient.Start(context.Background(), "conv-test", antigravityHarnessConfig)
 	defer exec.Close(context.Background())
 
 	if err := exec.Queue(context.Background(), userText("Hi")); err != nil {

@@ -76,7 +76,7 @@ func NewSubstrateHarness(harnessID string, endpoint string, namespace string, te
 }
 
 // Start implements Harness interface. It creates/resumes the target actor.
-func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
+func (h *SubstrateHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
 	if conversationID == "" {
 		return nil, errors.New("SubstrateHarness needs valid conversationID")
 	}
@@ -120,6 +120,7 @@ func (h *SubstrateHarness) Start(ctx context.Context, conversationID string) (Ex
 		execID:         uuid.NewString(),
 		conn:           conn,
 		client:         proto.NewHarnessServiceClient(conn),
+		harnessConfig:  harnessConfig,
 	}, nil
 }
 
@@ -165,6 +166,7 @@ type substrateExecution struct {
 	execID         string
 	conn           *grpc.ClientConn
 	client         proto.HarnessServiceClient
+	harnessConfig  []byte
 
 	mu      sync.Mutex
 	pending []*proto.Message
@@ -198,7 +200,8 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 		HarnessId:      e.harness.harnessID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				Messages: inputs,
+				HarnessConfig: e.harnessConfig,
+				Messages:      inputs,
 			},
 		},
 	}
