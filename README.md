@@ -137,12 +137,12 @@ ax exec \
   --resume
 ```
 
-Instead of running the default planning step, you can start executing
-from any registered agent:
+Instead of running the default harness, you can start executing
+any registered harness:
 
 ```bash
 ax exec \
-  --agent coding \
+  --harness antigravity \
   --input "Can you write me a simple HTTP server in Python?"
 ```
 
@@ -151,7 +151,7 @@ you can resume an incomplete execution in a conversation:
 ```bash
 ax exec \
   --conversation edf98ef5-4bb1-4a9e-a091-3a77e03727e6 \
-  --agent "coding" \
+  --harness antigravity \
   --resume
 ```
 
@@ -166,19 +166,19 @@ The `ax` command provides several subcommands:
 ax exec \
     [--input <text>] \
     [--conversation <id>] \
-    [--agent <id>] \
+    [--harness <id>] \
     [--server <address>] \
     [--config <file>] \
     [--resume] \
     [--last-seq <number>]
 ```
 
-Executes a new agentic execution or automatically resumes an existing one. If the conversation ID already exists, the execution will be resumed from its last state.
+Executes a new harness execution or automatically resumes an existing one. If the conversation ID already exists, the execution will be resumed from its last state.
 
 Options:
 - `--input`: Input message to send to agents (optional if `--resume` is set, otherwise required)
 - `--conversation`: Conversation ID (optional, generates UUID if not provided, or resumes if exists)
-- `--agent`: Agent ID to use (optional, defaults to planner)
+- `--harness`: Harness ID to use (optional, defaults to the default harness)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
@@ -197,7 +197,7 @@ ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let
 ax exec --server localhost:8494 --input "Hello agents!"
 
 # Execute using a custom agent
-ax exec --agent coding --input "Hello coding agent, write me a cool Go program!"
+ax exec --harness coding --input "Hello coding agent, write me a cool Go program!"
 ```
 
 ### Serve
@@ -219,13 +219,6 @@ server:
 eventlog:
   sqlite:
     filename: "eventlog/log.sqlite"
-
-planner:
-  gemini:
-    model: "gemini-3.5-flash"
-    timeout: "60s"
-    skills_dir: "./examples/skills"
-
 ```
 
 Example:
@@ -236,18 +229,10 @@ ax serve
 # Start server with custom config
 ax serve --config my-config.yaml
 ```
-## Gemini Agent
-
-AX includes a built-in Gemini agent that can be used to generate text based on a given prompt. The agent is registered as `gemini` and can be triggered as a standalone agent or used from custom agent implementations.
-
-```bash
-ax exec --agent gemini \
-  --input "Hello, how are you?"
-```
 
 ### Authentication
 
-The Gemini agent supports authentication using either Google AI Studio or Vertex AI:
+The built-in Antigravity agent supports authentication using either Google AI Studio or Vertex AI:
 
 ```bash
 # AI Studio API key based authentication.
@@ -264,23 +249,15 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 
 ### Skills
 
-AX includes built-in support for Agent Skills. See [Skills](examples/skills) for more.
-
-### Bash Tool
-
-The built-in planner is equipped with a `bash` tool that enables
-it to execute general-purpose shell commands. The tool automatically
-adapts to the user's operating system.
-
-For safety and control, any execution initiated by the bash tool
-requires explicit user approval via a confirmation flow before running.
-
+AX harnesses like Antigravity includes built-in support for
+Agent Skills. See [Skills](examples/skills) for more.
 
 ## What AX is NOT?
 * A managed service. AX is self-hosted and not a managed service.
   We aim to make it easy for users to deploy and operate it on
   their Kubernetes clusters.
-* An agentic framework. AX is agnostic of the framework used to build agents.
+* An agentic framework. AX is agnostic of the framework used
+  to build agents.
 * A specific harness like a specific coding agent, e.g. Antigravity.
   AX provides the serving layer around harnesses and is agnostic of the
   harness implementation. Soon, we will allow users to bring their own
@@ -293,9 +270,10 @@ Below is an overview of our upcoming features and planned changes:
 
 1. Antigravity as the built-in harness
 1. Support for BYOH (Bring Your Own Harness)
-1. Enabling suspension/resumption of subagents
-1. Support for tool call approvals in subagents
+1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
+1. Trajectory exposition
+1. Better telemetry exposition
 
 ## Contributing
 
