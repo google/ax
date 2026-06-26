@@ -17,40 +17,12 @@ syntax = "proto3";
 package ax;
 
 import "google/protobuf/struct.proto";
-import "google/protobuf/timestamp.proto";
 import "proto/content.proto";
 
 option go_package = "github.com/google/ax/proto";
 
 // WARNING: This file is in active development and
 // significant changes can be made with breaking changes.
-
-message AgentStart {
-  string agent_id = 1;
-  bytes agent_config = 2;
-  repeated Message messages = 3;
-}
-
-message AgentOutputs {
-  repeated Message messages = 1;
-}
-
-message AgentEnd {}
-
-message AgentRequest {
-  string conversation_id = 1;
-  string exec_id = 2;
-  AgentStart start = 3;
-}
-
-message AgentResponse {
-  string conversation_id = 1;
-  string exec_id = 2;
-  oneof type {
-    AgentOutputs outputs = 3;
-    AgentEnd end = 4;
-  }
-}
 
 // Message is a message in the history.
 message Message {
