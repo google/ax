@@ -47,13 +47,11 @@ graph LR
     Client
     Router["Router"]
     Controller["AX Controller<br/>(executor, event log, registry)"]
-    RemoteAgent["Agent<br/>(isolated actor)"]
     Tool["Tool<br/>(MCP server)"]
     Env["Environment with<br/>skills, built-in tools<br/>(isolated actor)"]
 
     Client -->|resumable stream| Router
     Router --> Controller
-    Controller <-->|resumable stream| RemoteAgent
     Controller --> Env
     Controller --> Tool
 ```
@@ -139,12 +137,12 @@ ax exec \
   --resume
 ```
 
-Instead of running the default planning step, you can start executing
-from any registered agent:
+Instead of running the default harness, you can start executing
+any registered harness:
 
 ```bash
 ax exec \
-  --agent coding \
+  --harness antigravity \
   --input "Can you write me a simple HTTP server in Python?"
 ```
 
@@ -153,46 +151,10 @@ you can resume an incomplete execution in a conversation:
 ```bash
 ax exec \
   --conversation edf98ef5-4bb1-4a9e-a091-3a77e03727e6 \
-  --agent "coding" \
+  --harness antigravity \
   --resume
 ```
 
-### 2. Execute with Custom Agents
-
-Most developers want to build their own agents. AX allows running custom agents as remote
-or sandbox agents. See [Custom Agents](#custom-agents) for a full list of supported agents.
-
-This example demonstrates how the AX server executes remote agents
-through the `AgentService.Connect` RPC.
-
-**Terminal 1** - Start the remote agent server:
-```bash
-go run examples/remote_agent/main.go
-```
-The remote agent runs as a gRPC server implementing `AgentService` on port `:50051`.
-
-**Terminal 2** - Start the AX controller server:
-```bash
-# Ensure the agent is registered as a remote agent in ax.yaml.
-cat ax.yaml
-# ...
-registry:
-  remote_agents:
-    - id: "lowercase"
-      name: "Lowercase Agent"
-      description: "Converts text to lowercase."
-      address: "localhost:50051"
-
-ax serve
-```
-The server exposes the service on port `:8494` by default.
-
-**Terminal 3** - Register the remote agent and execute:
-```bash
-ax exec \
-    --server localhost:8494 \
-    --input "HELLO, CAN YOU LOWERCASE WHAT I JUST SAID?"
-```
 
 ## Usage
 
@@ -204,19 +166,19 @@ The `ax` command provides several subcommands:
 ax exec \
     [--input <text>] \
     [--conversation <id>] \
-    [--agent <id>] \
+    [--harness <id>] \
     [--server <address>] \
     [--config <file>] \
     [--resume] \
     [--last-seq <number>]
 ```
 
-Executes a new agentic execution or automatically resumes an existing one. If the conversation ID already exists, the execution will be resumed from its last state.
+Executes a new harness execution or automatically resumes an existing one. If the conversation ID already exists, the execution will be resumed from its last state.
 
 Options:
 - `--input`: Input message to send to agents (optional if `--resume` is set, otherwise required)
 - `--conversation`: Conversation ID (optional, generates UUID if not provided, or resumes if exists)
-- `--agent`: Agent ID to use (optional, defaults to planner)
+- `--harness`: Harness ID to use (optional, defaults to the default harness)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
@@ -235,7 +197,7 @@ ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let
 ax exec --server localhost:8494 --input "Hello agents!"
 
 # Execute using a custom agent
-ax exec --agent coding --input "Hello coding agent, write me a cool Go program!"
+ax exec --harness coding --input "Hello coding agent, write me a cool Go program!"
 ```
 
 ### Serve
@@ -257,19 +219,6 @@ server:
 eventlog:
   sqlite:
     filename: "eventlog/log.sqlite"
-
-planner:
-  gemini:
-    model: "gemini-3.5-flash"
-    timeout: "60s"
-    skills_dir: "./examples/skills"
-
-registry:
-  remote_agents:
-    - id: "medical-deep-researcher"
-      name: "Medical Deep Researcher"
-      description: "Performs deep medical research using various resources like pubmed and clinicaltrials.gov"
-      address: "localhost:50051"
 ```
 
 Example:
@@ -280,18 +229,10 @@ ax serve
 # Start server with custom config
 ax serve --config my-config.yaml
 ```
-## Gemini Agent
-
-AX includes a built-in Gemini agent that can be used to generate text based on a given prompt. The agent is registered as `gemini` and can be triggered as a standalone agent or used from custom agent implementations.
-
-```bash
-ax exec --agent gemini \
-  --input "Hello, how are you?"
-```
 
 ### Authentication
 
-The Gemini agent supports authentication using either Google AI Studio or Vertex AI:
+The built-in Antigravity agent supports authentication using either Google AI Studio or Vertex AI:
 
 ```bash
 # AI Studio API key based authentication.
@@ -308,40 +249,15 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 
 ### Skills
 
-AX includes built-in support for Agent Skills. See [Skills](examples/skills) for more.
-
-### Bash Tool
-
-The built-in planner is equipped with a `bash` tool that enables
-it to execute general-purpose shell commands. The tool automatically
-adapts to the user's operating system.
-
-For safety and control, any execution initiated by the bash tool
-requires explicit user approval via a confirmation flow before running.
-
-### Custom Agents
-
-AX supports multiple ways to bring your own agents into the runtime.
-
-#### Remote agents
-
-Remote agents run outside the AX controller and are
-invoked over a protocol boundary.
-
-- [Remote Agent](examples/remote_agent) implements AX's native `AgentService` directly.
-- [ADK Agent (Python)](examples/adk_agent) runs a Google ADK agent as a remote agent.
-
-Please note that AX is actively developing its resumable streaming and agent communication protocols; these interfaces will change before a stable release.
-
-If you are implementing an AX-native remote agent, see `AgentService` in `proto/ax.proto`.
+AX harnesses like Antigravity includes built-in support for
+Agent Skills. See [Skills](examples/skills) for more.
 
 ## What AX is NOT?
 * A managed service. AX is self-hosted and not a managed service.
   We aim to make it easy for users to deploy and operate it on
   their Kubernetes clusters.
-* An agentic framework. AX is agnostic of the framework used to build agents.
-  We are working with other framework authors (e.g., [ADK](examples/adk_agent))
-  to provide easy integration with them.
+* An agentic framework. AX is agnostic of the framework used
+  to build agents.
 * A specific harness like a specific coding agent, e.g. Antigravity.
   AX provides the serving layer around harnesses and is agnostic of the
   harness implementation. Soon, we will allow users to bring their own
@@ -354,9 +270,10 @@ Below is an overview of our upcoming features and planned changes:
 
 1. Antigravity as the built-in harness
 1. Support for BYOH (Bring Your Own Harness)
-1. Enabling suspension/resumption of subagents
-1. Support for tool call approvals in subagents
+1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
+1. Trajectory exposition
+1. Better telemetry exposition
 
 ## Contributing
 

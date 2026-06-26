@@ -1,5 +1,0 @@
-grpcio
-grpcio-tools
-google-genai
-google-adk
-authlib

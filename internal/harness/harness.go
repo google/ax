@@ -40,8 +40,10 @@ type Handler interface {
 // compare-and-swap, which is correct only because there is a single writer per
 // conversation.
 type Harness interface {
-	// Start initializes a new Execution session for a conversation.
-	Start(ctx context.Context, conversationID string) (Execution, error)
+	// Start initializes a new Execution session for a conversation. harnessConfig
+	// carries optional per-request harness configuration; it is opaque to the
+	// controller and interpreted by the harness implementation.
+	Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error)
 }
 
 // Execution represents an active interactive session with an agent or planner.

@@ -16,7 +16,7 @@ syntax = "proto3";
 
 package ax;
 
-import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 import "proto/content.proto";
 
 option go_package = "github.com/google/ax/proto";
@@ -24,41 +24,10 @@ option go_package = "github.com/google/ax/proto";
 // WARNING: This file is in active development and
 // significant changes can be made with breaking changes.
 
-message AgentStart {
-  string agent_id = 1;
-  bytes agent_config = 2;
-  repeated Message messages = 3;
-}
-
-message AgentOutputs {
-  repeated Message messages = 1;
-}
-
-message AgentEnd {}
-
-message AgentRequest {
-  string conversation_id = 1;
-  string exec_id = 2;
-  AgentStart start = 3;
-}
-
-message AgentResponse {
-  string conversation_id = 1;
-  string exec_id = 2;
-  oneof type {
-    AgentOutputs outputs = 3;
-    AgentEnd end = 4;
-  }
-}
-
 // Message is a message in the history.
 message Message {
   string role = 1;     // user, assistant, or model
   Content content = 2; // content of the message
-  // If true, the message is stored only in the execution log
-  // (for resumption) but not in the conversation history,
-  // and not emitted to the client or any agent.
-  bool internal_only = 3;
 }
 
 // A conversation is the historical session that consist of
@@ -69,7 +38,7 @@ message ConversationEvent {
   int32 seq = 2;
   string exec_id = 3;
   string harness_id = 4;
-  bytes harness_config = 5;
+  google.protobuf.Struct harness_config = 5;
   repeated Message messages = 6;
   State state = 7;
 }
@@ -83,20 +52,6 @@ message HealthCheckResponse {
   string message = 2;
 }
 
-// AgentService defines the gRPC service for agent communication.
-// This protocol enables a bidirectional communication between the
-// controller and the agent. Agents can start new agentic calls via
-// the controller within the same execution boundary by using the channel.
-//
-// WARNING: There will be significant changes to this protocol as
-// we are solidifying resumption on the wire.
-service AgentService {
-  // Connect is used by agents to connect to the controller.
-  rpc Connect(AgentRequest) returns (stream AgentResponse);
-
-  // HealthCheck checks if the agent is healthy and responsive
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
-}
 
 message HarnessStart {
   // Per-execution harness configuration.
@@ -168,8 +123,8 @@ message ExecRequest {
   repeated Message inputs = 2;           // New inputs
   int32 last_seq = 3;                    // Last sequence number seen by the client
 
-  string agent_id = 4;                   // Agent ID, if empty planner is used
-  bytes agent_config = 5;                // Agent configuration if any
+  string harness_id = 4;                 // Harness ID, empty selects the default harness
+  bytes harness_config = 5;              // Per-request harness configuration (opaque JSON), if any
 }
 
 // ExecResponse contains the result of an execution.

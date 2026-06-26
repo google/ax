@@ -196,11 +196,12 @@ func stateStoreKey(conversationID string) string {
 // previously persisted resume cursor for conversationID so the returned
 // Execution resumes the existing interaction chain instead of starting a new
 // one.
-func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string) (Execution, error) {
+func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
 	e := &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
+		harnessConfig:  harnessConfig,
 	}
 	if h.cfg.StateStore == nil {
 		return e, nil
@@ -235,6 +236,7 @@ type antigravityInteractionsExecution struct {
 	harness        *AntigravityInteractionsHarness
 	conversationID string
 	id             string
+	harnessConfig  []byte
 
 	mu     sync.Mutex
 	queued []*proto.Message

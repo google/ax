@@ -27,7 +27,7 @@ import (
 
 type fakeHarness struct{}
 
-func (f *fakeHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+func (f *fakeHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	return &fakeExecution{id: "fake-exec-id"}, nil
 }
 
@@ -207,7 +207,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
-		AgentId:        "my-agent",
+		HarnessId:      "my-agent",
 		Inputs:         inputs,
 	}, handler)
 	if err != nil {
@@ -260,7 +260,7 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	err = c.Exec(ctx, &proto.ExecRequest{
 		ConversationId: cid,
 		Inputs:         inputs,
-		AgentId:        "antigravity",
+		HarnessId:      "antigravity",
 	}, handler)
 	if err == nil {
 		t.Fatal("expected error requesting unregistered agent, got nil")
@@ -272,7 +272,7 @@ type testHarness struct {
 	startFunc  func(ctx context.Context, conversationID string) (harness.Execution, error)
 }
 
-func (c *testHarness) Start(ctx context.Context, conversationID string) (harness.Execution, error) {
+func (c *testHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	c.startCalls++
 	return c.startFunc(ctx, conversationID)
 }
@@ -345,7 +345,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-agent",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Hello"}}}},
 			},
@@ -413,7 +413,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-agent",
 			Inputs:         nil, // NO new inputs
 		}, func(resp *proto.ExecResponse) error { return nil })
 		if err != nil {
@@ -480,7 +480,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.ExecRequest{
 			ConversationId: cid,
-			AgentId:        "test-agent",
+			HarnessId:      "test-agent",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "New input"}}}},
 			},

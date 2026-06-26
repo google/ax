@@ -75,7 +75,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 
 	dbPath := cfg.EventLog.SQLiteConfig.Filename
 	slog.InfoContext(ctx, "Opening event log database", slog.String("path", dbPath))
-	
+
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return fmt.Errorf("failed to create database directory: %w", err)
 	}
@@ -435,10 +435,6 @@ func buildExecTraces(execIDs []string, events []*proto.ConversationEvent) []Exec
 func extractMsgs(protoContents []*proto.Message) []Content {
 	var results []Content
 	for _, c := range protoContents {
-		// Skip messages flagged as internal-only.
-		if c.GetInternalOnly() {
-			continue
-		}
 		content := Content{Role: c.Role}
 		msgContent := c.GetContent()
 		if msgContent == nil {
