@@ -34,14 +34,15 @@ import (
 )
 
 var (
-	execConversationID string
-	execHarnessID      string
-	execHarnessConfig  string
-	execInput          string
-	execServerAddr     string
-	execConfigFile     string
-	execResume         bool // allow resuming an execution without inputs
-	execLastSeq        int32
+	execConversationID    string
+	execHarnessID         string
+	execHarnessConfig     string
+	execHarnessConfigJSON string
+	execInput             string
+	execServerAddr        string
+	execConfigFile        string
+	execResume            bool // allow resuming an execution without inputs
+	execLastSeq           int32
 )
 
 var execCmd = &cobra.Command{
@@ -57,12 +58,14 @@ func init() {
 	execCmd.Flags().StringVar(&execConversationID, "conversation", "", "Conversation ID (optional, generates UUID if not provided)")
 	execCmd.Flags().StringVar(&execHarnessID, "harness", "", "Harness ID (optional, default harness is used if not specified)")
 	execCmd.Flags().StringVar(&execHarnessConfig, "harness-config", "", "Path to a JSON file with per-request harness configuration")
+	execCmd.Flags().StringVar(&execHarnessConfigJSON, "harness-config-json", "", "Per-request harness configuration as an inline JSON string (mutually exclusive with --harness-config)")
 	execCmd.Flags().StringVar(&execInput, "input", "", "Input message to send (optional)")
 	execCmd.Flags().StringVar(&execServerAddr, "server", "", "gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)")
 	execCmd.Flags().StringVar(&execConfigFile, "config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
 	execCmd.Flags().BoolVar(&execResume, "resume", false, "Resume a conversation without inputs")
 	execCmd.Flags().Int32Var(&execLastSeq, "last-seq", 0, "Last sequence number seen by the client")
 	execCmd.MarkFlagsMutuallyExclusive("input", "resume")
+	execCmd.MarkFlagsMutuallyExclusive("harness-config", "harness-config-json")
 }
 
 // TODO(jbd): Add multimodal input flags, e.g. --input-image.
@@ -127,6 +130,8 @@ func runExec(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to read harness config %q: %w", execHarnessConfig, err)
 		}
 		harnessConfig = b
+	} else if execHarnessConfigJSON != "" {
+		harnessConfig = []byte(execHarnessConfigJSON)
 	}
 
 	return execLoop(ctx, execConversationID, execHarnessID, harnessConfig, execInput, execLastSeq)
