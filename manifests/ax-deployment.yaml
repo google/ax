@@ -65,7 +65,7 @@ spec:
         - name: PYTHONUNBUFFERED
           value: "1"
         - name: SKILLS_DIR
-          value: "/ax-app/skills"
+          value: "/ax/skills"
         - name: AX_HARNESS_WORKDIR
           value: "/ax"
   snapshotsConfig:
