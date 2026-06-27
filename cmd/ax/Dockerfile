@@ -32,12 +32,21 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian + Python + Antigravity) -----------
-# Python image: a full Debian base (buildpack-deps) that
-# already ships bash, git, curl, wget, ca-certificates, build-essential, and the
-# common CLIs (find/ps/less/grep/sed/...).
-FROM python:3.13
+# --- Stage 2: minimal runtime (Debian slim + Python + Antigravity) ------------
+# Python slim image: a stripped-down Debian base that ships Python and bash but
+# omits build tooling and most CLIs. We add only the handful of utilities the
+# skills/code-execution paths need.
+FROM python:3.13-slim
 WORKDIR /ax
+
+# A few utility tools on top of the slim base.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    less \
+    nano \
+    && rm -rf /var/lib/apt/lists/*
 
 # Antigravity runtime deps, installed from PyPI at build time.
 COPY python/antigravity/requirements.txt /tmp/requirements.txt
@@ -63,4 +72,4 @@ EXPOSE 80
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
 CMD ["/ax-app/ax", "harness", \
-     "--host", "0.0.0.0", "--port", "80"]
+    "--host", "0.0.0.0", "--port", "80"]
