@@ -11,6 +11,7 @@ test-sandbox-config.yaml
 sandbox-router
 examples/sandbox_agent/cloudbuild.yaml
 tasklog/*
+.ax-dev-env.sh
 python/__pycache__
 python/proto/__pycache__
 /axepp

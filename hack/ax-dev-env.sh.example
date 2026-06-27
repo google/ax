@@ -1,0 +1,56 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Example environment for deploying Agent Substrate + AX to GKE.
+#
+# Copy this file to .ax-dev-env.sh and customize it for your environment:
+#
+#   cp hack/ax-dev-env.sh.example .ax-dev-env.sh
+#
+# hack/install-ax.sh sources .ax-dev-env.sh automatically (set NO_DEV_ENV=1 to
+# skip). The substrate version is NOT configured here: it is taken automatically
+# from AX's go.mod pin.
+
+# --- Required: set these for your environment (no defaults) ---
+export PROJECT_ID=
+export CLUSTER_NAME=
+
+# --- GCP project ---
+# PROJECT_NUMBER is derived from PROJECT_ID (used by --create-cluster).
+if [[ -n "${PROJECT_ID}" ]]; then
+  export PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
+fi
+
+# --- Region / networking ---
+export GCE_REGION=us-central1
+export CLUSTER_LOCATION=us-central1-c
+export NETWORK=default
+export SUBNETWORK=default
+
+# --- Cluster / gVisor node pool ---
+export CLUSTER_VERSION=1.35.0-gke.2398000
+export NODE_POOL_NAME=substrate-node-pool
+export NODE_POOL_VERSION=1.35.0-gke.2398000
+export GVISOR_NODE_MACHINE_TYPE=n2-standard-4
+
+# Set this to target an existing cluster by its kube context name. When empty,
+# the deploy resolves the current kube context (or uses gcloud credentials).
+export KUBECTL_CONTEXT=
+
+# --- Storage / image registry ---
+export BUCKET_NAME=snapshot-substrate-test-${PROJECT_ID}
+export KO_DOCKER_REPO="gcr.io/${PROJECT_ID}"
+
+# Override the default build platforms if needed.
+export KO_DEFAULTPLATFORMS=linux/amd64

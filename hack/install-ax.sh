@@ -20,8 +20,18 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
+# Source developer environment overrides if present. Copy
+# hack/ax-dev-env.sh.example to .ax-dev-env.sh to configure your deployment.
+# Set NO_DEV_ENV=1 to skip.
+if [[ -f .ax-dev-env.sh ]] && [[ -z "${NO_DEV_ENV:-}" ]]; then
+  # shellcheck source=/dev/null
+  source .ax-dev-env.sh
+fi
+
 if [[ -n "${PROJECT_ID:-}" ]]; then
-  export KO_DOCKER_REPO="gcr.io/${PROJECT_ID}"
+  # Default the image repo to the project's GCR, but respect an explicit
+  # override (e.g. from .ax-dev-env.sh).
+  export KO_DOCKER_REPO="${KO_DOCKER_REPO:-gcr.io/${PROJECT_ID}}"
   echo "Using KO_DOCKER_REPO: ${KO_DOCKER_REPO}" >&2
 fi
 
@@ -70,9 +80,26 @@ wait_with_spinner() {
 function usage() {
   echo "Usage: $0 [options]"
   echo ""
-  echo "Options:"
+  echo "Deploys Agent Substrate and AX together. The substrate version is taken"
+  echo "automatically from AX's go.mod pin; you never choose a substrate commit."
+  echo ""
+  echo "One-time cluster setup (run once per cluster):"
+  echo ""
+  echo "  --create-cluster                      Provision GCP resources (GKE cluster, GCS bucket, IAM)"
+  echo "  --delete-cluster                      Tear down the provisioned GCP resources"
+  echo ""
+  echo "Deploy (re-run as you update your code):"
+  echo ""
+  echo "  --deploy-all                          Deploy the substrate control plane and the AX server"
+  echo "  --delete-all                          Delete the AX server and the substrate control plane"
+  echo ""
+  echo "Granular components:"
+  echo ""
+  echo "  --deploy-ate-system                   Deploy the substrate control plane (at AX's pinned version)"
+  echo "  --delete-ate-system                   Delete the substrate control plane"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
+  echo ""
   echo "  -h, --help                            Show this help message"
 }
 
@@ -184,6 +211,117 @@ build_ateom_image() {
   echo "${ateom_ref}"
 }
 
+# --- Agent Substrate (compute layer) ---------------------------------------
+#
+# AX runs on Agent Substrate. The substrate version is taken automatically from
+# AX's go.mod pin, so developers never choose a substrate commit.
+
+# require_env exits with a clear message if any named environment variable is
+# unset or empty.
+require_env() {
+  local missing=() v
+  for v in "$@"; do
+    [[ -n "${!v:-}" ]] || missing+=("${v}")
+  done
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    echo "Error: missing required environment variables: ${missing[*]}" >&2
+    echo "Copy hack/ax-dev-env.sh.example to .ax-dev-env.sh, fill it in, and re-run." >&2
+    exit 1
+  fi
+}
+
+# ensure_substrate_src materializes a git checkout of Agent Substrate at the
+# exact version AX pins in go.mod and echoes its directory on stdout. By default
+# it maintains a managed clone under the user cache; set AX_SUBSTRATE_DIR to use
+# your own substrate checkout instead.
+ensure_substrate_src() {
+  local commit
+  commit="$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')"
+  if [[ -z "${commit}" ]]; then
+    echo "Error: could not determine the pinned substrate version from go.mod." >&2
+    exit 1
+  fi
+
+  local dir="${AX_SUBSTRATE_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/ax/substrate}"
+
+  if [[ ! -d "${dir}/.git" ]]; then
+    if [[ -n "${AX_SUBSTRATE_DIR:-}" ]]; then
+      echo "Error: AX_SUBSTRATE_DIR=${AX_SUBSTRATE_DIR} is not a git checkout." >&2
+      exit 1
+    fi
+    log_step "clone substrate -> ${dir}" >&2
+    mkdir -p "$(dirname "${dir}")"
+    git clone --quiet https://github.com/agent-substrate/substrate "${dir}" >&2
+  fi
+
+  # Never clobber uncommitted work in a developer-provided checkout.
+  if [[ -n "${AX_SUBSTRATE_DIR:-}" ]] && [[ -n "$(git -C "${dir}" status --porcelain)" ]]; then
+    echo "Error: ${dir} has uncommitted changes; refusing to check out ${commit}." >&2
+    echo "Commit or stash them, or unset AX_SUBSTRATE_DIR." >&2
+    exit 1
+  fi
+
+  # Ensure the pinned commit is present locally, then check it out (detached).
+  if ! git -C "${dir}" cat-file -e "${commit}^{commit}" 2>/dev/null; then
+    log_step "fetch substrate ${commit}" >&2
+    git -C "${dir}" fetch --quiet origin >&2 || true
+  fi
+  if ! git -C "${dir}" cat-file -e "${commit}^{commit}" 2>/dev/null; then
+    git -C "${dir}" fetch --quiet origin "${commit}" >&2 \
+      || { echo "Error: could not fetch substrate commit ${commit}." >&2; exit 1; }
+  fi
+  git -C "${dir}" checkout --quiet --detach "${commit}" >&2
+
+  echo "${dir}"
+}
+
+# run_substrate runs a substrate hack/ script from the substrate checkout, in a
+# subshell with the checkout as the working directory so substrate's own
+# `git rev-parse --show-toplevel` resolves to the substrate tree (not AX's). It
+# forwards the current kube context so substrate targets the same cluster.
+run_substrate() {
+  local src
+  src="$(ensure_substrate_src)"
+  ( cd "${src}" \
+    && KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-$(kubectl config current-context 2>/dev/null || true)}" \
+       "$@" )
+}
+
+# create_cluster provisions the GCP resources substrate needs (GKE cluster with
+# Workload Identity and the required beta APIs, the GCS snapshot bucket, and IAM
+# bindings) via substrate's setup-gcp tool. This is a one-time step per cluster.
+create_cluster() {
+  log_step "create_cluster"
+  require_env PROJECT_ID PROJECT_NUMBER CLUSTER_NAME CLUSTER_LOCATION CLUSTER_VERSION \
+    NETWORK SUBNETWORK NODE_POOL_NAME NODE_POOL_VERSION GCE_REGION BUCKET_NAME \
+    GVISOR_NODE_MACHINE_TYPE
+  local src
+  src="$(ensure_substrate_src)"
+  ( cd "${src}" && go run ./tools/setup-gcp --all )
+}
+
+# delete_cluster tears down the GCP resources created by create_cluster.
+delete_cluster() {
+  log_step "delete_cluster"
+  local src
+  src="$(ensure_substrate_src)"
+  ( cd "${src}" && ./hack/teardown.sh --all )
+}
+
+# deploy_ate_system deploys the substrate control plane (CRDs, ateapi,
+# atecontroller, atelet, atenet, valkey, pod-cert controller) at AX's pinned
+# version. Idempotent: re-applying an unchanged version is a no-op.
+deploy_ate_system() {
+  log_step "deploy_ate_system"
+  run_substrate ./hack/install-ate.sh --deploy-ate-system
+}
+
+# delete_ate_system removes the substrate control plane.
+delete_ate_system() {
+  log_step "delete_ate_system"
+  run_substrate ./hack/install-ate.sh --delete-ate-system
+}
+
 deploy_ax_server() {
   log_step "deploy_ax_server"
 
@@ -224,8 +362,8 @@ deploy_ax_server() {
       | run_kubectl apply -f -; then
     echo >&2
     echo "Error: cluster rejected the manifest. An \"unknown field\" error usually means the" >&2
-    echo "cluster's substrate is incompatible with AX's go.mod pin — see" >&2
-    echo "manifests/README.md (\"Substrate compatibility\")." >&2
+    echo "cluster's substrate is incompatible with AX's go.mod pin. Sync the control" >&2
+    echo "plane to the pinned version with: $0 --deploy-ate-system" >&2
     exit 1
   fi
 
@@ -256,6 +394,19 @@ delete_ax_server() {
     workerpool/ax-harness-workerpool
 }
 
+# deploy_all deploys the substrate control plane and then the AX server.
+deploy_all() {
+  deploy_ate_system
+  deploy_ax_server
+}
+
+# delete_all removes the AX server and then the substrate control plane. It does
+# not delete the cluster or GCP resources (use --delete-cluster for that).
+delete_all() {
+  delete_ax_server
+  delete_ate_system
+}
+
 if [ "$#" -eq 0 ]; then
   usage
   exit 1
@@ -271,8 +422,17 @@ for arg in "$@"; do
   esac
 done
 
+# PROJECT_ID and CLUSTER_NAME are required for all operations.
+require_env PROJECT_ID CLUSTER_NAME
+
 while [[ "$#" -gt 0 ]]; do
   case $1 in
+    --create-cluster) create_cluster ;;
+    --delete-cluster) delete_cluster ;;
+    --deploy-all) deploy_all ;;
+    --delete-all) delete_all ;;
+    --deploy-ate-system) deploy_ate_system ;;
+    --delete-ate-system) delete_ate_system ;;
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
     *)
