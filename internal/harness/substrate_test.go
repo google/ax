@@ -39,7 +39,7 @@ var substrateHarnessConfig = []byte(`{"model":"gemini-2.5-pro"}`)
 // non-nil the standard health service is registered. Returns the listen address.
 func startHealthTestServer(t *testing.T, hs *health.Server) string {
 	t.Helper()
-	lis, err := net.Listen("tcp", "localhost:0")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestWaitForHealthy_StatusChange(t *testing.T) {
 
 func TestWaitForHealthy_ServerDown(t *testing.T) {
 	// Reserve a port then release it so nothing is listening there.
-	lis, err := net.Listen("tcp", "localhost:0")
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}

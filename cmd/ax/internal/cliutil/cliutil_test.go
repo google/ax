@@ -33,7 +33,7 @@ func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
 		Harnesses: config.HarnessesConfig{
 			Antigravity: config.AntigravityHarnessConfig{
 				Default:  true,
-				Endpoint: "localhost:50053",
+				Endpoint: "127.0.0.1:50053",
 			},
 		},
 	}

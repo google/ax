@@ -67,7 +67,7 @@ func main() {
 	runDemo(ctx, "antigravity", func(reg *controller.Registry) {
 		// With the new stateful gRPC-based streaming harness, connectivity checks on the
 		// server address replace the build-time checks for local script file presence.
-		address := "localhost:50053"
+		address := "127.0.0.1:50053"
 		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if err != nil {
 			log.Fatalf("Antigravity harness server not active at %s: %v", address, err)

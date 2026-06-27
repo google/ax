@@ -308,7 +308,7 @@ def enhance_config_from_env(config) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
-    parser.add_argument("--host", default="localhost", help="Host to bind the server to")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind the server to")
     args = parser.parse_args()
 
     global loaded_config

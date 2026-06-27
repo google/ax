@@ -52,7 +52,7 @@ var dashboardCmd = &cobra.Command{
 }
 
 func init() {
-	dashboardCmd.Flags().StringVar(&dashboardAddr, "addr", "localhost:8080", "Server address to listen on")
+	dashboardCmd.Flags().StringVar(&dashboardAddr, "addr", "127.0.0.1:8080", "Server address to listen on")
 	dashboardCmd.Flags().StringVar(&dashboardConfigFile, "config", "ax.yaml", "Path to YAML configuration file")
 }
 
@@ -175,7 +175,7 @@ func runDashboard(cmd *cobra.Command, args []string) error {
 	addr := listener.Addr().String()
 	host, port, err := net.SplitHostPort(addr)
 	if err == nil && (host == "::" || host == "0.0.0.0" || host == "" || host == "[::]") {
-		addr = fmt.Sprintf("localhost:%s", port)
+		addr = fmt.Sprintf("127.0.0.1:%s", port)
 	}
 	url := fmt.Sprintf("http://%s", addr)
 

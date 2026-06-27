@@ -46,7 +46,7 @@ var harnessClientCmd = &cobra.Command{
 }
 
 func init() {
-	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "localhost:50053", "The server address for the gRPC HarnessService.")
+	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "127.0.0.1:50053", "The server address for the gRPC HarnessService.")
 	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "testharness", "The harness id to send on the request envelope.")
 	rootCmd.AddCommand(harnessClientCmd)
 }

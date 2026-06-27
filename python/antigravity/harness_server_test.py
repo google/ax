@@ -33,11 +33,11 @@ def test_grpc_connect_success(mock_config, monkeypatch):
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         
         # 2. Connect async stub channel
-        addr = f"localhost:{port}"
+        addr = f"127.0.0.1:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
@@ -101,10 +101,10 @@ def test_grpc_connect_agent_reused(mock_config, monkeypatch):
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         
-        addr = f"localhost:{port}"
+        addr = f"127.0.0.1:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
@@ -193,10 +193,10 @@ def test_health_check():
         health_servicer = health.aio.HealthServicer()
         health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
         await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         try:
-            async with grpc.aio.insecure_channel(f"localhost:{port}") as channel:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
                 stub = health_pb2_grpc.HealthStub(channel)
                 resp = await stub.Check(health_pb2.HealthCheckRequest(service=""))
                 assert resp.status == health_pb2.HealthCheckResponse.SERVING
@@ -216,10 +216,10 @@ def test_grpc_connect_missing_credentials(mock_config, monkeypatch):
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         
-        addr = f"localhost:{port}"
+        addr = f"127.0.0.1:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
@@ -267,10 +267,10 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         
-        addr = f"localhost:{port}"
+        addr = f"127.0.0.1:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
@@ -345,10 +345,10 @@ def test_grpc_connect_buffering(mock_config, monkeypatch):
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
+        port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         
-        addr = f"localhost:{port}"
+        addr = f"127.0.0.1:{port}"
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
