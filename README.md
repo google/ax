@@ -45,15 +45,25 @@ Watch our demo to see AX works when deployed on [Agent Substrate](https://github
 %%{init: {"flowchart": {"diagramPadding": 80}}}%%
 graph LR
     Client
-    Router["Router"]
-    Controller["AX Controller<br/>(executor, event log, registry)"]
-    Tool["Tool<br/>(MCP server)"]
-    Env["Environment with<br/>skills, built-in tools<br/>(isolated actor)"]
 
-    Client -->|resumable stream| Router
-    Router --> Controller
-    Controller --> Env
-    Controller --> Tool
+    subgraph Cluster[" "]
+        Server["AX Server"]
+        DB[("Event Log"<br/>Storage)]
+        ControlService["Control API"]
+        Actor["Harness Actor<br/>(ax harness)"]
+      
+    end
+
+    SnapshotService
+    HarnessService["Harness, agent, or model service"]
+
+    Client <-->|resumable stream| Server
+    Server <-->|scan/append| DB
+    Server -->|resume/suspend| ControlService
+    ControlService -.-> Actor
+    Server <-->|resumable stream| Actor
+    Actor <-->|read/write| SnapshotService
+    Actor -.-> HarnessService
 ```
 
 As agents evolve from simple assistants to autonomous long running workers,
