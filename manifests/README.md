@@ -1,37 +1,15 @@
 # AX Harness Deployment on Kubernetes
 
 > [!WARNING]
-> 🚧 **The `harness` deployment path is under active development.**
 >
 > This path is experimental and incomplete: the manifests, scripts, and
 > runtime behavior will change and may break without notice.
 
 This directory contains Kubernetes manifests and configurations to deploy
-and verify the AX `harness` configuration path on Kubernetes using Agent
-Substrate.
+and verify the AX on Kubernetes using Agent Substrate.
 
 The target Kubernetes cluster is assumed to have
 [Agent Substrate](https://github.com/agent-substrate/substrate) installed.
-
-### Substrate compatibility
-
-AX pins [Agent Substrate](https://github.com/agent-substrate/substrate) in
-`go.mod`, and the **ateom** worker image is built from that pinned version. The
-cluster's substrate **CRDs and control plane** must be compatible with the
-manifest AX applies.
-
-When installing substrate, keep three things aligned: the ax `go.mod` pin = your
-local substrate checkout = the cluster's installed substrate.
-
-```bash
-# Get AX's pinned substrate commit:
-commit=$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')
-echo "$commit"   # e.g. fe93d160a1df
-
-# Check it out on a normal branch in your substrate clone (avoids a detached HEAD):
-git -C <substrate> fetch origin
-git -C <substrate> switch -C ax-pinned "$commit"
-```
 
 ---
 
@@ -45,17 +23,14 @@ git -C <substrate> switch -C ax-pinned "$commit"
 The installation script builds the required images and applies the resolved
 manifests to your cluster:
 
-- the comprehensive **ax** image, built from `cmd/ax/Dockerfile` with Docker or
-  Podman (the `harness`-tagged Go `ax` binary plus the Antigravity Python sidecar
-  on a Debian base). The ax-server runs `ax serve`; the harness actor runs
-  `ax harness`, which forks the sidecar;
+- the comprehensive **ax** image, built from `cmd/ax/Dockerfile`,
 - the **ateom-gvisor** worker image, built with `ko` from the `go.mod` pinned
   substrate module.
 
 #### Build prerequisites
 
-The ax image bundles the antigravity SDK and its `localharness` binary,
-installed from PyPI at build time. The image targets the cluster's **linux/amd64**
+The ax image bundles the antigravity SDK, installed from PyPI at build time.
+The image targets the cluster's **linux/amd64**
 nodes and is built with `--platform linux/amd64`.
 
 You also need a container engine to build and push the ax image. The script
@@ -90,8 +65,6 @@ export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
 ```
 
 ### 2. Port-Forward Services
-
-The `harness` path has no Envoy router or `Service`; connect directly to the `ax-server` `ReplicaSet`:
 
 ```bash
 # Port-forward the ax-server ReplicaSet
@@ -152,4 +125,24 @@ List the pods running in the `ax` namespace:
 ```bash
 # Add `-o wide` to see node/IP assignments, or `-w` to watch status changes.
 kubectl get pods -n ax
+```
+
+## Substrate compatibility
+
+AX pins [Agent Substrate](https://github.com/agent-substrate/substrate) in
+`go.mod`, and the **ateom** worker image is built from that pinned version. The
+cluster's substrate **CRDs and control plane** must be compatible with the
+manifest AX applies.
+
+When installing substrate, keep three things aligned: the ax `go.mod` pin = your
+local substrate checkout = the cluster's installed substrate.
+
+```bash
+# Get AX's pinned substrate commit:
+commit=$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')
+echo "$commit"   # e.g. fe93d160a1df
+
+# Check it out on a normal branch in your substrate clone (avoids a detached HEAD):
+git -C <substrate> fetch origin
+git -C <substrate> switch -C ax-pinned "$commit"
 ```
