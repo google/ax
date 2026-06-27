@@ -55,7 +55,6 @@ spec:
       # environment are specified here. `ax harness` forks the Antigravity Python
       # sidecar, which serves on port 80 because substrate DNATs workerPodIP:80.
       command: ["/ax-app/ax", "harness",
-                "--antigravity-agent-file", "/ax-app/python/antigravity/agent.py",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
         - name: GEMINI_API_KEY

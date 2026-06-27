@@ -13,14 +13,12 @@
 # limitations under the License.
 
 # NOTE ON ARCHITECTURE:
-# This is a generic, reusable gRPC server that does not define tools or personas. 
-# Instead, it dynamically imports any agent configuration file (defaulting to python/antigravity/agent.py) 
-# passed via the --agent_file CLI argument, then hosts it over the AX HarnessService protocol.
+# This gRPC server implements the AX HarnessService protocol. It embeds the
+# Antigravity weather agent logic directly, serving it over production gRPC.
 
 import argparse
 
 import asyncio
-import importlib.util
 import logging
 import os
 import sys
@@ -31,25 +29,34 @@ from google.protobuf.struct_pb2 import Struct
 from python.proto import ax_pb2
 from python.proto import ax_pb2_grpc
 from python.proto import content_pb2
-from google.antigravity import Agent, AgentConfig
+from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
-# Global placeholder for loaded agent config
-loaded_config: AgentConfig | None = None
+# 1. Define the custom weather tool
+def get_weather(city: str) -> str:
+    """Retrieves the current weather report for a specified city.
 
-def load_agent_config(agent_file: str) -> AgentConfig:
-    print(f"Loading agent config from {agent_file}...")
-    spec = importlib.util.spec_from_file_location("agent_module", agent_file)
-    if spec is None or spec.loader is None:
-        raise FileNotFoundError(f"Could not find or load agent file: {agent_file}")
-    agent_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(agent_module)
-    
-    config = getattr(agent_module, "agent_config", None)
-    if not config:
-        raise ValueError(f"No 'agent_config' found in {agent_file}")
-    print("Agent config loaded successfully.")
-    return config
+    Args:
+        city (str): The name of the city for which to retrieve the weather report.
+
+    Returns:
+        str: Weather report status and details.
+    """
+    sys.stderr.write(f"\n[PYTHON TOOL get_weather executed for city: {city}]\n")
+    sys.stderr.flush()
+    c = city.lower()
+    if "new york" in c or "nyc" in c:
+        return "The weather in New York is sunny with a temperature of 25 degrees Celsius (77 degrees Fahrenheit)."
+    elif "san francisco" in c or "sf" in c:
+        return "The weather in San Francisco is foggy with a temperature of 16 degrees Celsius (60.8 degrees Fahrenheit)."
+    else:
+        return f"Weather information for '{city}' is not available."
+
+# 2. Define the static agent config
+loaded_config = LocalAgentConfig(
+    system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
+    tools=[get_weather]
+)
 
 def _has_credentials(config: AgentConfig | None) -> bool:
     """Checks if Gemini credentials are set either in env or config."""
@@ -320,21 +327,14 @@ def enhance_config_from_env(config) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
-    parser.add_argument("--agent_file", default="python/antigravity/agent.py", help="Path to the agent config file")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()
     
     resolve_localhost()
     
-    # Load the agent config globally
     global loaded_config
-    try:
-        loaded_config = load_agent_config(args.agent_file)
-        enhance_config_from_env(loaded_config)
-    except Exception as e:
-        print(f"ERROR: Failed to load agent config: {e}", file=sys.stderr)
-        sys.exit(1)
+    enhance_config_from_env(loaded_config)
         
     asyncio.run(serve(args.host, args.port))
 

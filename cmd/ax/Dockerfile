@@ -63,5 +63,4 @@ EXPOSE 80
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
 CMD ["/ax-app/ax", "harness", \
-     "--antigravity-agent-file", "/ax-app/python/antigravity/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]
