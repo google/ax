@@ -14,7 +14,7 @@
 
 # NOTE ON ARCHITECTURE:
 # This is a generic, reusable gRPC server that does not define tools or personas. 
-# Instead, it dynamically imports any agent configuration file (defaulting to examples/antigravity_agent/agent.py) 
+# Instead, it dynamically imports any agent configuration file (defaulting to python/antigravity/agent.py) 
 # passed via the --agent_file CLI argument, then hosts it over the AX HarnessService protocol.
 
 import argparse
@@ -320,7 +320,7 @@ def enhance_config_from_env(config) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
-    parser.add_argument("--agent_file", default="examples/antigravity_agent/agent.py", help="Path to the agent config file")
+    parser.add_argument("--agent_file", default="python/antigravity/agent.py", help="Path to the agent config file")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()

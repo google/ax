@@ -101,7 +101,7 @@ kubectl port-forward -n ax rs/ax-server 8494:8494
 ### 3. Test End-to-End
 
 Run an execution targeting the port-forwarded server. The default `antigravity`
-harness serves the example `examples/antigravity_agent/agent.py`, which exposes
+harness serves the example `python/antigravity/agent.py`, which exposes
 a `get_weather` tool.
 
 ```bash

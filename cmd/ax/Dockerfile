@@ -46,7 +46,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
 COPY python/ /ax-app/python
-COPY examples/antigravity_agent/ /ax-app/examples/antigravity_agent
 COPY examples/skills/ /ax/skills/
 ENV SKILLS_DIR=/ax/skills
 COPY --from=build /out/ax /ax-app/ax
@@ -64,5 +63,5 @@ EXPOSE 80
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
 CMD ["/ax-app/ax", "harness", \
-     "--antigravity-agent-file", "/ax-app/examples/antigravity_agent/agent.py", \
+     "--antigravity-agent-file", "/ax-app/python/antigravity/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]

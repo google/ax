@@ -45,7 +45,7 @@ var harnessCmd = &cobra.Command{
 func init() {
 	harnessCmd.Flags().IntVar(&harnessPort, "port", 50053, "Port for the HarnessService to listen on")
 	harnessCmd.Flags().StringVar(&harnessHost, "host", "127.0.0.1", "Host interface for the HarnessService to bind")
-	harnessCmd.Flags().StringVar(&harnessAntigravityAgentFile, "antigravity-agent-file", "examples/antigravity_agent/agent.py", "Path to the agent config file the Python sidecar serves")
+	harnessCmd.Flags().StringVar(&harnessAntigravityAgentFile, "antigravity-agent-file", "python/antigravity/agent.py", "Path to the agent config file the Python sidecar serves")
 	rootCmd.AddCommand(harnessCmd)
 }
 
