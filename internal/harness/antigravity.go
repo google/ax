@@ -38,10 +38,10 @@ type AntigravityHarness struct {
 }
 
 // NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
-// Address defaults to "localhost:50053" (gRPC TCP connection).
+// Address defaults to "127.0.0.1:50053" (gRPC TCP connection).
 func NewAntigravityHarness(address string) *AntigravityHarness {
 	if address == "" {
-		address = "localhost:50053"
+		address = "127.0.0.1:50053"
 	}
 	return &AntigravityHarness{
 		address: address,
