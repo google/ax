@@ -240,6 +240,10 @@ deploy_ax_server() {
   wait_with_spinner "waiting for golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
     run_kubectl wait --for=condition=Ready actortemplate/ax-harness-template \
     -n ax --timeout="${AX_WAIT_TIMEOUT:-5m}"
+
+  echo ""
+  echo "Forward the AX server by running the following command (optional)"
+  echo "kubectl port-forward -n ax rs/ax-server 8494:8494"
 }
 
 # delete_ax_server removes the AX server and harness resources but preserves the
