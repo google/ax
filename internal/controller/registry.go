@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -37,10 +38,11 @@ func NewRegistry() *Registry {
 // RegisterHarness registers a harness under the given id. An empty id registers
 // the harness as the default, used when a request specifies no agent id.
 func (r *Registry) RegisterHarness(id string, h harness.Harness) error {
-	if id != "" {
-		if err := validateID(id); err != nil {
-			return err
-		}
+	if id == "" {
+		return errors.New("cannot register harness with empty id")
+	}
+	if err := validateID(id); err != nil {
+		return err
 	}
 
 	r.mu.Lock()
@@ -57,6 +59,7 @@ func (r *Registry) RegisterHarness(id string, h harness.Harness) error {
 func (r *Registry) Harness(id string) (harness.Harness, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	h, ok := r.harnesses[id]
 	if !ok {
 		return nil, fmt.Errorf("harness %s not found", id)
