@@ -13,9 +13,9 @@
 # limitations under the License.
 
 # Comprehensive AX image: the Go `ax` binary plus the Antigravity Python sidecar
-# (SDK, localharness, agent), on a Debian-based image with shell tooling for
-# skills/code execution. Used by both the ax-server (`ax serve`) and the harness
-# actor (`ax harness`, which forks the Python sidecar).
+# (SDK, localharness, agent), on a Debian-slim base with the shell tooling that
+# skills/code execution need. Used by both the ax-server (`ax serve`) and the
+# harness actor (`ax harness`, which forks the Python sidecar).
 #
 # Build context: repository root. The image targets the cluster's linux/amd64
 # nodes, so it is built with `--platform linux/amd64`. For a standalone build:
@@ -32,16 +32,34 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian + Python + Antigravity) -----------
-# Python image: a full Debian base (buildpack-deps) that
-# already ships bash, git, curl, wget, ca-certificates, build-essential, and the
-# common CLIs (find/ps/less/grep/sed/...).
-FROM python:3.13
+# --- Stage 2: install the Antigravity Python deps ------------------------------
+# Built on the full python:3.13 image so any package that ships an sdist (rather
+# than a wheel) can still compile. The deps are installed into an isolated prefix
+# that is copied into the slim runtime below, so no compilers reach the final
+# image.
+FROM python:3.13 AS pydeps
+COPY python/antigravity/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --prefix=/python-deps -r /tmp/requirements.txt
+
+# --- Stage 3: slim runtime (Debian-slim + Python + Antigravity) ----------------
+# python:3.13-slim is ~6x smaller than python:3.13. It already ships bash and the
+# coreutils CLIs (find/grep/sed/ls/...); we add only the extra tooling that
+# skills and code execution rely on.
+FROM python:3.13-slim
 WORKDIR /ax
 
-# Antigravity runtime deps, installed from PyPI at build time.
-COPY python/antigravity/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        less \
+        procps \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Antigravity runtime deps, built in stage 2. Same Python 3.13 minor version, so
+# the prefix merges cleanly into the runtime's /usr/local.
+COPY --from=pydeps /python-deps /usr/local
 
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
