@@ -50,20 +50,22 @@ graph LR
         Server["AX Server"]
         DB[("Event Log"<br/>Storage)]
         ControlService["Control API"]
-        Actor["Harness Actor<br/>(ax harness)"]
-      
+        Actor["Harness Actor<br/>(isolated image with fs, skills, etc)"]
     end
 
-    SnapshotService
-    HarnessService["Harness, agent, or model service"]
+    SnapshotService["Snapshots"]
+    HarnessService["Harness or model<br/>service"]
+    MCPServer["MCP server"]
 
     Client <-->|resumable stream| Server
     Server <-->|scan/append| DB
-    Server -->|resume/suspend| ControlService
-    ControlService -.-> Actor
+    Server --> ControlService
+    ControlService -->|resume/suspend| Actor
     Server <-->|resumable stream| Actor
-    Actor <-->|read/write| SnapshotService
+    ControlService <-->|read/write| SnapshotService
     Actor -.-> HarnessService
+    Actor --> MCPServer
+    Actor -.-> Environment
 ```
 
 As agents evolve from simple assistants to autonomous long running workers,
