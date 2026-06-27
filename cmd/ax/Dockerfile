@@ -32,12 +32,17 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian + Python + Antigravity) -----------
-# Python image: a full Debian base (buildpack-deps) that
-# already ships bash, git, curl, wget, ca-certificates, build-essential, and the
-# common CLIs (find/ps/less/grep/sed/...).
-FROM python:3.13
+FROM python:3.13-slim
 WORKDIR /ax
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        less \
+        procps \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Antigravity runtime deps, installed from PyPI at build time.
 COPY python/antigravity/requirements.txt /tmp/requirements.txt
