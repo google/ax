@@ -304,6 +304,25 @@ def enhance_config_from_env(config) -> None:
         if skills_dir not in config.skills_paths:
             config.skills_paths.append(skills_dir)
 
+def resolve_localhost():
+    """Ensure `localhost` resolves to 127.0.0.1.
+
+    Substrate actors run under gVisor with no runtime-injected /etc/hosts.
+    The antigravity SDK dials localharness at ws://localhost:<port>/
+    and Python's resolver needs `localhost` in /etc/hosts.
+    """
+    try:
+        try:
+            with open("/etc/hosts", "r") as f:
+                if "localhost" in f.read():
+                    return
+        except FileNotFoundError:
+            pass
+        with open("/etc/hosts", "a") as f:
+            f.write("127.0.0.1\tlocalhost\n")
+    except OSError as e:
+        print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
@@ -313,6 +332,10 @@ def main():
 
     global loaded_config
     enhance_config_from_env(loaded_config)
+
+    # This is a hack, on Agent Substrate /etc/hosts end up not
+    # having this entry even if it's the OCI image.
+    resolve_localhost()
         
     asyncio.run(serve(args.host, args.port))
 
