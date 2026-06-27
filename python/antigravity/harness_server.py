@@ -294,26 +294,6 @@ async def serve(host: str, port: int):
     finally:
         await servicer.cleanup()
 
-def resolve_localhost():
-    """Ensure `localhost` resolves to 127.0.0.1.
-
-    Substrate actors run under gVisor with no runtime-injected /etc/hosts.
-    The antigravity SDK dials localharness at ws://localhost:<port>/
-    and Python's resolver needs `localhost` in /etc/hosts.
-    """
-    try:
-        try:
-            with open("/etc/hosts", "r") as f:
-                if "localhost" in f.read():
-                    return
-        except FileNotFoundError:
-            pass
-        with open("/etc/hosts", "a") as f:
-            f.write("127.0.0.1\tlocalhost\n")
-    except OSError as e:
-        print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
-
-
 def enhance_config_from_env(config) -> None:
     skills_dir = os.environ.get("SKILLS_DIR")
     if skills_dir and os.path.isdir(skills_dir):
@@ -330,9 +310,7 @@ def main():
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()
-    
-    resolve_localhost()
-    
+
     global loaded_config
     enhance_config_from_env(loaded_config)
         
