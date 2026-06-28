@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/ax/internal/experimental/k8s/ate"
+	"github.com/google/ax/internal/k8s/ate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

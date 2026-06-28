@@ -31,7 +31,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/ax/internal/experimental/k8s/ate"
+	"github.com/google/ax/internal/k8s/ate"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
