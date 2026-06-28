@@ -260,7 +260,9 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 ### Harnesses
 
 AX provides built-in harnesses (e.g. Antigravity) but you can bring your
-own harness implementation by implementing `HarnessService`.
+own harness implementation by implementing `HarnessService`. On supported
+compute services (e.g. Agent Substrate), AX automatically runs the
+harness in isolation with automatic resumption and suspension.
 
 Traditional agents (e.g. tool use or workflow agents), or
 language models can be implemented as harnesses.
