@@ -47,10 +47,10 @@ graph LR
     Client
 
     subgraph Cluster[" "]
-        Server["AX Server"]
+        Server["AX Server<br/>(multi-tenant execution)"]
         DB[("Event Log"<br/>Storage)]
         ControlService["Control API"]
-        Actor["Harness Actor<br/>(isolated image with fs, skills, etc)"]
+        Actor["Harness Actor<br/>(stateful session-tenant execution)"]
     end
 
     SnapshotService["Snapshots"]
