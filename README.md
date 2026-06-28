@@ -326,24 +326,24 @@ lessons into common runtime layer.
 While this common layer was taking shape, the AI landscape underwent
 a massive shift. Applications were transitioning from static,
 stateless LLM calls to autonomous, long-running, self improving
-agents that often need isolated execution environments with a
-filesystem and custom image.
-
+agents that often need isolated resumable execution environments.
 From an efficiency standpoint, agentic workloads are inherently bursty.
 An agent might compute intensively for a minute, then sit idle for
-hours or days awaiting human approval. Keeping a stateful agent active
-in memory during these long idle periods is highly inefficient
-and cost-prohibitive at scale.
+hours or days awaiting human approval. Keeping a stateful actor active
+during these long idle periods is highly inefficient and cost-prohibitive
+at scale.
 
 Over the last 10 years, Kubernetes has become the standard for
 large scale job orchestration, but it was fundamentally designed for
 stateless microservices or predictable batch jobs --
 not for suspending and resuming stateful, sandboxed agent actors.
 
-By building this open, framework agnostic layer on top of new layers
-provided on top of Kubernetes, AX is aiming to provide developers and
-researchers the infrastructure that handles agent state, isolation,
-and efficiency.
+Motivated by both of these problem spaces, we decided to build a
+common and robust agentic orchestrator that works on new compute
+layers we are building on Kubernetes for agentic workloads. Our goal
+is to make it easier to productionize agentic applications so developers
+and researchers can focus on building and evaluating instead of building
+infrastructure.
 
 AX is developed and maintained by the team actively working on
 Google's internal runtime. Although the two projects operate
