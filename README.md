@@ -13,17 +13,17 @@
 > widely soon. If you are interested in collaborating with us,
 > please reach out to **ax-dev@google.com**!
 
-AX, short for Agent eXecutor, is a distributed agent runtime. It provides a
-runtime that coordinates agentic loops, manages executions with event logging,
-and communicates with both local and remote actors.
+AX, short for Agent Executor, is a distributed agent runtime. It provides a
+runtime that dynamically provisions an environment to run agents or harnesses
+in isolation within a suspendable/resumable image.
 AX is designed for reliability, with native support for recovery
-and execution resumption, even in complex distributed setups.
+and execution resumption, even in distributed setups.
 
 ## Features
 
-- **Distributed Runtime**: Controller, skills, tools, and agents can execute in isolation
+- **Distributed Runtime**: Harnesses, skills, tools, and agents can execute in isolation
 - **Resumption**: Automatic recovery from failures or interruptions
-- **Skills, Tools, Agents**: Support for skill, tool, and agent selection and execution
+- **Built-in Harnesses**: Support for frontier harnesses and custom implementations
 - **Auditing & Policy**: All user and agentic calls are coordinated by a common controller, easy to control and audit the overall execution and skill/tool/agent calls
 - **Portability**: Runs anywhere, scales to small and large deployments
 - **Customizability**: Agnostic of harness and model
@@ -81,8 +81,7 @@ experience on Kubernetes.
 We expect every sophisticated agentic application will need the capabilities provided by AX.
 We are building this layer as a widely available foundation,
 enabling developers to focus on building their applications rather than infrastructure.
-We decided to build this project in public to validate every design decision before
-a stable release is cut. We highly encourage you to give us feedback.
+We decided to build this project in public to validate every design decision before a stable release is cut. We highly encourage you to give us feedback.
 
 ## Installation
 
