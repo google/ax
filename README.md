@@ -314,6 +314,42 @@ We are currently undergoing a significant architectural redesign, and external c
 However, in the meantime, we warmly encourage you to file bugs and
 send feature requests.
 
+## History
+
+Over the years, teams across Google built and operated several
+distributed execution engines. As these systems evolved, certain
+architectural patterns consistently stood the test of time.
+The teams realized they were repeatedly solving similar
+orchestration problems, prompting the push to extract these
+lessons into common runtime layer.
+
+While this common layer was taking shape, the AI landscape underwent
+a massive shift. Applications were transitioning from static,
+stateless LLM calls to autonomous, long-running, self improving
+agents that often need isolated execution environments with a
+filesystem and custom image.
+
+From an efficiency standpoint, agentic workloads are inherently bursty.
+An agent might compute intensively for a minute, then sit idle for
+hours or days awaiting human approval. Keeping a stateful agent active
+in memory during these long idle periods is highly inefficient
+and cost-prohibitive at scale.
+
+Over the last 10 years, Kubernetes has become the standard for
+large scale job orchestration, but it was fundamentally designed for
+stateless microservices or predictable batch jobs --
+not for suspending and resuming stateful, sandboxed agent actors.
+
+By building this open, framework agnostic layer on top of new layers
+provided on top of Kubernetes, AX is aiming to provide developers and
+researchers the infrastructure that handles agent state, isolation,
+and efficiency.
+
+AX is developed and maintained by the team actively working on
+Google's internal runtime. Although the two projects operate
+at different layers today, we are applying our knowledge
+and insights to AX in the public domain.
+
 ## Acknowledgements
 
 We thank Google DeepMind for their earlier work in distributed harnesses which
