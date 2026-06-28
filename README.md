@@ -213,6 +213,8 @@ Options:
 
 Example configuration file (`ax.yaml`):
 ```yaml
+version: v1alpha
+
 server:
   address: ":8494"
 

@@ -15,6 +15,7 @@
 # Sample LOCAL configuration for the AX *harness* build (compiled with -tags=harness).
 # Usage:  ax serve --config ax.yaml
 #         ax exec  --config ax.yaml --input "hello"   # uses harnesses.default
+version: v1alpha
 
 server:
   address: ":8494"

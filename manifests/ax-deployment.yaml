@@ -202,6 +202,7 @@ metadata:
   namespace: ax
 data:
   ax.yaml: |
+    version: v1alpha
     eventlog:
       postgres:
         dsn: ${AX_EVENTLOG_DSN}

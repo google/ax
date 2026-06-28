@@ -33,6 +33,7 @@ const (
 
 // Config represents the main configuration for the AX harness server.
 type Config struct {
+	Version   string          `yaml:"version"`
 	Server    ServerConfig    `yaml:"server"`
 	EventLog  EventLogConfig  `yaml:"eventlog"`
 	Harnesses HarnessesConfig `yaml:"harnesses,omitempty"`
