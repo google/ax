@@ -81,8 +81,10 @@ experience on Kubernetes.
 We expect every sophisticated agentic application will need the
 capabilities provided by AX.
 We are building this layer as a widely available foundation,
-enabling developers to focus on building their applications ratherthan infrastructure.
-We decided to build this project in public to validate every design decision before a stable release is cut. We highly encourage you to give us feedback.
+enabling developers to focus on building their applications rather
+than infrastructure. We decided to build this project in public to
+validate every design decision before a stable release is cut.
+We highly encourage you to give us feedback.
 
 ## Installation
 
