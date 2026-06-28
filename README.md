@@ -324,15 +324,14 @@ orchestration problems, prompting the push to extract these
 lessons into common runtime layer.
 
 While this common layer was taking shape, the AI landscape underwent
-a massive shift. Applications were transitioning from static,
-stateless LLM calls to autonomous, long-running, self improving
+a massive shift. Applications were transitioning from
+statless tool use agents to autonomous, long-running, self improving
 agents that often need isolated resumable execution environments.
-From an efficiency standpoint, agentic workloads are inherently bursty.
+Also, from an efficiency standpoint, agentic workloads are inherently bursty.
 An agent might compute intensively for a minute, then sit idle for
 hours or days awaiting human approval. Keeping a stateful actor active
 during these long idle periods is highly inefficient and cost-prohibitive
 at scale.
-
 Over the last 10 years, Kubernetes has become the standard for
 large scale job orchestration, but it was fundamentally designed for
 stateless microservices or predictable batch jobs --
