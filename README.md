@@ -278,12 +278,13 @@ Agent Skills. See [Skills](examples/skills) for more.
 
 Below is an overview of our upcoming features and planned changes:
 
-1. Antigravity as the built-in harness
+1. Support for more frontier harnesses besidees Antigravity
 1. Support for BYOH (Bring Your Own Harness)
 1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
 1. Trajectory exposition
 1. Better telemetry exposition
+1. Integrations for policy, auditing, and more
 
 ## Contributing
 
