@@ -269,7 +269,7 @@ func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
 
 func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
-	srv := &mockHarnessServer{failFrame: true, errMessage: "boom"}
+	srv := &mockHarnessServer{failFrame: true, errCode: 13, errMessage: "boom"}
 	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
 
 	ctx := context.Background()

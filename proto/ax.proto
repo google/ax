@@ -43,16 +43,6 @@ message ConversationEvent {
   State state = 7;
 }
 
-// HealthCheckRequest for agent health checks
-message HealthCheckRequest {}
-
-// HealthCheckResponse contains agent health status
-message HealthCheckResponse {
-  bool healthy = 1;
-  string message = 2;
-}
-
-
 message HarnessStart {
   // Per-execution harness configuration.
   bytes harness_config = 1;
@@ -77,11 +67,18 @@ message HarnessOutputs {
   repeated Message messages = 1;
 }
 
+message Error {
+  // A status code, corresponds to google.golang.org/grpc/codes.
+  int32 code = 1;
+  // A description of the error.
+  string description = 2;
+}
+
 message HarnessEnd {
   // Terminal state for the harness execution.
   State state = 1;
-  // Optional error message.
-  string error_message = 2;
+  // Optional error details.
+  Error error = 2;
 }
 
 message HarnessResponse {

@@ -244,8 +244,9 @@ def test_grpc_connect_missing_credentials(mock_config, monkeypatch):
             assert len(responses) == 1
             assert responses[0].WhichOneof('type') == 'end'
             assert responses[0].end.state == ax_pb2.STATE_FAILED
-            assert "No Gemini credentials configured" in responses[0].end.error_message
-            assert "GEMINI_API_KEY" in responses[0].end.error_message
+            assert responses[0].end.error.code == 9
+            assert "No Gemini credentials configured" in responses[0].end.error.description
+            assert "GEMINI_API_KEY" in responses[0].end.error.description
             
         await server.stop(0)
 

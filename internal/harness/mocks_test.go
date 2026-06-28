@@ -100,6 +100,8 @@ type mockHarnessServer struct {
 	failConnect bool
 	// failFrame makes Connect terminate the turn with HarnessEnd{STATE_FAILED}.
 	failFrame bool
+	// errCode is the error code used by failFrame.
+	errCode int32
 	// errMessage is the error text used by failConnect/failFrame.
 	errMessage string
 
@@ -138,7 +140,13 @@ func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 		return stream.Send(&proto.HarnessResponse{
 			ConversationId: convID,
 			Type: &proto.HarnessResponse_End{
-				End: &proto.HarnessEnd{State: proto.State_STATE_FAILED, ErrorMessage: s.errMessage},
+				End: &proto.HarnessEnd{
+					State: proto.State_STATE_FAILED,
+					Error: &proto.Error{
+						Code:        s.errCode,
+						Description: s.errMessage,
+					},
+				},
 			},
 		})
 	}

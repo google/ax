@@ -136,7 +136,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if not ax_messages:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="No messages found in start payload")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description="No messages found in start payload",
+                    ),
+                ),
             )
             return
             
@@ -145,7 +151,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if latest_message.content.WhichOneof('type') != 'text':
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="Latest message must contain text content")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description="Latest message must contain text content",
+                    ),
+                ),
             )
             return
         latest_query_text = latest_message.content.text.text
@@ -155,7 +167,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if not loaded_config:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="Agent config is not loaded on the server")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=9,  # FAILED_PRECONDITION
+                        description="Agent config is not loaded on the server",
+                    ),
+                ),
             )
             return
             
@@ -165,11 +183,14 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
                     state=ax_pb2.STATE_FAILED,
-                    error_message=(
-                        "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
-                        "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
-                    )
-                )
+                    error=ax_pb2.Error(
+                        code=9,  # FAILED_PRECONDITION
+                        description=(
+                            "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
+                            "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
+                        ),
+                    ),
+                ),
             )
             return
         try:
@@ -271,7 +292,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             logging.exception("Error inside Connect servicer execution")
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message=f"Agent execution terminated due to error. ({str(e)})")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=13,  # INTERNAL
+                        description=f"Agent execution terminated due to error. ({str(e)})",
+                    ),
+                ),
             )
             return
 

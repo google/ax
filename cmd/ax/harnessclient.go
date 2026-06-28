@@ -116,7 +116,12 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Server > message[%d] (%s): %s\n", i, m.Role, text)
 			}
 		case *proto.HarnessResponse_End:
-			fmt.Printf("Server > [end] state=%s %s\n", payload.End.GetState(), payload.End.GetErrorMessage())
+			if errDetail := payload.End.GetError(); errDetail != nil {
+				fmt.Printf("Server > [end] state=%s error=(code=%d description=%q)\n",
+					payload.End.GetState(), errDetail.GetCode(), errDetail.GetDescription())
+			} else {
+				fmt.Printf("Server > [end] state=%s\n", payload.End.GetState())
+			}
 		}
 	}
 
