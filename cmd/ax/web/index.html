@@ -1121,6 +1121,21 @@ function renderTrace(data) {
     return;
   }
 
+  // Save currently expanded card IDs before clearing the list
+  const expandedCardIds = new Set();
+  document.querySelectorAll('.exec-card').forEach(card => {
+    const hdr = card.querySelector('.exec-card-hdr');
+    if (hdr && !hdr.classList.contains('collapsed')) {
+      expandedCardIds.add(card.id);
+    }
+  });
+
+  // If this is the first load (e.g. no cards in DOM yet), expand the root card by default
+  const isFirstLoad = document.querySelectorAll('.exec-card').length === 0;
+  if (isFirstLoad && data.root_exec_id) {
+    expandedCardIds.add(`card-${data.root_exec_id}`);
+  }
+
   // Build timeline
   const execTimes=data.execs.map(e=>{
     const ts=e.events.map(ev=>new Date(ev.timestamp).getTime());
@@ -1177,16 +1192,22 @@ function renderTrace(data) {
     
     const stateBadge=lastState?`<span class="badge ${statusClass}"><span class="badge-dot"></span>${esc(lastState.replace('STATE_',''))}</span>`:'';
 
+    const cardId = `card-${exec.exec_id}`;
+    const isExpanded = expandedCardIds.has(cardId);
+    const hdrClass = isExpanded ? '' : 'collapsed';
+    const bodyClass = isExpanded ? 'exec-card-body-content' : 'exec-card-body-content hidden';
+    const bodyWrapperClass = isExpanded ? '' : 'hidden';
+
     execListHtml+=`
-      <div class="exec-card" id="card-${esc(exec.exec_id)}">
-        <div class="exec-card-hdr collapsed" onclick="toggleCard(this)">
+      <div class="exec-card" id="${esc(cardId)}">
+        <div class="exec-card-hdr ${hdrClass}" onclick="toggleCard(this)">
           <span class="expand-ico">▼</span>
           <span class="exec-name">${esc(shortName)}</span>
           <span class="agent-badge">${esc(exec.agent_id||'—')}</span>
           ${stateBadge}
         </div>
-        <div class="exec-card-body hidden">
-          <div class="exec-card-body-content">
+        <div class="exec-card-body ${bodyWrapperClass}">
+          <div class="${bodyClass}">
             ${exec.events.map(ev => renderEvent(ev)).join('')}
           </div>
         </div>
