@@ -338,12 +338,12 @@ large scale job orchestration, but it was fundamentally designed for
 stateless microservices or predictable batch jobs --
 not for suspending and resuming stateful, sandboxed agent actors.
 
-Motivated by both of these problem spaces, we decided to build a
-common and robust agentic orchestrator that works on new compute
-layers we are building on Kubernetes for agentic workloads. Our goal
-is to make it easier to productionize agentic applications so developers
-and researchers can focus on building and evaluating instead of building
-infrastructure.
+Driven by these dual challenges, we are building a robust, common
+agentic orchestrator designed specifically for the new compute
+layers we are developing on Kubernetes. Our goal is to ease
+the productionization of agentic applications, allowing developers
+and researchers to focus on building and evaluating their
+applications rather than dealing with underlying infrastructure.
 
 AX is developed and maintained by the team actively working on
 Google's internal runtime. Although the two projects operate
