@@ -297,6 +297,7 @@ Below is an overview of our upcoming features and planned changes:
 1. Support for BYOH (Bring Your Own Harness)
 1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
+1. Forking from event log and snapshots
 1. Trajectory exposition
 1. Better telemetry exposition
 1. Integrations for policy, auditing, and more
