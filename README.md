@@ -13,9 +13,9 @@
 > widely soon. If you are interested in collaborating with us,
 > please reach out to **ax-dev@google.com**!
 
-AX, short for Agent Executor, is a distributed agent runtime. It provides a
-runtime that dynamically provisions an environment to run agents or harnesses
-in isolation within a suspendable/resumable image.
+AX, short for Agent Executor, is a distributed harness runtime.
+It dynamically provisions isolated environments from suspendable/resumable
+images to execute harnesses and agents.
 AX is designed for reliability, with native support for recovery
 and execution resumption, even in distributed setups.
 
@@ -78,9 +78,10 @@ workers becomes a necessity. AX provides the foundational layer to fill these ga
 While compute-agnostic, AX is aiming to provide the best
 experience on Kubernetes.
 
-We expect every sophisticated agentic application will need the capabilities provided by AX.
+We expect every sophisticated agentic application will need the
+capabilities provided by AX.
 We are building this layer as a widely available foundation,
-enabling developers to focus on building their applications rather than infrastructure.
+enabling developers to focus on building their applications ratherthan infrastructure.
 We decided to build this project in public to validate every design decision before a stable release is cut. We highly encourage you to give us feedback.
 
 ## Installation
