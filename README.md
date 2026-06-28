@@ -338,10 +338,10 @@ large scale job orchestration, but it was fundamentally designed for
 stateless microservices or predictable batch jobs --
 not for suspending and resuming stateful, sandboxed agent actors.
 
-Driven by these dual challenges, we are building a robust, common
+Driven by these dual challenges, we decided to build a robust, common
 agentic orchestrator designed specifically for the new compute
 layers we are developing on Kubernetes. Our goal is to ease
-the productionization of agentic applications, allowing developers
+the productionization of agents, allowing developers
 and researchers to focus on building and evaluating their
 applications rather than dealing with underlying infrastructure.
 
