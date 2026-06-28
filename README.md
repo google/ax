@@ -347,7 +347,7 @@ applications rather than dealing with underlying infrastructure.
 AX is developed and maintained by the team actively working on
 Google's internal runtime. Although the two projects operate
 at different layers today, we are applying our knowledge
-and insights to AX in the public domain.
+and insights to AX in the public domain every day.
 
 ## Acknowledgements
 
