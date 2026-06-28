@@ -257,10 +257,23 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 
 ## Extensions
 
+### Harnesses
+
+AX provides built-in harnesses (e.g. Antigravity) but you can bring your
+own harness implementation by implementing `HarnessService`.
+
+Traditional agents (e.g. tool use or workflow agents), or
+language models can be implemented as harnesses.
+
 ### Skills
 
-AX harnesses like Antigravity includes built-in support for
+Built-in harnesses like Antigravity includes built-in support for
 Agent Skills. See [Skills](examples/skills) for more.
+
+### MCP Tools
+
+Built-in harnesses like Antigravity provides support for discovering
+and making calls to MCP tools when they are configured.
 
 ## What AX is NOT?
 * A managed service. AX is self-hosted and not a managed service.
