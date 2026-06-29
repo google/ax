@@ -296,7 +296,7 @@ and making calls to MCP tools when they are configured.
 
 Below is an overview of our upcoming features and planned changes:
 
-1. Support for more frontier harnesses besidees Antigravity
+1. Support for more frontier harnesses besides Antigravity
 1. Support for BYOH (Bring Your Own Harness)
 1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
