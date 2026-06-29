@@ -1,9 +1,9 @@
-# Deploying Agent Substrate + AX on Kubernetes
+# AX Harness Deployment on Kubernetes
 
 > [!WARNING]
 >
-> It is experimental and incomplete: the manifests, scripts, and runtime
-> behavior will change and may break without notice.
+> This path is experimental and incomplete: the manifests, scripts, and
+> runtime behavior will change and may break without notice.
 
 This directory contains Kubernetes manifests and configurations to deploy
 and verify the AX on Kubernetes using Agent Substrate.
