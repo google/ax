@@ -192,12 +192,12 @@ deploy_ax_server() {
     echo "Error: GEMINI_API_KEY environment variable must be set" >&2
     exit 1
   fi
-  if [[ -z "${BUCKET_NAME:-}" ]]; then
-    echo "Error: BUCKET_NAME environment variable must be set" >&2
+  if [[ -z "${AX_SNAPSHOTS_BUCKET:-}" ]]; then
+    echo "Error: AX_SNAPSHOTS_BUCKET environment variable must be set" >&2
     exit 1
   fi
 
-  echo "Using GCS Bucket: ${BUCKET_NAME}"
+  echo "Using GCS Bucket: ${AX_SNAPSHOTS_BUCKET}"
 
   # Build and push the images, capturing their digest-pinned references.
   local ax_image ateom_image
@@ -216,7 +216,7 @@ deploy_ax_server() {
 
   # Render the manifest and apply it.
   if ! sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
-      -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
+      -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g" \
       -e "s|\${AX_IMAGE}|${ax_image}|g" \
       -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
       -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g" \

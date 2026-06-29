@@ -68,7 +68,7 @@ spec:
         - name: AX_HARNESS_WORKDIR
           value: "/ax"
   snapshotsConfig:
-    location: gs://${BUCKET_NAME}/antigravity/
+    location: gs://${AX_SNAPSHOTS_BUCKET}/antigravity/
 ---
 
 # ---------------------------------------------------------------------------

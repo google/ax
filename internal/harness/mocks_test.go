@@ -50,29 +50,33 @@ type mockControlServer struct {
 	resumeNilActor bool   // when true, ResumeActor returns a nil Actor
 }
 
+func (f *mockControlServer) CreateAtespace(_ context.Context, req *ateapipb.CreateAtespaceRequest) (*ateapipb.CreateAtespaceResponse, error) {
+	return &ateapipb.CreateAtespaceResponse{Atespace: &ateapipb.Atespace{Name: req.GetName()}}, nil
+}
+
 func (f *mockControlServer) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.CreateActorResponse, error) {
 	f.mu.Lock()
-	f.createCalls = append(f.createCalls, req.GetActorId())
+	f.createCalls = append(f.createCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
-	return &ateapipb.CreateActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorId()}}, nil
+	return &ateapipb.CreateActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorRef().GetName()}}, nil
 }
 
 func (f *mockControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
 	f.mu.Lock()
-	f.resumeCalls = append(f.resumeCalls, req.GetActorId())
+	f.resumeCalls = append(f.resumeCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
 	if f.resumeNilActor {
 		return &ateapipb.ResumeActorResponse{}, nil
 	}
-	return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorId(), AteomPodIp: f.resumeIP}}, nil
+	return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorRef().GetName(), AteomPodIp: f.resumeIP}}, nil
 }
 
 func (f *mockControlServer) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
 	f.mu.Lock()
-	f.suspendCalls = append(f.suspendCalls, req.GetActorId())
+	f.suspendCalls = append(f.suspendCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
 	return &ateapipb.SuspendActorResponse{}, nil
 }

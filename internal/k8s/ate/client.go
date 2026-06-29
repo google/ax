@@ -21,7 +21,9 @@ import (
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type Client struct {
@@ -58,8 +60,11 @@ func NewClient(ns, template, target string, opts ...grpc.DialOption) (*Client, e
 // CreateActor creates a new actor.
 func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
+	if _, err := client.CreateAtespace(ctx, &ateapipb.CreateAtespaceRequest{Name: c.namespace}); err != nil && status.Code(err) != codes.AlreadyExists {
+		return nil, fmt.Errorf("error when calling Control.CreateAtespace: %w", err)
+	}
 	resp, err := client.CreateActor(ctx, &ateapipb.CreateActorRequest{
-		ActorId:                id,
+		ActorRef:               &ateapipb.ActorRef{Atespace: c.namespace, Name: id},
 		ActorTemplateNamespace: c.namespace,
 		ActorTemplateName:      c.template,
 	})
@@ -74,7 +79,7 @@ func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateAc
 func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
-		ActorId: id,
+		ActorRef: &ateapipb.ActorRef{Atespace: c.namespace, Name: id},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.ResumeActor: %w", err)
@@ -86,7 +91,7 @@ func (c *Client) ResumeActor(ctx context.Context, id string) (*ateapipb.ResumeAc
 func (c *Client) SuspendActor(ctx context.Context, id string) (*ateapipb.SuspendActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
 	resp, err := client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{
-		ActorId: id,
+		ActorRef: &ateapipb.ActorRef{Atespace: c.namespace, Name: id},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error when calling Control.SuspendActor: %w", err)
