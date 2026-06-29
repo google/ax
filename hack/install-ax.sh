@@ -282,6 +282,11 @@ ensure_substrate_src() {
 run_substrate() {
   local src
   src="$(ensure_substrate_src)"
+  # The managed clone takes all config from the inherited environment. Remove any
+  # leftover .ate-dev-env.sh.
+  if [[ -z "${AX_SUBSTRATE_DIR:-}" ]]; then
+    rm -f "${src}/.ate-dev-env.sh"
+  fi
   ( cd "${src}" \
     && KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-$(kubectl config current-context 2>/dev/null || true)}" \
        "$@" )
@@ -301,11 +306,35 @@ create_cluster() {
 }
 
 # delete_cluster tears down the GCP resources created by create_cluster.
+#
+# Substrate's teardown.sh requires a .ate-dev-env.sh file. We generate one transiently
+# in the checkout from the current environment, then remove it so it never
+# lingers to shadow a later deploy.
 delete_cluster() {
   log_step "delete_cluster"
+  require_env PROJECT_ID PROJECT_NUMBER BUCKET_NAME NODE_POOL_NAME CLUSTER_NAME \
+    CLUSTER_LOCATION
   local src
   src="$(ensure_substrate_src)"
-  ( cd "${src}" && ./hack/teardown.sh --all )
+
+  local env_file="${src}/.ate-dev-env.sh"
+  local created_env_file=false
+  if [[ -z "${AX_SUBSTRATE_DIR:-}" ]] || [[ ! -f "${env_file}" ]]; then
+    created_env_file=true
+    local v
+    : >"${env_file}"
+    for v in PROJECT_ID PROJECT_NUMBER BUCKET_NAME NODE_POOL_NAME CLUSTER_NAME \
+      CLUSTER_LOCATION; do
+      printf 'export %s=%q\n' "${v}" "${!v}" >>"${env_file}"
+    done
+  fi
+
+  local rc=0
+  ( cd "${src}" && ./hack/teardown.sh --all ) || rc=$?
+  if [[ "${created_env_file}" == true ]]; then
+    rm -f "${env_file}"
+  fi
+  return "${rc}"
 }
 
 # deploy_ate_system deploys the substrate control plane (CRDs, ateapi,

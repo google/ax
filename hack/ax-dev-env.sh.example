@@ -39,9 +39,9 @@ export NETWORK=default
 export SUBNETWORK=default
 
 # --- Cluster / gVisor node pool ---
-export CLUSTER_VERSION=1.35.0-gke.2398000
+export CLUSTER_VERSION=1.35.5-gke.1163012
 export NODE_POOL_NAME=substrate-node-pool
-export NODE_POOL_VERSION=1.35.0-gke.2398000
+export NODE_POOL_VERSION=1.35.5-gke.1163012
 export GVISOR_NODE_MACHINE_TYPE=n2-standard-4
 
 # Set this to target an existing cluster by its kube context name. When empty,

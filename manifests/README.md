@@ -170,6 +170,7 @@ Remove the in-cluster workloads (the event-log database is preserved):
 ./hack/install-ax.sh --delete-all          # AX server + substrate control plane
 # or just one layer:
 ./hack/install-ax.sh --delete-ax-server    # AX only; preserves the event-log DB
+./hack/install-ax.sh --delete-ate-system   # substrate control plane only
 ```
 
 To delete everything in the namespace, including the event-log data:
