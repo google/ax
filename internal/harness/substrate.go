@@ -31,7 +31,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/google/ax/internal/experimental/k8s/ate"
+	"github.com/google/ax/internal/k8s/ate"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
@@ -232,7 +232,10 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 			}
 		case *proto.HarnessResponse_End:
 			if payload.End.GetState() == proto.State_STATE_FAILED {
-				return fmt.Errorf("harness failed: %s", payload.End.GetErrorMessage())
+				if errDetail := payload.End.GetError(); errDetail != nil {
+					return fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
+				}
+				return fmt.Errorf("harness failed with no error details")
 			}
 			return handler.OnComplete(ctx, e.execID)
 		}

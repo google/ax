@@ -32,12 +32,17 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags=harness -o /out/ax ./cmd/ax
 
-# --- Stage 2: comprehensive runtime (Debian + Python + Antigravity) -----------
-# Python image: a full Debian base (buildpack-deps) that
-# already ships bash, git, curl, wget, ca-certificates, build-essential, and the
-# common CLIs (find/ps/less/grep/sed/...).
-FROM python:3.13
+FROM python:3.13-slim
 WORKDIR /ax
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        less \
+        procps \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Antigravity runtime deps, installed from PyPI at build time.
 COPY python/antigravity/requirements.txt /tmp/requirements.txt
@@ -46,7 +51,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
 COPY python/ /ax-app/python
-COPY examples/antigravity_agent/ /ax-app/examples/antigravity_agent
 COPY examples/skills/ /ax/skills/
 ENV SKILLS_DIR=/ax/skills
 COPY --from=build /out/ax /ax-app/ax
@@ -64,5 +68,4 @@ EXPOSE 80
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
 CMD ["/ax-app/ax", "harness", \
-     "--antigravity-agent-file", "/ax-app/examples/antigravity_agent/agent.py", \
      "--host", "0.0.0.0", "--port", "80"]

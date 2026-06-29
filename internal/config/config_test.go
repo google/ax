@@ -17,6 +17,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSubstrateNewHarness(t *testing.T) {
@@ -98,5 +100,23 @@ func TestValidate_MultipleDefaults(t *testing.T) {
 	err := c.Validate()
 	if err == nil || !strings.Contains(err.Error(), "multiple harnesses marked as default") {
 		t.Fatalf("Validate() = %v, want multiple defaults error", err)
+	}
+}
+
+func TestLoadFromFile_Version(t *testing.T) {
+	data := `
+version: "1.2.3"
+server:
+  address: ":8080"
+eventlog:
+  sqlite:
+    filename: "test.db"
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(data), &cfg); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if cfg.Version != "1.2.3" {
+		t.Errorf("cfg.Version = %q, want %q", cfg.Version, "1.2.3")
 	}
 }

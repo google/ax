@@ -13,14 +13,12 @@
 # limitations under the License.
 
 # NOTE ON ARCHITECTURE:
-# This is a generic, reusable gRPC server that does not define tools or personas. 
-# Instead, it dynamically imports any agent configuration file (defaulting to examples/antigravity_agent/agent.py) 
-# passed via the --agent_file CLI argument, then hosts it over the AX HarnessService protocol.
+# This gRPC server implements the AX HarnessService protocol. It embeds the
+# Antigravity weather agent logic directly, serving it over production gRPC.
 
 import argparse
 
 import asyncio
-import importlib.util
 import logging
 import os
 import sys
@@ -31,25 +29,34 @@ from google.protobuf.struct_pb2 import Struct
 from python.proto import ax_pb2
 from python.proto import ax_pb2_grpc
 from python.proto import content_pb2
-from google.antigravity import Agent, AgentConfig
+from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
-# Global placeholder for loaded agent config
-loaded_config: AgentConfig | None = None
+# 1. Define the custom weather tool
+def get_weather(city: str) -> str:
+    """Retrieves the current weather report for a specified city.
 
-def load_agent_config(agent_file: str) -> AgentConfig:
-    print(f"Loading agent config from {agent_file}...")
-    spec = importlib.util.spec_from_file_location("agent_module", agent_file)
-    if spec is None or spec.loader is None:
-        raise FileNotFoundError(f"Could not find or load agent file: {agent_file}")
-    agent_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(agent_module)
-    
-    config = getattr(agent_module, "agent_config", None)
-    if not config:
-        raise ValueError(f"No 'agent_config' found in {agent_file}")
-    print("Agent config loaded successfully.")
-    return config
+    Args:
+        city (str): The name of the city for which to retrieve the weather report.
+
+    Returns:
+        str: Weather report status and details.
+    """
+    sys.stderr.write(f"\n[PYTHON TOOL get_weather executed for city: {city}]\n")
+    sys.stderr.flush()
+    c = city.lower()
+    if "new york" in c or "nyc" in c:
+        return "The weather in New York is sunny with a temperature of 25 degrees Celsius (77 degrees Fahrenheit)."
+    elif "san francisco" in c or "sf" in c:
+        return "The weather in San Francisco is foggy with a temperature of 16 degrees Celsius (60.8 degrees Fahrenheit)."
+    else:
+        return f"Weather information for '{city}' is not available."
+
+# 2. Define the static agent config
+loaded_config = LocalAgentConfig(
+    system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
+    tools=[get_weather]
+)
 
 def _has_credentials(config: AgentConfig | None) -> bool:
     """Checks if Gemini credentials are set either in env or config."""
@@ -129,7 +136,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if not ax_messages:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="No messages found in start payload")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description="No messages found in start payload",
+                    ),
+                ),
             )
             return
             
@@ -138,7 +151,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if latest_message.content.WhichOneof('type') != 'text':
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="Latest message must contain text content")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description="Latest message must contain text content",
+                    ),
+                ),
             )
             return
         latest_query_text = latest_message.content.text.text
@@ -148,7 +167,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         if not loaded_config:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message="Agent config is not loaded on the server")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=9,  # FAILED_PRECONDITION
+                        description="Agent config is not loaded on the server",
+                    ),
+                ),
             )
             return
             
@@ -158,11 +183,14 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
                     state=ax_pb2.STATE_FAILED,
-                    error_message=(
-                        "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
-                        "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
-                    )
-                )
+                    error=ax_pb2.Error(
+                        code=9,  # FAILED_PRECONDITION
+                        description=(
+                            "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
+                            "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
+                        ),
+                    ),
+                ),
             )
             return
         try:
@@ -264,7 +292,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             logging.exception("Error inside Connect servicer execution")
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_FAILED, error_message=f"Agent execution terminated due to error. ({str(e)})")
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=13,  # INTERNAL
+                        description=f"Agent execution terminated due to error. ({str(e)})",
+                    ),
+                ),
             )
             return
 
@@ -287,6 +321,16 @@ async def serve(host: str, port: int):
     finally:
         await servicer.cleanup()
 
+def enhance_config_from_env(config) -> None:
+    skills_dir = os.environ.get("SKILLS_DIR")
+    if skills_dir and os.path.isdir(skills_dir):
+        print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
+        if not hasattr(config, "skills_paths") or config.skills_paths is None:
+            config.skills_paths = []
+        config.skills_paths = list(config.skills_paths)
+        if skills_dir not in config.skills_paths:
+            config.skills_paths.append(skills_dir)
+
 def resolve_localhost():
     """Ensure `localhost` resolves to 127.0.0.1.
 
@@ -307,34 +351,18 @@ def resolve_localhost():
         print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
 
 
-def enhance_config_from_env(config) -> None:
-    skills_dir = os.environ.get("SKILLS_DIR")
-    if skills_dir and os.path.isdir(skills_dir):
-        print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
-        if not hasattr(config, "skills_paths") or config.skills_paths is None:
-            config.skills_paths = []
-        config.skills_paths = list(config.skills_paths)
-        if skills_dir not in config.skills_paths:
-            config.skills_paths.append(skills_dir)
-
-
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
-    parser.add_argument("--agent_file", default="examples/antigravity_agent/agent.py", help="Path to the agent config file")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()
-    
-    resolve_localhost()
-    
-    # Load the agent config globally
+
     global loaded_config
-    try:
-        loaded_config = load_agent_config(args.agent_file)
-        enhance_config_from_env(loaded_config)
-    except Exception as e:
-        print(f"ERROR: Failed to load agent config: {e}", file=sys.stderr)
-        sys.exit(1)
+    enhance_config_from_env(loaded_config)
+
+    # This is a hack, on Agent Substrate /etc/hosts end up not
+    # having this entry even if it's the OCI image.
+    resolve_localhost()
         
     asyncio.run(serve(args.host, args.port))
 

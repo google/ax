@@ -13,17 +13,17 @@
 > widely soon. If you are interested in collaborating with us,
 > please reach out to **ax-dev@google.com**!
 
-AX, short for Agent eXecutor, is a distributed agent runtime. It provides a
-runtime that coordinates agentic loops, manages executions with event logging,
-and communicates with both local and remote actors.
+AX, short for Agent Executor, is a distributed harness runtime.
+It dynamically provisions isolated environments from suspendable/resumable
+images to execute harnesses and agents.
 AX is designed for reliability, with native support for recovery
-and execution resumption, even in complex distributed setups.
+and execution resumption, even in distributed setups.
 
 ## Features
 
-- **Distributed Runtime**: Controller, skills, tools, and agents can execute in isolation
+- **Distributed Runtime**: Harnesses, skills, tools, and agents can execute in isolation
 - **Resumption**: Automatic recovery from failures or interruptions
-- **Skills, Tools, Agents**: Support for skill, tool, and agent selection and execution
+- **Built-in Harnesses**: Support for frontier harnesses and custom implementations
 - **Auditing & Policy**: All user and agentic calls are coordinated by a common controller, easy to control and audit the overall execution and skill/tool/agent calls
 - **Portability**: Runs anywhere, scales to small and large deployments
 - **Customizability**: Agnostic of harness and model
@@ -45,15 +45,27 @@ Watch our demo to see AX works when deployed on [Agent Substrate](https://github
 %%{init: {"flowchart": {"diagramPadding": 80}}}%%
 graph LR
     Client
-    Router["Router"]
-    Controller["AX Controller<br/>(executor, event log, registry)"]
-    Tool["Tool<br/>(MCP server)"]
-    Env["Environment with<br/>skills, built-in tools<br/>(isolated actor)"]
 
-    Client -->|resumable stream| Router
-    Router --> Controller
-    Controller --> Env
-    Controller --> Tool
+    subgraph Cluster[" "]
+        Server["AX Server<br/>(multi-tenant)"]
+        DB[("Event Log"<br/>Storage)]
+        ControlService["Control API"]
+        Actor["Harness Actor<br/>(stateful session-tenant)"]
+    end
+
+    SnapshotService["Snapshots"]
+    HarnessService["Harness or model<br/>service"]
+    MCPServer["MCP server"]
+
+    Client <-->|resumable stream| Server
+    Server <-->|scan/append| DB
+    Server --> ControlService
+    ControlService -->|resume/suspend| Actor
+    Server <-->|resumable stream| Actor
+    ControlService <-->|read/write| SnapshotService
+    Actor -.-> HarnessService
+    Actor --> MCPServer
+    Actor -.-> Environment
 ```
 
 As agents evolve from simple assistants to autonomous long running workers,
@@ -66,11 +78,13 @@ workers becomes a necessity. AX provides the foundational layer to fill these ga
 While compute-agnostic, AX is aiming to provide the best
 experience on Kubernetes.
 
-We expect every sophisticated agentic application will need the capabilities provided by AX.
+We expect every sophisticated agentic application will need the
+capabilities provided by AX.
 We are building this layer as a widely available foundation,
-enabling developers to focus on building their applications rather than infrastructure.
-We decided to build this project in public to validate every design decision before
-a stable release is cut. We highly encourage you to give us feedback.
+enabling developers to focus on building their applications rather
+than infrastructure. We decided to build this project in public to
+validate every design decision before a stable release is cut.
+We highly encourage you to give us feedback.
 
 ## Installation
 
@@ -97,7 +111,6 @@ AX is natively supported on
 on Kubernetes and it's the recommended deployment option for production
 use. For more details on setup and configuration, see the
 [deployment guide](./manifests/README.md).
-
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
 
@@ -213,6 +226,8 @@ Options:
 
 Example configuration file (`ax.yaml`):
 ```yaml
+version: v1alpha
+
 server:
   address: ":8494"
 
@@ -247,10 +262,25 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 
 ## Extensions
 
+### Harnesses
+
+AX provides built-in harnesses (e.g. Antigravity) but you can bring your
+own harness implementation by implementing `HarnessService`. On supported
+compute services (e.g. Agent Substrate), AX automatically runs the
+harness in isolation with automatic resumption and suspension.
+
+Traditional agents (e.g. tool use or workflow agents), or
+language models can be implemented as harnesses.
+
 ### Skills
 
-AX harnesses like Antigravity includes built-in support for
+Built-in harnesses like Antigravity includes built-in support for
 Agent Skills. See [Skills](examples/skills) for more.
+
+### MCP Tools
+
+Built-in harnesses like Antigravity provides support for discovering
+and making calls to MCP tools when they are configured.
 
 ## What AX is NOT?
 * A managed service. AX is self-hosted and not a managed service.
@@ -268,12 +298,14 @@ Agent Skills. See [Skills](examples/skills) for more.
 
 Below is an overview of our upcoming features and planned changes:
 
-1. Antigravity as the built-in harness
+1. Support for more frontier harnesses besides Antigravity
 1. Support for BYOH (Bring Your Own Harness)
 1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
+1. Forking from event log and snapshots
 1. Trajectory exposition
 1. Better telemetry exposition
+1. Integrations for policy, auditing, and more
 
 ## Contributing
 
@@ -283,6 +315,41 @@ on how to contribute to this project.
 We are currently undergoing a significant architectural redesign, and external contributions are temporarily paused.
 However, in the meantime, we warmly encourage you to file bugs and
 send feature requests.
+
+## History
+
+Over the years, teams across Google built and operated several
+distributed execution engines. As these systems evolved, certain
+architectural patterns consistently stood the test of time.
+The teams realized they were repeatedly solving similar
+orchestration problems, prompting the push to extract these
+lessons into common runtime layer.
+
+While this common layer was taking shape, the AI landscape underwent
+a massive shift. Applications were transitioning from
+statless tool use agents to autonomous, long-running, self improving
+agents that often need isolated resumable execution environments.
+Also, from an efficiency standpoint, agentic workloads are inherently bursty.
+An agent might compute intensively for a minute, then sit idle for
+hours or days awaiting human approval. Keeping a stateful actor active
+during these long idle periods is highly inefficient and cost-prohibitive
+at scale.
+Over the last 10 years, Kubernetes has become the standard for
+large scale job orchestration, but it was fundamentally designed for
+stateless microservices or predictable batch jobs --
+not for suspending and resuming stateful, sandboxed agent actors.
+
+Driven by these dual challenges, we decided to build a robust, common
+agentic orchestrator designed specifically for the new compute
+layers we are developing on Kubernetes. Our goal is to ease
+the productionization of agents, allowing developers
+and researchers to focus on building and evaluating their
+applications rather than dealing with underlying infrastructure.
+
+AX is developed and maintained by the team actively working on
+Google's internal runtime. Although the two projects operate
+at different layers today, we are applying our knowledge
+and insights to AX in the public domain every day.
 
 ## Acknowledgements
 

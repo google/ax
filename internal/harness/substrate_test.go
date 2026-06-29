@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/ax/internal/experimental/k8s/ate"
+	"github.com/google/ax/internal/k8s/ate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -269,7 +269,7 @@ func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
 
 func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
-	srv := &mockHarnessServer{failFrame: true, errMessage: "boom"}
+	srv := &mockHarnessServer{failFrame: true, errCode: 13, errMessage: "boom"}
 	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
 
 	ctx := context.Background()

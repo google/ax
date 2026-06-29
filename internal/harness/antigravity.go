@@ -38,10 +38,10 @@ type AntigravityHarness struct {
 }
 
 // NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
-// Address defaults to "localhost:50053" (gRPC TCP connection).
+// Address defaults to "127.0.0.1:50053" (gRPC TCP connection).
 func NewAntigravityHarness(address string) *AntigravityHarness {
 	if address == "" {
-		address = "localhost:50053"
+		address = "127.0.0.1:50053"
 	}
 	return &AntigravityHarness{
 		address: address,
@@ -155,7 +155,10 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 			}
 		case *proto.HarnessResponse_End:
 			if payload.End.GetState() == proto.State_STATE_FAILED {
-				return fmt.Errorf("harness failed: %s", payload.End.GetErrorMessage())
+				if errDetail := payload.End.GetError(); errDetail != nil {
+					return fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
+				}
+				return fmt.Errorf("harness failed with no error details")
 			}
 			return handler.OnComplete(ctx, e.id)
 		}

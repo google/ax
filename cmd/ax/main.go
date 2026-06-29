@@ -68,5 +68,8 @@ func newConfig(cmd *cobra.Command, configFile string) (*cliutil.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error loading config file '%s': %w", configFile, err)
 	}
+	if cfg.Version != "v1alpha" {
+		return nil, fmt.Errorf("unsupported config version %q, must be \"v1alpha\"", cfg.Version)
+	}
 	return cfg, nil
 }
