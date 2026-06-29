@@ -8,14 +8,12 @@
 This directory contains Kubernetes manifests and configurations to deploy
 and verify the AX on Kubernetes using Agent Substrate.
 
-The target Kubernetes cluster is assumed to have
-[Agent Substrate](https://github.com/agent-substrate/substrate) installed.
+There are two phases for the full deployment:
 
----
-
-## 🚀 Deploying to Agent Substrate
-
-### 1. Build and Deploy
+- **One-time setup** — provision the GKE cluster and GCP resources
+  (`--create-cluster`). Run this once per cluster.
+- **Deploy** — build and roll out substrate + AX. Re-run this
+  every time you change your code and want to deploy the changes to the cluster.
 
 > [!NOTE]
 > Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
@@ -27,54 +25,105 @@ manifests to your cluster:
 - the **ateom-gvisor** worker image, built with `ko` from the `go.mod` pinned
   substrate module.
 
-#### Build prerequisites
+## 📋 Prerequisites
 
-The ax image bundles the antigravity SDK, installed from PyPI at build time.
-The image targets the cluster's **linux/amd64**
-nodes and is built with `--platform linux/amd64`.
+Install and configure:
 
-You also need a container engine to build and push the ax image. The script
-auto-detects one (preferring a **running** docker, then podman); force a choice
-with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
+- [`gcloud`](https://cloud.google.com/sdk/docs/install) (authenticated — see below)
+- [`kubectl`](https://kubernetes.io/docs/tasks/tools/)
+- [Go](https://go.dev/doc/install)
+- `git` and `openssl`
+- [`ko`](https://ko.build/install/) on your `PATH` (builds the worker image)
+- A container engine to build the AX image: **Docker** or **Podman**
 
-- **Docker** — Docker Desktop (macOS; cross-builds linux/amd64 via emulation) or
-  Docker Engine (Linux; native).
-- **Podman** — on macOS, start a machine first with `podman machine init &&
-  podman machine start` (cross-builds linux/amd64 via emulation); on Linux it
-  runs natively (podman/buildah >= 4.0).
+## 🚀 Deploying to Agent Substrate
 
-#### Registry authentication
+> [!NOTE]
+> If you already have a running GKE cluster with substrate already deployed,
+> you can skip the step 1 to 4, and directly jump to [Step 5. Deploy AX](#5-deploy-ax).
 
-`PROJECT_ID` sets `KO_DOCKER_REPO=gcr.io/$PROJECT_ID`. The deploy pushes two
-images — the **ax** image (via your container engine) and the **ateom** image
-(via `ko`) — and both authenticate through the gcloud credential helper:
+### 1. Configure your environment
 
-```bash
-./hack/install-ax.sh --deploy-all
-```
-
-This builds the images and deploys the substrate control plane followed by the
-AX server. It is **idempotent and re-runnable**: re-run it after every code
-change. It only rolls pods when an image digest or manifest actually changes, so
-re-deploying an unchanged version is a no-op.
-
-Re-deploy a single layer:
+Copy the example env file and edit it for your project:
 
 ```bash
-export PROJECT_ID="ax-substrate" # Your GCP project ID
-export GEMINI_API_KEY="your-api-key"
-export BUCKET_NAME="snapshot-substrate-test-$PROJECT_ID"
-
-./hack/install-ax.sh --deploy-ax-server
+cp hack/ax-dev-env.sh.example .ax-dev-env.sh
+# edit .ax-dev-env.sh ...
+source .ax-dev-env.sh
 ```
 
-### 2. Port-Forward Services
+Key variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `PROJECT_ID` | Your GCP project ID (**required**) |
+| `CLUSTER_NAME` | Your GKE cluster name (**required**) |
+| `PROJECT_NUMBER` | Derived from `PROJECT_ID` (used by `--create-cluster`) |
+| `CLUSTER_LOCATION` / `CLUSTER_VERSION` | GKE cluster location / version |
+| `NODE_POOL_NAME` / `NODE_POOL_VERSION` / `GVISOR_NODE_MACHINE_TYPE` | gVisor node pool |
+| `NETWORK` / `SUBNETWORK` / `GCE_REGION` | Networking / region |
+| `BUCKET_NAME` | GCS bucket for snapshots |
+| `KO_DOCKER_REPO` | Image registry (defaults to `gcr.io/${PROJECT_ID}`) |
+| `KUBECTL_CONTEXT` | Optional: target an existing cluster by context name |
+
+### 2. Authenticate
+
+```bash
+gcloud auth login                                    # user credentials
+gcloud auth configure-docker                         # gcr.io image push
+gcloud auth application-default login --project=${PROJECT_ID}
+```
+
+> [!NOTE]
+> This is one-time setup. `gcloud auth configure-docker` just installs the
+> `gcloud` credential helper into `~/.docker/config.json` (it does not need to
+> be re-run per deploy; image pushes mint fresh tokens automatically). Re-run
+> `gcloud auth login` / `application-default login` only when your gcloud
+> session expires.
+
+### 3. Create the cluster
+
+Provision the GKE cluster, the GCS snapshot bucket, and IAM bindings:
+
+```bash
+./hack/install-ax.sh --create-cluster
+```
+
+> [!NOTE]
+> This is a one-time step per cluster. Skip it if you already have a
+> substrate-ready cluster; just set `KUBECTL_CONTEXT` to target it.
+
+### 4. Deploy substrate
+
+Deploy the substrate control plane:
+
+```bash
+./hack/install-ax.sh --deploy-ate-system    # substrate control plane (at AX's pinned version)
+```
+
+> [!NOTE]
+> AX pins Agent Substrate in `go.mod`, and both the **ateom** worker image and the
+substrate control plane are built from that pinned version. The script reads the
+pin and materializes the matching substrate source for you. By default the source is a managed clone under
+`${XDG_CACHE_HOME:-~/.cache}/ax/substrate`. To use your own substrate checkout
+instead, set `AX_SUBSTRATE_DIR=/path/to/substrate`; the script checks out the
+pinned commit there and refuses if the tree has uncommitted changes.
+
+### 5. Deploy AX
+
+Deploy AX server + harness:
+
+```bash
+./hack/install-ax.sh --deploy-ax            # AX server + harness
+```
+
+### 6. Port-Forward Services
 
 ```bash
 kubectl port-forward -n ax rs/ax-server 8494:8494
 ```
 
-### 3. Test End-to-End
+## Test End-to-End
 
 Run an execution targeting the port-forwarded server. The default `antigravity`
 harness has an embedded weather agent that exposes a `get_weather` tool.
@@ -100,9 +149,9 @@ The weather in New York is sunny with a temperature of 25 degrees Celsius (77 de
 Remove the in-cluster workloads (the event-log database is preserved):
 
 ```bash
-./hack/install-ax.sh --delete-all          # AX server + substrate control plane
+./hack/install-ax.sh --delete-all          # AX + substrate control plane
 # or just one layer:
-./hack/install-ax.sh --delete-ax-server    # AX only; preserves the event-log DB
+./hack/install-ax.sh --delete-ax           # AX only; preserves the event-log DB
 ./hack/install-ax.sh --delete-ate-system   # substrate control plane only
 ```
 
@@ -139,24 +188,4 @@ List the pods running in the `ax` namespace:
 ```bash
 # Add `-o wide` to see node/IP assignments, or `-w` to watch status changes.
 kubectl get pods -n ax
-```
-
-## Substrate compatibility
-
-AX pins [Agent Substrate](https://github.com/agent-substrate/substrate) in
-`go.mod`, and the **ateom** worker image is built from that pinned version. The
-cluster's substrate **CRDs and control plane** must be compatible with the
-manifest AX applies.
-
-When installing substrate, keep three things aligned: the ax `go.mod` pin = your
-local substrate checkout = the cluster's installed substrate.
-
-```bash
-# Get AX's pinned substrate commit:
-commit=$(go list -m -f '{{.Version}}' github.com/agent-substrate/substrate | sed 's/.*-//')
-echo "$commit"   # e.g. fe93d160a1df
-
-# Check it out on a normal branch in your substrate clone (avoids a detached HEAD):
-git -C <substrate> fetch origin
-git -C <substrate> switch -C ax-pinned "$commit"
 ```

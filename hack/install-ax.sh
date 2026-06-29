@@ -88,17 +88,13 @@ function usage() {
   echo "  --create-cluster                      Provision GCP resources (GKE cluster, GCS bucket, IAM)"
   echo "  --delete-cluster                      Tear down the provisioned GCP resources"
   echo ""
-  echo "Deploy (re-run as you update your code):"
-  echo ""
-  echo "  --deploy-all                          Deploy the substrate control plane and the AX server"
-  echo "  --delete-all                          Delete the AX server and the substrate control plane"
-  echo ""
-  echo "Granular components:"
+  echo "Deploy / delete (re-run as you update your code):"
   echo ""
   echo "  --deploy-ate-system                   Deploy the substrate control plane (at AX's pinned version)"
   echo "  --delete-ate-system                   Delete the substrate control plane"
-  echo "  --deploy-ax-server                    Build images and deploy AX server and components"
-  echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
+  echo "  --deploy-ax                           Build images and deploy AX server and components"
+  echo "  --delete-ax                           Delete AX server and components, preserving the event-log database"
+  echo "  --delete-all                          Delete both the AX server and the substrate control plane"
   echo ""
   echo "  -h, --help                            Show this help message"
 }
@@ -351,8 +347,8 @@ delete_ate_system() {
   run_substrate ./hack/install-ate.sh --delete-ate-system
 }
 
-deploy_ax_server() {
-  log_step "deploy_ax_server"
+deploy_ax() {
+  log_step "deploy_ax"
 
   # Check dependencies
   if [[ -z "${GEMINI_API_KEY:-}" ]]; then
@@ -413,12 +409,12 @@ deploy_ax_server() {
   echo "kubectl port-forward -n ax rs/ax-server 8494:8494"
 }
 
-# delete_ax_server removes the AX server and harness resources but preserves the
+# delete_ax removes the AX server and harness resources but preserves the
 # event-log database: it leaves the namespace and the Postgres subsystem
 # (Service/Secret/StatefulSet and its PVC) intact so a later redeploy reuses the
 # existing data.
-delete_ax_server() {
-  log_step "delete_ax_server"
+delete_ax() {
+  log_step "delete_ax"
 
   run_kubectl -n ax delete --ignore-not-found \
     replicaset/ax-server \
@@ -427,16 +423,10 @@ delete_ax_server() {
     workerpool/ax-harness-workerpool
 }
 
-# deploy_all deploys the substrate control plane and then the AX server.
-deploy_all() {
-  deploy_ate_system
-  deploy_ax_server
-}
-
 # delete_all removes the AX server and then the substrate control plane. It does
 # not delete the cluster or GCP resources (use --delete-cluster for that).
 delete_all() {
-  delete_ax_server
+  delete_ax
   delete_ate_system
 }
 
@@ -462,12 +452,11 @@ while [[ "$#" -gt 0 ]]; do
   case $1 in
     --create-cluster) create_cluster ;;
     --delete-cluster) delete_cluster ;;
-    --deploy-all) deploy_all ;;
     --delete-all) delete_all ;;
     --deploy-ate-system) deploy_ate_system ;;
     --delete-ate-system) delete_ate_system ;;
-    --deploy-ax-server) deploy_ax_server ;;
-    --delete-ax-server) delete_ax_server ;;
+    --deploy-ax) deploy_ax ;;
+    --delete-ax) delete_ax ;;
     *)
       echo "Error: unknown option: $1" >&2
       echo ""
