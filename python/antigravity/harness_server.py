@@ -22,6 +22,7 @@ import asyncio
 import logging
 import os
 import sys
+from typing import TypedDict
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
@@ -52,59 +53,121 @@ def get_weather(city: str) -> str:
     else:
         return f"Weather information for '{city}' is not available."
 
-# 2. Define the static agent config
-loaded_config = LocalAgentConfig(
-    system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
-    tools=[get_weather]
-)
+class VertexKwargs(TypedDict, total=False):
+    """Typed subset of LocalAgentConfig kwargs needed to enable Vertex AI.
 
-def _has_credentials(config: AgentConfig | None) -> bool:
-    """Checks if Gemini credentials are set either in env or config."""
-    # Check environment variables
-    has_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    use_vertex = (
+    `total=False` so {} is a valid value (returned when env does not request
+    Vertex). When populated, all three keys are present.
+    """
+    vertex: bool
+    project: str
+    location: str
+
+
+def _env_use_vertex() -> bool:
+    """True if env requests the Vertex AI backend (vs. AI Studio API key)."""
+    return (
         os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("true", "1") or
         os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE", "").lower() in ("true", "1")
     )
-    if has_api_key or use_vertex:
+
+def _vertex_kwargs_from_env() -> VertexKwargs:
+    """Returns LocalAgentConfig kwargs from GOOGLE_CLOUD_{PROJECT,LOCATION} env.
+
+    Temporary override until AGY supports reading these env vars natively.
+    Returns {} when env does not request Vertex (caller's programmatic config
+    stands as-is). When env requests Vertex, returns VertexKwargs populated
+    for passing to LocalAgentConfig.__init__ so AGY's @model_validator picks
+    them up.
+
+    Raises ValueError if env requests Vertex but project/location are missing.
+
+    TODO: remove once AGY reads these env vars natively.
+    """
+    if not _env_use_vertex():
+        return {}
+
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "")
+
+    missing = [
+        name for name, value in (
+            ("project (set GOOGLE_CLOUD_PROJECT)", project),
+            ("location (set GOOGLE_CLOUD_LOCATION)", location),
+        ) if not value
+    ]
+    if missing:
+        raise ValueError(
+            "Vertex AI backend requested but missing required config: "
+            + ", ".join(missing)
+        )
+
+    print(f"Vertex AI backend configured: project={project} location={location}")
+    return {"vertex": True, "project": project, "location": location}
+
+def _build_default_config() -> LocalAgentConfig:
+    """Builds the default agent config the sidecar serves on startup.
+
+    Vertex configuration is read from env via `_vertex_kwargs_from_env`.
+
+    TODO(#194): per-request `harness_config` will override fields of this
+    default on a per-conversation basis. Until then, every conversation uses
+    this config.
+    """
+    return LocalAgentConfig(
+        system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
+        tools=[get_weather],
+        **_vertex_kwargs_from_env(),
+    )
+
+def _has_credentials(config: AgentConfig | None) -> bool:
+    """Checks if Gemini credentials are set per AGY's accepted sources.
+
+    Mirrors AGY's own validation. AGY accepts exactly these sources:
+      1. GEMINI_API_KEY environment variable (read directly by AGY).
+      2. config.api_key set programmatically (AI Studio path).
+      3. config.vertex=True + config.{project,location} set (Vertex path).
+      4. config.vertex=True + config.api_key set (Vertex Express Mode;
+         covered by case 2).
+
+    Anything else (e.g. vertex=True without project/location) is rejected
+    by AGY at request time, so we reject it here at startup too.
+    """
+    # Check env - AGY reads GEMINI_API_KEY directly from os.environ.
+    if os.environ.get("GEMINI_API_KEY"):
         return True
-        
-    # Check configuration
+
+    # Check passed in config
     if config:
-        # Check nested gemini_config
-        gemini_config = getattr(config, "gemini_config", None)
-        if gemini_config:
-            # 1. Direct configuration
-            if getattr(gemini_config, "api_key", None) or getattr(gemini_config, "vertex", False):
-                return True
-            # 2. Per-model configuration
-            models = getattr(gemini_config, "models", None)
-            default_model = getattr(models, "default", None) if models else None
-            if default_model and getattr(default_model, "api_key", None):
-                return True
-                
-        # Check top-level config shorthands
-        if getattr(config, "api_key", None) or getattr(config, "vertex", False):
+        if getattr(config, "api_key", None):
             return True
-            
+        if getattr(config, "vertex", False):
+            # Vertex requires project + location, unless an api_key (Express
+            # Mode) is set - but Express Mode would have returned True above.
+            if getattr(config, "project", None) and getattr(config, "location", None):
+                return True
+
     return False
 
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     """Implements the ax.HarnessService protocol over gRPC."""
 
-    def __init__(self):
+    def __init__(self, default_config: AgentConfig):
         # TODO: Implement an eviction/idle-timeout policy to prevent unbounded memory growth in production.
+        self._default_config = default_config
         self._agents = {}
         self._lock = asyncio.Lock()
 
     async def _get_or_create_agent(self, conversation_id: str) -> Agent:
         async with self._lock:
             if conversation_id not in self._agents:
-                global loaded_config
-                if not loaded_config:
+                # TODO(#194): derive a per-conversation AgentConfig by layering
+                # request.start.harness_config on top of self._default_config,
+                # instead of using the default verbatim for every conversation.
+                if not self._default_config:
                     raise ValueError("Agent config is not loaded on the server")
                 print(f"[gRPC] Creating new Agent instance for conv_id={conversation_id}")
-                agent = Agent(loaded_config)
+                agent = Agent(self._default_config)
                 await agent.__aenter__()
                 self._agents[conversation_id] = agent
             return self._agents[conversation_id]
@@ -162,9 +225,8 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             return
         latest_query_text = latest_message.content.text.text
         
-        # 2. Initialize or get the Antigravity Agent session
-        global loaded_config
-        if not loaded_config:
+        # TODO(#194): parse and validate request.start.harness_config here.
+        if not self._default_config:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
@@ -172,23 +234,6 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                     error=ax_pb2.Error(
                         code=9,  # FAILED_PRECONDITION
                         description="Agent config is not loaded on the server",
-                    ),
-                ),
-            )
-            return
-            
-        # Check credentials
-        if not _has_credentials(loaded_config):
-            yield ax_pb2.HarnessResponse(
-                conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(
-                    state=ax_pb2.STATE_FAILED,
-                    error=ax_pb2.Error(
-                        code=9,  # FAILED_PRECONDITION
-                        description=(
-                            "No Gemini credentials configured. Please set the GEMINI_API_KEY environment variable "
-                            "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True (Vertex AI) before starting the harness server."
-                        ),
                     ),
                 ),
             )
@@ -302,9 +347,9 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
 
-async def serve(host: str, port: int):
+async def _serve(host: str, port: int, default_config: AgentConfig):
     server = grpc.aio.server()
-    servicer = AntigravityHarnessServiceServicer()
+    servicer = AntigravityHarnessServiceServicer(default_config)
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
 
     # Serve the standard gRPC health protocol.
@@ -321,7 +366,7 @@ async def serve(host: str, port: int):
     finally:
         await servicer.cleanup()
 
-def enhance_config_from_env(config) -> None:
+def _enhance_config_from_env(config) -> None:
     skills_dir = os.environ.get("SKILLS_DIR")
     if skills_dir and os.path.isdir(skills_dir):
         print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
@@ -331,7 +376,7 @@ def enhance_config_from_env(config) -> None:
         if skills_dir not in config.skills_paths:
             config.skills_paths.append(skills_dir)
 
-def resolve_localhost():
+def _resolve_localhost():
     """Ensure `localhost` resolves to 127.0.0.1.
 
     Substrate actors run under gVisor with no runtime-injected /etc/hosts.
@@ -357,14 +402,25 @@ def main():
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
     args = parser.parse_args()
 
-    global loaded_config
-    enhance_config_from_env(loaded_config)
+    try:
+        default_config = _build_default_config()
+        _enhance_config_from_env(default_config)
+        if not _has_credentials(default_config):
+            raise ValueError(
+                "No Gemini credentials configured. Set GEMINI_API_KEY "
+                "(AI Studio) or GOOGLE_GENAI_USE_VERTEXAI=True + "
+                "GOOGLE_CLOUD_{PROJECT,LOCATION} (Vertex AI)."
+            )
+    except ValueError as e:
+        # Single startup-config exit point.
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # This is a hack, on Agent Substrate /etc/hosts end up not
     # having this entry even if it's the OCI image.
-    resolve_localhost()
+    _resolve_localhost()
         
-    asyncio.run(serve(args.host, args.port))
+    asyncio.run(_serve(args.host, args.port, default_config))
 
 if __name__ == "__main__":
     main()
