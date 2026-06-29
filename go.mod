@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
-	github.com/agent-substrate/substrate v0.0.0-20260627030503-37b5006d92cc
+	github.com/agent-substrate/substrate v0.0.0-20260629060549-505b3a44d2be
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/spf13/cobra v1.10.2
