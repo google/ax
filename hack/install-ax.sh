@@ -294,11 +294,12 @@ run_substrate() {
 create_cluster() {
   log_step "create_cluster"
   require_env PROJECT_ID PROJECT_NUMBER CLUSTER_NAME CLUSTER_LOCATION CLUSTER_VERSION \
-    NETWORK SUBNETWORK NODE_POOL_NAME NODE_POOL_VERSION GCE_REGION BUCKET_NAME \
+    NETWORK SUBNETWORK NODE_POOL_NAME NODE_POOL_VERSION GCE_REGION AX_SNAPSHOTS_BUCKET \
     GVISOR_NODE_MACHINE_TYPE
   local src
   src="$(ensure_substrate_src)"
-  ( cd "${src}" && go run ./tools/setup-gcp --all )
+  # substrate's setup-gcp reads BUCKET_NAME for the snapshot bucket.
+  ( cd "${src}" && BUCKET_NAME="${AX_SNAPSHOTS_BUCKET}" go run ./tools/setup-gcp --all )
 }
 
 # delete_cluster tears down the GCP resources created by create_cluster.
@@ -308,8 +309,11 @@ create_cluster() {
 # lingers to shadow a later deploy.
 delete_cluster() {
   log_step "delete_cluster"
-  require_env PROJECT_ID PROJECT_NUMBER BUCKET_NAME NODE_POOL_NAME CLUSTER_NAME \
+  require_env PROJECT_ID PROJECT_NUMBER AX_SNAPSHOTS_BUCKET NODE_POOL_NAME CLUSTER_NAME \
     CLUSTER_LOCATION
+  # substrate's teardown.sh reads BUCKET_NAME for the snapshot bucket; the
+  # generated .ate-dev-env.sh below writes it from AX_SNAPSHOTS_BUCKET.
+  local BUCKET_NAME="${AX_SNAPSHOTS_BUCKET}"
   local src
   src="$(ensure_substrate_src)"
 
@@ -355,12 +359,12 @@ deploy_ax() {
     echo "Error: GEMINI_API_KEY environment variable must be set" >&2
     exit 1
   fi
-  if [[ -z "${BUCKET_NAME:-}" ]]; then
-    echo "Error: BUCKET_NAME environment variable must be set" >&2
+  if [[ -z "${AX_SNAPSHOTS_BUCKET:-}" ]]; then
+    echo "Error: AX_SNAPSHOTS_BUCKET environment variable must be set" >&2
     exit 1
   fi
 
-  echo "Using GCS Bucket: ${BUCKET_NAME}"
+  echo "Using GCS Bucket: ${AX_SNAPSHOTS_BUCKET}"
 
   # Build and push the images, capturing their digest-pinned references.
   local ax_image ateom_image
@@ -379,7 +383,7 @@ deploy_ax() {
 
   # Render the manifest and apply it.
   if ! sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
-      -e "s|\${BUCKET_NAME}|${BUCKET_NAME}|g" \
+      -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g" \
       -e "s|\${AX_IMAGE}|${ax_image}|g" \
       -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
       -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g" \

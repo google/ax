@@ -16,7 +16,7 @@ There are two phases for the full deployment:
   every time you change your code and want to deploy the changes to the cluster.
 
 > [!NOTE]
-> Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${BUCKET_NAME}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
+> Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${AX_SNAPSHOTS_BUCKET}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
 
 The installation script builds the required images and applies the resolved
 manifests to your cluster:
@@ -62,7 +62,7 @@ Key variables:
 | `CLUSTER_LOCATION` / `CLUSTER_VERSION` | GKE cluster location / version |
 | `NODE_POOL_NAME` / `NODE_POOL_VERSION` / `GVISOR_NODE_MACHINE_TYPE` | gVisor node pool |
 | `NETWORK` / `SUBNETWORK` / `GCE_REGION` | Networking / region |
-| `BUCKET_NAME` | GCS bucket for snapshots |
+| `AX_SNAPSHOTS_BUCKET` | GCS bucket for snapshots |
 | `KO_DOCKER_REPO` | Image registry (defaults to `gcr.io/${PROJECT_ID}`) |
 | `KUBECTL_CONTEXT` | Optional: target an existing cluster by context name |
 
