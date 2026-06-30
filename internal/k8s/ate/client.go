@@ -60,6 +60,7 @@ func NewClient(ns, template, target string, opts ...grpc.DialOption) (*Client, e
 // CreateActor creates a new actor.
 func (c *Client) CreateActor(ctx context.Context, id string) (*ateapipb.CreateActorResponse, error) {
 	client := ateapipb.NewControlClient(c.conn)
+	// TODO(wjjclaud): Configure atespace in manifests instead of reusing the namespace.
 	if _, err := client.CreateAtespace(ctx, &ateapipb.CreateAtespaceRequest{Name: c.namespace}); err != nil && status.Code(err) != codes.AlreadyExists {
 		return nil, fmt.Errorf("error when calling Control.CreateAtespace: %w", err)
 	}
