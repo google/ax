@@ -58,7 +58,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/ax/internal/storage"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
@@ -122,14 +121,13 @@ type AntigravityInteractionsConfig struct {
 	// timeout is used.
 	HTTPClient *http.Client
 
-	// StateStore durably persists each conversation's resume cursor (the last
-	// interaction id) so a conversation can resume after a process restart or on
-	// a different replica. If nil, that cursor is kept in memory only (on the
-	// Execution) and is lost when the Execution is discarded or the process
-	// exits -- a later Start for the same conversation id then begins a new
-	// interaction chain (empty previous_interaction_id) instead of continuing the
-	// existing one.
-	StateStore storage.Store
+	// StateDir is the directory where each conversation's resume cursor is
+	// persisted, so a conversation can resume after a restart. It is required:
+	// NewAntigravityInteractionsHarness returns an error if it is empty.
+	// Correctness relies on a single writer per conversation (the controller
+	// guarantees at most one Execution per conversation), so writes are
+	// last-write-wins.
+	StateDir string
 }
 
 func (c *AntigravityInteractionsConfig) withDefaults() {
@@ -158,6 +156,11 @@ type AntigravityInteractionsHarness struct {
 	cfg        AntigravityInteractionsConfig
 	httpClient *http.Client
 
+	// cursors persists each conversation's resume cursor to disk so a conversation
+	// can resume after a restart. It is always non-nil (the constructor requires a
+	// usable state directory).
+	cursors *cursorStore
+
 	// tsOnce guards lazy initialization of ts, the resolved OAuth2 token source.
 	// It is resolved on first use (rather than in the constructor) so credential
 	// errors surface to the caller of Run instead of at construction time.
@@ -167,35 +170,28 @@ type AntigravityInteractionsHarness struct {
 }
 
 // NewAntigravityInteractionsHarness creates a harness from the given config,
-// filling in defaults for unset fields.
-func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) *AntigravityInteractionsHarness {
+// filling in defaults for unset fields. It returns an error if cfg.StateDir is
+// empty or the cursor store cannot be created: resume-cursor persistence is
+// required, so a usable state directory must be provided.
+func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) (*AntigravityInteractionsHarness, error) {
 	cfg.withDefaults()
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = &http.Client{Timeout: 10 * time.Minute}
 	}
-	return &AntigravityInteractionsHarness{cfg: cfg, httpClient: hc}
+	if cfg.StateDir == "" {
+		return nil, errors.New("AntigravityInteractionsConfig.StateDir must be set")
+	}
+	cursors, err := newCursorStore(cfg.StateDir)
+	if err != nil {
+		return nil, fmt.Errorf("creating cursor store: %w", err)
+	}
+	return &AntigravityInteractionsHarness{cfg: cfg, httpClient: hc, cursors: cursors}, nil
 }
 
-// resumeCursor is the small per-conversation state persisted to StateStore so a
-// conversation can resume across restarts/replicas. It records the tail of the
-// server-side interaction chain (PrevInteractionID). The cursor is only ever
-// persisted after a turn completes successfully, so a persisted cursor always
-// has a non-empty PrevInteractionID; "the conversation has started" is therefore
-// derived as PrevInteractionID != "" rather than stored separately.
-type resumeCursor struct {
-	PrevInteractionID string `json:"prev_interaction_id"`
-}
-
-// stateStoreKey is the StateStore key for a conversation's resume cursor.
-func stateStoreKey(conversationID string) string {
-	return "antigravity-interactions/cursor/" + conversationID
-}
-
-// Start implements Harness.Start. If a StateStore is configured, it loads any
-// previously persisted resume cursor for conversationID so the returned
-// Execution resumes the existing interaction chain instead of starting a new
-// one.
+// Start implements Harness.Start. It loads any previously persisted resume
+// cursor for conversationID so the returned Execution resumes the existing
+// interaction chain instead of starting a new one.
 func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
 	e := &antigravityInteractionsExecution{
 		harness:        h,
@@ -203,23 +199,14 @@ func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversation
 		id:             uuid.NewString(),
 		harnessConfig:  harnessConfig,
 	}
-	if h.cfg.StateStore == nil {
-		return e, nil
-	}
 
-	value, err := h.cfg.StateStore.Get(ctx, stateStoreKey(conversationID))
-	switch {
-	case errors.Is(err, storage.ErrNotFound):
-		// No prior state: a brand-new conversation.
-	case err != nil:
-		// A real storage failure must not be silently treated as "new", which
-		// would lose an existing conversation's history.
+	cur, found, err := h.cursors.load(conversationID)
+	if err != nil {
+		// A real load failure must not be silently treated as "new", which would
+		// lose an existing conversation's history.
 		return nil, fmt.Errorf("loading resume cursor for %q: %w", conversationID, err)
-	default:
-		var cur resumeCursor
-		if err := json.Unmarshal(value, &cur); err != nil {
-			return nil, fmt.Errorf("decoding resume cursor for %q: %w", conversationID, err)
-		}
+	}
+	if found {
 		// A persisted cursor is only written after a successful turn, so a
 		// non-empty interaction id means the conversation has already started;
 		// the first-turn check in Run derives that from prevInteractionID.
@@ -285,10 +272,10 @@ func (e *antigravityInteractionsExecution) drainQueue() []any {
 	return messagesToInputSteps(msgs)
 }
 
-// setPrevID records the latest interaction id (in memory) and, if a StateStore
-// is configured, durably persists the resume cursor so the conversation can
-// resume after a restart. A persistence failure is returned to the caller so
-// the run can decide how to handle it rather than silently losing durability.
+// setPrevID records the latest interaction id (in memory) and durably persists
+// the resume cursor so the conversation can resume after a restart. A persistence
+// failure is returned to the caller so the run can decide how to handle it rather
+// than silently losing durability.
 func (e *antigravityInteractionsExecution) setPrevID(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
@@ -297,21 +284,7 @@ func (e *antigravityInteractionsExecution) setPrevID(ctx context.Context, id str
 	e.prevInteractionID = id
 	e.mu.Unlock()
 
-	if e.harness.cfg.StateStore == nil {
-		return nil
-	}
-	return e.persistCursor(ctx, resumeCursor{PrevInteractionID: id})
-}
-
-// persistCursor writes the resume cursor to the StateStore. The store is
-// last-write-wins; correctness relies on the controller guaranteeing a single
-// Execution (writer) per conversation (see the Harness interface).
-func (e *antigravityInteractionsExecution) persistCursor(ctx context.Context, cur resumeCursor) error {
-	blob, err := json.Marshal(cur)
-	if err != nil {
-		return fmt.Errorf("encoding resume cursor: %w", err)
-	}
-	if err := e.harness.cfg.StateStore.Put(ctx, stateStoreKey(e.conversationID), blob); err != nil {
+	if err := e.harness.cursors.save(e.conversationID, resumeCursor{PrevInteractionID: id}); err != nil {
 		return fmt.Errorf("persisting resume cursor: %w", err)
 	}
 	return nil
@@ -599,6 +572,14 @@ func (h *AntigravityInteractionsHarness) interactionsURL() string {
 	return fmt.Sprintf("%s/%s/projects/%s/locations/%s/interactions",
 		interactionsEndpoint, interactionsAPIVersion, cloudProject(), cloudLocation())
 }
+
+// Endpoint returns the Interactions API base endpoint this harness targets
+// (e.g. the prod or autopush host). Exposed so callers/tools can log which
+// backend is in use, since the endpoint is a compile-time constant.
+func Endpoint() string { return interactionsEndpoint }
+
+// APIVersion returns the Interactions API version this harness targets.
+func APIVersion() string { return interactionsAPIVersion }
 
 // token returns a bearer access token from the harness's OAuth2 token source.
 // The source is resolved once (lazily) and auto-refreshes thereafter.
