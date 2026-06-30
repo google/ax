@@ -145,7 +145,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 	if !execResume {
 		var quit bool
 		var err error
-		input, quit, err = promptUser(d, input)
+		input, quit, err = promptUser(d, input, &harnessConfig)
 		if err != nil {
 			return err
 		}
@@ -260,8 +260,11 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 			}
 		}
 
+		// Per-request config: clear the config after each turn.
+		harnessConfig = nil
+
 		var quit bool
-		input, quit, err = promptUser(d, "")
+		input, quit, err = promptUser(d, "", &harnessConfig)
 		if err != nil {
 			return err
 		}
@@ -363,32 +366,44 @@ func displayContents(d *internal.Display, contents []*proto.Message) {
 }
 
 // promptUser loops until the user provides a non-empty input string.
+// The "/config" command opens the harness config menu.
 // It returns:
 //   - string: the valid user input
 //   - bool: true if the user entered a quit command
 //   - error: any error that occurred during prompting
-func promptUser(d *internal.Display, input string) (string, bool, error) {
-	for strings.TrimSpace(input) == "" {
-		var err error
-		input, err = d.PromptForInput()
-		if err != nil {
-			if errors.Is(err, internal.ErrUserAborted) {
-				if interruptHandler.HandleInterrupt() {
-					return "", true, nil
+func promptUser(d *internal.Display, input string, harnessConfig *[]byte) (string, bool, error) {
+	for {
+		for strings.TrimSpace(input) == "" {
+			var err error
+			input, err = d.PromptForInput()
+			if err != nil {
+				if errors.Is(err, internal.ErrUserAborted) {
+					if interruptHandler.HandleInterrupt() {
+						return "", true, nil
+					}
+					input = "" // Continue loop to prompt again
+					continue
 				}
-				input = "" // Continue loop to prompt again
-				continue
+				return "", false, err
 			}
-			return "", false, err
 		}
-	}
 
-	d.DisplayInput(input)
-	if strings.ToLower(strings.TrimSpace(input)) == "q" {
-		d.ShowResumption(execConversationID, execServerAddr)
-		return "", true, nil
+		trimmed := strings.TrimSpace(input)
+		if trimmed == "/config" {
+			if err := runConfigMenu(d, harnessConfig); err != nil {
+				return "", false, err
+			}
+			input = "" // Re-prompt after handling the config.
+			continue
+		}
+
+		d.DisplayInput(input)
+		if strings.ToLower(trimmed) == "q" {
+			d.ShowResumption(execConversationID, execServerAddr)
+			return "", true, nil
+		}
+		return input, false, nil
 	}
-	return input, false, nil
 }
 
 // InterruptHandler encapsulates the cancellation and signal handling state.

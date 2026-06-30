@@ -19,6 +19,8 @@ import (
 	"io"
 	"os"
 
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/google/ax/proto"
@@ -149,6 +151,12 @@ func (d *Display) displaySystem(text string) {
 	fmt.Fprintln(d.w, text)
 }
 
+// ShowNotice prints an informational message (e.g. the current harness config
+// or a validation error) on its own line.
+func (d *Display) ShowNotice(text string) {
+	d.displaySystem(text)
+}
+
 // FinishOutput completes the streaming output and shows info if provided
 func (d *Display) FinishOutput(info string) {
 	if d.state != stateNone {
@@ -162,7 +170,7 @@ func (d *Display) FinishOutput(info string) {
 }
 
 func (d *Display) DisplayHeader() {
-	fmt.Fprintln(d.w, d.idStyle.Render("Conversation: " + d.id))
+	fmt.Fprintln(d.w, d.idStyle.Render("Conversation: "+d.id))
 	fmt.Fprintln(d.w)
 }
 
@@ -190,18 +198,118 @@ func (d *Display) PromptForApproval(question string) (bool, error) {
 // Returns the input string and an error if the user cancelled (Ctrl+C)
 func (d *Display) PromptForInput() (string, error) {
 	var userInput string
+
+	// Rebind tab to complete the suggestion and enter to submit.
+	keymap := huh.NewDefaultKeyMap()
+	keymap.Input.AcceptSuggestion = key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "complete"))
+	keymap.Input.Next = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit"))
+
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
 				Placeholder("Enter prompt... (type `q` to quit)").
+				Suggestions([]string{"/config"}).
 				Value(&userInput),
 		),
-	).WithWidth(boxWidth)
+	).WithWidth(boxWidth).WithShowHelp(false).WithKeyMap(keymap)
 
 	if err := form.Run(); err != nil {
 		return "", err
 	}
 	return userInput, nil
+}
+
+// configKeyMap returns a huh keymap for the /config menu that cancels on esc in
+// addition to the default ctrl+c, and shows a consistent "esc close" hint in
+// every field's help footer.
+func configKeyMap() *huh.KeyMap {
+	km := huh.NewDefaultKeyMap()
+	km.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("esc", "close"))
+
+	// Surface the esc hint through a slot that stays enabled.
+	closeHint := key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "close"))
+	km.Select.Filter = closeHint
+	km.Text.Editor = closeHint
+	return km
+}
+
+// clearMenuOnCancel converts the interrupt huh emits on cancel (esc/ctrl+c) into
+// a graceful quit.
+var clearMenuOnCancel = tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
+	if _, ok := msg.(tea.InterruptMsg); ok {
+		return tea.QuitMsg{}
+	}
+	return msg
+})
+
+// PromptForConfigAction shows the /config menu and returns the chosen action,
+// one of "edit", "load", or "cancel". It returns an error if the user cancelled
+// (Ctrl+C or Esc).
+func (d *Display) PromptForConfigAction() (string, error) {
+	var action string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Harness config").
+				Options(
+					huh.NewOption("View/edit config", "edit"),
+					huh.NewOption("Load from file", "load"),
+					huh.NewOption("Cancel", "cancel"),
+				).
+				Value(&action),
+		),
+	).WithWidth(boxWidth).WithKeyMap(configKeyMap()).WithProgramOptions(clearMenuOnCancel)
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return action, nil
+}
+
+// PromptForConfigEdit shows a multi-line editor pre-filled with current and
+// returns the edited text. It returns an error if the user cancelled (Ctrl+C or
+// Esc).
+func (d *Display) PromptForConfigEdit(current string) (string, error) {
+	text := current
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewText().
+				Title("Harness config (JSON, leave empty to clear)").
+				Lines(10).
+				ExternalEditor(true).
+				Value(&text),
+		),
+	).WithWidth(boxWidth).WithKeyMap(configKeyMap()).WithProgramOptions(clearMenuOnCancel)
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return text, nil
+}
+
+// PromptForConfigFile shows a file browser for selecting a JSON config file and
+// returns the chosen path. It returns an error if the user cancelled (Ctrl+C or
+// Esc).
+func (d *Display) PromptForConfigFile() (string, error) {
+	var path string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewFilePicker().
+				Title("Load harness config").
+				CurrentDirectory(".").
+				AllowedTypes([]string{".json"}).
+				FileAllowed(true).
+				DirAllowed(false).
+				Picking(true).
+				Height(10).
+				Value(&path),
+		),
+	).WithWidth(boxWidth).WithKeyMap(configKeyMap()).WithProgramOptions(clearMenuOnCancel)
+
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func (d *Display) ShowResumption(id string, server string) {
