@@ -37,19 +37,17 @@ var _ Execution = (*antigravityExecution)(nil)
 // AntigravityHarness implements the Harness interface by connecting to the
 // Antigravity Python agent server over gRPC.
 type AntigravityHarness struct {
-	address   string
-	telemetry TelemetryConfig
+	address string
 }
 
 // NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
 // Address defaults to "127.0.0.1:50053" (gRPC TCP connection).
-func NewAntigravityHarness(address string, tel TelemetryConfig) *AntigravityHarness {
+func NewAntigravityHarness(address string) *AntigravityHarness {
 	if address == "" {
 		address = "127.0.0.1:50053"
 	}
 	return &AntigravityHarness{
-		address:   address,
-		telemetry: tel,
+		address: address,
 	}
 }
 
@@ -93,11 +91,9 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
-	if e.harness.telemetry.Enabled {
-		var span trace.Span
-		ctx, span = otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
-		defer span.End()
-	}
+	var span trace.Span
+	ctx, span = otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
+	defer span.End()
 
 	e.mu.Lock()
 	if e.closed {
@@ -115,9 +111,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 
 	// 1. Connect to the gRPC server
 	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if e.harness.telemetry.Enabled {
-		dialOpts = append(dialOpts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
-	}
+	dialOpts = append(dialOpts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	conn, err := grpc.DialContext(ctx, e.harness.address, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to gRPC harness server at %s: %w", e.harness.address, err)
