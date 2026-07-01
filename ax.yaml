@@ -27,3 +27,7 @@ eventlog:
 harnesses:
   antigravity:
     default: true
+
+telemetry:
+  otlp:
+    enabled: true

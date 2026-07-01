@@ -50,7 +50,7 @@ graph LR
         Server["AX Server<br/>(multi-tenant)"]
         DB[("Event Log"<br/>Storage)]
         ControlService["Control API"]
-        Actor["Harness Actor<br/>(stateful session-tenant)"]
+        Actor["AX Harness Server<br/>(stateful session-tenant)"]
     end
 
     SnapshotService["Snapshots"]

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,7 +24,9 @@ import (
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/server"
+	"github.com/google/ax/internal/telemetry"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 )
 
 var (
@@ -56,6 +59,31 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Initialize OpenTelemetry SDK
+	if cfg.Telemetry.OTLP.Enabled {
+		var opts []otlptracegrpc.Option
+		endpoint := cfg.Telemetry.OTLP.Endpoint
+		if endpoint == "" {
+			endpoint = defaultEndpoint
+		}
+		opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
+		if gcpOpts, ok := gcpTelemetryOpts(endpoint); ok {
+			opts = append(opts, gcpOpts...)
+		} else {
+			opts = append(opts, otlptracegrpc.WithInsecure())
+		}
+
+		shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server", opts...)
+		if err != nil {
+			return fmt.Errorf("failed to initialize telemetry: %w", err)
+		}
+		defer func() {
+			if err := shutdown(context.Background()); err != nil {
+				slog.Error("failed to shutdown telemetry", "error", err)
+			}
+		}()
 	}
 
 	c, err := cliutil.NewControllerFromConfig(ctx, cfg)

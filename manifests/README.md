@@ -73,20 +73,19 @@ kubectl port-forward -n ax rs/ax-server 8494:8494
 
 ### 3. Test End-to-End
 
-Run an execution targeting the port-forwarded server. The default `antigravity`
-harness has an embedded weather agent that exposes a `get_weather` tool.
+Run an execution targeting the port-forwarded server.
 
 ```bash
-ax exec --server=localhost:8494 --input="what's the weather in NYC?"
+ax exec --server=localhost:8494 --input="hello, who are you?"
 ```
 
 The server should respond with something like:
 ```text
 Conversation: fb344a18-3720-4c4f-8a6e-2ce34db975b3
 
-⏺ what's the weather in NYC?
+⏺ hello, who are you?
 
-The weather in New York is sunny with a temperature of 25 degrees Celsius (77 degrees Fahrenheit).
+I am a helpful assistant. How can I help you today?
 ```
 *The request is served by the antigravity harness actor running on Substrate.*
 

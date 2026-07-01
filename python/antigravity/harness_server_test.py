@@ -16,22 +16,19 @@ import asyncio
 import pytest
 import grpc
 from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
-from python.antigravity.harness_server import AntigravityHarnessServiceServicer, loaded_config
+from python.antigravity.harness_server import AntigravityHarnessServiceServicer
 from google.antigravity import LocalAgentConfig
 
 @pytest.fixture
 def mock_config(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "mock-api-key")
-    cfg = LocalAgentConfig(system_instructions="Test instructions")
-    import python.antigravity.harness_server as hs
-    hs.loaded_config = cfg
-    return cfg
+    return LocalAgentConfig(system_instructions="Test instructions")
 
 def test_grpc_connect_success(mock_config, monkeypatch):
     async def _run():
         # 1. Start temporary local gRPC server on random open port
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer()
+        servicer = AntigravityHarnessServiceServicer(mock_config)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -99,7 +96,7 @@ def test_grpc_connect_success(mock_config, monkeypatch):
 def test_grpc_connect_agent_reused(mock_config, monkeypatch):
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer()
+        servicer = AntigravityHarnessServiceServicer(mock_config)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -188,8 +185,9 @@ def test_health_check():
     async def _run():
         from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
+        cfg = LocalAgentConfig(system_instructions="health-check stub")
         server = grpc.aio.server()
-        ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(), server)
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(cfg), server)
         health_servicer = health.aio.HealthServicer()
         health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
         await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
@@ -206,51 +204,45 @@ def test_health_check():
     asyncio.run(_run())
 
 
-def test_grpc_connect_missing_credentials(mock_config, monkeypatch):
+def test_has_credentials_missing(monkeypatch):
+    """Returns False when neither env nor config provides credentials."""
+    from python.antigravity.harness_server import _has_credentials
+
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
     monkeypatch.delenv("GOOGLE_GENAI_USE_ENTERPRISE", raising=False)
 
-    async def _run():
-        server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer()
-        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
-        port = server.add_insecure_port("localhost:0")
-        await server.start()
-        
-        addr = f"localhost:{port}"
-        async with grpc.aio.insecure_channel(addr) as channel:
-            stub = ax_pb2_grpc.HarnessServiceStub(channel)
-            
-            start_payload = ax_pb2.HarnessStart(
-                messages=[
-                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
-                ]
-            )
-            req = ax_pb2.HarnessRequest(
-                conversation_id="conv-test-credentials",
-                harness_id="antigravity",
-                start=start_payload
-            )
-            
-            async def request_iter():
-                yield req
+    cfg = LocalAgentConfig(system_instructions="test")
+    assert _has_credentials(cfg) is False
 
-            responses = []
-            async for resp in stub.Connect(request_iter()):
-                responses.append(resp)
-                
-            assert len(responses) == 1
-            assert responses[0].WhichOneof('type') == 'end'
-            assert responses[0].end.state == ax_pb2.STATE_FAILED
-            assert responses[0].end.error.code == 9
-            assert "No Gemini credentials configured" in responses[0].end.error.description
-            assert "GEMINI_API_KEY" in responses[0].end.error.description
-            
-        await server.stop(0)
 
-    asyncio.run(_run())
+def test_has_credentials_vertex_requires_project_and_location(monkeypatch):
+    """vertex=True alone is not enough; AGY requires project+location too."""
+    from python.antigravity.harness_server import _has_credentials
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    cfg_vertex_only = LocalAgentConfig(system_instructions="test", vertex=True)
+    assert _has_credentials(cfg_vertex_only) is False
+
+    cfg_vertex_proj_only = LocalAgentConfig(system_instructions="test", vertex=True, project="p")
+    assert _has_credentials(cfg_vertex_proj_only) is False
+
+    cfg_vertex_loc_only = LocalAgentConfig(system_instructions="test", vertex=True, location="us-central1")
+    assert _has_credentials(cfg_vertex_loc_only) is False
+
+    cfg_vertex_full = LocalAgentConfig(system_instructions="test", vertex=True, project="p", location="us-central1")
+    assert _has_credentials(cfg_vertex_full) is True
+
+
+def test_has_credentials_vertex_express_mode(monkeypatch):
+    """vertex=True + api_key (Express Mode) is accepted even without project/location."""
+    from python.antigravity.harness_server import _has_credentials
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    cfg = LocalAgentConfig(system_instructions="test", vertex=True, api_key="express-key")
+    assert _has_credentials(cfg) is True
 
 
 def test_grpc_connect_programmatic_credentials(monkeypatch):
@@ -261,12 +253,10 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
 
     # Config with API key programmatically set
     cfg = LocalAgentConfig(system_instructions="Test instructions", api_key="mock-config-api-key")
-    import python.antigravity.harness_server as hs
-    hs.loaded_config = cfg
 
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer()
+        servicer = AntigravityHarnessServiceServicer(cfg)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -325,7 +315,7 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
 
 
 def test_enhance_config_from_env(monkeypatch, tmp_path):
-    from python.antigravity.harness_server import enhance_config_from_env
+    from python.antigravity.harness_server import _enhance_config_from_env
     from google.antigravity import LocalAgentConfig
     import os
     
@@ -337,14 +327,14 @@ def test_enhance_config_from_env(monkeypatch, tmp_path):
     
     # Test: Using SKILLS_DIR env var
     monkeypatch.setenv("SKILLS_DIR", str(skills_dir))
-    enhance_config_from_env(cfg)
+    _enhance_config_from_env(cfg)
     assert str(skills_dir) in cfg.skills_paths
 
 
 def test_grpc_connect_buffering(mock_config, monkeypatch):
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer()
+        servicer = AntigravityHarnessServiceServicer(mock_config)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -423,4 +413,115 @@ def test_grpc_connect_buffering(mock_config, monkeypatch):
 
     asyncio.run(_run())
 
+def test_vertex_kwargs_from_env_returns_kwargs(monkeypatch):
+    """GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_CLOUD_{PROJECT,LOCATION} -> kwargs dict."""
+    from python.antigravity.harness_server import _vertex_kwargs_from_env
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
+    assert _vertex_kwargs_from_env() == {
+        "vertex": True,
+        "project": "env-project",
+        "location": "us-east1",
+    }
+
+
+def test_vertex_kwargs_from_env_no_op_without_vertex(monkeypatch):
+    """Without GOOGLE_GENAI_USE_VERTEXAI, returns empty dict."""
+    from python.antigravity.harness_server import _vertex_kwargs_from_env
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.delenv("GOOGLE_GENAI_USE_ENTERPRISE", raising=False)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "should-be-ignored")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "should-be-ignored")
+    assert _vertex_kwargs_from_env() == {}
+
+
+def test_vertex_kwargs_from_env_raises_when_project_missing(monkeypatch):
+    """Vertex requested with no project -> ValueError naming the env var."""
+    from python.antigravity.harness_server import _vertex_kwargs_from_env
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
+        _vertex_kwargs_from_env()
+
+
+def test_vertex_kwargs_from_env_raises_when_location_missing(monkeypatch):
+    """Vertex requested with no location -> ValueError naming the env var."""
+    from python.antigravity.harness_server import _vertex_kwargs_from_env
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
+    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_LOCATION"):
+        _vertex_kwargs_from_env()
+
+
+def test_vertex_kwargs_from_env_enterprise_alias(monkeypatch):
+    """GOOGLE_GENAI_USE_ENTERPRISE is an alias for VERTEXAI."""
+    from python.antigravity.harness_server import _vertex_kwargs_from_env
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ent-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    assert _vertex_kwargs_from_env() == {
+        "vertex": True,
+        "project": "ent-project",
+        "location": "us-central1",
+    }
+
+
+def test_build_default_config_picks_up_vertex_env(monkeypatch):
+    """End-to-end: env vars flow through _build_default_config into LocalAgentConfig."""
+    from python.antigravity.harness_server import _build_default_config
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
+    cfg = _build_default_config()
+    assert cfg.vertex is True
+    assert cfg.project == "env-project"
+    assert cfg.location == "us-east1"
+
+
+def test_servicer_requires_default_config():
+    """Constructor takes a default config; passing nothing is a TypeError."""
+    with pytest.raises(TypeError, match="default_config"):
+        AntigravityHarnessServiceServicer()
+
+
+def test_run_turn_guards_against_missing_default_config(monkeypatch):
+    """If something sets _default_config to None at runtime (future bug in
+    per-request layering, #194), _run_turn returns STATE_FAILED instead of
+    crashing the server.
+    """
+    async def _run():
+        cfg = LocalAgentConfig(system_instructions="will be set to None")
+        servicer = AntigravityHarnessServiceServicer(cfg)
+        servicer._default_config = None
+        server = grpc.aio.server()
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+        port = server.add_insecure_port("localhost:0")
+        await server.start()
+        try:
+            async with grpc.aio.insecure_channel(f"localhost:{port}") as channel:
+                stub = ax_pb2_grpc.HarnessServiceStub(channel)
+                req = ax_pb2.HarnessRequest(
+                    conversation_id="conv-guard",
+                    harness_id="antigravity",
+                    start=ax_pb2.HarnessStart(messages=[
+                        ax_pb2.Message(role="user",
+                            content=content_pb2.Content(text=content_pb2.TextContent(text="Hi"))),
+                    ]),
+                )
+                async def request_iter():
+                    yield req
+                responses = []
+                async for resp in stub.Connect(request_iter()):
+                    responses.append(resp)
+                assert len(responses) == 1
+                assert responses[0].end.state == ax_pb2.STATE_FAILED
+                assert responses[0].end.error.code == 9
+                assert "Agent config is not loaded" in responses[0].end.error.description
+        finally:
+            await server.stop(0)
+    asyncio.run(_run())
 

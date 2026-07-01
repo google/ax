@@ -32,6 +32,13 @@ type Handler interface {
 }
 
 // Harness represents a service capable of starting execution sessions.
+//
+// Single-writer expectation: the controller must ensure that at most one
+// Execution exists per conversation id at a time. Harness implementations rely
+// on this invariant -- for example, a harness that durably persists
+// per-conversation state may use a last-write-wins store without
+// compare-and-swap, which is correct only because there is a single writer per
+// conversation.
 type Harness interface {
 	// Start initializes a new Execution session for a conversation. harnessConfig
 	// carries optional per-request harness configuration; it is opaque to the

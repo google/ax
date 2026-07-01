@@ -37,11 +37,23 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	EventLog  EventLogConfig  `yaml:"eventlog"`
 	Harnesses HarnessesConfig `yaml:"harnesses,omitempty"`
+	Telemetry TelemetryConfig `yaml:"telemetry,omitempty"`
 }
 
 // ServerConfig configures the gRPC server.
 type ServerConfig struct {
 	Address string `yaml:"address"` // Server address to listen on (e.g., ":8494")
+}
+
+// TelemetryConfig configures telemetry options.
+type TelemetryConfig struct {
+	OTLP OTLPConfig `yaml:"otlp,omitempty"`
+}
+
+// OTLPConfig configures the OTLP exporter.
+type OTLPConfig struct {
+	Enabled  bool   `yaml:"enabled,omitempty"`
+	Endpoint string `yaml:"endpoint,omitempty"` // OTLP collector endpoint (e.g., "localhost:4317")
 }
 
 // SQLiteConfig configures the SQLite event log file.

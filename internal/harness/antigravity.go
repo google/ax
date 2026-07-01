@@ -17,9 +17,10 @@ package harness
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -88,6 +89,9 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
+	ctx, span := otel.Tracer("antigravity-harness").Start(ctx, "Run")
+	defer span.End()
+
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -103,7 +107,9 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// 1. Connect to the gRPC server
-	conn, err := grpc.DialContext(ctx, e.harness.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	dialOpts = append(dialOpts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	conn, err := grpc.DialContext(ctx, e.harness.address, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to gRPC harness server at %s: %w", e.harness.address, err)
 	}
@@ -137,34 +143,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// 5. Stream responses and trigger callbacks
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("gRPC harness streaming failure: %w", err)
-		}
-
-		switch payload := resp.Type.(type) {
-		case *proto.HarnessResponse_Outputs:
-			for _, outMsg := range payload.Outputs.Messages {
-				if err := handler.OnMessage(ctx, e.id, outMsg); err != nil {
-					return fmt.Errorf("failed to dispatch streamed output: %w", err)
-				}
-			}
-		case *proto.HarnessResponse_End:
-			if payload.End.GetState() == proto.State_STATE_FAILED {
-				if errDetail := payload.End.GetError(); errDetail != nil {
-					return fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
-				}
-				return fmt.Errorf("harness failed with no error details")
-			}
-			return handler.OnComplete(ctx, e.id)
-		}
-	}
-
-	return nil
+	return drainStream(ctx, stream, e.id, handler)
 }
 
 // Close implements Execution.Close.

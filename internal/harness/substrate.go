@@ -19,11 +19,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -67,6 +68,7 @@ func NewSubstrateHarness(harnessID string, endpoint string, namespace string, te
 	if len(opts) == 0 {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	return &SubstrateHarness{
 		harnessID: harnessID,
 		ateClient: client,
@@ -184,6 +186,9 @@ func (e *substrateExecution) Queue(ctx context.Context, msg ...*proto.Message) e
 }
 
 func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
+	ctx, span := otel.Tracer("substrate-harness").Start(ctx, "Run")
+	defer span.End()
+
 	e.mu.Lock()
 	inputs := e.pending
 	e.pending = nil
@@ -215,33 +220,7 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// Drain HarnessResponse frames until the terminal HarnessEnd.
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error receiving from harness stream: %w", err)
-		}
-		switch payload := resp.Type.(type) {
-		case *proto.HarnessResponse_Outputs:
-			for _, m := range payload.Outputs.Messages {
-				if err := handler.OnMessage(ctx, e.execID, m); err != nil {
-					return err
-				}
-			}
-		case *proto.HarnessResponse_End:
-			if payload.End.GetState() == proto.State_STATE_FAILED {
-				if errDetail := payload.End.GetError(); errDetail != nil {
-					return fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
-				}
-				return fmt.Errorf("harness failed with no error details")
-			}
-			return handler.OnComplete(ctx, e.execID)
-		}
-	}
-
-	return handler.OnComplete(ctx, e.execID)
+	return drainStream(ctx, stream, e.execID, handler)
 }
 
 func (e *substrateExecution) Close(ctx context.Context) error {
