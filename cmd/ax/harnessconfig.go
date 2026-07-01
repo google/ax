@@ -15,64 +15,65 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/google/ax/cmd/ax/internal"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// runConfigMenu shows the /config menu and applies the user's choice to
-// harnessConfig. An updated config is sent on subsequent requests.
-func runConfigMenu(d *internal.Display, harnessConfig *[]byte) error {
+// runConfigMenu shows the /config menu and returns the (possibly updated) config.
+// An updated config is sent on subsequent requests.
+func runConfigMenu(d *internal.Display, harnessConfig []byte) ([]byte, error) {
 	for {
 		action, err := d.PromptForConfigAction()
 		if err != nil {
 			if errors.Is(err, internal.ErrUserAborted) {
-				return nil // Esc/Ctrl+C on the menu cancels /config.
+				return harnessConfig, nil // Esc/Ctrl+C on the menu cancels /config.
 			}
-			return err
+			return harnessConfig, err
 		}
 
 		switch action {
 		case "edit":
-			done, err := editHarnessConfig(d, harnessConfig)
+			cfg, done, err := editHarnessConfig(d, harnessConfig)
 			if err != nil {
-				return err
+				return harnessConfig, err
 			}
 			if done {
-				return nil
+				return cfg, nil
 			}
 		case "load":
-			done, err := loadHarnessConfig(d, harnessConfig)
+			cfg, done, err := loadHarnessConfig(d)
 			if err != nil {
-				return err
+				return harnessConfig, err
 			}
 			if done {
-				return nil
+				return cfg, nil
 			}
 		default: // "cancel" or anything else
-			return nil
+			return harnessConfig, nil
 		}
 	}
 }
 
 // editHarnessConfig opens the JSON editor pre-filled with the current config. It
-// returns done=true if the config was updated, or false if the user cancelled
-// back to the menu. Invalid JSON is reported and the editor re-opens with the
-// user's draft so they can fix it.
-func editHarnessConfig(d *internal.Display, harnessConfig *[]byte) (bool, error) {
-	draft := prettyHarnessConfig(*harnessConfig)
+// returns the updated config with done=true if the config was updated, or
+// done=false (config ignored) if the user cancelled back to the menu. Invalid
+// JSON is reported and the editor re-opens with the user's draft so they can fix
+// it.
+func editHarnessConfig(d *internal.Display, harnessConfig []byte) ([]byte, bool, error) {
+	draft := prettyHarnessConfig(harnessConfig)
 	for {
 		edited, err := d.PromptForConfigEdit(draft)
 		if err != nil {
 			if errors.Is(err, internal.ErrUserAborted) {
-				return false, nil // Back to the menu.
+				return nil, false, nil // Back to the menu.
 			}
-			return false, err
+			return nil, false, err
 		}
 		normalized, err := normalizeHarnessConfigJSON(edited)
 		if err != nil {
@@ -80,44 +81,44 @@ func editHarnessConfig(d *internal.Display, harnessConfig *[]byte) (bool, error)
 			draft = edited // Preserve the user's input so they can fix it.
 			continue
 		}
-		*harnessConfig = normalized
-		return true, nil
+		return normalized, true, nil
 	}
 }
 
-// loadHarnessConfig lets the user pick a JSON file and loads it into
-// harnessConfig. It returns done=true if the config was loaded, or false if the
-// user cancelled back to the menu or the file could not be used.
-func loadHarnessConfig(d *internal.Display, harnessConfig *[]byte) (bool, error) {
+// loadHarnessConfig lets the user pick a JSON file and loads it. It returns the
+// loaded config with done=true, or done=false (config ignored) if the user
+// cancelled back to the menu or the file could not be used.
+func loadHarnessConfig(d *internal.Display) ([]byte, bool, error) {
 	path, err := d.PromptForConfigFile()
 	if err != nil {
 		if errors.Is(err, internal.ErrUserAborted) {
-			return false, nil // Back to the menu.
+			return nil, false, nil // Back to the menu.
 		}
-		return false, err
+		return nil, false, err
 	}
 	b, err := os.ReadFile(strings.TrimSpace(path))
 	if err != nil {
 		d.ShowNotice(fmt.Sprintf("Failed to read file: %v", err))
-		return false, nil
+		return nil, false, nil
 	}
 	normalized, err := normalizeHarnessConfigJSON(string(b))
 	if err != nil {
 		d.ShowNotice(fmt.Sprintf("Invalid config: %v", err))
-		return false, nil
+		return nil, false, nil
 	}
-	*harnessConfig = normalized
-	return true, nil
+	return normalized, true, nil
 }
 
 // normalizeHarnessConfigJSON trims and validates the given JSON config, returning
-// the bytes to send on the wire. Empty input clears the config (returns nil).
+// the bytes to send on the wire. Empty input clears the config (returns nil). The
+// config must be a JSON object.
 func normalizeHarnessConfigJSON(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil
 	}
-	if err := protojson.Unmarshal([]byte(s), &structpb.Struct{}); err != nil {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(s), &obj); err != nil {
 		return nil, err
 	}
 	return []byte(s), nil
@@ -129,13 +130,9 @@ func prettyHarnessConfig(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}
-	var st structpb.Struct
-	if err := protojson.Unmarshal(b, &st); err != nil {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, b, "", "  "); err != nil {
 		return string(b)
 	}
-	out, err := protojson.MarshalOptions{Indent: "  "}.Marshal(&st)
-	if err != nil {
-		return string(b)
-	}
-	return string(out)
+	return buf.String()
 }

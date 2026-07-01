@@ -70,8 +70,7 @@ func TestPrettyHarnessConfig(t *testing.T) {
 		t.Errorf("invalid: got %q, want raw passthrough", got)
 	}
 
-	// Valid JSON is rendered (multi-line, indented). Avoid asserting exact
-	// whitespace since protojson output is intentionally not byte-stable.
+	// Valid JSON is rendered multi-line and indented.
 	got := prettyHarnessConfig([]byte(`{"model":"gemini"}`))
 	if !strings.Contains(got, "model") || !strings.Contains(got, "gemini") {
 		t.Errorf("valid: got %q, want it to contain the key and value", got)

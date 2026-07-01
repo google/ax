@@ -145,7 +145,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 	if !execResume {
 		var quit bool
 		var err error
-		input, quit, err = promptUser(d, input, &harnessConfig)
+		input, harnessConfig, quit, err = promptUser(d, input, harnessConfig)
 		if err != nil {
 			return err
 		}
@@ -264,7 +264,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		harnessConfig = nil
 
 		var quit bool
-		input, quit, err = promptUser(d, "", &harnessConfig)
+		input, harnessConfig, quit, err = promptUser(d, "", harnessConfig)
 		if err != nil {
 			return err
 		}
@@ -369,9 +369,10 @@ func displayContents(d *internal.Display, contents []*proto.Message) {
 // The "/config" command opens the harness config menu.
 // It returns:
 //   - string: the valid user input
+//   - []byte: the (possibly updated) harness config
 //   - bool: true if the user entered a quit command
 //   - error: any error that occurred during prompting
-func promptUser(d *internal.Display, input string, harnessConfig *[]byte) (string, bool, error) {
+func promptUser(d *internal.Display, input string, harnessConfig []byte) (string, []byte, bool, error) {
 	for {
 		for strings.TrimSpace(input) == "" {
 			var err error
@@ -379,20 +380,22 @@ func promptUser(d *internal.Display, input string, harnessConfig *[]byte) (strin
 			if err != nil {
 				if errors.Is(err, internal.ErrUserAborted) {
 					if interruptHandler.HandleInterrupt() {
-						return "", true, nil
+						return "", harnessConfig, true, nil
 					}
 					input = "" // Continue loop to prompt again
 					continue
 				}
-				return "", false, err
+				return "", harnessConfig, false, err
 			}
 		}
 
 		trimmed := strings.TrimSpace(input)
 		if trimmed == "/config" {
-			if err := runConfigMenu(d, harnessConfig); err != nil {
-				return "", false, err
+			cfg, err := runConfigMenu(d, harnessConfig)
+			if err != nil {
+				return "", harnessConfig, false, err
 			}
+			harnessConfig = cfg
 			input = "" // Re-prompt after handling the config.
 			continue
 		}
@@ -400,9 +403,9 @@ func promptUser(d *internal.Display, input string, harnessConfig *[]byte) (strin
 		d.DisplayInput(input)
 		if strings.ToLower(trimmed) == "q" {
 			d.ShowResumption(execConversationID, execServerAddr)
-			return "", true, nil
+			return "", harnessConfig, true, nil
 		}
-		return input, false, nil
+		return input, harnessConfig, false, nil
 	}
 }
 
