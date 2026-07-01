@@ -54,6 +54,10 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	// substrate actors ("1").
 	substrateMode := os.Getenv("AX_SUBSTRATE") == "1"
 
+	telCfg := harness.TelemetryConfig{
+		Enabled: cfg.Telemetry.OTLP.Enabled,
+	}
+
 	// Built-in harnesses.
 	var defaultHarnessID string
 	var antigravityHarness harness.Harness
@@ -63,9 +67,9 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		antigravityHarness = harness.NewAntigravityHarness(address)
+		antigravityHarness = harness.NewAntigravityHarness(address, telCfg)
 	} else {
-		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80)
+		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80, telCfg)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
@@ -82,7 +86,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		return nil, fmt.Errorf("custom substrate harnesses require AX_SUBSTRATE=1")
 	}
 	for _, sc := range cfg.Harnesses.Substrate {
-		h, err := sc.NewHarness("")
+		h, err := sc.NewHarness("", telCfg)
 		if err != nil {
 			return nil, fmt.Errorf("substrate harness %q: %w", sc.ID, err)
 		}

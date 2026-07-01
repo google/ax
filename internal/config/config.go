@@ -100,17 +100,17 @@ type SubstrateHarnessConfig struct {
 
 // NewHarness builds the custom harness. Custom harnesses always run as substrate
 // actors from the user's own ActorTemplate.
-func (c SubstrateHarnessConfig) NewHarness(endpoint string) (harness.Harness, error) {
+func (c SubstrateHarnessConfig) NewHarness(endpoint string, tel harness.TelemetryConfig) (harness.Harness, error) {
 	port := c.Port
 	if port == 0 {
 		port = substrateDefaultPort
 	}
-	return newSubstrateHarness(c.ID, endpoint, c.Namespace, c.Template, port)
+	return newSubstrateHarness(c.ID, endpoint, c.Namespace, c.Template, port, tel)
 }
 
 // newSubstrateHarness brings up a harness that is deployed as a substrate actor.
-func newSubstrateHarness(harnessID, endpoint, namespace, template string, port int) (harness.Harness, error) {
-	sh, err := harness.NewSubstrateHarness(harnessID, endpoint, namespace, template, port)
+func newSubstrateHarness(harnessID, endpoint, namespace, template string, port int, tel harness.TelemetryConfig) (harness.Harness, error) {
+	sh, err := harness.NewSubstrateHarness(harnessID, endpoint, namespace, template, port, tel)
 	if err != nil {
 		return nil, err
 	}

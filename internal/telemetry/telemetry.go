@@ -17,14 +17,22 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"cloud.google.com/go/compute/metadata"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	oauth2google "golang.org/x/oauth2/google"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/google"
 )
+
+const defaultEndpoint = "telemetry.googleapis.com"
 
 // SetTraceProvider initializes the OpenTelemetry SDK.
 // It returns a shutdown function that should be called when the application exits.
@@ -37,10 +45,28 @@ func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) 
 
 	// 2. Create OTLP Exporter.
 	var opts []otlptracegrpc.Option
-	if endpoint != "" {
-		opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
+	if endpoint == "" {
+		endpoint = defaultEndpoint
 	}
-	opts = append(opts, otlptracegrpc.WithInsecure())
+	opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
+
+	// If the endpoint is Google's telemetry service, configure TLS and Application Default Credentials.
+	var projectID string
+	if endpoint == defaultEndpoint || endpoint == defaultEndpoint+":443" {
+		bundle := google.NewDefaultCredentials()
+		opts = append(opts,
+			otlptracegrpc.WithTLSCredentials(bundle.TransportCredentials()),
+			otlptracegrpc.WithDialOption(
+				grpc.WithPerRPCCredentials(bundle.PerRPCCredentials()),
+			),
+		)
+		projectID = detectProjectID(ctx)
+		if projectID == "" {
+			fmt.Fprintln(os.Stderr, "WARNING: telemetry endpoint is Google Cloud Trace, but no GCP project ID was detected. Exporting traces will fail. Please set GOOGLE_CLOUD_PROJECT.")
+		}
+	} else {
+		opts = append(opts, otlptracegrpc.WithInsecure())
+	}
 
 	exporter, err := otlptracegrpc.New(ctx, opts...)
 	if err != nil {
@@ -48,10 +74,14 @@ func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) 
 	}
 
 	// 3. Define Resource.
+	attrs := []attribute.KeyValue{
+		semconv.ServiceNameKey.String(serviceName),
+	}
+	if projectID != "" {
+		attrs = append(attrs, attribute.String("gcp.project_id", projectID))
+	}
 	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(serviceName),
-		),
+		resource.WithAttributes(attrs...),
 		resource.WithProcess(),
 		resource.WithTelemetrySDK(),
 	)
@@ -72,4 +102,19 @@ func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) 
 	return func(shutdownCtx context.Context) error {
 		return tp.Shutdown(shutdownCtx)
 	}, nil
+}
+
+func detectProjectID(ctx context.Context) string {
+	if proj := os.Getenv("GOOGLE_CLOUD_PROJECT"); proj != "" {
+		return proj
+	}
+	if metadata.OnGCEWithContext(ctx) {
+		if proj, err := metadata.ProjectIDWithContext(ctx); err == nil {
+			return proj
+		}
+	}
+	if creds, err := oauth2google.FindDefaultCredentials(ctx); err == nil && creds.ProjectID != "" {
+		return creds.ProjectID
+	}
+	return ""
 }

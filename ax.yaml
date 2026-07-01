@@ -31,4 +31,3 @@ harnesses:
 telemetry:
   otlp:
     enabled: true
-    endpoint: "localhost:4317"
