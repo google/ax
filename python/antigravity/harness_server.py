@@ -36,6 +36,8 @@ from opentelemetry.propagate import set_global_textmap
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from opentelemetry.instrumentation.grpc import server_interceptor
 
+SERVICE_NAME = "antigravity-harness"
+
 def _init_telemetry():
     # Set global propagator (for context propagation over the wire)
     set_global_textmap(TraceContextTextMapPropagator())
@@ -44,7 +46,7 @@ def _init_telemetry():
         return
 
     # Set up TracerProvider and Exporter
-    resource = Resource.create(attributes={"service.name": "antigravity-harness"})
+    resource = Resource.create(attributes={"service.name": SERVICE_NAME})
     provider = TracerProvider(resource=resource)
     
     try:
@@ -217,7 +219,7 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             if request.WhichOneof("type") != "start":
                 continue  # cancel frames not handled yet
             
-            tracer = trace.get_tracer("antigravity-harness")
+            tracer = trace.get_tracer(SERVICE_NAME)
             with tracer.start_as_current_span("Connect") as span:
                 span.set_attribute("conversation_id", request.conversation_id)
                 async for response in self._run_turn(request):
