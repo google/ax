@@ -22,7 +22,6 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -91,8 +90,7 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
-	var span trace.Span
-	ctx, span = otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
+	ctx, span := otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
 	defer span.End()
 
 	e.mu.Lock()
