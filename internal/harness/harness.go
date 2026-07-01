@@ -54,8 +54,3 @@ type Execution interface {
 	// Close cleanly releases all resources associated with the execution session.
 	Close(ctx context.Context) error
 }
-
-// TelemetryConfig configures telemetry options for the harness.
-type TelemetryConfig struct {
-	Enabled bool
-}

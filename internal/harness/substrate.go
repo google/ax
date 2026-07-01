@@ -48,11 +48,10 @@ type SubstrateHarness struct {
 	ateClient *ate.Client
 	port      int
 	dialOpts  []grpc.DialOption
-	telemetry TelemetryConfig
 }
 
 // NewSubstrateHarness creates a new SubstrateHarness.
-func NewSubstrateHarness(harnessID string, endpoint string, namespace string, template string, port int, tel TelemetryConfig, opts ...grpc.DialOption) (*SubstrateHarness, error) {
+func NewSubstrateHarness(harnessID string, endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
 	if port == 0 {
 		port = 50053 // Default HarnessService port
 	}
@@ -70,15 +69,12 @@ func NewSubstrateHarness(harnessID string, endpoint string, namespace string, te
 	if len(opts) == 0 {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-	if tel.Enabled {
-		opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
-	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	return &SubstrateHarness{
 		harnessID: harnessID,
 		ateClient: client,
 		port:      port,
 		dialOpts:  opts,
-		telemetry: tel,
 	}, nil
 }
 

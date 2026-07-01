@@ -18,12 +18,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
 func TestSubstrateNewHarness(t *testing.T) {
-	h, err := SubstrateHarnessConfig{ID: "c", Namespace: "team-ns", Template: "custom-template"}.NewHarness("api.ate-system.svc:443", harness.TelemetryConfig{})
+	h, err := SubstrateHarnessConfig{ID: "c", Namespace: "team-ns", Template: "custom-template"}.NewHarness("api.ate-system.svc:443")
 	if err != nil {
 		t.Fatalf("NewHarness: %v", err)
 	}
