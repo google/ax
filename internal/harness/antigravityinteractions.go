@@ -124,9 +124,12 @@ type AntigravityInteractionsConfig struct {
 	// StateDir is the directory where each conversation's resume cursor is
 	// persisted, so a conversation can resume after a restart. It is required:
 	// NewAntigravityInteractionsHarness returns an error if it is empty.
-	// Correctness relies on a single writer per conversation (the controller
-	// guarantees at most one Execution per conversation), so writes are
-	// last-write-wins.
+	//
+	// Correctness relies on a single writer per conversation: writes are
+	// last-write-wins with no compare-and-swap. This is an expectation the caller
+	// must satisfy (e.g. by routing a conversation id to one worker, or resuming
+	// a worker from that conversation's snapshot) -- it is not currently enforced
+	// by the controller.
 	StateDir string
 }
 
