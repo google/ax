@@ -20,7 +20,13 @@ import (
 	"fmt"
 
 	"github.com/google/ax/proto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var tracer = otel.Tracer("eventlog.sql")
 
 // sqlEventLog is a database backed EventLog shared by the SQLite and
 // PostgreSQL implementations.
@@ -29,14 +35,25 @@ type sqlEventLog struct {
 }
 
 // Append serializes the event to JSON and inserts it into the database.
-func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent) (int32, error) {
+func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent) (seq int32, err error) {
+	ctx, span := tracer.Start(ctx, "eventlog.sql/Append", trace.WithAttributes(
+		attribute.String("conversation_id", event.ConversationId),
+	))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	tx, err := l.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("eventlog: begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	seq := event.Seq
+	seq = event.Seq
 	if seq == 0 {
 		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(seq), 0) + 1 FROM conversation_log WHERE conversation_id = $1", event.ConversationId).Scan(&seq); err != nil {
 			return 0, fmt.Errorf("eventlog: compute seq: %w", err)
@@ -63,14 +80,24 @@ func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent
 }
 
 // Events retrieves all events from the database for a conversation, ordered by seq.
-func (l *sqlEventLog) Events(ctx context.Context, conversationID string) ([]*proto.ConversationEvent, error) {
+func (l *sqlEventLog) Events(ctx context.Context, conversationID string) (events []*proto.ConversationEvent, err error) {
+	ctx, span := tracer.Start(ctx, "eventlog.sql/Events", trace.WithAttributes(
+		attribute.String("conversation_id", conversationID),
+	))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	rows, err := l.db.QueryContext(ctx, "SELECT payload FROM conversation_log WHERE conversation_id = $1 ORDER BY seq", conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("eventlog: query conversation: %w", err)
 	}
 	defer rows.Close()
 
-	var events []*proto.ConversationEvent
 	for rows.Next() {
 		var payload string
 		if err := rows.Scan(&payload); err != nil {
@@ -92,7 +119,18 @@ func (l *sqlEventLog) Events(ctx context.Context, conversationID string) ([]*pro
 }
 
 // DeleteAll deletes all events for a specific conversation ID.
-func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) error {
+func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) (err error) {
+	ctx, span := tracer.Start(ctx, "eventlog.sql/DeleteAll", trace.WithAttributes(
+		attribute.String("conversation_id", conversationID),
+	))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	if _, err := l.db.ExecContext(ctx, "DELETE FROM conversation_log WHERE conversation_id = $1", conversationID); err != nil {
 		return fmt.Errorf("eventlog: delete conversation: %w", err)
 	}
