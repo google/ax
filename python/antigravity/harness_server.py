@@ -36,7 +36,7 @@ from opentelemetry.propagate import set_global_textmap
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from opentelemetry.instrumentation.grpc import server_interceptor
 
-def init_telemetry():
+def _init_telemetry():
     # Set global propagator (for context propagation over the wire)
     set_global_textmap(TraceContextTextMapPropagator())
 
@@ -453,7 +453,7 @@ def main():
     # having this entry even if it's the OCI image.
     _resolve_localhost()
         
-    init_telemetry()
+    _init_telemetry()
     asyncio.run(_serve(args.host, args.port, default_config))
 
 if __name__ == "__main__":
