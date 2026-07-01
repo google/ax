@@ -19,7 +19,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -221,45 +220,7 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// Drain HarnessResponse frames until the terminal HarnessEnd.
-	var endState proto.State
-	var endErr error
-	hasEnd := false
-
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("error receiving from harness stream: %w", err)
-		}
-		switch payload := resp.Type.(type) {
-		case *proto.HarnessResponse_Outputs:
-			for _, m := range payload.Outputs.Messages {
-				if err := handler.OnMessage(ctx, e.execID, m); err != nil {
-					return err
-				}
-			}
-		case *proto.HarnessResponse_End:
-			hasEnd = true
-			endState = payload.End.GetState()
-			if endState == proto.State_STATE_FAILED {
-				if errDetail := payload.End.GetError(); errDetail != nil {
-					endErr = fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
-				} else {
-					endErr = fmt.Errorf("harness failed with no error details")
-				}
-			}
-		}
-	}
-
-	if !hasEnd {
-		return fmt.Errorf("harness stream ended without HarnessEnd frame")
-	}
-	if endState == proto.State_STATE_FAILED {
-		return endErr
-	}
-	return handler.OnComplete(ctx, e.execID)
+	return drainStream(ctx, stream, e.execID, handler)
 }
 
 func (e *substrateExecution) Close(ctx context.Context) error {

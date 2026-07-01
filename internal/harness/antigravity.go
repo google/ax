@@ -17,7 +17,6 @@ package harness
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -144,46 +143,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// 5. Stream responses and trigger callbacks
-	var endState proto.State
-	var endErr error
-	hasEnd := false
-
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("gRPC harness streaming failure: %w", err)
-		}
-
-		switch payload := resp.Type.(type) {
-		case *proto.HarnessResponse_Outputs:
-			for _, outMsg := range payload.Outputs.Messages {
-				if err := handler.OnMessage(ctx, e.id, outMsg); err != nil {
-					return fmt.Errorf("failed to dispatch streamed output: %w", err)
-				}
-			}
-		case *proto.HarnessResponse_End:
-			hasEnd = true
-			endState = payload.End.GetState()
-			if endState == proto.State_STATE_FAILED {
-				if errDetail := payload.End.GetError(); errDetail != nil {
-					endErr = fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
-				} else {
-					endErr = fmt.Errorf("harness failed with no error details")
-				}
-			}
-		}
-	}
-
-	if !hasEnd {
-		return fmt.Errorf("harness stream ended without HarnessEnd frame")
-	}
-	if endState == proto.State_STATE_FAILED {
-		return endErr
-	}
-	return handler.OnComplete(ctx, e.id)
+	return drainStream(ctx, stream, e.id, handler)
 }
 
 // Close implements Execution.Close.
