@@ -37,25 +37,7 @@ from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
-# 1. Define the custom weather tool
-def get_weather(city: str) -> str:
-    """Retrieves the current weather report for a specified city.
 
-    Args:
-        city (str): The name of the city for which to retrieve the weather report.
-
-    Returns:
-        str: Weather report status and details.
-    """
-    sys.stderr.write(f"\n[PYTHON TOOL get_weather executed for city: {city}]\n")
-    sys.stderr.flush()
-    c = city.lower()
-    if "new york" in c or "nyc" in c:
-        return "The weather in New York is sunny with a temperature of 25 degrees Celsius (77 degrees Fahrenheit)."
-    elif "san francisco" in c or "sf" in c:
-        return "The weather in San Francisco is foggy with a temperature of 16 degrees Celsius (60.8 degrees Fahrenheit)."
-    else:
-        return f"Weather information for '{city}' is not available."
 
 class VertexKwargs(TypedDict, total=False):
     """Typed subset of LocalAgentConfig kwargs needed to enable Vertex AI.
@@ -119,8 +101,7 @@ def _build_default_config() -> LocalAgentConfig:
     this config.
     """
     return LocalAgentConfig(
-        system_instructions="You are a helpful agent. Use the get_weather tool to answer weather questions.",
-        tools=[get_weather],
+        system_instructions="You are a helpful agent.",
         **_vertex_kwargs_from_env(),
     )
 
