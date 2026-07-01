@@ -72,86 +72,6 @@ spec:
 ---
 
 # ---------------------------------------------------------------------------
-# Event log storage (PostgreSQL)
-# ---------------------------------------------------------------------------
-apiVersion: v1
-kind: Service
-metadata:
-  name: ax-eventlog-postgres
-  namespace: ax
-  labels:
-    app: ax-eventlog-postgres
-spec:
-  selector:
-    app: ax-eventlog-postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ax-eventlog-postgres
-  namespace: ax
-type: Opaque
-stringData:
-  password: "${POSTGRES_PASSWORD}"
-  dsn: "postgres://axuser:${POSTGRES_PASSWORD}@ax-eventlog-postgres.ax.svc:5432/axeventlog?sslmode=disable"
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: ax-eventlog-postgres
-  namespace: ax
-  labels:
-    app: ax-eventlog-postgres
-spec:
-  serviceName: ax-eventlog-postgres
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ax-eventlog-postgres
-  template:
-    metadata:
-      labels:
-        app: ax-eventlog-postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:16
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_DB
-              value: axeventlog
-            - name: POSTGRES_USER
-              value: axuser
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: ax-eventlog-postgres
-                  key: password
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "axuser", "-d", "axeventlog"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 10Gi
----
-
-# ---------------------------------------------------------------------------
 # AX Server
 # ---------------------------------------------------------------------------
 apiVersion: apps/v1
@@ -162,7 +82,7 @@ metadata:
   labels:
     app: ax-server
 spec:
-  replicas: 3
+  replicas: ${AX_SERVER_REPLICAS}
   selector:
     matchLabels:
       app: ax-server
@@ -182,11 +102,13 @@ spec:
               value: "${GEMINI_API_KEY}"
             - name: AX_SUBSTRATE
               value: "1"
+            # Optional: only set when using Postgres
             - name: AX_EVENTLOG_DSN
               valueFrom:
                 secretKeyRef:
                   name: ax-eventlog-postgres
                   key: dsn
+                  optional: true
           volumeMounts:
             - name: ax-config
               mountPath: /etc/ax

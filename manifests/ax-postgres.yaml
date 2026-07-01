@@ -1,0 +1,97 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ---------------------------------------------------------------------------
+# Event log storage (PostgreSQL)
+#
+# Applied by hack/install-ax.sh only in the default (Postgres) deployment mode.
+# Pass --no-postgres to install-ax.sh to skip these resources; the ax-server
+# ConfigMap (in ax-deployment.yaml) is then rewritten to use an ephemeral SQLite
+# event log instead.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: ax-eventlog-postgres
+  namespace: ax
+  labels:
+    app: ax-eventlog-postgres
+spec:
+  selector:
+    app: ax-eventlog-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ax-eventlog-postgres
+  namespace: ax
+type: Opaque
+stringData:
+  password: "${POSTGRES_PASSWORD}"
+  dsn: "postgres://axuser:${POSTGRES_PASSWORD}@ax-eventlog-postgres.ax.svc:5432/axeventlog?sslmode=disable"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ax-eventlog-postgres
+  namespace: ax
+  labels:
+    app: ax-eventlog-postgres
+spec:
+  serviceName: ax-eventlog-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ax-eventlog-postgres
+  template:
+    metadata:
+      labels:
+        app: ax-eventlog-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: axeventlog
+            - name: POSTGRES_USER
+              value: axuser
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ax-eventlog-postgres
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "axuser", "-d", "axeventlog"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

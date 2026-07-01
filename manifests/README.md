@@ -56,12 +56,19 @@ gcloud auth configure-docker   # set up the gcr.io credential helper
 
 #### Deploy
 
+By default the deploy provisions a **Postgres** StatefulSet as the event-log
+store on substrate. Pass `--no-postgres` to skip Postgres and use an 
+**ephemeral SQLite** event log instead.
+
 ```bash
 export PROJECT_ID="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
 export AX_SNAPSHOTS_BUCKET="snapshot-substrate-test-$PROJECT_ID"
 
 ./hack/install-ax.sh --deploy-ax-server
+
+# Deploy without Postgres:
+# ./hack/install-ax.sh --deploy-ax-server --no-postgres
 ```
 
 ### 2. Port-Forward Services
@@ -114,7 +121,7 @@ Use the **`kubectl ate`** CLI tool to inspect the live states of
 active actors and allocated standby worker pool instances:
 
 ```bash
-kubectl ate get actors
+kubectl ate get actors -a ax
 
 kubectl ate get workers
 ```

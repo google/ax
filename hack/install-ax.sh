@@ -73,6 +73,7 @@ function usage() {
   echo "Options:"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
+  echo "  --no-postgres                         With --deploy-ax-server: use an ephemeral SQLite event log instead of Postgres"
   echo "  -h, --help                            Show this help message"
 }
 
@@ -204,24 +205,51 @@ deploy_ax_server() {
   ax_image=$(build_ax_image)
   ateom_image=$(build_ateom_image)
 
-  # Resolve a stable Postgres password for the event log.
-  local pg_password="${POSTGRES_PASSWORD:-}"
-  local existing_pw
-  existing_pw="$(run_kubectl -n ax get secret ax-eventlog-postgres -o go-template='{{.data.password | base64decode}}' 2>/dev/null || true)"
-  if [[ -n "${existing_pw}" ]]; then
-    pg_password="${existing_pw}"
-  elif [[ -z "${pg_password}" ]]; then
-    pg_password="$(openssl rand -hex 16)"
+  # Select the event-log backend: Postgres by default, or an ephemeral per-pod
+  # SQLite log when --no-postgres was passed (single ax-server replica). The
+  # ax-server ConfigMap in ax-deployment.yaml defaults to Postgres; --no-postgres
+  # rewrites its eventlog block to SQLite.
+  local ax_replicas pg_password
+  pg_password="${POSTGRES_PASSWORD:-}"
+  if [[ "${USE_POSTGRES}" == "true" ]]; then
+    ax_replicas=3
+    # Resolve a stable Postgres password for the event log.
+    local existing_pw
+    existing_pw="$(run_kubectl -n ax get secret ax-eventlog-postgres -o go-template='{{.data.password | base64decode}}' 2>/dev/null || true)"
+    if [[ -n "${existing_pw}" ]]; then
+      pg_password="${existing_pw}"
+    elif [[ -z "${pg_password}" ]]; then
+      pg_password="$(openssl rand -hex 16)"
+    fi
+  else
+    ax_replicas=1
+    echo "Deploying without Postgres: ax-server will use an ephemeral per-pod SQLite event log (single replica)." >&2
   fi
 
-  # Render the manifest and apply it.
-  if ! sed -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g" \
-      -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g" \
-      -e "s|\${AX_IMAGE}|${ax_image}|g" \
-      -e "s|\${ATEOM_IMAGE}|${ateom_image}|g" \
-      -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g" \
+  # Common substitutions applied to every rendered manifest.
+  local render_sed=(
+    -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g"
+    -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
+    -e "s|\${AX_IMAGE}|${ax_image}|g"
+    -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
+    -e "s|\${AX_SERVER_REPLICAS}|${ax_replicas}|g"
+    -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g"
+  )
+
+  # Render and apply: in the default mode use the Postgres resources.
+  # With --no-postgres, rewrite the ConfigMap's eventlog block (Postgres -> SQLite).
+  local applied=true
+  if [[ "${USE_POSTGRES}" == "true" ]]; then
+    { sed "${render_sed[@]}" manifests/ax-deployment.yaml; echo "---"; sed "${render_sed[@]}" manifests/ax-postgres.yaml; } \
+      | run_kubectl apply -f - || applied=false
+  else
+    sed "${render_sed[@]}" \
+      -e 's|      postgres:|      sqlite:|' \
+      -e 's|        dsn: .*|        filename: "/tmp/ax-eventlog/log.sqlite"|' \
       manifests/ax-deployment.yaml \
-      | run_kubectl apply -f -; then
+      | run_kubectl apply -f - || applied=false
+  fi
+  if [[ "${applied}" != "true" ]]; then
     echo >&2
     echo "Error: cluster rejected the manifest. An \"unknown field\" error usually means the" >&2
     echo "cluster's substrate is incompatible with AX's go.mod pin — see" >&2
@@ -230,10 +258,12 @@ deploy_ax_server() {
   fi
 
   # Wait for the event-log Postgres to be ready before ax-server relies on it.
-  log_step "wait for statefulset/ax-eventlog-postgres to be ready"
-  wait_with_spinner "waiting for postgres (timeout ${AX_WAIT_TIMEOUT:-5m})" \
-    run_kubectl -n ax rollout status statefulset/ax-eventlog-postgres \
-    --timeout="${AX_WAIT_TIMEOUT:-5m}"
+  if [[ "${USE_POSTGRES}" == "true" ]]; then
+    log_step "wait for statefulset/ax-eventlog-postgres to be ready"
+    wait_with_spinner "waiting for postgres (timeout ${AX_WAIT_TIMEOUT:-5m})" \
+      run_kubectl -n ax rollout status statefulset/ax-eventlog-postgres \
+      --timeout="${AX_WAIT_TIMEOUT:-5m}"
+  fi
 
   # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
   log_step "wait for actortemplate/ax-harness-template to be Ready"
@@ -265,12 +295,19 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
+# Event-log backend: Postgres by default; --no-postgres switches to an ephemeral
+# per-pod SQLite event log.
+USE_POSTGRES=true
+
 # If -h or --help appears anywhere in the command line, print the usage and exit.
 for arg in "$@"; do
   case "$arg" in
     -h|--help)
       usage
       exit 0
+      ;;
+    --no-postgres)
+      USE_POSTGRES=false
       ;;
   esac
 done
@@ -279,6 +316,7 @@ while [[ "$#" -gt 0 ]]; do
   case $1 in
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
+    --no-postgres) ;; # resolved in the pre-scan above
     *)
       echo "Error: unknown option: $1" >&2
       echo ""
