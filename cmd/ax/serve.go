@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/internal/server"
+	"github.com/google/ax/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +49,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize structured logging (JSON to stdout)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
+	// Initialize OpenTelemetry SDK
+	shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server")
+	if err != nil {
+		return fmt.Errorf("failed to initialize telemetry: %w", err)
+	}
+	defer func() {
+		if err := shutdown(context.Background()); err != nil {
+			slog.Error("failed to shutdown telemetry", "error", err)
+		}
+	}()
 
 	cfg, err := newConfig(cmd, serveConfigFile)
 	if err != nil {

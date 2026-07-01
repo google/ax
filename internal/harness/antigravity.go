@@ -20,6 +20,8 @@ import (
 	"io"
 	"sync"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -88,6 +90,9 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
+	ctx, span := otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
+	defer span.End()
+
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -103,7 +108,10 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// 1. Connect to the gRPC server
-	conn, err := grpc.DialContext(ctx, e.harness.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.DialContext(ctx, e.harness.address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to connect to gRPC harness server at %s: %w", e.harness.address, err)
 	}

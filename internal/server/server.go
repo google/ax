@@ -24,6 +24,7 @@ import (
 	"net"
 	"sync"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -102,6 +103,7 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	opts = append(opts,
 		grpc.ChainUnaryInterceptor(LoggingInterceptor),
 		grpc.ChainStreamInterceptor(StreamLoggingInterceptor),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	)
 
 	s.grpcServer = grpc.NewServer(opts...)

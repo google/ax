@@ -27,6 +27,34 @@ import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.propagate import set_global_textmap
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from opentelemetry.instrumentation.grpc import server_interceptor
+
+def init_telemetry():
+    # Set global propagator (for context propagation over the wire)
+    set_global_textmap(TraceContextTextMapPropagator())
+
+    if os.environ.get("OTEL_TRACES_EXPORTER", "").lower() == "none":
+        return
+
+    # Set up TracerProvider and Exporter
+    resource = Resource.create(attributes={"service.name": "antigravity-harness"})
+    provider = TracerProvider(resource=resource)
+    
+    try:
+        processor = BatchSpanProcessor(OTLPSpanExporter())
+        provider.add_span_processor(processor)
+    except Exception as e:
+        print(f"Failed to initialize OTLP exporter: {e}. Falling back to no-op.", file=sys.stderr)
+        
+    trace.set_tracer_provider(provider)
+
 from python.proto import ax_pb2
 from python.proto import ax_pb2_grpc
 from python.proto import content_pb2
@@ -188,8 +216,12 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         async for request in request_iterator:
             if request.WhichOneof("type") != "start":
                 continue  # cancel frames not handled yet
-            async for response in self._run_turn(request):
-                yield response
+            
+            tracer = trace.get_tracer("antigravity-harness")
+            with tracer.start_as_current_span("Connect") as span:
+                span.set_attribute("conversation_id", request.conversation_id)
+                async for response in self._run_turn(request):
+                    yield response
 
     async def _run_turn(self, request):
         print(f"[gRPC] Connect turn requested. conv_id={request.conversation_id}")
@@ -348,7 +380,8 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             return
 
 async def _serve(host: str, port: int, default_config: AgentConfig):
-    server = grpc.aio.server()
+    interceptors = [server_interceptor()]
+    server = grpc.aio.server(interceptors=interceptors)
     servicer = AntigravityHarnessServiceServicer(default_config)
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
 
@@ -420,6 +453,7 @@ def main():
     # having this entry even if it's the OCI image.
     _resolve_localhost()
         
+    init_telemetry()
     asyncio.run(_serve(args.host, args.port, default_config))
 
 if __name__ == "__main__":

@@ -2,3 +2,7 @@
 # (python/antigravity/harness_server.py).
 google-antigravity==0.1.5
 grpcio-health-checking==1.81.0
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-grpc
+opentelemetry-exporter-otlp

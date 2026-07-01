@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -67,6 +69,7 @@ func NewSubstrateHarness(harnessID string, endpoint string, namespace string, te
 	if len(opts) == 0 {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	return &SubstrateHarness{
 		harnessID: harnessID,
 		ateClient: client,
@@ -184,6 +187,9 @@ func (e *substrateExecution) Queue(ctx context.Context, msg ...*proto.Message) e
 }
 
 func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
+	ctx, span := otel.Tracer("harness").Start(ctx, "substrateExecution.Run")
+	defer span.End()
+
 	e.mu.Lock()
 	inputs := e.pending
 	e.pending = nil
