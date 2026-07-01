@@ -26,8 +26,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("eventlog.sql")
-
 // sqlEventLog is a database backed EventLog shared by the SQLite and
 // PostgreSQL implementations.
 type sqlEventLog struct {
@@ -36,16 +34,8 @@ type sqlEventLog struct {
 
 // Append serializes the event to JSON and inserts it into the database.
 func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent) (seq int32, err error) {
-	ctx, span := tracer.Start(ctx, "eventlog.sql/Append", trace.WithAttributes(
-		attribute.String("conversation_id", event.ConversationId),
-	))
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		span.End()
-	}()
+	ctx, endSpan := l.startSpan(ctx, "Append", event.ConversationId)
+	defer func() { endSpan(err) }()
 
 	tx, err := l.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -81,16 +71,8 @@ func (l *sqlEventLog) Append(ctx context.Context, event *proto.ConversationEvent
 
 // Events retrieves all events from the database for a conversation, ordered by seq.
 func (l *sqlEventLog) Events(ctx context.Context, conversationID string) (events []*proto.ConversationEvent, err error) {
-	ctx, span := tracer.Start(ctx, "eventlog.sql/Events", trace.WithAttributes(
-		attribute.String("conversation_id", conversationID),
-	))
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		span.End()
-	}()
+	ctx, endSpan := l.startSpan(ctx, "Events", conversationID)
+	defer func() { endSpan(err) }()
 
 	rows, err := l.db.QueryContext(ctx, "SELECT payload FROM conversation_log WHERE conversation_id = $1 ORDER BY seq", conversationID)
 	if err != nil {
@@ -120,16 +102,8 @@ func (l *sqlEventLog) Events(ctx context.Context, conversationID string) (events
 
 // DeleteAll deletes all events for a specific conversation ID.
 func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) (err error) {
-	ctx, span := tracer.Start(ctx, "eventlog.sql/DeleteAll", trace.WithAttributes(
-		attribute.String("conversation_id", conversationID),
-	))
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		span.End()
-	}()
+	ctx, endSpan := l.startSpan(ctx, "DeleteAll", conversationID)
+	defer func() { endSpan(err) }()
 
 	if _, err := l.db.ExecContext(ctx, "DELETE FROM conversation_log WHERE conversation_id = $1", conversationID); err != nil {
 		return fmt.Errorf("eventlog: delete conversation: %w", err)
@@ -140,4 +114,20 @@ func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) (err
 // Close releases the database connection.
 func (l *sqlEventLog) Close() error {
 	return l.db.Close()
+}
+
+func (l *sqlEventLog) startSpan(ctx context.Context, name string, conversationID string) (context.Context, func(err error)) {
+	const tracerName = "eventlog.sql"
+	tracer := otel.Tracer(tracerName)
+
+	ctx, span := tracer.Start(ctx, tracerName+"/"+name, trace.WithAttributes(
+		attribute.String("conversation_id", conversationID),
+	))
+	return ctx, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}
 }
