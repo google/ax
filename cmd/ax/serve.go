@@ -50,17 +50,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize structured logging (JSON to stdout)
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
-	// Initialize OpenTelemetry SDK
-	shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server")
-	if err != nil {
-		return fmt.Errorf("failed to initialize telemetry: %w", err)
-	}
-	defer func() {
-		if err := shutdown(context.Background()); err != nil {
-			slog.Error("failed to shutdown telemetry", "error", err)
-		}
-	}()
-
 	cfg, err := newConfig(cmd, serveConfigFile)
 	if err != nil {
 		return err
@@ -69,6 +58,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Initialize OpenTelemetry SDK
+	if cfg.Telemetry.OTLP.Enabled {
+		shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server", cfg.Telemetry.OTLP.Endpoint)
+		if err != nil {
+			return fmt.Errorf("failed to initialize telemetry: %w", err)
+		}
+		defer func() {
+			if err := shutdown(context.Background()); err != nil {
+				slog.Error("failed to shutdown telemetry", "error", err)
+			}
+		}()
 	}
 
 	c, err := cliutil.NewControllerFromConfig(ctx, cfg)

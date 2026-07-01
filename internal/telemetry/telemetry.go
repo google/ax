@@ -17,7 +17,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -29,21 +28,21 @@ import (
 
 // SetTraceProvider initializes the OpenTelemetry SDK.
 // It returns a shutdown function that should be called when the application exits.
-func SetTraceProvider(ctx context.Context, serviceName string) (func(context.Context) error, error) {
+func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) (func(context.Context) error, error) {
 	// 1. Set global propagator. This is crucial for context propagation over gRPC/HTTP.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	))
 
-	// If OTEL_TRACES_EXPORTER is set to none, do not initialize the tracer provider.
-	if os.Getenv("OTEL_TRACES_EXPORTER") == "none" {
-		return func(context.Context) error { return nil }, nil
-	}
-
 	// 2. Create OTLP Exporter.
-	// By default, it will use OTEL_EXPORTER_OTLP_ENDPOINT, etc.
-	exporter, err := otlptracegrpc.New(ctx)
+	var opts []otlptracegrpc.Option
+	if endpoint != "" {
+		opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
+	}
+	opts = append(opts, otlptracegrpc.WithInsecure())
+
+	exporter, err := otlptracegrpc.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
 	}
