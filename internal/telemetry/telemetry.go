@@ -34,9 +34,18 @@ import (
 
 const defaultEndpoint = "telemetry.googleapis.com"
 
+// WithGCPCredentials returns an option that configures the OTLP exporter to use Google Cloud credentials.
+func WithGCPCredentials() otlptracegrpc.Option {
+	bundle := google.NewDefaultCredentials()
+	return otlptracegrpc.WithDialOption(
+		grpc.WithTransportCredentials(bundle.TransportCredentials()),
+		grpc.WithPerRPCCredentials(bundle.PerRPCCredentials()),
+	)
+}
+
 // SetTraceProvider initializes the OpenTelemetry SDK.
 // It returns a shutdown function that should be called when the application exits.
-func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) (func(context.Context) error, error) {
+func SetTraceProvider(ctx context.Context, serviceName string, opts ...otlptracegrpc.Option) (func(context.Context) error, error) {
 	// 1. Set global propagator. This is crucial for context propagation over gRPC/HTTP.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
@@ -44,30 +53,6 @@ func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) 
 	))
 
 	// 2. Create OTLP Exporter.
-	var opts []otlptracegrpc.Option
-	if endpoint == "" {
-		endpoint = defaultEndpoint
-	}
-	opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
-
-	// If the endpoint is Google's telemetry service, configure TLS and Application Default Credentials.
-	var projectID string
-	if endpoint == defaultEndpoint || endpoint == defaultEndpoint+":443" {
-		bundle := google.NewDefaultCredentials()
-		opts = append(opts,
-			otlptracegrpc.WithTLSCredentials(bundle.TransportCredentials()),
-			otlptracegrpc.WithDialOption(
-				grpc.WithPerRPCCredentials(bundle.PerRPCCredentials()),
-			),
-		)
-		projectID = detectProjectID(ctx)
-		if projectID == "" {
-			fmt.Fprintln(os.Stderr, "WARNING: telemetry endpoint is Google Cloud Trace, but no GCP project ID was detected. Exporting traces will fail. Please set GOOGLE_CLOUD_PROJECT.")
-		}
-	} else {
-		opts = append(opts, otlptracegrpc.WithInsecure())
-	}
-
 	exporter, err := otlptracegrpc.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
@@ -77,9 +62,10 @@ func SetTraceProvider(ctx context.Context, serviceName string, endpoint string) 
 	attrs := []attribute.KeyValue{
 		semconv.ServiceNameKey.String(serviceName),
 	}
-	if projectID != "" {
+	if projectID := detectProjectID(ctx); projectID != "" {
 		attrs = append(attrs, attribute.String("gcp.project_id", projectID))
 	}
+
 	res, err := resource.New(ctx,
 		resource.WithAttributes(attrs...),
 		resource.WithProcess(),

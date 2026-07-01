@@ -26,6 +26,7 @@ import (
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 )
 
 var (
@@ -62,7 +63,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize OpenTelemetry SDK
 	if cfg.Telemetry.OTLP.Enabled {
-		shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server", cfg.Telemetry.OTLP.Endpoint)
+		var opts []otlptracegrpc.Option
+		endpoint := cfg.Telemetry.OTLP.Endpoint
+		if endpoint == "" {
+			endpoint = defaultEndpoint
+		}
+		opts = append(opts, otlptracegrpc.WithEndpoint(endpoint))
+		if gcpOpts, ok := gcpTelemetryOpts(endpoint); ok {
+			opts = append(opts, gcpOpts...)
+		} else {
+			opts = append(opts, otlptracegrpc.WithInsecure())
+		}
+
+		shutdown, err := telemetry.SetTraceProvider(ctx, "ax-server", opts...)
 		if err != nil {
 			return fmt.Errorf("failed to initialize telemetry: %w", err)
 		}
