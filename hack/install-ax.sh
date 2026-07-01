@@ -73,7 +73,7 @@ function usage() {
   echo "Options:"
   echo "  --deploy-ax-server                    Build images and deploy AX server and components"
   echo "  --delete-ax-server                    Delete AX server and components, preserving the event-log database"
-  echo "  --no-postgres                         With --deploy-ax-server: use an ephemeral SQLite event log instead of Postgres"
+  echo "  --deploy-postgres                     With --deploy-ax-server: also deploy a bundled Postgres for testing (default: connect to an existing Postgres via AX_EVENTLOG_DSN)"
   echo "  -h, --help                            Show this help message"
 }
 
@@ -197,6 +197,11 @@ deploy_ax_server() {
     echo "Error: AX_SNAPSHOTS_BUCKET environment variable must be set" >&2
     exit 1
   fi
+  # The default (external Postgres) path needs a DSN; fail fast before building.
+  if [[ "${DEPLOY_POSTGRES}" != "true" && -z "${AX_EVENTLOG_DSN:-}" ]]; then
+    echo "Error: AX_EVENTLOG_DSN must be set to your Postgres DSN, or pass --deploy-postgres to deploy a bundled test Postgres." >&2
+    exit 1
+  fi
 
   echo "Using GCS Bucket: ${AX_SNAPSHOTS_BUCKET}"
 
@@ -205,25 +210,24 @@ deploy_ax_server() {
   ax_image=$(build_ax_image)
   ateom_image=$(build_ateom_image)
 
-  # Select the event-log backend: Postgres by default, or an ephemeral per-pod
-  # SQLite log when --no-postgres was passed (single ax-server replica). The
-  # ax-server ConfigMap in ax-deployment.yaml defaults to Postgres; --no-postgres
-  # rewrites its eventlog block to SQLite.
-  local ax_replicas pg_password
-  pg_password="${POSTGRES_PASSWORD:-}"
-  if [[ "${USE_POSTGRES}" == "true" ]]; then
-    ax_replicas=3
-    # Resolve a stable Postgres password for the event log.
+  # Resolve the event-log Postgres DSN. By default ax-server connects to an
+  # existing Postgres via AX_EVENTLOG_DSN; --deploy-postgres creates a bundled
+  # Postgres in-cluster (for testing) and derives the DSN from it.
+  local pg_dsn pg_password=""
+  if [[ "${DEPLOY_POSTGRES}" == "true" ]]; then
+    # Reuse the existing bundled-Postgres password if present, else POSTGRES_PASSWORD,
+    # else generate one.
     local existing_pw
     existing_pw="$(run_kubectl -n ax get secret ax-eventlog-postgres -o go-template='{{.data.password | base64decode}}' 2>/dev/null || true)"
     if [[ -n "${existing_pw}" ]]; then
       pg_password="${existing_pw}"
-    elif [[ -z "${pg_password}" ]]; then
-      pg_password="$(openssl rand -hex 16)"
+    else
+      pg_password="${POSTGRES_PASSWORD:-$(openssl rand -hex 16)}"
     fi
+    pg_dsn="postgres://axuser:${pg_password}@ax-eventlog-postgres.ax.svc:5432/axeventlog?sslmode=disable"
   else
-    ax_replicas=1
-    echo "Deploying without Postgres: ax-server will use an ephemeral per-pod SQLite event log (single replica)." >&2
+    pg_dsn="${AX_EVENTLOG_DSN}"
+    echo "Using existing Postgres via AX_EVENTLOG_DSN." >&2
   fi
 
   # Common substitutions applied to every rendered manifest.
@@ -232,24 +236,10 @@ deploy_ax_server() {
     -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
     -e "s|\${AX_IMAGE}|${ax_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
-    -e "s|\${AX_SERVER_REPLICAS}|${ax_replicas}|g"
-    -e "s|\${POSTGRES_PASSWORD}|${pg_password}|g"
   )
 
-  # Render and apply: in the default mode use the Postgres resources.
-  # With --no-postgres, rewrite the ConfigMap's eventlog block (Postgres -> SQLite).
-  local applied=true
-  if [[ "${USE_POSTGRES}" == "true" ]]; then
-    { sed "${render_sed[@]}" manifests/ax-deployment.yaml; echo "---"; sed "${render_sed[@]}" manifests/ax-postgres.yaml; } \
-      | run_kubectl apply -f - || applied=false
-  else
-    sed "${render_sed[@]}" \
-      -e 's|      postgres:|      sqlite:|' \
-      -e 's|        dsn: .*|        filename: "/tmp/ax-eventlog/log.sqlite"|' \
-      manifests/ax-deployment.yaml \
-      | run_kubectl apply -f - || applied=false
-  fi
-  if [[ "${applied}" != "true" ]]; then
+  # Render and apply the core manifest (namespace, harnesses, ax-server, ConfigMap).
+  if ! sed "${render_sed[@]}" manifests/ax-deployment.yaml | run_kubectl apply -f -; then
     echo >&2
     echo "Error: cluster rejected the manifest. An \"unknown field\" error usually means the" >&2
     echo "cluster's substrate is incompatible with AX's go.mod pin — see" >&2
@@ -257,8 +247,19 @@ deploy_ax_server() {
     exit 1
   fi
 
-  # Wait for the event-log Postgres to be ready before ax-server relies on it.
-  if [[ "${USE_POSTGRES}" == "true" ]]; then
+  # Create/update the event-log Secret with the DSN (and, for the bundled Postgres,
+  # its password). ax-server reads AX_EVENTLOG_DSN from this Secret's dsn key.
+  local secret_args=(--from-literal=dsn="${pg_dsn}")
+  if [[ "${DEPLOY_POSTGRES}" == "true" ]]; then
+    secret_args+=(--from-literal=password="${pg_password}")
+  fi
+  run_kubectl -n ax create secret generic ax-eventlog-postgres "${secret_args[@]}" \
+    --dry-run=client -o yaml | run_kubectl apply -f -
+
+  # With --deploy-postgres, create the bundled Postgres and wait for it to be
+  # ready before ax-server relies on it.
+  if [[ "${DEPLOY_POSTGRES}" == "true" ]]; then
+    run_kubectl apply -f manifests/ax-postgres.yaml
     log_step "wait for statefulset/ax-eventlog-postgres to be ready"
     wait_with_spinner "waiting for postgres (timeout ${AX_WAIT_TIMEOUT:-5m})" \
       run_kubectl -n ax rollout status statefulset/ax-eventlog-postgres \
@@ -295,9 +296,10 @@ if [ "$#" -eq 0 ]; then
   exit 1
 fi
 
-# Event-log backend: Postgres by default; --no-postgres switches to an ephemeral
-# per-pod SQLite event log.
-USE_POSTGRES=true
+# Event-log Postgres: by default ax-server connects to an existing Postgres via
+# the AX_EVENTLOG_DSN env var. --deploy-postgres additionally creates a bundled
+# Postgres in-cluster (for testing on Substrate).
+DEPLOY_POSTGRES=false
 
 # If -h or --help appears anywhere in the command line, print the usage and exit.
 for arg in "$@"; do
@@ -306,8 +308,8 @@ for arg in "$@"; do
       usage
       exit 0
       ;;
-    --no-postgres)
-      USE_POSTGRES=false
+    --deploy-postgres)
+      DEPLOY_POSTGRES=true
       ;;
   esac
 done
@@ -316,7 +318,7 @@ while [[ "$#" -gt 0 ]]; do
   case $1 in
     --deploy-ax-server) deploy_ax_server ;;
     --delete-ax-server) delete_ax_server ;;
-    --no-postgres) ;; # resolved in the pre-scan above
+    --deploy-postgres) ;; # resolved in the pre-scan above
     *)
       echo "Error: unknown option: $1" >&2
       echo ""

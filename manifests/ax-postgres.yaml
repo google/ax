@@ -15,10 +15,10 @@
 # ---------------------------------------------------------------------------
 # Event log storage (PostgreSQL)
 #
-# Applied by hack/install-ax.sh only in the default (Postgres) deployment mode.
-# Pass --no-postgres to install-ax.sh to skip these resources; the ax-server
-# ConfigMap (in ax-deployment.yaml) is then rewritten to use an ephemeral SQLite
-# event log instead.
+# Applied by hack/install-ax.sh only when --deploy-postgres is passed. By default
+# ax-server connects to an existing Postgres via AX_EVENTLOG_DSN and these
+# resources are not deployed. The ax-eventlog-postgres Secret (holding the
+# password used below and the DSN) is created by install-ax.sh.
 # ---------------------------------------------------------------------------
 apiVersion: v1
 kind: Service
@@ -33,16 +33,6 @@ spec:
   ports:
     - port: 5432
       targetPort: 5432
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ax-eventlog-postgres
-  namespace: ax
-type: Opaque
-stringData:
-  password: "${POSTGRES_PASSWORD}"
-  dsn: "postgres://axuser:${POSTGRES_PASSWORD}@ax-eventlog-postgres.ax.svc:5432/axeventlog?sslmode=disable"
 ---
 apiVersion: apps/v1
 kind: StatefulSet

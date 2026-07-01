@@ -56,19 +56,27 @@ gcloud auth configure-docker   # set up the gcr.io credential helper
 
 #### Deploy
 
-By default the deploy provisions a **Postgres** StatefulSet as the event-log
-store on substrate. Pass `--no-postgres` to skip Postgres and use an 
-**ephemeral SQLite** event log instead.
+The event log is stored in Postgres. By default ax-server connects to an
+**existing** Postgres that you provide via the `AX_EVENTLOG_DSN` env var (bring your own database). Pass `--deploy-postgres` to also
+create a **bundled** Postgres in-cluster instead (for testing).
 
 ```bash
 export PROJECT_ID="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
 export AX_SNAPSHOTS_BUCKET="snapshot-substrate-test-$PROJECT_ID"
 
+# Connect to your existing Postgres:
+export AX_EVENTLOG_DSN="postgres://user:pass@host:5432/db?sslmode=require"
 ./hack/install-ax.sh --deploy-ax-server
 
-# Deploy without Postgres:
-# ./hack/install-ax.sh --deploy-ax-server --no-postgres
+# Or deploy a bundled Postgres for testing:
+./hack/install-ax.sh --deploy-ax-server --deploy-postgres
+```
+
+The bundled Postgres uses an auto-generated password. To get its DSN:
+
+```bash
+kubectl get secret ax-eventlog-postgres -n ax -o go-template='{{.data.dsn | base64decode}}'
 ```
 
 ### 2. Port-Forward Services
