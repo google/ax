@@ -221,6 +221,10 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// Drain HarnessResponse frames until the terminal HarnessEnd.
+	var endState proto.State
+	var endErr error
+	hasEnd := false
+
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -237,16 +241,24 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 				}
 			}
 		case *proto.HarnessResponse_End:
-			if payload.End.GetState() == proto.State_STATE_FAILED {
+			hasEnd = true
+			endState = payload.End.GetState()
+			if endState == proto.State_STATE_FAILED {
 				if errDetail := payload.End.GetError(); errDetail != nil {
-					return fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
+					endErr = fmt.Errorf("harness failed: [%d] %s", errDetail.GetCode(), errDetail.GetDescription())
+				} else {
+					endErr = fmt.Errorf("harness failed with no error details")
 				}
-				return fmt.Errorf("harness failed with no error details")
 			}
-			return handler.OnComplete(ctx, e.execID)
 		}
 	}
 
+	if !hasEnd {
+		return fmt.Errorf("harness stream ended without HarnessEnd frame")
+	}
+	if endState == proto.State_STATE_FAILED {
+		return endErr
+	}
 	return handler.OnComplete(ctx, e.execID)
 }
 
