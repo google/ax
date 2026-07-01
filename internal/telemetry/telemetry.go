@@ -45,7 +45,7 @@ func WithGCPCredentials() otlptracegrpc.Option {
 
 // SetTraceProvider initializes the OpenTelemetry SDK.
 // It returns a shutdown function that should be called when the application exits.
-func SetTraceProvider(ctx context.Context, serviceName string, opts ...otlptracegrpc.Option) (func(context.Context) error, error) {
+func SetTraceProvider(ctx context.Context, service string, opts ...otlptracegrpc.Option) (func(context.Context) error, error) {
 	// 1. Set global propagator. This is crucial for context propagation over gRPC/HTTP.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
@@ -60,9 +60,9 @@ func SetTraceProvider(ctx context.Context, serviceName string, opts ...otlptrace
 
 	// 3. Define Resource.
 	attrs := []attribute.KeyValue{
-		semconv.ServiceNameKey.String(serviceName),
+		semconv.ServiceNameKey.String(service),
 	}
-	if projectID := detectProjectID(ctx); projectID != "" {
+	if projectID := detectGCPProjectID(ctx); projectID != "" {
 		attrs = append(attrs, attribute.String("gcp.project_id", projectID))
 	}
 
@@ -90,7 +90,7 @@ func SetTraceProvider(ctx context.Context, serviceName string, opts ...otlptrace
 	}, nil
 }
 
-func detectProjectID(ctx context.Context) string {
+func detectGCPProjectID(ctx context.Context) string {
 	if proj := os.Getenv("GOOGLE_CLOUD_PROJECT"); proj != "" {
 		return proj
 	}
