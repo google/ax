@@ -186,7 +186,7 @@ func (e *substrateExecution) Queue(ctx context.Context, msg ...*proto.Message) e
 }
 
 func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
-	ctx, span := otel.Tracer("harness").Start(ctx, "substrateExecution.Run")
+	ctx, span := otel.Tracer("substrate-harness").Start(ctx, "Run")
 	defer span.End()
 
 	e.mu.Lock()

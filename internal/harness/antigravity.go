@@ -89,7 +89,7 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
 func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
-	ctx, span := otel.Tracer("harness").Start(ctx, "antigravityExecution.Run")
+	ctx, span := otel.Tracer("antigravity-harness").Start(ctx, "Run")
 	defer span.End()
 
 	e.mu.Lock()
