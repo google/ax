@@ -106,7 +106,14 @@ func (d *Display) Display(content *proto.Content) {
 		// Let the confirmation prompt handle displaying the question.
 
 	case *proto.Content_ToolCall:
-		// No-op for cleaner CLI logs
+		// Tool calls aren't rendered, but they mark a boundary between
+		// contiguous text/thought blocks. Terminate the current line so the
+		// next response starts fresh instead of running into the previous one
+		// (e.g. "...configured.I will list...").
+		if d.state != stateNone {
+			fmt.Fprintln(d.w)
+			d.state = stateNone
+		}
 
 	case *proto.Content_ToolResult:
 		// Only print if the tool returned an error, otherwise skip

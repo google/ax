@@ -32,6 +32,9 @@ func TestDisplay_Streaming(t *testing.T) {
 			},
 		}}}
 	}
+	toolCallContent := func() *proto.Content {
+		return &proto.Content{Type: &proto.Content_ToolCall{ToolCall: &proto.ToolCallContent{}}}
+	}
 
 	t.Run("consecutive text chunks are concatenated", func(t *testing.T) {
 		t.Parallel()
@@ -44,6 +47,39 @@ func TestDisplay_Streaming(t *testing.T) {
 
 		got := buf.String()
 		want := "Hello world!"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("tool call separates consecutive text blocks", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		d := NewDisplay("test-id", &buf)
+
+		d.Display(textContent("...configured."))
+		d.Display(toolCallContent())
+		d.Display(textContent("I will list the contents."))
+
+		got := buf.String()
+		want := "...configured.\nI will list the contents."
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("repeated tool calls do not add extra newlines", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		d := NewDisplay("test-id", &buf)
+
+		d.Display(textContent("Done."))
+		d.Display(toolCallContent())
+		d.Display(toolCallContent())
+		d.Display(textContent("Next."))
+
+		got := buf.String()
+		want := "Done.\nNext."
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
 		}
