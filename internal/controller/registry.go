@@ -15,7 +15,9 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/google/ax/internal/harness"
@@ -64,7 +66,29 @@ func (r *Registry) Harness(id string) (harness.Harness, error) {
 	return h, nil
 }
 
-// Close releases resources held by the registry.
+// Close releases resources held by the registry. Any harness that implements
+// io.Closer is closed exactly once, even if it was registered under multiple
+// IDs (e.g. under its real ID and again under "" as the default). Errors from
+// individual harness Close calls are joined so a single failure does not
+// suppress the rest.
 func (r *Registry) Close() error {
-	return nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	seen := make(map[harness.Harness]struct{}, len(r.harnesses))
+	var errs []error
+	for _, h := range r.harnesses {
+		if _, dup := seen[h]; dup {
+			continue
+		}
+		seen[h] = struct{}{}
+		closer, ok := h.(io.Closer)
+		if !ok {
+			continue
+		}
+		if err := closer.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }

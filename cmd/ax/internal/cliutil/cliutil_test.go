@@ -24,6 +24,11 @@ import (
 )
 
 func TestNewControllerFromConfig_DefaultHarness(t *testing.T) {
+	// Sidecar autostart would try to fork python3 here; the harness client
+	// itself never dials until a request is made, so the test only needs to
+	// build the controller.
+	t.Setenv("AX_ANTIGRAVITY_NO_AUTOSTART", "1")
+
 	cfg := &config.Config{
 		EventLog: config.EventLogConfig{
 			SQLiteConfig: config.SQLiteConfig{
@@ -76,6 +81,7 @@ func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 
 func TestNewControllerFromConfig_CustomHarnessRequiresSubstrateMode(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "")
+	t.Setenv("AX_ANTIGRAVITY_NO_AUTOSTART", "1")
 
 	cfg := &config.Config{
 		EventLog: config.EventLogConfig{

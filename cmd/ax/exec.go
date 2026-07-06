@@ -121,6 +121,14 @@ func runExec(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("error creating controller: %w", err)
 		}
 		execController = c
+		// Ensure the local controller (and any auto-started harness sidecar)
+		// is torn down on normal exit. The SIGTERM path in interruptHandler.exit
+		// already handles the signal case.
+		defer func() {
+			if err := execController.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: controller shutdown: %v\n", err)
+			}
+		}()
 	}
 
 	var harnessConfig []byte

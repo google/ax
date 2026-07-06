@@ -17,7 +17,10 @@ package cliutil
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/controller"
@@ -28,6 +31,12 @@ import (
 )
 
 const antigravityHarnessID = "antigravity"
+
+// defaultAntigravityAddress is the loopback address on which the Antigravity
+// sidecar listens by default. Kept here (rather than only inside
+// antigravity.New) so autoStartAntigravitySidecar can parse host/port before
+// constructing the harness.
+const defaultAntigravityAddress = "127.0.0.1:50053"
 
 // Controller is the active controller type for this build.
 type Controller = *controller.Controller
@@ -63,9 +72,18 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	if !substrateMode {
 		address := cfg.Harnesses.Antigravity.Endpoint
 		if address == "" {
-			address = "127.0.0.1:50053"
+			address = defaultAntigravityAddress
 		}
-		antigravityHarness = antigravity.New(address)
+		ah := antigravity.New(address)
+		// Fork (or reuse) the Antigravity Python sidecar for the local execution
+		// path. Skipped when the user explicitly points at a non-loopback endpoint
+		// (they are managing the sidecar out-of-band) or when
+		// AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (used by tests and by users who
+		// want to run ax harness in a separate terminal without any probing).
+		if err := autoStartAntigravitySidecar(ctx, ah, address); err != nil {
+			return nil, fmt.Errorf("antigravity harness sidecar: %w", err)
+		}
+		antigravityHarness = ah
 	} else {
 		antigravityHarness, err = substrate.New(antigravityHarnessID, "", "", "", 80)
 		if err != nil {
@@ -120,4 +138,63 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 			return eventlog.OpenSQLiteEventLog(cfg.EventLog.SQLiteConfig.Filename)
 		},
 	})
+}
+
+// autoStartAntigravitySidecar probes the configured harness address; if nothing
+// is serving there, it forks the Antigravity Python sidecar and waits for it to
+// become healthy. The sidecar's lifetime is bound to the harness (torn down via
+// controller.Registry.Close). See antigravity.EnsureSidecar for the reuse-vs-fork
+// logic.
+//
+// Environment overrides:
+//   - AX_ANTIGRAVITY_NO_AUTOSTART=1 disables autostart entirely (the user is
+//     responsible for starting ax harness or an equivalent sidecar).
+//   - AX_ANTIGRAVITY_SIDECAR_CMD overrides the argv used to fork the sidecar.
+//     Split on whitespace; --host and --port are appended automatically.
+//     Useful for pointing at a venv's python (e.g.
+//     "/path/to/venv/bin/python3 -m python.antigravity.harness_server").
+//
+// Skipped when the address is non-loopback (user manages the sidecar
+// out-of-band).
+func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.AntigravityHarness, address string) error {
+	if os.Getenv("AX_ANTIGRAVITY_NO_AUTOSTART") == "1" {
+		return nil
+	}
+	host, portStr, err := net.SplitHostPort(address)
+	if err != nil {
+		// Malformed address: fall back to leaving the sidecar unmanaged so
+		// the user gets the original clear "connection refused" error at
+		// dial time rather than a cryptic autostart-parse failure here.
+		return nil
+	}
+	if !isLoopback(host) {
+		return nil
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil
+	}
+	cfg := antigravity.SidecarConfig{Host: host, Port: port}
+	if cmdOverride := strings.Fields(os.Getenv("AX_ANTIGRAVITY_SIDECAR_CMD")); len(cmdOverride) > 0 {
+		cfg.Command = cmdOverride
+	}
+	sc, err := antigravity.EnsureSidecar(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	h.AttachSidecar(sc)
+	return nil
+}
+
+// isLoopback reports whether host is a well-known loopback name or a loopback
+// IP literal. We only autostart the sidecar for loopback addresses because a
+// non-loopback endpoint implies the user is pointing at a sidecar they run
+// themselves (e.g. in a container, on a remote host).
+func isLoopback(host string) bool {
+	switch host {
+	case "localhost", "":
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

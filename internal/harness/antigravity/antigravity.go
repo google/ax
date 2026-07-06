@@ -38,6 +38,7 @@ var _ harness.Execution = (*antigravityExecution)(nil)
 // Antigravity Python agent server over gRPC.
 type AntigravityHarness struct {
 	address string
+	sidecar *Sidecar // non-nil when this harness manages a co-located sidecar; see AttachSidecar
 }
 
 // New creates a new AntigravityHarness with a configurable address.
@@ -49,6 +50,25 @@ func New(address string) *AntigravityHarness {
 	return &AntigravityHarness{
 		address: address,
 	}
+}
+
+// AttachSidecar binds a co-located sidecar to this harness. Close(ctx) on any
+// Execution produced by this harness does not affect the sidecar; the sidecar
+// is torn down when the enclosing controller.Registry is closed (which invokes
+// the harness's Close method).
+func (h *AntigravityHarness) AttachSidecar(s *Sidecar) {
+	h.sidecar = s
+}
+
+// Close shuts down any sidecar attached via AttachSidecar. Safe to call
+// multiple times. Implements io.Closer so controller.Registry.Close can
+// discover and invoke it without a harness-specific type assertion in the
+// registry itself.
+func (h *AntigravityHarness) Close() error {
+	if h.sidecar == nil {
+		return nil
+	}
+	return h.sidecar.Close()
 }
 
 // Start implements Harness.Start.
