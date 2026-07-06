@@ -37,7 +37,7 @@ import (
 
 // Server implements the AXService gRPC service.
 type Server struct {
-	proto.UnimplementedControllerServiceServer
+	proto.UnimplementedExecutionServiceServer
 	proto.UnimplementedConversationServiceServer
 
 	controller *controller.Controller
@@ -107,7 +107,7 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	)
 
 	s.grpcServer = grpc.NewServer(opts...)
-	proto.RegisterControllerServiceServer(s.grpcServer, s)
+	proto.RegisterExecutionServiceServer(s.grpcServer, s)
 	proto.RegisterConversationServiceServer(s.grpcServer, s)
 
 	// Register standard gRPC Health Check server.

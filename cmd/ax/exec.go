@@ -325,7 +325,7 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.ExecRequ
 	}
 	defer conn.Close()
 
-	client := proto.NewControllerServiceClient(conn)
+	client := proto.NewExecutionServiceClient(conn)
 	stream, err := client.Exec(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("error executing: %w", err)

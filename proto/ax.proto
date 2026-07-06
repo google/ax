@@ -130,7 +130,7 @@ message ExecResponse {
   int32 seq = 2;                // Seq of the outputs
 }
 
-service ControllerService {
+service ExecutionService {
   // Exec executes an agentic task or resumes an existing one with streaming responses
   // If the conversation_id already exists, it will be resumed.
   rpc Exec(ExecRequest) returns (stream ExecResponse);
