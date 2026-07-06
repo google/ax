@@ -88,7 +88,7 @@ const (
 const defaultLocation = "global"
 
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
-// Use NewAntigravityInteractionsHarness, which fills sensible defaults.
+// Use New, which fills sensible defaults.
 //
 // Cloud project and location come from the standard GOOGLE_CLOUD_PROJECT and
 // GOOGLE_CLOUD_LOCATION environment variables.
@@ -124,7 +124,7 @@ type AntigravityInteractionsConfig struct {
 
 	// StateDir is the directory where each conversation's resume cursor is
 	// persisted, so a conversation can resume after a restart. It is required:
-	// NewAntigravityInteractionsHarness returns an error if it is empty.
+	// New returns an error if it is empty.
 	//
 	// Correctness relies on a single writer per conversation: writes are
 	// last-write-wins with no compare-and-swap. This is an expectation the caller
@@ -173,11 +173,11 @@ type AntigravityInteractionsHarness struct {
 	tsErr  error
 }
 
-// NewAntigravityInteractionsHarness creates a harness from the given config,
+// New creates a harness from the given config,
 // filling in defaults for unset fields. It returns an error if cfg.StateDir is
 // empty or the cursor store cannot be created: resume-cursor persistence is
 // required, so a usable state directory must be provided.
-func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) (*AntigravityInteractionsHarness, error) {
+func New(cfg AntigravityInteractionsConfig) (*AntigravityInteractionsHarness, error) {
 	cfg.withDefaults()
 	hc := cfg.HTTPClient
 	if hc == nil {

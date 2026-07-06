@@ -65,9 +65,9 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		antigravityHarness = antigravity.NewAntigravityHarness(address)
+		antigravityHarness = antigravity.New(address)
 	} else {
-		antigravityHarness, err = substrate.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80)
+		antigravityHarness, err = substrate.New(antigravityHarnessID, "", "", "", 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}

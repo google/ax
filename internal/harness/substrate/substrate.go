@@ -54,8 +54,8 @@ type SubstrateHarness struct {
 	dialOpts  []grpc.DialOption
 }
 
-// NewSubstrateHarness creates a new SubstrateHarness.
-func NewSubstrateHarness(harnessID string, endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
+// New creates a new SubstrateHarness.
+func New(harnessID string, endpoint string, namespace string, template string, port int, opts ...grpc.DialOption) (*SubstrateHarness, error) {
 	if port == 0 {
 		port = 50053 // Default HarnessService port
 	}

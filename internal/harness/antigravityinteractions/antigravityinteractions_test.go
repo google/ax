@@ -90,14 +90,14 @@ func (f *fakeInteractions) recorded() []interactionRequest {
 func newTestHarness(t *testing.T, fake *fakeInteractions, stateDir string) *AntigravityInteractionsHarness {
 	t.Helper()
 	t.Setenv(envCloudProject, "test-project")
-	h, err := NewAntigravityInteractionsHarness(AntigravityInteractionsConfig{
+	h, err := New(AntigravityInteractionsConfig{
 		Agent:       "test-agent",
 		StateDir:    stateDir,
 		HTTPClient:  &http.Client{Transport: fake},
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "fake-token"}),
 	})
 	if err != nil {
-		t.Fatalf("NewAntigravityInteractionsHarness: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	return h
 }
@@ -156,13 +156,13 @@ func TestResumeAcrossRestart(t *testing.T) {
 // StateDir: resume-cursor persistence is required.
 func TestNewRequiresStateDir(t *testing.T) {
 	t.Setenv(envCloudProject, "test-project")
-	_, err := NewAntigravityInteractionsHarness(AntigravityInteractionsConfig{
+	_, err := New(AntigravityInteractionsConfig{
 		Agent:       "test-agent",
 		StateDir:    "", // missing
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "fake-token"}),
 	})
 	if err == nil {
-		t.Fatal("NewAntigravityInteractionsHarness with empty StateDir: got nil error, want error")
+		t.Fatal("New with empty StateDir: got nil error, want error")
 	}
 }
 

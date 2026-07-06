@@ -30,7 +30,7 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 	srv := &harnesstest.MockHarnessServer{
 		Outputs: []*proto.Message{harnesstest.ThoughtText("Analyzing"), harnesstest.AssistantText("Hello world")},
 	}
-	harnessClient := NewAntigravityHarness(harnesstest.StartHarnessServer(t, srv))
+	harnessClient := New(harnesstest.StartHarnessServer(t, srv))
 
 	exec, err := harnessClient.Start(context.Background(), "conv-test", antigravityHarnessConfig)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestAntigravityHarness_Run_Success(t *testing.T) {
 
 func TestAntigravityHarness_Run_ErrorFrame(t *testing.T) {
 	srv := &harnesstest.MockHarnessServer{FailConnect: true, ErrMessage: "internal mock server crash"}
-	harnessClient := NewAntigravityHarness(harnesstest.StartHarnessServer(t, srv))
+	harnessClient := New(harnesstest.StartHarnessServer(t, srv))
 
 	exec, _ := harnessClient.Start(context.Background(), "conv-test", antigravityHarnessConfig)
 	defer exec.Close(context.Background())

@@ -39,9 +39,9 @@ type AntigravityHarness struct {
 	address string
 }
 
-// NewAntigravityHarness creates a new AntigravityHarness with a configurable address.
+// New creates a new AntigravityHarness with a configurable address.
 // Address defaults to "127.0.0.1:50053" (gRPC TCP connection).
-func NewAntigravityHarness(address string) *AntigravityHarness {
+func New(address string) *AntigravityHarness {
 	if address == "" {
 		address = "127.0.0.1:50053"
 	}

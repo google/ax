@@ -74,7 +74,7 @@ func main() {
 		}
 		conn.Close()
 		fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
-		h := antigravity.NewAntigravityHarness(address)
+		h := antigravity.New(address)
 		reg.RegisterHarness("antigravity", h)
 	})
 }
