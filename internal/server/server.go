@@ -19,12 +19,17 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -35,7 +40,7 @@ import (
 	"github.com/google/ax/proto"
 )
 
-// Server implements the AXService gRPC service.
+// Server implements the AXService gRPC and HTTP services.
 type Server struct {
 	proto.UnimplementedExecutionServiceServer
 	proto.UnimplementedConversationServiceServer
@@ -93,7 +98,7 @@ func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConver
 	return &proto.DeleteConversationResponse{}, nil
 }
 
-// Serve starts the gRPC server on the specified address.
+// Serve starts the gRPC and HTTP server on the specified address.
 func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
@@ -115,20 +120,38 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	hs.SetServingStatus("AX", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(s.grpcServer, hs)
 
-	if err := s.grpcServer.Serve(lis); err != nil {
+	defaultMux := http.NewServeMux()
+	defaultMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok\n"))
+	})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			s.grpcServer.ServeHTTP(w, r)
+		} else {
+			defaultMux.ServeHTTP(w, r)
+		}
+	})
+
+	httpServer := &http.Server{
+		Handler: h2c.NewHandler(handler, &http2.Server{}),
+	}
+
+	if err := httpServer.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("failed to serve: %w", err)
 	}
 	return nil
 }
 
-// GracefulStop stops the gRPC server gracefully.
+// GracefulStop stops the server gracefully.
 func (s *Server) GracefulStop() {
 	slog.Info("Stopping server gracefully...")
-	if s.controller != nil {
-		s.controller.Close()
-	}
 	if s.grpcServer != nil {
 		s.grpcServer.GracefulStop()
+	}
+	if s.controller != nil {
+		s.controller.Close()
 	}
 }
 
