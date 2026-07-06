@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sys
 from typing import TypedDict
 import grpc
@@ -258,8 +259,19 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             def flush_thought():
                 if not thought_chunks:
                     return None
+
+                # Normalize Gemini's thinking output: collapse runs of 3+ newlines
+                # (emitted between reasoning sections) to exactly one blank line
+                # and strip trailing whitespace. Then append exactly one trailing
+                # newline so downstream displays render a blank line between the
+                # thinking block and whatever follows (next thought, tool call,
+                # or answer text). Without the trailing newline the display's
+                # transition logic emits only one newline, gluing blocks together.
+                raw_text = "".join(thought_chunks)
+                clean_text = re.sub(r'\n{3,}', '\n\n', raw_text).rstrip() + '\n'
+
                 summary = [
-                    content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text="".join(thought_chunks)))
+                    content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text=clean_text))
                 ]
                 thought_chunks.clear()
                 msg = ax_pb2.Message(
