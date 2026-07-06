@@ -22,9 +22,9 @@ import (
 	"github.com/google/ax/proto"
 )
 
-// drainStream reads from the harness gRPC stream until io.EOF, dispatching messages
+// DrainStream reads from the harness gRPC stream until io.EOF, dispatching messages
 // to the handler, and returns the final execution status.
-func drainStream(ctx context.Context, stream proto.HarnessService_ConnectClient, execID string, handler Handler) error {
+func DrainStream(ctx context.Context, stream proto.HarnessService_ConnectClient, execID string, handler Handler) error {
 	var endState proto.State
 	var endErr error
 	hasEnd := false

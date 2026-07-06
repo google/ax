@@ -37,7 +37,7 @@ import (
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/internal/controller/eventlog/eventlogtest"
-	"github.com/google/ax/internal/harness"
+	"github.com/google/ax/internal/harness/antigravity"
 	"github.com/google/ax/proto"
 )
 
@@ -74,8 +74,8 @@ func main() {
 		}
 		conn.Close()
 		fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
-		harness := harness.NewAntigravityHarness(address)
-		reg.RegisterHarness("antigravity", harness)
+		h := antigravity.NewAntigravityHarness(address)
+		reg.RegisterHarness("antigravity", h)
 	})
 }
 

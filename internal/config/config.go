@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/google/ax/internal/harness"
+	"github.com/google/ax/internal/harness/substrate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -110,7 +111,7 @@ func (c SubstrateHarnessConfig) NewHarness(endpoint string) (harness.Harness, er
 
 // newSubstrateHarness brings up a harness that is deployed as a substrate actor.
 func newSubstrateHarness(harnessID, endpoint, namespace, template string, port int) (harness.Harness, error) {
-	sh, err := harness.NewSubstrateHarness(harnessID, endpoint, namespace, template, port)
+	sh, err := substrate.NewSubstrateHarness(harnessID, endpoint, namespace, template, port)
 	if err != nil {
 		return nil, err
 	}

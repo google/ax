@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package antigravityinteractions
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/ax/internal/harness/harnesstest"
 	"golang.org/x/oauth2"
 )
 
@@ -110,10 +111,10 @@ func runOneTurn(t *testing.T, h *AntigravityInteractionsHarness, conversationID,
 	if err != nil {
 		t.Fatalf("Start(%q): %v", conversationID, err)
 	}
-	if err := exec.Queue(ctx, userText(prompt)); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserText(prompt)); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if err := exec.Run(ctx, &mockHandler{}); err != nil {
+	if err := exec.Run(ctx, &harnesstest.MockHandler{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if err := exec.Close(ctx); err != nil {

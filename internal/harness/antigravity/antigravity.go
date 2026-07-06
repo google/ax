@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package antigravity
 
 import (
 	"context"
@@ -24,13 +24,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
 
 // Compile-time interface assertions.
-var _ Harness = (*AntigravityHarness)(nil)
-var _ Execution = (*antigravityExecution)(nil)
+var _ harness.Harness = (*AntigravityHarness)(nil)
+var _ harness.Execution = (*antigravityExecution)(nil)
 
 // AntigravityHarness implements the Harness interface by connecting to the
 // Antigravity Python agent server over gRPC.
@@ -50,7 +51,7 @@ func NewAntigravityHarness(address string) *AntigravityHarness {
 }
 
 // Start implements Harness.Start.
-func (h *AntigravityHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
+func (h *AntigravityHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	return &antigravityExecution{
 		harness:        h,
 		conversationID: conversationID,
@@ -88,7 +89,7 @@ func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message)
 }
 
 // Run executes the turn over gRPC bidirectional streaming and forwards events to the handler.
-func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
+func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler) error {
 	ctx, span := otel.Tracer("antigravity-harness").Start(ctx, "Run")
 	defer span.End()
 
@@ -143,7 +144,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// 5. Stream responses and trigger callbacks
-	return drainStream(ctx, stream, e.id, handler)
+	return harness.DrainStream(ctx, stream, e.id, handler)
 }
 
 // Close implements Execution.Close.

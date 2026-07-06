@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package substrate
 
 import (
 	"bytes"
@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/internal/k8s/ate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -156,25 +157,25 @@ func newTestSubstrateHarness(t *testing.T, ctrlAddr, harnessAddr string) *Substr
 // break: create/resume idempotency, worker-IP extraction, the health gate, the
 // Connect streaming protocol, and suspend-on-close.
 func TestSubstrateHarness_EndToEnd(t *testing.T) {
-	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
-	srv := &mockHarnessServer{}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
+	ctrl := &harnesstest.MockControlServer{ResumeIP: "127.0.0.1"}
+	srv := &harnesstest.MockHarnessServer{}
+	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, srv))
 
 	ctx := context.Background()
 	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := exec.Queue(ctx, userText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	handler := &mockHandler{}
+	handler := &harnesstest.MockHandler{}
 	if err := exec.Run(ctx, handler); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
 	// The harness server received the start frame with the right identifiers.
-	convID, harnessID, harnessConfig, inputs := srv.received()
+	convID, harnessID, harnessConfig, inputs := srv.Received()
 	if convID != "conv-1" || harnessID != "antigravity" {
 		t.Errorf("server got convID=%q harnessID=%q, want conv-1/antigravity", convID, harnessID)
 	}
@@ -186,15 +187,15 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 	}
 
 	// The handler streamed the output and completed.
-	if !handler.isDone() {
+	if !handler.IsDone() {
 		t.Error("handler did not complete")
 	}
-	if got := handler.texts(); !slices.Equal(got, []string{"ack: hi"}) {
+	if got := handler.Texts(); !slices.Equal(got, []string{"ack: hi"}) {
 		t.Errorf("handler messages=%v, want [ack: hi]", got)
 	}
 
 	// CreateActor then ResumeActor ran for the conversation; no suspend yet.
-	create, resume, suspend := ctrl.calls()
+	create, resume, suspend := ctrl.Calls()
 	want := []string{"conv-1"}
 	if !slices.Equal(create, want) || !slices.Equal(resume, want) {
 		t.Errorf("create=%v resume=%v, want %v each", create, resume, want)
@@ -207,17 +208,17 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 	if err := exec.Close(ctx); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, _, suspend = ctrl.calls(); !slices.Equal(suspend, want) {
+	if _, _, suspend = ctrl.Calls(); !slices.Equal(suspend, want) {
 		t.Errorf("suspend=%v, want %v", suspend, want)
 	}
 }
 
 func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
-	ctrl := &mockControlServer{
-		resumeIP:  "127.0.0.1",
-		createErr: status.Error(codes.AlreadyExists, "exists"),
+	ctrl := &harnesstest.MockControlServer{
+		ResumeIP:  "127.0.0.1",
+		CreateErr: status.Error(codes.AlreadyExists, "exists"),
 	}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
+	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
 	ctx := context.Background()
 	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
@@ -226,24 +227,24 @@ func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = exec.Close(ctx) })
 
-	if err := exec.Queue(ctx, userText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	handler := &mockHandler{}
+	handler := &harnesstest.MockHandler{}
 	if err := exec.Run(ctx, handler); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !handler.isDone() {
+	if !handler.IsDone() {
 		t.Error("handler did not complete")
 	}
-	if _, resume, _ := ctrl.calls(); !slices.Equal(resume, []string{"conv-1"}) {
+	if _, resume, _ := ctrl.Calls(); !slices.Equal(resume, []string{"conv-1"}) {
 		t.Errorf("resume=%v, want [conv-1]", resume)
 	}
 }
 
 func TestSubstrateHarness_ResumeNoWorkerIP(t *testing.T) {
-	ctrl := &mockControlServer{resumeIP: ""} // empty AteomPodIp
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
+	ctrl := &harnesstest.MockControlServer{ResumeIP: ""} // empty AteomPodIp
+	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
 	_, err := h.Start(context.Background(), "conv-1", substrateHarnessConfig)
 	if err == nil {
@@ -255,8 +256,8 @@ func TestSubstrateHarness_ResumeNoWorkerIP(t *testing.T) {
 }
 
 func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
-	ctrl := &mockControlServer{resumeNilActor: true}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, &mockHarnessServer{}))
+	ctrl := &harnesstest.MockControlServer{ResumeNilActor: true}
+	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
 	_, err := h.Start(context.Background(), "conv-1", substrateHarnessConfig)
 	if err == nil {
@@ -268,9 +269,9 @@ func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
 }
 
 func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
-	ctrl := &mockControlServer{resumeIP: "127.0.0.1"}
-	srv := &mockHarnessServer{failFrame: true, errCode: 13, errMessage: "boom"}
-	h := newTestSubstrateHarness(t, startControlServer(t, ctrl), startHarnessServer(t, srv))
+	ctrl := &harnesstest.MockControlServer{ResumeIP: "127.0.0.1"}
+	srv := &harnesstest.MockHarnessServer{FailFrame: true, ErrCode: 13, ErrMessage: "boom"}
+	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, srv))
 
 	ctx := context.Background()
 	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
@@ -278,10 +279,10 @@ func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { _ = exec.Close(ctx) })
-	if err := exec.Queue(ctx, userText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	if err := exec.Run(ctx, &mockHandler{}); err == nil {
+	if err := exec.Run(ctx, &harnesstest.MockHandler{}); err == nil {
 		t.Fatal("expected error from failed harness frame, got nil")
 	} else if !strings.Contains(err.Error(), "harness failed") {
 		t.Errorf("error = %v, want it to mention 'harness failed'", err)

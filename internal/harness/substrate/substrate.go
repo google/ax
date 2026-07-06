@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package substrate
 
 import (
 	"context"
@@ -32,10 +32,15 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/k8s/ate"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
+
+// Compile-time interface assertions.
+var _ harness.Harness = (*SubstrateHarness)(nil)
+var _ harness.Execution = (*substrateExecution)(nil)
 
 // healthCheckTimeout defines the maximum time Start waits for a freshly
 // created/resumed actor's harness to become reachable and ready.
@@ -78,7 +83,7 @@ func NewSubstrateHarness(harnessID string, endpoint string, namespace string, te
 }
 
 // Start implements Harness interface. It creates/resumes the target actor.
-func (h *SubstrateHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
+func (h *SubstrateHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	if conversationID == "" {
 		return nil, errors.New("SubstrateHarness needs valid conversationID")
 	}
@@ -185,7 +190,7 @@ func (e *substrateExecution) Queue(ctx context.Context, msg ...*proto.Message) e
 	return nil
 }
 
-func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
+func (e *substrateExecution) Run(ctx context.Context, handler harness.Handler) error {
 	ctx, span := otel.Tracer("substrate-harness").Start(ctx, "Run")
 	defer span.End()
 
@@ -220,7 +225,7 @@ func (e *substrateExecution) Run(ctx context.Context, handler Handler) error {
 	}
 
 	// Drain HarnessResponse frames until the terminal HarnessEnd.
-	return drainStream(ctx, stream, e.execID, handler)
+	return harness.DrainStream(ctx, stream, e.execID, handler)
 }
 
 func (e *substrateExecution) Close(ctx context.Context) error {

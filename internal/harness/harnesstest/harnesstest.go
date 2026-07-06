@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package harnesstest
 
 // Shared in-process mocks for the harness tests: a mock Substrate Control server
 // (the substrate control plane), a mock HarnessService server (the harness
@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -37,7 +38,7 @@ import (
 // actor lifecycle calls SubstrateHarness makes and lets tests steer the
 // CreateActor/ResumeActor responses. Only the three RPCs SubstrateHarness uses
 // are implemented; the rest come from the embedded Unimplemented server.
-type mockControlServer struct {
+type MockControlServer struct {
 	ateapipb.UnimplementedControlServer
 
 	mu           sync.Mutex
@@ -45,44 +46,44 @@ type mockControlServer struct {
 	resumeCalls  []string
 	suspendCalls []string
 
-	createErr      error  // returned from CreateActor when non-nil
-	resumeIP       string // AteomPodIp returned from ResumeActor
-	resumeNilActor bool   // when true, ResumeActor returns a nil Actor
+	CreateErr      error  // returned from CreateActor when non-nil
+	ResumeIP       string // AteomPodIp returned from ResumeActor
+	ResumeNilActor bool   // when true, ResumeActor returns a nil Actor
 }
 
-func (f *mockControlServer) CreateAtespace(_ context.Context, req *ateapipb.CreateAtespaceRequest) (*ateapipb.CreateAtespaceResponse, error) {
+func (f *MockControlServer) CreateAtespace(_ context.Context, req *ateapipb.CreateAtespaceRequest) (*ateapipb.CreateAtespaceResponse, error) {
 	return &ateapipb.CreateAtespaceResponse{Atespace: &ateapipb.Atespace{Name: req.GetName()}}, nil
 }
 
-func (f *mockControlServer) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.CreateActorResponse, error) {
+func (f *MockControlServer) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.CreateActorResponse, error) {
 	f.mu.Lock()
 	f.createCalls = append(f.createCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
-	if f.createErr != nil {
-		return nil, f.createErr
+	if f.CreateErr != nil {
+		return nil, f.CreateErr
 	}
 	return &ateapipb.CreateActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorRef().GetName()}}, nil
 }
 
-func (f *mockControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
+func (f *MockControlServer) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
 	f.mu.Lock()
 	f.resumeCalls = append(f.resumeCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
-	if f.resumeNilActor {
+	if f.ResumeNilActor {
 		return &ateapipb.ResumeActorResponse{}, nil
 	}
-	return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorRef().GetName(), AteomPodIp: f.resumeIP}}, nil
+	return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{ActorId: req.GetActorRef().GetName(), AteomPodIp: f.ResumeIP}}, nil
 }
 
-func (f *mockControlServer) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
+func (f *MockControlServer) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
 	f.mu.Lock()
 	f.suspendCalls = append(f.suspendCalls, req.GetActorRef().GetName())
 	f.mu.Unlock()
 	return &ateapipb.SuspendActorResponse{}, nil
 }
 
-// calls returns copies of the recorded call lists.
-func (f *mockControlServer) calls() (create, resume, suspend []string) {
+// Calls returns copies of the recorded call lists.
+func (f *MockControlServer) Calls() (create, resume, suspend []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.createCalls...),
@@ -94,20 +95,20 @@ func (f *mockControlServer) calls() (create, resume, suspend []string) {
 // the harness running inside an actor (substrate) or a local subprocess
 // (antigravity). It records the start frame and emits its configured outputs
 // followed by a terminal HarnessEnd.
-type mockHarnessServer struct {
+type MockHarnessServer struct {
 	proto.UnimplementedHarnessServiceServer
 
-	// outputs are the messages emitted (in a single Outputs frame) before the
+	// Outputs are the messages emitted (in a single Outputs frame) before the
 	// terminal HarnessEnd. When nil, each input is echoed as "ack: <input>".
-	outputs []*proto.Message
-	// failConnect makes Connect return an RPC error before any frame.
-	failConnect bool
-	// failFrame makes Connect terminate the turn with HarnessEnd{STATE_FAILED}.
-	failFrame bool
-	// errCode is the error code used by failFrame.
-	errCode int32
-	// errMessage is the error text used by failConnect/failFrame.
-	errMessage string
+	Outputs []*proto.Message
+	// FailConnect makes Connect return an RPC error before any frame.
+	FailConnect bool
+	// FailFrame makes Connect terminate the turn with HarnessEnd{STATE_FAILED}.
+	FailFrame bool
+	// ErrCode is the error code used by FailFrame.
+	ErrCode int32
+	// ErrMessage is the error text used by FailConnect/FailFrame.
+	ErrMessage string
 
 	mu               sync.Mutex
 	gotConvID        string
@@ -116,9 +117,9 @@ type mockHarnessServer struct {
 	gotInputs        []string
 }
 
-func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
-	if s.failConnect {
-		return status.Error(codes.Internal, s.errMessage)
+func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
+	if s.FailConnect {
+		return status.Error(codes.Internal, s.ErrMessage)
 	}
 
 	req, err := stream.Recv()
@@ -140,25 +141,25 @@ func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 	s.mu.Unlock()
 
 	convID := req.GetConversationId()
-	if s.failFrame {
+	if s.FailFrame {
 		return stream.Send(&proto.HarnessResponse{
 			ConversationId: convID,
 			Type: &proto.HarnessResponse_End{
 				End: &proto.HarnessEnd{
 					State: proto.State_STATE_FAILED,
 					Error: &proto.Error{
-						Code:        s.errCode,
-						Description: s.errMessage,
+						Code:        s.ErrCode,
+						Description: s.ErrMessage,
 					},
 				},
 			},
 		})
 	}
 
-	msgs := s.outputs
+	msgs := s.Outputs
 	if msgs == nil {
 		for _, in := range inputs {
-			msgs = append(msgs, assistantText("ack: "+in))
+			msgs = append(msgs, AssistantText("ack: "+in))
 		}
 	}
 	if len(msgs) > 0 {
@@ -177,49 +178,51 @@ func (s *mockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 	})
 }
 
-// received returns a copy of the start frame the server received.
-func (s *mockHarnessServer) received() (convID, harnessID string, harnessConfig []byte, inputs []string) {
+// Received returns a copy of the start frame the server received.
+func (s *MockHarnessServer) Received() (convID, harnessID string, harnessConfig []byte, inputs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.gotConvID, s.gotHarnessID, append([]byte(nil), s.gotHarnessConfig...), append([]string(nil), s.gotInputs...)
 }
 
 // mockHandler records the messages and completion streamed during a turn.
-type mockHandler struct {
+type MockHandler struct {
 	mu       sync.Mutex
 	messages []*proto.Message
 	complete bool
 }
 
-func (h *mockHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
+var _ harness.Handler = (*MockHandler)(nil)
+
+func (h *MockHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.messages = append(h.messages, msg)
 	return nil
 }
 
-func (h *mockHandler) OnComplete(_ context.Context, _ string) error {
+func (h *MockHandler) OnComplete(_ context.Context, _ string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.complete = true
 	return nil
 }
 
-func (h *mockHandler) isDone() bool {
+func (h *MockHandler) IsDone() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.complete
 }
 
-// collected returns a copy of the messages received via OnMessage.
-func (h *mockHandler) collected() []*proto.Message {
+// Collected returns a copy of the messages received via OnMessage.
+func (h *MockHandler) Collected() []*proto.Message {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]*proto.Message(nil), h.messages...)
 }
 
-// texts returns the text content of each received message, in order.
-func (h *mockHandler) texts() []string {
+// Texts returns the text content of each received message, in order.
+func (h *MockHandler) Texts() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []string
@@ -229,21 +232,21 @@ func (h *mockHandler) texts() []string {
 	return out
 }
 
-func assistantText(text string) *proto.Message {
+func AssistantText(text string) *proto.Message {
 	return &proto.Message{
 		Role:    "assistant",
 		Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}},
 	}
 }
 
-func userText(text string) *proto.Message {
+func UserText(text string) *proto.Message {
 	return &proto.Message{
 		Role:    "user",
 		Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}},
 	}
 }
 
-func thoughtText(summary string) *proto.Message {
+func ThoughtText(summary string) *proto.Message {
 	return &proto.Message{
 		Role: "model",
 		Content: &proto.Content{
@@ -258,9 +261,9 @@ func thoughtText(summary string) *proto.Message {
 	}
 }
 
-// startHarnessServer starts a HarnessService + health server (status SERVING)
+// StartHarnessServer starts a HarnessService + health server (status SERVING)
 // on a random local port and returns its address.
-func startHarnessServer(t *testing.T, srv *mockHarnessServer) string {
+func StartHarnessServer(t *testing.T, srv *MockHarnessServer) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -276,8 +279,8 @@ func startHarnessServer(t *testing.T, srv *mockHarnessServer) string {
 	return lis.Addr().String()
 }
 
-// startControlServer starts a mock Substrate Control server on a random local port.
-func startControlServer(t *testing.T, srv *mockControlServer) string {
+// StartControlServer starts a mock Substrate Control server on a random local port.
+func StartControlServer(t *testing.T, srv *MockControlServer) string {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -23,6 +23,8 @@ import (
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/internal/harness"
+	"github.com/google/ax/internal/harness/antigravity"
+	"github.com/google/ax/internal/harness/substrate"
 )
 
 const antigravityHarnessID = "antigravity"
@@ -63,9 +65,9 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		antigravityHarness = harness.NewAntigravityHarness(address)
+		antigravityHarness = antigravity.NewAntigravityHarness(address)
 	} else {
-		antigravityHarness, err = harness.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80)
+		antigravityHarness, err = substrate.NewSubstrateHarness(antigravityHarnessID, "", "", "", 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}

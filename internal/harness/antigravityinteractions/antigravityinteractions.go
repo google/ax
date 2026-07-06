@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package harness
+package antigravityinteractions
 
 // AntigravityInteractionsHarness drives an Antigravity agent through the Vertex
 // GenAI Interactions API over HTTPS + Server-Sent Events, using the steps-based
@@ -58,6 +58,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
@@ -68,8 +69,8 @@ import (
 const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 
 // Compile-time interface assertions.
-var _ Harness = (*AntigravityInteractionsHarness)(nil)
-var _ Execution = (*antigravityInteractionsExecution)(nil)
+var _ harness.Harness = (*AntigravityInteractionsHarness)(nil)
+var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
 
 const interactionsAPIVersion = "v1beta1"
 
@@ -195,7 +196,7 @@ func NewAntigravityInteractionsHarness(cfg AntigravityInteractionsConfig) (*Anti
 // Start implements Harness.Start. It loads any previously persisted resume
 // cursor for conversationID so the returned Execution resumes the existing
 // interaction chain instead of starting a new one.
-func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error) {
+func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
 	e := &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
@@ -301,7 +302,7 @@ func (e *antigravityInteractionsExecution) setPrevID(ctx context.Context, id str
 // The agent's text output is forwarded via handler.OnMessage; handler.OnComplete
 // is called once when the conversation finishes. At each interaction gap, any
 // human input queued via Queue (steering) is folded into the next turn.
-func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler Handler) error {
+func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler harness.Handler) error {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -383,7 +384,7 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler Hand
 }
 
 // emitText forwards non-empty model text to the handler as a Message.
-func emitText(ctx context.Context, handler Handler, execID, text string) error {
+func emitText(ctx context.Context, handler harness.Handler, execID, text string) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
