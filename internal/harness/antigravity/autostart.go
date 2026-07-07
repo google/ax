@@ -12,6 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This file implements the auto-start / probe-then-fork lifecycle for the
+// Antigravity Python sidecar used by `ax exec`. The mechanism is not
+// AGY-specific: any harness with a co-located subprocess and a gRPC health
+// probe could reuse it. TODO(#266): move Sidecar / newSidecarCmd /
+// EnsureSidecar / probeIdentity / etc. into a shared package (likely
+// internal/harness/autostart) so other built-in harnesses (e.g. Claude Code)
+// can plug into the same machinery.
+
 package antigravity
 
 import (
