@@ -51,7 +51,11 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 # Python sidecar (with generated proto stubs), the agent it serves, and the ax
 # binary built in stage 1.
 COPY python/ /ax-app/python
-COPY examples/skills/ /ax/skills/
+
+# You can copy skills or use skills managers (e.g. npx skills)
+# to download them into the image.
+# Example: COPY examples/skills/ /ax/skills/
+
 ENV SKILLS_DIR=/ax/skills
 COPY --from=build /out/ax /ax-app/ax
 
