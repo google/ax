@@ -272,7 +272,13 @@ func StartHarnessServer(t *testing.T, srv *MockHarnessServer) string {
 	s := grpc.NewServer()
 	proto.RegisterHarnessServiceServer(s, srv)
 	hs := health.NewServer()
+	// TODO: remove overall "" entry after validating downstream (substrate
+	// probes, external tests) don't rely on it.
 	hs.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	// Fully-qualified service name matching what the real Antigravity Python
+	// sidecar registers, so tests exercise the same identity-check path used
+	// in production (see antigravity.probeIdentity).
+	hs.SetServingStatus("harness.antigravity", grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(s, hs)
 	go func() { _ = s.Serve(lis) }()
 	t.Cleanup(s.Stop)

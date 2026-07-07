@@ -39,8 +39,15 @@ import (
 var defaultSidecarCommand = []string{"python3", "-m", "python.antigravity.harness_server"}
 
 const (
-	// reuseProbeTimeout is the fast probe deadline used to decide whether an
-	// existing sidecar is already serving at the configured address. Kept short
+	// healthServiceName is the fully-qualified gRPC health service name the
+	// Antigravity Python sidecar registers. Used both to reuse-probe an existing
+	// sidecar and to wait for a freshly-forked sidecar's readiness. Aligns with
+	// the `harnesses.antigravity` key in ax.yaml so the identity check is
+	// discoverable from configuration.
+	healthServiceName = "harness.antigravity"
+
+	// reuseProbeTimeout is the fast probe deadline used to identify whether the
+	// configured endpoint is already serving an Antigravity sidecar. Kept short
 	// so ax exec startup stays snappy when nothing is running.
 	reuseProbeTimeout = 500 * time.Millisecond
 	// startupTimeout is how long EnsureSidecar waits for a freshly forked
@@ -133,15 +140,111 @@ func SidecarCommand(cfg SidecarConfig) *exec.Cmd {
 	return cmd
 }
 
+// probeResult classifies what the caller found at the configured endpoint.
+type probeResult int
+
+const (
+	// probeAGYServing means the endpoint is answering as an Antigravity sidecar
+	// (gRPC health for "harness.antigravity" returned SERVING).
+	probeAGYServing probeResult = iota
+	// probeOtherService means the endpoint is reachable but is NOT an
+	// Antigravity sidecar (it does not know the "harness.antigravity" health
+	// service). Callers should treat this as user mis-config and surface a
+	// clear error instead of forking on top of a foreign service.
+	probeOtherService
+	// probeNoService means the port is free (connection refused). Callers may
+	// fork a new sidecar on this address.
+	probeNoService
+	// probeInconclusive means the probe could not determine the state (transport
+	// error, timeout, malformed response). Callers should surface the underlying
+	// error rather than making a decision.
+	probeInconclusive
+)
+
+func (p probeResult) String() string {
+	switch p {
+	case probeAGYServing:
+		return "agy-serving"
+	case probeOtherService:
+		return "other-service"
+	case probeNoService:
+		return "no-service"
+	case probeInconclusive:
+		return "inconclusive"
+	}
+	return "unknown"
+}
+
+// probeIdentity classifies the service (if any) listening at addr by asking
+// the gRPC health protocol whether it is serving the Antigravity sidecar
+// service name. This lets EnsureSidecar distinguish three fundamentally
+// different situations: an existing sidecar to reuse, a foreign service that
+// blocks us from forking, and an empty port that we can safely take.
+func probeIdentity(ctx context.Context, addr string, timeout time.Duration) (probeResult, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return probeInconclusive, fmt.Errorf("create gRPC client for %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	client := grpc_health_v1.NewHealthClient(conn)
+	resp, err := client.Check(probeCtx, &grpc_health_v1.HealthCheckRequest{Service: healthServiceName})
+	if err == nil {
+		if resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING {
+			return probeAGYServing, nil
+		}
+		// The server responded but is not SERVING this service. Treat as
+		// another service (e.g. our sidecar's status flipped to NOT_SERVING
+		// during shutdown, or an unrelated gRPC service that happens to know
+		// the health protocol but not our service name).
+		return probeOtherService, nil
+	}
+	switch status.Code(err) {
+	case codes.NotFound:
+		// gRPC health protocol says NOT_FOUND for an unknown service name;
+		// this is the canonical "some other gRPC server is here" signal.
+		return probeOtherService, nil
+	case codes.Unimplemented:
+		// The server does not implement the health protocol at all; almost
+		// certainly not our sidecar.
+		return probeOtherService, nil
+	case codes.Unavailable:
+		// Transport error. In the "connection refused" case this means the
+		// port is empty. Distinguish from other transient Unavailable errors
+		// (which we surface as inconclusive) by looking at the message.
+		if isConnectionRefused(err) {
+			return probeNoService, nil
+		}
+		return probeInconclusive, err
+	default:
+		return probeInconclusive, err
+	}
+}
+
+// isConnectionRefused reports whether a gRPC Unavailable error is caused by a
+// TCP connect refusal (which for our purposes means the port is empty and can
+// be taken by a fresh fork). gRPC does not expose the underlying syscall
+// error typed, so we string-match; kept intentionally narrow to avoid
+// misclassifying real transport failures as empty ports.
+func isConnectionRefused(err error) bool {
+	return strings.Contains(err.Error(), "connect: connection refused")
+}
+
 // EnsureSidecar guarantees that an Antigravity sidecar is reachable at
-// cfg.Host:cfg.Port when it returns nil error. It first probes the address; if
-// a healthy sidecar is already serving there (e.g. because the user started
-// ax harness manually or from a previous ax exec), it is reused as-is
-// (Sidecar.Forked = false). Otherwise, it forks the Python sidecar and waits
-// up to startupTimeout for it to become healthy.
+// cfg.Host:cfg.Port when it returns nil error. It probes the endpoint to
+// identify what (if anything) is already running:
 //
-// The caller is responsible for calling Sidecar.Close() when done. Close is a
-// no-op for reused sidecars.
+//   - Existing AGY sidecar → reuse as-is (Sidecar.Forked = false, Close is a
+//     no-op so the user keeps ownership of the process they started).
+//   - Some other service → return an explicit error asking the user to update
+//     harnesses.antigravity.endpoint in ax.yaml. We do NOT fork on top of a
+//     foreign service.
+//   - Empty port → fork the Python sidecar and wait for it to become healthy.
+//
+// The caller is responsible for calling Sidecar.Close() when done.
 func EnsureSidecar(ctx context.Context, cfg SidecarConfig) (*Sidecar, error) {
 	host := cfg.Host
 	if host == "" {
@@ -153,16 +256,33 @@ func EnsureSidecar(ctx context.Context, cfg SidecarConfig) (*Sidecar, error) {
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 
-	// Fast path: if something is already answering health checks at addr, reuse
-	// it. This mirrors how ax exec --server reuses an already-running controller
-	// server and matches the user's mental model when they've started
-	// ax harness by hand in another terminal.
-	if reachable(ctx, addr, reuseProbeTimeout) {
+	result, probeErr := probeIdentity(ctx, addr, reuseProbeTimeout)
+	switch result {
+	case probeAGYServing:
 		slog.InfoContext(ctx, "reusing existing antigravity harness", slog.String("addr", addr))
 		return &Sidecar{Addr: addr, Forked: false}, nil
+
+	case probeOtherService:
+		return nil, fmt.Errorf(
+			"antigravity harness: port %s is in use but does not respond as an "+
+				"Antigravity harness (gRPC health service %q was not SERVING). "+
+				"Update `harnesses.antigravity.endpoint` in ax.yaml to a free port.",
+			addr, healthServiceName)
+
+	case probeInconclusive:
+		return nil, fmt.Errorf("antigravity harness: probe %s failed: %w", addr, probeErr)
+
+	case probeNoService:
+		// fall through to fork
 	}
 
-	// Slow path: fork the sidecar and wait for it to become healthy.
+	return forkSidecar(ctx, cfg, host, port, addr)
+}
+
+// forkSidecar starts the Python sidecar via SidecarCommand and waits for it to
+// become healthy. Called only when probeIdentity classified the endpoint as
+// empty (probeNoService).
+func forkSidecar(ctx context.Context, cfg SidecarConfig, host string, port int, addr string) (*Sidecar, error) {
 	cmd := SidecarCommand(SidecarConfig{
 		Host:    host,
 		Port:    port,
@@ -212,34 +332,9 @@ func EnsureSidecar(ctx context.Context, cfg SidecarConfig) (*Sidecar, error) {
 	return sc, nil
 }
 
-// reachable is a single-shot health probe used for the fast reuse path. It
-// returns true iff the target address answers a gRPC health Check (or reports
-// Unimplemented, indicating a server is reachable but does not implement the
-// health service) within timeout.
-func reachable(ctx context.Context, addr string, timeout time.Duration) bool {
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-
-	client := grpc_health_v1.NewHealthClient(conn)
-	resp, err := client.Check(probeCtx, &grpc_health_v1.HealthCheckRequest{Service: ""})
-	if err == nil && resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING {
-		return true
-	}
-	if status.Code(err) == codes.Unimplemented {
-		return true
-	}
-	return false
-}
-
-// waitForHealthy polls the gRPC health service at addr until it reports SERVING
-// (or Unimplemented, meaning the port is up but the server does not implement
-// the health protocol) or timeout expires. Retries with exponential backoff.
+// waitForHealthy polls the gRPC health service at addr until the Antigravity
+// sidecar reports SERVING under its fully-qualified service name, or timeout
+// expires. Retries with exponential backoff.
 func waitForHealthy(ctx context.Context, addr string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -254,13 +349,8 @@ func waitForHealthy(ctx context.Context, addr string, timeout time.Duration) err
 	const maxBackoff = 2 * time.Second
 	backoff := 100 * time.Millisecond
 	for {
-		resp, err := client.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: ""})
+		resp, err := client.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: healthServiceName})
 		if err == nil && resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING {
-			return nil
-		}
-		if status.Code(err) == codes.Unimplemented {
-			// Server is reachable but does not implement the health service;
-			// treat as ready.
 			return nil
 		}
 		select {

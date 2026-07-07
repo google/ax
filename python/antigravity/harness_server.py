@@ -353,7 +353,13 @@ async def _serve(host: str, port: int, default_config: AgentConfig):
     # Serve the standard gRPC health protocol.
     health_servicer = health.aio.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    # TODO: remove after validating no adverse impact on substrate readiness/
+    # liveness probes. Callers should use the named entry below instead.
     await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
+    # Fully-qualified service name so `ax exec` can distinguish this sidecar
+    # from other gRPC services that might occupy the same port. Aligns with
+    # the `harnesses.antigravity` key in ax.yaml.
+    await health_servicer.set("harness.antigravity", health_pb2.HealthCheckResponse.SERVING)
     
     listen_addr = f"{host}:{port}"
     server.add_insecure_port(listen_addr)

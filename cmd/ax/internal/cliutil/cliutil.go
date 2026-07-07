@@ -20,7 +20,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/controller"
@@ -140,22 +139,19 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	})
 }
 
-// autoStartAntigravitySidecar probes the configured harness address; if nothing
-// is serving there, it forks the Antigravity Python sidecar and waits for it to
-// become healthy. The sidecar's lifetime is bound to the harness (torn down via
-// controller.Registry.Close). See antigravity.EnsureSidecar for the reuse-vs-fork
-// logic.
+// autoStartAntigravitySidecar guarantees that an Antigravity Python sidecar
+// is running at the configured harness address by the time the controller is
+// handed back. It delegates the reuse-vs-fork-vs-error decision to
+// antigravity.EnsureSidecar, which probes the endpoint's gRPC health service
+// name to distinguish an existing sidecar, a foreign service, and an empty
+// port. The sidecar's lifetime is bound to the harness (torn down via
+// controller.Registry.Close).
 //
-// Environment overrides:
-//   - AX_ANTIGRAVITY_NO_AUTOSTART=1 disables autostart entirely (the user is
-//     responsible for starting ax harness or an equivalent sidecar).
-//   - AX_ANTIGRAVITY_SIDECAR_CMD overrides the argv used to fork the sidecar.
-//     Split on whitespace; --host and --port are appended automatically.
-//     Useful for pointing at a venv's python (e.g.
-//     "/path/to/venv/bin/python3 -m python.antigravity.harness_server").
-//
-// Skipped when the address is non-loopback (user manages the sidecar
-// out-of-band).
+// Skipped when:
+//   - AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (testing, or a user who wants to
+//     manage the sidecar out-of-band without any probing).
+//   - The address is non-loopback (user is pointing at a remote sidecar they
+//     manage themselves; forking on top of a remote address is nonsensical).
 func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.AntigravityHarness, address string) error {
 	if os.Getenv("AX_ANTIGRAVITY_NO_AUTOSTART") == "1" {
 		return nil
@@ -174,11 +170,7 @@ func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.Antigravity
 	if err != nil {
 		return nil
 	}
-	cfg := antigravity.SidecarConfig{Host: host, Port: port}
-	if cmdOverride := strings.Fields(os.Getenv("AX_ANTIGRAVITY_SIDECAR_CMD")); len(cmdOverride) > 0 {
-		cfg.Command = cmdOverride
-	}
-	sc, err := antigravity.EnsureSidecar(ctx, cfg)
+	sc, err := antigravity.EnsureSidecar(ctx, antigravity.SidecarConfig{Host: host, Port: port})
 	if err != nil {
 		return err
 	}
