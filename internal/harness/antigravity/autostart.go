@@ -27,7 +27,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -72,26 +71,27 @@ const (
 // SidecarConfig configures how EnsureSidecar (and newSidecarCmd) fork the
 // Antigravity Python sidecar. Zero values fall back to sensible defaults.
 //
-// TODO(#266): these fields should be sourced from ax.yaml
-// (harnesses.antigravity.autostart.*) instead of being assembled in Go, so
-// operators can tune host/port/argv/env without a rebuild and so both ax exec
-// autostart and ax harness read the same knobs.
+// Host and Port are the only production knobs; they're supplied by the caller
+// (today: cliutil.autoStartAntigravitySidecar) which parses them out of the
+// `harnesses.antigravity.endpoint` field in ax.yaml. Command and Env are
+// test-only overrides (see autostart_test.go: re-exec of the test binary as
+// a fake sidecar).
+//
+// TODO(#266): source these fields directly from ax.yaml under
+// harnesses.antigravity.autostart.* once we generalize harness registration,
+// so both ax exec autostart and ax harness read the same knobs.
 type SidecarConfig struct {
 	Host string // bind host for the sidecar; defaults to "127.0.0.1"
 	Port int    // bind port for the sidecar; defaults to 50053
 
-	// Command is the argv used to fork the sidecar. Defaults to
+	// Command is a test-only override for the sidecar argv. Defaults to
 	// {"python3", "-m", "python.antigravity.harness_server"}. --host and --port
 	// are appended by newSidecarCmd.
 	Command []string
 
-	// Env, Stdout, Stderr, and Stdin control the child process. If Env is nil,
-	// os.Environ() is inherited. If the *put streams are nil, os.Stdout/os.Stderr
-	// are used.
-	Env    []string
-	Stdout io.Writer
-	Stderr io.Writer
-	Stdin  io.Reader
+	// Env is a test-only override for the sidecar's environment. If nil,
+	// os.Environ() is inherited (the production case).
+	Env []string
 }
 
 // Sidecar tracks the state of the Antigravity harness sidecar backing an
@@ -144,15 +144,11 @@ func newSidecarCmd(cfg SidecarConfig) *exec.Cmd {
 	argv = append(argv, "--host", host, "--port", strconv.Itoa(port))
 
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Stdout = cfg.Stdout
-	if cmd.Stdout == nil {
-		cmd.Stdout = os.Stdout
-	}
-	cmd.Stderr = cfg.Stderr
-	if cmd.Stderr == nil {
-		cmd.Stderr = os.Stderr
-	}
-	cmd.Stdin = cfg.Stdin
+	// Sidecar stdio is always wired to the parent's terminal; Stdin left nil
+	// (Python daemon does not consume it). Add a SidecarConfig knob if a
+	// caller ever needs redirection.
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if cfg.Env != nil {
 		cmd.Env = cfg.Env
 	} else {
@@ -256,14 +252,16 @@ func isConnectionRefused(err error) bool {
 }
 
 // EnsureSidecar guarantees that an Antigravity sidecar is reachable at
-// cfg.Host:cfg.Port when it returns nil error. It probes the endpoint to
-// identify what (if anything) is already running:
+// cfg.Host:cfg.Port when it returns nil error. cfg.Host and cfg.Port come
+// from the caller (today: cliutil.autoStartAntigravitySidecar), which parses
+// them out of the `harnesses.antigravity.endpoint` field in ax.yaml. Callers
+// probing arbitrary endpoints (tests) pass them directly.
 //
-// TODO(#266): the SidecarConfig fields (Host, Port, Command, Env) should be
-// sourced from ax.yaml (harnesses.antigravity.autostart.*) rather than
-// constructed ad-hoc by cliutil.autoStartAntigravitySidecar. That would let
-// operators tune argv, env, host/port without touching Go code, and lets ax
-// harness share the same config.
+// It probes the endpoint to identify what (if anything) is already running:
+//
+// TODO(#266): source SidecarConfig directly from ax.yaml under
+// harnesses.antigravity.autostart.* once we generalize harness registration,
+// so both ax exec autostart and ax harness share the same knobs.
 //
 //   - Existing AGY sidecar → reuse as-is (Sidecar.Forked = false, Close is a
 //     no-op so the user keeps ownership of the process they started).
@@ -316,9 +314,6 @@ func forkSidecar(ctx context.Context, cfg SidecarConfig, host string, port int, 
 		Port:    port,
 		Command: cfg.Command,
 		Env:     cfg.Env,
-		Stdout:  cfg.Stdout,
-		Stderr:  cfg.Stderr,
-		Stdin:   cfg.Stdin,
 	})
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start antigravity harness sidecar (%s): %w", strings.Join(cmd.Args, " "), err)
