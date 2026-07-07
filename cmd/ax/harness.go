@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -125,13 +126,17 @@ func runAntigravityInteractionsHarness(ctx context.Context, systemInstructions s
 	return antigravityinteractions.Serve(ctx, cfg, harnessHost, harnessPort, harnessReadyzPort)
 }
 
-// harnessStateDir returns the directory for persisting resume cursors, defaulting
-// to the actor working directory (AX_HARNESS_WORKDIR) or the current directory.
+// harnessStateDir returns the directory for persisting resume cursors. It lives
+// in a dedicated ".ax/cursors" subdirectory UNDER the actor working directory
+// (AX_HARNESS_WORKDIR, or the current directory) so AX's internal state is kept
+// out of the agent-visible workspace while still residing within the actor's
+// snapshotted filesystem (so it survives snapshot/restore).
 func harnessStateDir() string {
-	if dir := os.Getenv("AX_HARNESS_WORKDIR"); dir != "" {
-		return dir
+	base := os.Getenv("AX_HARNESS_WORKDIR")
+	if base == "" {
+		base = "."
 	}
-	return "."
+	return filepath.Join(base, ".ax", "cursors")
 }
 
 // serveReadyz serves the HTTP /readyz endpoint on readyzPort that substrate's
