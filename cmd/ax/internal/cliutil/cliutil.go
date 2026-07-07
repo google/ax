@@ -74,11 +74,14 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 			address = defaultAntigravityAddress
 		}
 		ah := antigravity.New(address)
-		// Fork (or reuse) the Antigravity Python sidecar for the local execution
-		// path. Skipped when the user explicitly points at a non-loopback endpoint
-		// (they are managing the sidecar out-of-band) or when
-		// AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (used by tests and by users who
-		// want to run ax harness in a separate terminal without any probing).
+		// Fork (or reuse) the Antigravity Python sidecar for the local
+		// execution path. autoStartAntigravitySidecar probes the endpoint to
+		// distinguish an existing AGY sidecar (reuse), a foreign service
+		// occupying the port (error), and an empty port (fork). Skipped when
+		// the endpoint is non-loopback (user is pointing at a remote sidecar
+		// they manage themselves; we can't fork remotely) or when
+		// AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (tests, or advanced users who
+		// want the raw pre-#249 "dial and let it fail on connect" behavior).
 		if err := autoStartAntigravitySidecar(ctx, ah, address); err != nil {
 			return nil, fmt.Errorf("antigravity harness sidecar: %w", err)
 		}
