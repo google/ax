@@ -15,9 +15,17 @@
 package main
 
 import (
+	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func TestSetHarnessWorkDir(t *testing.T) {
@@ -63,4 +71,58 @@ func TestSetHarnessWorkDir(t *testing.T) {
 			t.Error("expected an error for a missing directory, got nil")
 		}
 	})
+}
+
+func TestServeReadyz(t *testing.T) {
+	// Start a real gRPC server exposing the standard health service; this stands
+	// in for the Antigravity Python harness that serveReadyz probes.
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for gRPC: %v", err)
+	}
+	healthServer := health.NewServer()
+	grpcServer := grpc.NewServer()
+	healthpb.RegisterHealthServer(grpcServer, healthServer)
+	go func() { _ = grpcServer.Serve(grpcListener) }()
+	t.Cleanup(grpcServer.Stop)
+	grpcPort := grpcListener.Addr().(*net.TCPAddr).Port
+
+	// Reserve an ephemeral port for /readyz, then hand it to serveReadyz to bind.
+	readyzListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for readyz: %v", err)
+	}
+	readyzPort := readyzListener.Addr().(*net.TCPAddr).Port
+	_ = readyzListener.Close()
+
+	// Start with the harness not serving, then run serveReadyz against it.
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	go serveReadyz(readyzPort, grpcPort)
+	url := fmt.Sprintf("http://127.0.0.1:%d/readyz", readyzPort)
+
+	// /readyz re-derives readiness from gRPC health on every request: 503 until
+	// the harness is SERVING, 200 once it is, and back to 503 if it stops serving.
+	waitReadyz(t, url, http.StatusServiceUnavailable)
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	waitReadyz(t, url, http.StatusOK)
+	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	waitReadyz(t, url, http.StatusServiceUnavailable)
+}
+
+func waitReadyz(t *testing.T, url string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	got := 0
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil {
+			got = resp.StatusCode
+			_ = resp.Body.Close()
+			if got == want {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("GET %s = %d, want %d", url, got, want)
 }

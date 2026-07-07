@@ -67,6 +67,10 @@ spec:
           value: "/ax/skills"
         - name: AX_HARNESS_WORKDIR
           value: "/ax"
+      readyz:
+        httpGet:
+          path: /readyz
+          port: 8081
   snapshotsConfig:
     location: gs://${AX_SNAPSHOTS_BUCKET}/antigravity/
 ---

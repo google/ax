@@ -8,7 +8,7 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.3
 	cloud.google.com/go/compute/metadata v0.9.0
-	github.com/agent-substrate/substrate v0.0.0-20260629215754-fe48750deb27
+	github.com/agent-substrate/substrate v0.0.0-20260706222328-3cb7433bd8a8
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/spf13/cobra v1.10.2

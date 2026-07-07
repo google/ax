@@ -10,8 +10,8 @@ cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdB
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
 github.com/MakeNowJust/heredoc v1.0.0 h1:cXCdzVdstXyiTqTvfqk9SDHpKNjxuom+DOlyEeQ4pzQ=
 github.com/MakeNowJust/heredoc v1.0.0/go.mod h1:mG5amYoWBHf8vpLOuehzbGGw0EHxpZZ6lCpQ4fNJ8LE=
-github.com/agent-substrate/substrate v0.0.0-20260629215754-fe48750deb27 h1:REbnncRlgoNQYIHMRm9Gu/3KQReTPQVWRn6A5jZM/GQ=
-github.com/agent-substrate/substrate v0.0.0-20260629215754-fe48750deb27/go.mod h1:2ri5mTz714LWinayPQG1d4G/kMuzbqvRXlrUrpc7N9Y=
+github.com/agent-substrate/substrate v0.0.0-20260706222328-3cb7433bd8a8 h1:tUeBjLs9TJgIWfML2dlZ3UOFG3dacbwrIYkas2ctBgY=
+github.com/agent-substrate/substrate v0.0.0-20260706222328-3cb7433bd8a8/go.mod h1:2cvSnnHPwZRAhkrC2LH1bQd1tQBfL3p+zU6pZiHBUkA=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=
 github.com/atotto/clipboard v0.1.4/go.mod h1:ZY9tmq7sm5xIbd9bOK4onWV4S6X0u6GY7Vn0Yu86PYI=
 github.com/aymanbagabas/go-udiff v0.4.1 h1:OEIrQ8maEeDBXQDoGCbbTTXYJMYRCRO1fnodZ12Gv5o=

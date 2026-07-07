@@ -18,21 +18,31 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var (
 	harnessPort int
 	harnessHost string
 )
+
+// harnessReadyzPort is the port for the HTTP /readyz readiness endpoint.
+const harnessReadyzPort = 8081
 
 var harnessCmd = &cobra.Command{
 	Use:    "harness",
@@ -84,6 +94,10 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	}
 	log.Printf("forked antigravity harness server (pid %d) on %s:%d", py.Process.Pid, harnessHost, harnessPort)
 
+	// Serve the /readyz endpoint that substrate's readiness probe polls (during
+	// golden snapshotting and per-actor Run/Restore).
+	go serveReadyz(harnessReadyzPort, harnessPort)
+
 	// Forward termination signals to the child so substrate can stop the actor.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -97,4 +111,37 @@ func runHarness(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("antigravity harness server exited: %w", err)
 	}
 	return nil
+}
+
+// serveReadyz serves the HTTP /readyz endpoint on readyzPort that substrate's
+// readiness probe polls (during golden snapshotting and per-actor Run/Restore).
+// Each request forwards to the forked harness's gRPC health Check.
+func serveReadyz(readyzPort, grpcPort int) {
+	conn, err := grpc.NewClient(
+		net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcPort)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		log.Printf("readyz: failed to create gRPC health client: %v", err)
+		return
+	}
+	healthClient := healthpb.NewHealthClient(conn)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		resp, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{})
+		if err != nil || resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok\n"))
+	})
+
+	addr := net.JoinHostPort(harnessHost, strconv.Itoa(readyzPort))
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Printf("readyz server on %s exited: %v", addr, err)
+	}
 }
