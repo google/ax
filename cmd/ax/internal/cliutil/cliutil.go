@@ -77,11 +77,12 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		// Fork (or reuse) the Antigravity Python sidecar for the local
 		// execution path. autoStartAntigravitySidecar probes the endpoint to
 		// distinguish an existing AGY sidecar (reuse), a foreign service
-		// occupying the port (error), and an empty port (fork). Skipped when
-		// the endpoint is non-loopback (user is pointing at a remote sidecar
-		// they manage themselves; we can't fork remotely) or when
-		// AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (tests, or advanced users who
-		// want the raw pre-#249 "dial and let it fail on connect" behavior).
+		// occupying the port (error), and an empty port (fork). Skipped when:
+		//   - the endpoint host is not this machine (e.g. a remote sidecar
+		//     the user runs themselves); we can only fork locally.
+		//   - AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (tests, or advanced users
+		//     who want the raw pre-#249 "dial and let it fail on connect"
+		//     behavior).
 		if err := autoStartAntigravitySidecar(ctx, ah, address); err != nil {
 			return nil, fmt.Errorf("antigravity harness sidecar: %w", err)
 		}
@@ -153,8 +154,9 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 // Skipped when:
 //   - AX_ANTIGRAVITY_NO_AUTOSTART=1 is set (testing, or a user who wants to
 //     manage the sidecar out-of-band without any probing).
-//   - The address is non-loopback (user is pointing at a remote sidecar they
-//     manage themselves; forking on top of a remote address is nonsensical).
+//   - The address host is not this machine (e.g. a remote address like
+//     "sidecar.example.com:50053"); we cannot fork a Python process on
+//     another host, so autostart doesn't apply. See isLocalHost.
 func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.AntigravityHarness, address string) error {
 	if os.Getenv("AX_ANTIGRAVITY_NO_AUTOSTART") == "1" {
 		return nil
@@ -166,7 +168,7 @@ func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.Antigravity
 		// dial time rather than a cryptic autostart-parse failure here.
 		return nil
 	}
-	if !isLoopback(host) {
+	if !isLocalHost(host) {
 		return nil
 	}
 	port, err := strconv.Atoi(portStr)
@@ -181,11 +183,13 @@ func autoStartAntigravitySidecar(ctx context.Context, h *antigravity.Antigravity
 	return nil
 }
 
-// isLoopback reports whether host is a well-known loopback name or a loopback
-// IP literal. We only autostart the sidecar for loopback addresses because a
-// non-loopback endpoint implies the user is pointing at a sidecar they run
-// themselves (e.g. in a container, on a remote host).
-func isLoopback(host string) bool {
+// isLocalHost reports whether host refers to this machine (loopback), so that
+// it makes sense for us to fork the Python sidecar on it. Covers the common
+// spellings: "localhost", "127.0.0.1", "::1", and other addresses in the
+// 127.0.0.0/8 loopback range. A non-local host (e.g. "sidecar.example.com")
+// implies the user is pointing at a sidecar they run elsewhere; autostart is
+// skipped because we cannot fork a Python process on another machine.
+func isLocalHost(host string) bool {
 	switch host {
 	case "localhost", "":
 		return true
