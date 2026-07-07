@@ -24,12 +24,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/google/ax/internal/pythonsidecar"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -80,19 +80,23 @@ func runHarness(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	py := exec.Command("python3", "-m", "python.antigravity.harness_server",
-		"--host", harnessHost,
-		"--port", strconv.Itoa(harnessPort),
-	)
-	py.Stdin = os.Stdin
-	py.Stdout = os.Stdout
-	py.Stderr = os.Stderr
-	py.Env = os.Environ()
+	cfg := pythonsidecar.Config{
+		Module: "python.antigravity.harness_server",
+		Args: []string{
+			"--host", harnessHost,
+			"--port", strconv.Itoa(harnessPort),
+		},
+		Stdin:     os.Stdin,
+		Stdout:    os.Stdout,
+		Stderr:    os.Stderr,
+		ReadyFunc: pythonsidecar.TCPReady(net.JoinHostPort("127.0.0.1", strconv.Itoa(harnessPort))),
+	}
 
-	if err := py.Start(); err != nil {
+	sidecar := pythonsidecar.New(cfg)
+	if err := sidecar.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("failed to start antigravity harness server: %w", err)
 	}
-	log.Printf("forked antigravity harness server (pid %d) on %s:%d", py.Process.Pid, harnessHost, harnessPort)
+	log.Printf("forked antigravity harness server (pid %d) on %s:%d", sidecar.Pid(), harnessHost, harnessPort)
 
 	// Serve the /readyz endpoint that substrate's readiness probe polls (during
 	// golden snapshotting and per-actor Run/Restore).
@@ -102,12 +106,11 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		for sig := range sigChan {
-			_ = py.Process.Signal(sig)
-		}
+		<-sigChan
+		_ = sidecar.Stop()
 	}()
 
-	if err := py.Wait(); err != nil {
+	if err := sidecar.Wait(); err != nil {
 		return fmt.Errorf("antigravity harness server exited: %w", err)
 	}
 	return nil
