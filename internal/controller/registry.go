@@ -69,6 +69,11 @@ func (r *Registry) Harness(id string) (harness.Harness, error) {
 // Close releases resources held by the registry. Any harness that implements
 // io.Closer is closed. Errors from individual harness Close calls are joined
 // so a single failure does not suppress the rest.
+//
+// Today only AntigravityHarness (local mode) implements io.Closer, so in
+// practice this only closes the Python sidecar auto-forked as part of
+// `ax exec`. SubstrateHarness does not implement Close (actor lifecycle is
+// managed by ATE/K8s).
 func (r *Registry) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
