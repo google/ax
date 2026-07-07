@@ -84,6 +84,12 @@ type SidecarConfig struct {
 	Host string // bind host for the sidecar; defaults to "127.0.0.1"
 	Port int    // bind port for the sidecar; defaults to 50053
 
+	// TODO(#266): remove Command and Env from the public SidecarConfig and
+	// move them behind a test-only helper (e.g. an internal
+	// antigravitytest.WithFakeSidecar hook) that stubs the fork target.
+	// Production callers never set these; keeping them on the exported
+	// struct leaks a test-only concern into the API surface.
+
 	// Command is a test-only override for the sidecar argv. Defaults to
 	// {"python3", "-m", "python.antigravity.harness_server"}. --host and --port
 	// are appended by newSidecarCmd.
