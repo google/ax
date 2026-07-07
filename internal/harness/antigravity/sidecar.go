@@ -104,8 +104,11 @@ func (s *Sidecar) Close() error {
 
 // SidecarCommand returns an *exec.Cmd that runs the Antigravity Python sidecar
 // per the provided SidecarConfig. It fills in defaults and wires stdio/env, but
-// does not Start() the process. Used by ax harness (foreground supervisor) and
-// by EnsureSidecar (auto-fork on ax exec).
+// does not Start() the process. Used by EnsureSidecar (auto-fork on ax exec).
+//
+// TODO(#265): also use this from cmd/ax/harness.go:runHarness so both fork
+// paths share a single source of truth for argv, stdio, env, and Pdeathsig.
+// Kept separate today to keep PR #251's scope minimal.
 func SidecarCommand(cfg SidecarConfig) *exec.Cmd {
 	host := cfg.Host
 	if host == "" {
