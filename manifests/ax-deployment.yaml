@@ -72,7 +72,7 @@ spec:
           path: /readyz
           port: 8081
   snapshotsConfig:
-    location: gs://${AX_SNAPSHOTS_BUCKET}/antigravity/
+    location: gs://${AX_SNAPSHOTS_BUCKET}/axharness/
 ---
 
 # ---------------------------------------------------------------------------
