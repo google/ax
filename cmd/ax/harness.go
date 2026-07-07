@@ -80,9 +80,9 @@ func runHarness(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// TODO(#265): consolidate with antigravity.SidecarCommand so both fork
-	// paths share a single source of truth for argv, stdio, env, and
-	// Pdeathsig. Kept inline here to keep PR #251's scope minimal.
+	// TODO(#265): consolidate with antigravity's sidecar command builder so
+	// both fork paths share a single source of truth for argv, stdio, env,
+	// and Pdeathsig. Kept inline here to keep PR #251's scope minimal.
 	py := exec.Command("python3", "-m", "python.antigravity.harness_server",
 		"--host", harnessHost,
 		"--port", strconv.Itoa(harnessPort),

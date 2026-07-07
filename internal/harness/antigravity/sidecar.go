@@ -55,7 +55,7 @@ const (
 	startupTimeout = 30 * time.Second
 )
 
-// SidecarConfig configures how EnsureSidecar (and SidecarCommand) fork the
+// SidecarConfig configures how EnsureSidecar (and newSidecarCmd) fork the
 // Antigravity Python sidecar. Zero values fall back to sensible defaults.
 type SidecarConfig struct {
 	Host string // bind host for the sidecar; defaults to "127.0.0.1"
@@ -63,7 +63,7 @@ type SidecarConfig struct {
 
 	// Command is the argv used to fork the sidecar. Defaults to
 	// {"python3", "-m", "python.antigravity.harness_server"}. --host and --port
-	// are appended by SidecarCommand.
+	// are appended by newSidecarCmd.
 	Command []string
 
 	// Env, Stdout, Stderr, and Stdin control the child process. If Env is nil,
@@ -102,14 +102,14 @@ func (s *Sidecar) Close() error {
 	return s.closeErr
 }
 
-// SidecarCommand returns an *exec.Cmd that runs the Antigravity Python sidecar
+// newSidecarCmd returns an *exec.Cmd that runs the Antigravity Python sidecar
 // per the provided SidecarConfig. It fills in defaults and wires stdio/env, but
 // does not Start() the process. Used by EnsureSidecar (auto-fork on ax exec).
 //
-// TODO(#265): also use this from cmd/ax/harness.go:runHarness so both fork
-// paths share a single source of truth for argv, stdio, env, and Pdeathsig.
-// Kept separate today to keep PR #251's scope minimal.
-func SidecarCommand(cfg SidecarConfig) *exec.Cmd {
+// TODO(#265): export this and reuse from cmd/ax/harness.go:runHarness so both
+// fork paths share a single source of truth for argv, stdio, env, and
+// Pdeathsig. Kept private today to keep PR #251's scope minimal.
+func newSidecarCmd(cfg SidecarConfig) *exec.Cmd {
 	host := cfg.Host
 	if host == "" {
 		host = "127.0.0.1"
@@ -282,11 +282,11 @@ func EnsureSidecar(ctx context.Context, cfg SidecarConfig) (*Sidecar, error) {
 	return forkSidecar(ctx, cfg, host, port, addr)
 }
 
-// forkSidecar starts the Python sidecar via SidecarCommand and waits for it to
+// forkSidecar starts the Python sidecar via newSidecarCmd and waits for it to
 // become healthy. Called only when probeIdentity classified the endpoint as
 // empty (probeNoService).
 func forkSidecar(ctx context.Context, cfg SidecarConfig, host string, port int, addr string) (*Sidecar, error) {
-	cmd := SidecarCommand(SidecarConfig{
+	cmd := newSidecarCmd(SidecarConfig{
 		Host:    host,
 		Port:    port,
 		Command: cfg.Command,

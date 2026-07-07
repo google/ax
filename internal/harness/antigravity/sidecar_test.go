@@ -246,20 +246,20 @@ func TestEnsureSidecar_StartupTimeout(t *testing.T) {
 	}
 }
 
-// TestSidecarCommand_DefaultCommand verifies that SidecarCommand falls back to
+// TestNewSidecarCmd_DefaultCommand verifies that newSidecarCmd falls back to
 // the built-in Python argv when Command is left empty, and appends --host/--port.
-func TestSidecarCommand_DefaultCommand(t *testing.T) {
-	cmd := SidecarCommand(SidecarConfig{Host: "0.0.0.0", Port: 60001})
+func TestNewSidecarCmd_DefaultCommand(t *testing.T) {
+	cmd := newSidecarCmd(SidecarConfig{Host: "0.0.0.0", Port: 60001})
 	want := []string{"python3", "-m", "python.antigravity.harness_server", "--host", "0.0.0.0", "--port", "60001"}
 	if !stringSlicesEqual(cmd.Args, want) {
 		t.Errorf("Args = %v, want %v", cmd.Args, want)
 	}
 }
 
-// TestSidecarCommand_CustomCommand verifies that a caller-supplied Command
+// TestNewSidecarCmd_CustomCommand verifies that a caller-supplied Command
 // replaces the default argv and still has --host/--port appended.
-func TestSidecarCommand_CustomCommand(t *testing.T) {
-	cmd := SidecarCommand(SidecarConfig{
+func TestNewSidecarCmd_CustomCommand(t *testing.T) {
+	cmd := newSidecarCmd(SidecarConfig{
 		Host:    "127.0.0.1",
 		Port:    9,
 		Command: []string{"my-sidecar", "--flag=x"},
