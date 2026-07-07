@@ -350,15 +350,12 @@ async def _serve(host: str, port: int, default_config: AgentConfig):
     servicer = AntigravityHarnessServiceServicer(default_config)
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
 
-    # Serve the standard gRPC health protocol.
+    # Serve the standard gRPC health protocol under the fully-qualified
+    # service name "harness.antigravity". Both consumers (`ax exec` identity
+    # probe and `ax harness` /readyz endpoint) query this name; aligns with
+    # the `harnesses.antigravity` key in ax.yaml.
     health_servicer = health.aio.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
-    # TODO: remove after validating no adverse impact on substrate readiness/
-    # liveness probes. Callers should use the named entry below instead.
-    await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
-    # Fully-qualified service name so `ax exec` can distinguish this sidecar
-    # from other gRPC services that might occupy the same port. Aligns with
-    # the `harnesses.antigravity` key in ax.yaml.
     await health_servicer.set("harness.antigravity", health_pb2.HealthCheckResponse.SERVING)
     
     listen_addr = f"{host}:{port}"

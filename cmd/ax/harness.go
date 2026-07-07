@@ -116,9 +116,16 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// readyzHealthService is the fully-qualified gRPC health service name the
+// Antigravity Python sidecar registers. Probing by this name (rather than the
+// empty overall name) ensures /readyz only returns 200 when the sidecar we
+// forked is up -- not just any gRPC server that happens to occupy the port.
+const readyzHealthService = "harness.antigravity"
+
 // serveReadyz serves the HTTP /readyz endpoint on readyzPort that substrate's
 // readiness probe polls (during golden snapshotting and per-actor Run/Restore).
-// Each request forwards to the forked harness's gRPC health Check.
+// Each request forwards to the forked harness's gRPC health Check for the
+// harness.antigravity service.
 func serveReadyz(readyzPort, grpcPort int) {
 	conn, err := grpc.NewClient(
 		net.JoinHostPort("127.0.0.1", strconv.Itoa(grpcPort)),
@@ -134,7 +141,7 @@ func serveReadyz(readyzPort, grpcPort int) {
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()
-		resp, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{})
+		resp, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{Service: readyzHealthService})
 		if err != nil || resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return

@@ -96,16 +96,18 @@ func TestServeReadyz(t *testing.T) {
 	_ = readyzListener.Close()
 
 	// Start with the harness not serving, then run serveReadyz against it.
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	// serveReadyz probes the fully-qualified "harness.antigravity" service
+	// name (see readyzHealthService).
+	healthServer.SetServingStatus(readyzHealthService, healthpb.HealthCheckResponse_NOT_SERVING)
 	go serveReadyz(readyzPort, grpcPort)
 	url := fmt.Sprintf("http://127.0.0.1:%d/readyz", readyzPort)
 
 	// /readyz re-derives readiness from gRPC health on every request: 503 until
 	// the harness is SERVING, 200 once it is, and back to 503 if it stops serving.
 	waitReadyz(t, url, http.StatusServiceUnavailable)
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(readyzHealthService, healthpb.HealthCheckResponse_SERVING)
 	waitReadyz(t, url, http.StatusOK)
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
+	healthServer.SetServingStatus(readyzHealthService, healthpb.HealthCheckResponse_NOT_SERVING)
 	waitReadyz(t, url, http.StatusServiceUnavailable)
 }
 
