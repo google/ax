@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -215,12 +216,15 @@ func (e *substrateExecution) Run(ctx context.Context, handler harness.Handler) e
 			},
 		},
 	}
-	if err := stream.Send(start); err != nil {
+	// A server that fails before reading the start frame makes Send/CloseSend
+	// report io.EOF; the real status is surfaced by DrainStream's Recv below, so
+	// only treat non-EOF errors as send failures.
+	if err := stream.Send(start); err != nil && err != io.EOF {
 		return fmt.Errorf("failed to send harness start: %w", err)
 	}
 
 	// Close send direction to trigger server processing.
-	if err := stream.CloseSend(); err != nil {
+	if err := stream.CloseSend(); err != nil && err != io.EOF {
 		return fmt.Errorf("failed to close stream send direction: %w", err)
 	}
 

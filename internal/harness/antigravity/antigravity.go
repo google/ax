@@ -17,6 +17,7 @@ package antigravity
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -136,10 +137,13 @@ func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler)
 	if err != nil {
 		return fmt.Errorf("failed to call gRPC HarnessService.Connect: %w", err)
 	}
-	if err := stream.Send(start); err != nil {
+	// A server that fails before reading the start frame makes Send/CloseSend
+	// report io.EOF; the real status is surfaced by DrainStream's Recv below, so
+	// only treat non-EOF errors as send failures.
+	if err := stream.Send(start); err != nil && err != io.EOF {
 		return fmt.Errorf("failed to send harness start: %w", err)
 	}
-	if err := stream.CloseSend(); err != nil {
+	if err := stream.CloseSend(); err != nil && err != io.EOF {
 		return fmt.Errorf("failed to close stream send direction: %w", err)
 	}
 
