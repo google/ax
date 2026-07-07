@@ -265,10 +265,6 @@ func isConnectionRefused(err error) bool {
 //
 // It probes the endpoint to identify what (if anything) is already running:
 //
-// TODO(#266): source SidecarConfig directly from ax.yaml under
-// harnesses.antigravity.autostart.* once we generalize harness registration,
-// so both ax exec autostart and ax harness share the same knobs.
-//
 //   - Existing AGY sidecar → reuse as-is (Sidecar.Forked = false, Close is a
 //     no-op so the user keeps ownership of the process they started).
 //   - Some other service → return an explicit error asking the user to update
