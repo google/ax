@@ -30,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -111,6 +112,26 @@ func runHarness(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("antigravity harness server exited: %w", err)
 	}
 	return nil
+}
+
+func runAntigravityInteractionsHarness(ctx context.Context, systemInstructions string) error {
+	if err := setHarnessWorkDir(); err != nil {
+		return err
+	}
+	cfg := antigravityinteractions.AntigravityInteractionsConfig{
+		SystemInstruction: systemInstructions,
+		StateDir:          harnessStateDir(),
+	}
+	return antigravityinteractions.Serve(ctx, cfg, harnessHost, harnessPort, harnessReadyzPort)
+}
+
+// harnessStateDir returns the directory for persisting resume cursors, defaulting
+// to the actor working directory (AX_HARNESS_WORKDIR) or the current directory.
+func harnessStateDir() string {
+	if dir := os.Getenv("AX_HARNESS_WORKDIR"); dir != "" {
+		return dir
+	}
+	return "."
 }
 
 // serveReadyz serves the HTTP /readyz endpoint on readyzPort that substrate's
