@@ -70,6 +70,11 @@ const (
 
 // SidecarConfig configures how EnsureSidecar (and newSidecarCmd) fork the
 // Antigravity Python sidecar. Zero values fall back to sensible defaults.
+//
+// TODO(#266): these fields should be sourced from ax.yaml
+// (harnesses.antigravity.autostart.*) instead of being assembled in Go, so
+// operators can tune host/port/argv/env without a rebuild and so both ax exec
+// autostart and ax harness read the same knobs.
 type SidecarConfig struct {
 	Host string // bind host for the sidecar; defaults to "127.0.0.1"
 	Port int    // bind port for the sidecar; defaults to 50053
@@ -252,6 +257,12 @@ func isConnectionRefused(err error) bool {
 // EnsureSidecar guarantees that an Antigravity sidecar is reachable at
 // cfg.Host:cfg.Port when it returns nil error. It probes the endpoint to
 // identify what (if anything) is already running:
+//
+// TODO(#266): the SidecarConfig fields (Host, Port, Command, Env) should be
+// sourced from ax.yaml (harnesses.antigravity.autostart.*) rather than
+// constructed ad-hoc by cliutil.autoStartAntigravitySidecar. That would let
+// operators tune argv, env, host/port without touching Go code, and lets ax
+// harness share the same config.
 //
 //   - Existing AGY sidecar → reuse as-is (Sidecar.Forked = false, Close is a
 //     no-op so the user keeps ownership of the process they started).
