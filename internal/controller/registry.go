@@ -69,12 +69,6 @@ func (r *Registry) Harness(id string) (harness.Harness, error) {
 // Close releases resources held by the registry. Any harness that implements
 // io.Closer is closed. Errors from individual harness Close calls are joined
 // so a single failure does not suppress the rest.
-//
-// Assumes each harness object is registered under a single ID. Today
-// cliutil.NewControllerFromConfig registers the default harness twice (under
-// its real ID and again under ""); Sidecar.Close's sync.Once protects the
-// interim double-Close until that duplicate registration is removed (see
-// #264).
 func (r *Registry) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
