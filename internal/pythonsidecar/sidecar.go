@@ -44,6 +44,11 @@ type Config struct {
 	ReadyFunc func(ctx context.Context) error
 }
 
+// TODO: AntigravityHarness should use pythonsidecar.
+// TODO: Use /var/ax_agy_harness_service for communication instead of TCP.
+// TODO: Use go:embed to embed python/ directory into the ax binary.
+// TODO: Add a Setup method to extract embedded assets, pip install, etc.
+
 // Sidecar manages the lifecycle of the underlying Python process.
 type Sidecar struct {
 	cfg Config
