@@ -21,8 +21,8 @@ ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
 if [[ -n "${PROJECT_ID:-}" ]]; then
-  export KO_DOCKER_REPO="gcr.io/${PROJECT_ID}"
-  echo "Using KO_DOCKER_REPO: ${KO_DOCKER_REPO}" >&2
+  export AX_IMAGE_REPO="gcr.io/${PROJECT_ID}"
+  echo "Using AX_IMAGE_REPO: ${AX_IMAGE_REPO}" >&2
 fi
 
 export KO_DEFAULTPLATFORMS="${KO_DEFAULTPLATFORMS:-linux/amd64}"
@@ -107,10 +107,10 @@ detect_container_engine() {
 
 # build_ax_image builds and pushes the comprehensive ax image (the Go ax binary
 # plus the Antigravity Python sidecar) and echoes its digest-pinned reference on
-# stdout. Requires KO_DOCKER_REPO and a container engine.
+# stdout. Requires AX_IMAGE_REPO and a container engine.
 build_ax_image() {
-  if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
-    echo "Error: KO_DOCKER_REPO environment variable must be set" >&2
+  if [[ -z "${AX_IMAGE_REPO:-}" ]]; then
+    echo "Error: AX_IMAGE_REPO environment variable must be set" >&2
     exit 1
   fi
   detect_container_engine
@@ -121,7 +121,7 @@ build_ax_image() {
   fi
 
   local repo tag image digest
-  repo="${KO_DOCKER_REPO}/ax"
+  repo="${AX_IMAGE_REPO}/ax"
   tag="$(git rev-parse --short HEAD)"
   image="${repo}:${tag}"
 
@@ -161,8 +161,8 @@ build_ateom_image() {
     echo "${ATEOM_IMAGE}"
     return
   fi
-  if [[ -z "${KO_DOCKER_REPO:-}" ]]; then
-    echo "Error: KO_DOCKER_REPO environment variable must be set" >&2
+  if [[ -z "${AX_IMAGE_REPO:-}" ]]; then
+    echo "Error: AX_IMAGE_REPO environment variable must be set" >&2
     exit 1
   fi
 
@@ -176,7 +176,7 @@ build_ateom_image() {
   fi
 
   log_step "build_ateom_image (from ${sub_dir})" >&2
-  ateom_ref="$(cd "${sub_dir}" && KO_DOCKER_REPO="${KO_DOCKER_REPO}" GOFLAGS="" ko build --platform=linux/amd64 -B ./cmd/ateom-gvisor)"
+  ateom_ref="$(cd "${sub_dir}" && KO_DOCKER_REPO="${AX_IMAGE_REPO}" GOFLAGS="" ko build --platform=linux/amd64 -B ./cmd/ateom-gvisor)"
 
   if [[ "${ateom_ref}" != *@sha256:* ]]; then
     echo "Error: ko did not return a digest-pinned ateom image (got '${ateom_ref}')." >&2

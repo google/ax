@@ -45,7 +45,7 @@ with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
 #### Registry authentication
 
-`PROJECT_ID` sets `KO_DOCKER_REPO=gcr.io/$PROJECT_ID`. The deploy pushes two
+`PROJECT_ID` sets `AX_IMAGE_REPO=gcr.io/$PROJECT_ID`. The deploy pushes two
 images — the **ax** image (via your container engine) and the **ateom** image
 (via `ko`) — and both authenticate through the gcloud credential helper:
 
