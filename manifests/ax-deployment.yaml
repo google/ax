@@ -66,7 +66,7 @@ spec:
         - name: SKILLS_DIR
           value: "/ax/skills"
         - name: AX_HARNESS_WORKDIR
-          value: "/ax"
+          value: "/workspace"
       readyz:
         httpGet:
           path: /readyz

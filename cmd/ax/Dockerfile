@@ -30,10 +30,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -tags=harness -o /out/ax ./cmd/ax
+    go build -o /out/ax ./cmd/ax
 
 FROM python:3.13-slim
-WORKDIR /ax
+WORKDIR /workspace
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
