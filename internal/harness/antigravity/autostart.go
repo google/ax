@@ -57,9 +57,14 @@ const (
 	// reuseProbeTimeout is the fast probe deadline used to identify whether the
 	// configured endpoint is already serving an Antigravity sidecar. Kept short
 	// so ax exec startup stays snappy when nothing is running.
+	//
+	// TODO(#266): promote to ax.yaml (e.g. harnesses.antigravity.autostart.probe_timeout)
+	// so both ax exec autostart and ax harness can share the same knob.
 	reuseProbeTimeout = 500 * time.Millisecond
 	// startupTimeout is how long EnsureSidecar waits for a freshly forked
 	// Python sidecar to become healthy before giving up.
+	//
+	// TODO(#266): promote to ax.yaml (e.g. harnesses.antigravity.autostart.startup_timeout).
 	startupTimeout = 30 * time.Second
 )
 
