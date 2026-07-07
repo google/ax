@@ -38,7 +38,10 @@ var _ harness.Execution = (*antigravityExecution)(nil)
 // Antigravity Python agent server over gRPC.
 type AntigravityHarness struct {
 	address string
-	sidecar *Sidecar // non-nil when this harness manages a co-located sidecar; see AttachSidecar
+	// sidecar is set via AttachSidecar when the Python sidecar is auto-forked
+	// as part of `ax exec` (local mode). Nil in substrate mode, when the user
+	// runs the sidecar out-of-band, or when AX_ANTIGRAVITY_NO_AUTOSTART=1.
+	sidecar *Sidecar
 }
 
 // New creates a new AntigravityHarness with a configurable address.
