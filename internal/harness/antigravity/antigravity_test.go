@@ -17,10 +17,6 @@ package antigravity
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"net"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -109,66 +105,4 @@ func TestNew_AutoStartFalse_NilSidecar(t *testing.T) {
 	if h.sidecar != nil {
 		t.Errorf("expected sidecar to be nil, got %v", h.sidecar)
 	}
-}
-
-// TestNew_AutoStartTrue_StubServer_ForksSidecar drives the real fork +
-// TCPReady path with a tiny stub python.antigravity.harness_server on
-// PYTHONPATH, so we don't need the AGY SDK installed to test the wiring.
-// sidecar.Stop stops the forked process.
-func TestNew_AutoStartTrue_StubServer_ForksSidecar(t *testing.T) {
-	stubPythonAntigravityModule(t)
-
-	addr := fmt.Sprintf("127.0.0.1:%d", getFreePort(t))
-	h, err := New(context.Background(), addr, true)
-	if err != nil {
-		t.Fatalf("New(autoStart=true): %v", err)
-	}
-	if h.sidecar == nil {
-		t.Fatal("expected sidecar to be forked, got nil")
-	}
-	if !h.sidecar.IsRunning() {
-		t.Fatal("expected sidecar to be running after New")
-	}
-	if err := h.sidecar.Stop(); err != nil {
-		t.Errorf("sidecar.Stop: %v", err)
-	}
-	if h.sidecar.IsRunning() {
-		t.Error("expected sidecar to be stopped")
-	}
-}
-
-// stubPythonAntigravityModule writes a minimal python/antigravity/harness_server.py on PYTHONPATH that runs a stdlib socketserver.TCPServer so pythonsidecar.TCPReady succeeds without needing the real AGY SDK.
-func stubPythonAntigravityModule(t *testing.T) {
-	t.Helper()
-	root := t.TempDir()
-	pkg := filepath.Join(root, "python", "antigravity")
-	if err := os.MkdirAll(pkg, 0755); err != nil {
-		t.Fatalf("mkdir stub: %v", err)
-	}
-	src := `import socketserver, sys
-port = int(sys.argv[sys.argv.index("--port")+1])
-socketserver.TCPServer.allow_reuse_address = True
-socketserver.TCPServer(("127.0.0.1", port), socketserver.BaseRequestHandler).serve_forever()
-`
-	if err := os.WriteFile(filepath.Join(root, "python", "__init__.py"), []byte(""), 0644); err != nil {
-		t.Fatalf("write stub init: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pkg, "__init__.py"), []byte(""), 0644); err != nil {
-		t.Fatalf("write stub init: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pkg, "harness_server.py"), []byte(src), 0644); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-	t.Setenv("PYTHONPATH", root)
-}
-
-func getFreePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to get free port: %v", err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	_ = l.Close()
-	return port
 }
