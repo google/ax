@@ -18,7 +18,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -26,6 +30,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/google/ax/internal/harness"
+	"github.com/google/ax/internal/pythonsidecar"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
 )
@@ -38,17 +43,49 @@ var _ harness.Execution = (*antigravityExecution)(nil)
 // Antigravity Python agent server over gRPC.
 type AntigravityHarness struct {
 	address string
+	sidecar *pythonsidecar.Sidecar // non-nil when this harness forked the process
 }
 
-// New creates a new AntigravityHarness with a configurable address.
-// Address defaults to "127.0.0.1:50053" (gRPC TCP connection).
-func New(address string) *AntigravityHarness {
+// New creates a new AntigravityHarness. When autoStart is true, New forks the
+// Antigravity Python sidecar and waits for it to become reachable.
+func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarness, error) {
 	if address == "" {
 		address = "127.0.0.1:50053"
 	}
-	return &AntigravityHarness{
-		address: address,
+	h := &AntigravityHarness{address: address}
+	if !autoStart {
+		return h, nil
 	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: invalid address %q: %w", address, err)
+	}
+	cfg := pythonsidecar.Config{
+		Module: "python.antigravity.harness_server",
+		Args: []string{
+			"--host", host,
+			"--port", port,
+		},
+		Stdin:     os.Stdin,
+		Stdout:    os.Stdout,
+		Stderr:    os.Stderr,
+		ReadyFunc: pythonsidecar.TCPReady(address),
+	}
+	sidecar := pythonsidecar.New(cfg)
+	if err := sidecar.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start antigravity harness server: %w", err)
+	}
+	h.sidecar = sidecar
+	// Own the sidecar lifecycle here (no registry->controller->antigravity
+	// teardown chain): on ctrl-C / SIGTERM, stop the Python process
+	// directly. Mirrors cmd/ax/harness.go.
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		_ = sidecar.Stop()
+	}()
+	return h, nil
 }
 
 // Start implements Harness.Start.
