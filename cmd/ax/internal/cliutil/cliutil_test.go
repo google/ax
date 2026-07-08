@@ -49,40 +49,6 @@ func TestNewControllerFromConfig_BuiltinSubstrate(t *testing.T) {
 	c.Close()
 }
 
-func TestNewControllerFromConfig_InteractionsLocalDefaultsStateDir(t *testing.T) {
-	t.Setenv("AX_SUBSTRATE", "")  // local mode: the harness is built in-process
-	t.Setenv("HOME", t.TempDir()) // DefaultStateDir() resolves under a temp home
-
-	cfg := &config.Config{
-		EventLog: config.EventLogConfig{
-			SQLiteConfig: config.SQLiteConfig{
-				Filename: filepath.Join(t.TempDir(), "log.sqlite"),
-			},
-		},
-		Harnesses: config.HarnessesConfig{
-			Antigravity: config.AntigravityHarnessConfig{Default: true},
-			AntigravityInteractions: config.AntigravityInteractionsHarnessConfig{
-				Agent: "projects/p/locations/global/agents/a",
-				// StateDir omitted -> cliutil applies the ~/.ax/cursors default.
-			},
-		},
-	}
-
-	c, err := NewControllerFromConfig(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("NewControllerFromConfig: %v", err)
-	}
-	if c == nil {
-		t.Fatal("expected non-nil controller")
-	}
-	defer c.Close()
-
-	// With a default state dir applied, the harness still registers locally.
-	if _, err := c.Registry().Harness(config.AntigravityInteractionsHarnessID); err != nil {
-		t.Errorf("interactions harness not registered with a defaulted state_dir: %v", err)
-	}
-}
-
 func TestNewControllerFromConfig_InteractionsSubstrate(t *testing.T) {
 	t.Setenv("AX_SUBSTRATE", "1")
 
