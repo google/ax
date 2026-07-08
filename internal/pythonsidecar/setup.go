@@ -109,11 +109,6 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 			return nil
 		}
 
-		name := d.Name()
-		if name == ".DS_Store" || strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") || strings.HasSuffix(name, ".go") {
-			return nil
-		}
-
 		destPath := filepath.Join(destDir, filepath.FromSlash(path))
 		rel, err := filepath.Rel(destDir, destPath)
 		if err != nil || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
