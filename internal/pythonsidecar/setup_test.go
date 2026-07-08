@@ -36,6 +36,7 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 
 	testFS := fstest.MapFS{
 		"antigravity/harness_server.py": &fstest.MapFile{Data: []byte("print('hello')")},
+		"antigravity/requirements.txt":  &fstest.MapFile{Data: []byte("# empty requirements for test\n")},
 		"proto/ax_pb2.py":               &fstest.MapFile{Data: []byte("print('proto')")},
 	}
 
@@ -75,6 +76,7 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 func TestSidecar_Setup(t *testing.T) {
 	testFS := fstest.MapFS{
 		"antigravity/harness_server.py": &fstest.MapFile{Data: []byte("print('hello')")},
+		"antigravity/requirements.txt":  &fstest.MapFile{Data: []byte("# empty requirements for test\n")},
 	}
 	tmpDir := filepath.Join(t.TempDir(), "target")
 	s := pythonsidecar.New(pythonsidecar.Config{

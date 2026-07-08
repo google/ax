@@ -52,31 +52,19 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 
 	extractDir := filepath.Join(targetDir, "python")
 	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
-	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
 
 	result := targetDir + string(os.PathListSeparator) + extractDir
 
-	if _, err := os.Stat(extractDir); err == nil {
-		if _, err := os.Stat(pkgDir); err == nil {
-			return result + string(os.PathListSeparator) + pkgDir, nil
-		}
-		return result, nil
-	}
 	if err := extractFS(ctx, opts.FS, extractDir); err != nil {
 		return "", fmt.Errorf("failed to extract embedded assets: %w", err)
 	}
 
-	if _, err := os.Stat(reqPath); err == nil {
-		pkgPath, err := install(ctx, reqPath)
-		if err != nil {
-			return "", err
-		}
-		if pkgPath != "" {
-			return result + string(os.PathListSeparator) + pkgPath, nil
-		}
+	pkgPath, err := install(ctx, reqPath)
+	if err != nil {
+		return "", err
 	}
 
-	return result, nil
+	return result + string(os.PathListSeparator) + pkgPath, nil
 }
 
 // Setup extracts embedded Python assets as specified by opts.
@@ -153,7 +141,7 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 
 func install(ctx context.Context, reqPath string) (string, error) {
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
-	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--target", pkgDir, "-r", reqPath)
+	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--extra-index-url", "https://pypi.org/simple", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("pip install failed for %s: %w\nOutput:\n%s", reqPath, err, string(out))
