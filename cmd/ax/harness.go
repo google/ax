@@ -122,24 +122,28 @@ func runAntigravityInteractionsHarness(ctx context.Context, systemInstructions s
 	if err := setHarnessWorkDir(); err != nil {
 		return err
 	}
+	stateDir, err := harnessStateDir()
+	if err != nil {
+		return err
+	}
 	cfg := antigravityinteractions.AntigravityInteractionsConfig{
 		SystemInstruction: systemInstructions,
-		StateDir:          harnessStateDir(),
+		StateDir:          stateDir,
 	}
 	return antigravityinteractions.Serve(ctx, cfg, harnessHost, harnessPort, harnessReadyzPort)
 }
 
-// harnessStateDir returns the directory for persisting resume cursors. It lives
-// in a dedicated ".ax/cursors" subdirectory UNDER the actor working directory
-// (AX_HARNESS_WORKDIR, or the current directory) so AX's internal state is kept
-// out of the agent-visible workspace while still residing within the actor's
-// snapshotted filesystem (so it survives snapshot/restore).
-func harnessStateDir() string {
-	base := os.Getenv("AX_HARNESS_WORKDIR")
-	if base == "" {
-		base = "."
+// harnessStateDir returns the directory for persisting resume cursors: a
+// dedicated "~/.ax/cursors" under the user's home directory. It lives OUTSIDE the
+// agent's working directory on purpose -- the working directory is the agent's
+// operating surface (it reads and edits files there, including hidden ones), so
+// AX's internal state is kept separate to avoid the agent seeing or clobbering it.
+func harnessStateDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory for resume-cursor state: %w", err)
 	}
-	return filepath.Join(base, ".ax", "cursors")
+	return filepath.Join(home, ".ax", "cursors"), nil
 }
 
 // serveReadyz serves the HTTP /readyz endpoint on readyzPort that substrate's
