@@ -67,23 +67,6 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 	return result + string(os.PathListSeparator) + pkgPath, nil
 }
 
-// Setup extracts embedded Python assets as specified by opts.
-// Upon success, it sets s.cfg.PythonPath to the target directory where assets were extracted.
-func (s *Sidecar) Setup(ctx context.Context, opts SetupOptions) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.running {
-		return fmt.Errorf("cannot run Setup while sidecar is running")
-	}
-	targetDir, err := Setup(ctx, opts)
-	if err != nil {
-		return err
-	}
-	s.cfg.PythonPath = targetDir
-	return nil
-}
-
 func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 	return fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

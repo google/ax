@@ -73,12 +73,13 @@ func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarne
 		ReadyFunc: pythonsidecar.TCPReady(address),
 	}
 	sidecar := pythonsidecar.New(cfg)
-	if err := sidecar.Setup(ctx, pythonsidecar.SetupOptions{
+	path, err := pythonsidecar.Setup(ctx, pythonsidecar.SetupOptions{
 		FS: python.FS,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed to setup antigravity harness server assets: %w", err)
 	}
-	if err := sidecar.Start(ctx, ""); err != nil {
+	if err := sidecar.Start(ctx, path); err != nil {
 		return nil, fmt.Errorf("failed to start antigravity harness server: %w", err)
 	}
 	h.sidecar = sidecar

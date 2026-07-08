@@ -73,45 +73,6 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 	}
 }
 
-func TestSidecar_Setup(t *testing.T) {
-	testFS := fstest.MapFS{
-		"antigravity/harness_server.py": &fstest.MapFile{Data: []byte("print('hello')")},
-		"antigravity/requirements.txt":  &fstest.MapFile{Data: []byte("# empty requirements for test\n")},
-	}
-	tmpDir := filepath.Join(t.TempDir(), "target")
-	s := pythonsidecar.New(pythonsidecar.Config{
-		Module: "test_module",
-	})
-
-	err := s.Setup(context.Background(), pythonsidecar.SetupOptions{
-		FS:        testFS,
-		TargetDir: tmpDir,
-	})
-	if err != nil {
-		t.Fatalf("Sidecar.Setup() failed: %v", err)
-	}
-
-	// Verify Sidecar cannot run Setup while already running
-	modulePath := filepath.Join(tmpDir, "test_module.py")
-	if err := os.WriteFile(modulePath, []byte("import time\ntime.sleep(2)\n"), 0644); err != nil {
-		t.Fatalf("failed to write test module: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.Start(ctx, tmpDir); err != nil {
-		t.Fatalf("Start() failed: %v", err)
-	}
-
-	if err := s.Setup(ctx, pythonsidecar.SetupOptions{FS: testFS, TargetDir: tmpDir}); err == nil {
-		t.Errorf("expected Sidecar.Setup() to fail while running, got nil")
-	}
-
-	_ = s.Stop()
-	_ = s.Wait()
-}
-
 func TestSidecar_PythonPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	customPath := filepath.Join(tmpDir, "custom_python_path")
