@@ -94,18 +94,6 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 			return ctx.Err()
 		}
 
-		name := d.Name()
-		if d.IsDir() {
-			if name == "__pycache__" || name == ".pytest_cache" || name == ".git" || name == ".github" {
-				return fs.SkipDir
-			}
-			return nil
-		}
-
-		if name == ".DS_Store" || strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") || strings.HasSuffix(name, ".go") {
-			return nil
-		}
-
 		destPath := filepath.Join(destDir, filepath.FromSlash(path))
 		rel, err := filepath.Rel(destDir, destPath)
 		if err != nil || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
