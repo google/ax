@@ -56,6 +56,12 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	// substrate actors ("1").
 	substrateMode := os.Getenv("AX_SUBSTRATE") == "1"
 
+	// Validate config before local-mode antigravity.New forks the Python
+	// sidecar, so a config error surfaces without spawning a subprocess.
+	if len(cfg.Harnesses.Substrate) > 0 && !substrateMode {
+		return nil, fmt.Errorf("custom substrate harnesses require AX_SUBSTRATE=1")
+	}
+
 	// Built-in harnesses.
 	var defaultHarnessID string
 	var antigravityHarness harness.Harness
@@ -65,7 +71,11 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		antigravityHarness = antigravity.New(address)
+		// Local mode: the harness owns the Python sidecar.
+		antigravityHarness, err = antigravity.New(ctx, address, true)
+		if err != nil {
+			return nil, fmt.Errorf("antigravity harness: %w", err)
+		}
 	} else {
 		antigravityHarness, err = substrate.New(antigravityHarnessID, "", "", "", 80)
 		if err != nil {
@@ -79,10 +89,6 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		defaultHarnessID = antigravityHarnessID
 	}
 
-	// Custom substrate harnesses.
-	if len(cfg.Harnesses.Substrate) > 0 && !substrateMode {
-		return nil, fmt.Errorf("custom substrate harnesses require AX_SUBSTRATE=1")
-	}
 	for _, sc := range cfg.Harnesses.Substrate {
 		h, err := sc.NewHarness("")
 		if err != nil {
