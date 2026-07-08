@@ -67,9 +67,6 @@ func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarne
 			"--host", host,
 			"--port", port,
 		},
-		Stdin:     os.Stdin,
-		Stdout:    os.Stdout,
-		Stderr:    os.Stderr,
 		ReadyFunc: pythonsidecar.TCPReady(address),
 	}
 	sidecar := pythonsidecar.New(cfg)

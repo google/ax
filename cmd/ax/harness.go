@@ -88,7 +88,6 @@ func runHarness(cmd *cobra.Command, args []string) error {
 			"--host", harnessHost,
 			"--port", strconv.Itoa(harnessPort),
 		},
-		Stdin:     os.Stdin,
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
 		ReadyFunc: pythonsidecar.TCPReady(net.JoinHostPort("127.0.0.1", strconv.Itoa(harnessPort))),

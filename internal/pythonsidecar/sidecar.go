@@ -35,8 +35,6 @@ type Config struct {
 	Module string
 	// Args contains any additional arguments to pass to the module. (Optional)
 	Args []string
-	// Stdin redirects the sidecar's standard input. (Optional)
-	Stdin io.Reader
 	// Stdout redirects the sidecar's standard output. (Optional)
 	Stdout io.Writer
 	// Stderr redirects the sidecar's standard error. (Optional)
@@ -108,9 +106,6 @@ func (s *Sidecar) Start(ctx context.Context, pythonPath string) error {
 		cmd.Env = env
 	}
 
-	if s.cfg.Stdin != nil {
-		cmd.Stdin = s.cfg.Stdin
-	}
 	if s.cfg.Stdout != nil {
 		cmd.Stdout = s.cfg.Stdout
 	}
