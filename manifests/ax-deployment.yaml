@@ -133,3 +133,6 @@ data:
     harnesses:
       antigravity:
         default: true
+      # TODO(wjjclaud): Uncomment when ready to enable.
+      # antigravity-interactions:
+      #   agent: "projects/vertex-agent-fishfood/locations/global/agents/antigravity-preview-05-2026"

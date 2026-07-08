@@ -52,6 +52,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -152,6 +153,20 @@ func cloudLocation() string {
 		return loc
 	}
 	return defaultLocation
+}
+
+// DefaultStateDir returns the default resume-cursor directory, ~/.ax/cursors,
+// used when a caller does not set StateDir explicitly. It lives outside the
+// agent's working directory on purpose: the working directory is the agent's
+// operating surface (it reads and edits files there), so AX's internal state is
+// kept separate to avoid the agent seeing or clobbering it. New still requires a
+// non-empty StateDir; callers apply this default.
+func DefaultStateDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory for resume-cursor state: %w", err)
+	}
+	return filepath.Join(home, ".ax", "cursors"), nil
 }
 
 // AntigravityInteractionsHarness implements Harness by talking to the public

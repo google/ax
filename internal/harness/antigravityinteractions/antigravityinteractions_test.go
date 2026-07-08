@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -219,5 +220,19 @@ func TestCursorStoreLoadSave(t *testing.T) {
 	}
 	if cur.PrevInteractionID != "INT-8" {
 		t.Errorf("after overwrite PrevInteractionID = %q, want %q", cur.PrevInteractionID, "INT-8")
+	}
+}
+
+// TestDefaultStateDir returns ~/.ax/cursors under the user's home directory.
+func TestDefaultStateDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	got, err := DefaultStateDir()
+	if err != nil {
+		t.Fatalf("DefaultStateDir: %v", err)
+	}
+	if want := filepath.Join(home, ".ax", "cursors"); got != want {
+		t.Errorf("DefaultStateDir() = %q, want %q", got, want)
 	}
 }

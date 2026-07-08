@@ -103,6 +103,26 @@ func TestValidate_MultipleDefaults(t *testing.T) {
 	}
 }
 
+func TestValidate_InteractionsIDReserved(t *testing.T) {
+	c := validConfig()
+	c.Harnesses.Substrate[0].ID = "antigravity-interactions"
+	err := c.Validate()
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Validate() = %v, want reserved id error", err)
+	}
+}
+
+func TestValidate_InteractionsValid(t *testing.T) {
+	c := validConfig()
+	c.Harnesses.AntigravityInteractions = AntigravityInteractionsHarnessConfig{
+		Agent:    "projects/p/locations/global/agents/a",
+		StateDir: "interactions-state",
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want nil", err)
+	}
+}
+
 func TestLoadFromFile_Version(t *testing.T) {
 	data := `
 version: "1.2.3"

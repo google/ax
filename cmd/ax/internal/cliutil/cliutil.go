@@ -24,10 +24,9 @@ import (
 	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/harness/antigravity"
+	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/google/ax/internal/harness/substrate"
 )
-
-const antigravityHarnessID = "antigravity"
 
 // Controller is the active controller type for this build.
 type Controller = *controller.Controller
@@ -56,10 +55,11 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	// substrate actors ("1").
 	substrateMode := os.Getenv("AX_SUBSTRATE") == "1"
 
-	// Built-in harnesses.
 	var defaultHarnessID string
-	var antigravityHarness harness.Harness
 	var err error
+
+	// Built-in Antigravity harness.
+	var antigravityHarness harness.Harness
 	if !substrateMode {
 		address := cfg.Harnesses.Antigravity.Endpoint
 		if address == "" {
@@ -67,16 +67,46 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		}
 		antigravityHarness = antigravity.New(address)
 	} else {
-		antigravityHarness, err = substrate.New(antigravityHarnessID, "", "", "", 80)
+		antigravityHarness, err = substrate.New(config.AntigravityHarnessID, "", "", "", 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
 	}
-	if err := reg.RegisterHarness(antigravityHarnessID, antigravityHarness); err != nil {
+	if err := reg.RegisterHarness(config.AntigravityHarnessID, antigravityHarness); err != nil {
 		return nil, fmt.Errorf("register antigravity harness: %w", err)
 	}
 	if cfg.Harnesses.Antigravity.Default {
-		defaultHarnessID = antigravityHarnessID
+		defaultHarnessID = config.AntigravityHarnessID
+	}
+
+	// Built-in Antigravity Interactions harness.
+	if ic := cfg.Harnesses.AntigravityInteractions; ic.Agent != "" {
+		var antigravityInteractionsHarness harness.Harness
+		if !substrateMode {
+			stateDir := ic.StateDir
+			if stateDir == "" {
+				stateDir, err = antigravityinteractions.DefaultStateDir()
+				if err != nil {
+					return nil, fmt.Errorf("antigravity-interactions harness: %w", err)
+				}
+			}
+			antigravityInteractionsHarness, err = antigravityinteractions.New(antigravityinteractions.AntigravityInteractionsConfig{
+				Agent:             ic.Agent,
+				SystemInstruction: ic.SystemInstruction,
+				StateDir:          stateDir,
+			})
+		} else {
+			antigravityInteractionsHarness, err = substrate.New(config.AntigravityInteractionsHarnessID, "", "", "", 80)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("antigravity-interactions harness: %w", err)
+		}
+		if err := reg.RegisterHarness(config.AntigravityInteractionsHarnessID, antigravityInteractionsHarness); err != nil {
+			return nil, fmt.Errorf("register antigravity-interactions harness: %w", err)
+		}
+		if ic.Default {
+			defaultHarnessID = config.AntigravityInteractionsHarnessID
+		}
 	}
 
 	// Custom substrate harnesses.

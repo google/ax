@@ -30,6 +30,9 @@ const (
 	// The port for harnesses running as substrate actors. Substrate's
 	// actor networking DNATs inbound workerPodIP:80 to the actor.
 	substrateDefaultPort = 80
+	// Harness IDs reserved for AX's built-in harnesses.
+	AntigravityHarnessID             = "antigravity"
+	AntigravityInteractionsHarnessID = "antigravity-interactions"
 )
 
 // Config represents the main configuration for the AX harness server.
@@ -74,19 +77,29 @@ type EventLogConfig struct {
 }
 
 // HarnessesConfig groups harnesses to serve by type. There are two categories:
-//   - Built-in harnesses (e.g. Antigravity) whose implementation and container
-//     image are provided by AX.
+//   - Built-in harnesses (e.g. Antigravity, AntigravityInteractions) whose
+//     implementation and container image are provided by AX.
 //   - Custom harnesses on substrate whose implementation and container image are
 //     provided by the user via their own ActorTemplate.
 type HarnessesConfig struct {
-	Antigravity AntigravityHarnessConfig `yaml:"antigravity,omitempty"`
-	Substrate   []SubstrateHarnessConfig `yaml:"substrate,omitempty"`
+	Antigravity             AntigravityHarnessConfig             `yaml:"antigravity,omitempty"`
+	AntigravityInteractions AntigravityInteractionsHarnessConfig `yaml:"antigravity-interactions,omitempty"`
+	Substrate               []SubstrateHarnessConfig             `yaml:"substrate,omitempty"`
 }
 
 // AntigravityHarnessConfig registers the built-in Antigravity harness.
 type AntigravityHarnessConfig struct {
 	Default  bool   `yaml:"default,omitempty"`
 	Endpoint string `yaml:"endpoint,omitempty"` // HarnessService address
+}
+
+// AntigravityInteractionsHarnessConfig registers the built-in Antigravity
+// Interactions harness (over the Vertex GenAI Interactions API).
+type AntigravityInteractionsHarnessConfig struct {
+	Default           bool   `yaml:"default,omitempty"`            // Default harness or not
+	Agent             string `yaml:"agent"`                        // Interactions API agent
+	SystemInstruction string `yaml:"system_instruction,omitempty"` // Optional system prompt
+	StateDir          string `yaml:"state_dir,omitempty"`          // Resume-cursor directory (optional; defaults to ~/.ax/cursors)
 }
 
 // SubstrateHarnessConfig registers a custom harness deployed on substrate
@@ -165,13 +178,16 @@ func (c *Config) Validate() error {
 	if c.Harnesses.Antigravity.Default {
 		defaultCount++
 	}
+	if c.Harnesses.AntigravityInteractions.Default {
+		defaultCount++
+	}
 
 	for _, sc := range c.Harnesses.Substrate {
 		if sc.ID == "" {
 			return fmt.Errorf("substrate harness id is required")
 		}
-		if sc.ID == "antigravity" {
-			return fmt.Errorf("substrate harness id %q is reserved for the built-in antigravity harness", sc.ID)
+		if sc.ID == AntigravityHarnessID || sc.ID == AntigravityInteractionsHarnessID {
+			return fmt.Errorf("substrate harness id %q is reserved for built-in harnesses", sc.ID)
 		}
 		if sc.Namespace == "" {
 			return fmt.Errorf("substrate harness %q: namespace is required", sc.ID)
