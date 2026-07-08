@@ -78,7 +78,7 @@ func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarne
 	}); err != nil {
 		return nil, fmt.Errorf("failed to setup antigravity harness server assets: %w", err)
 	}
-	if err := sidecar.Start(ctx); err != nil {
+	if err := sidecar.Start(ctx, ""); err != nil {
 		return nil, fmt.Errorf("failed to start antigravity harness server: %w", err)
 	}
 	h.sidecar = sidecar

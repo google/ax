@@ -95,7 +95,7 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	}
 
 	sidecar := pythonsidecar.New(cfg)
-	if err := sidecar.Start(cmd.Context()); err != nil {
+	if err := sidecar.Start(cmd.Context(), ""); err != nil {
 		return fmt.Errorf("failed to start antigravity harness server: %w", err)
 	}
 	log.Printf("forked antigravity harness server (pid %d) on %s:%d", sidecar.Pid(), harnessHost, harnessPort)

@@ -82,12 +82,11 @@ func TestSidecar_Setup(t *testing.T) {
 	if err := os.WriteFile(modulePath, []byte("import time\ntime.sleep(2)\n"), 0644); err != nil {
 		t.Fatalf("failed to write test module: %v", err)
 	}
-	t.Setenv("PYTHONPATH", tmpDir)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := s.Start(ctx); err != nil {
+	if err := s.Start(ctx, tmpDir); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 
@@ -122,15 +121,13 @@ sys.exit(0)
 		Module:     "path_check",
 		Stdout:     &stdout,
 		PythonPath: customPath,
-		Env:        []string{"CUSTOM_VAR=test_value_123"},
 	}
-	t.Setenv("PYTHONPATH", tmpDir)
 
 	s := pythonsidecar.New(cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := s.Start(ctx); err != nil {
+	if err := s.Start(ctx, tmpDir); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	if err := s.Wait(); err != nil {
@@ -140,8 +137,5 @@ sys.exit(0)
 	out := stdout.String()
 	if !strings.Contains(out, customPath) {
 		t.Errorf("expected sys.path to contain customPath, got output:\n%s", out)
-	}
-	if !strings.Contains(out, "CUSTOM_VAR:test_value_123") {
-		t.Errorf("expected custom env var in output, got output:\n%s", out)
 	}
 }

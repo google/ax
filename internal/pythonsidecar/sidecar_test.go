@@ -45,7 +45,7 @@ func TestSidecar_ConfigValidation(t *testing.T) {
 
 	t.Run("empty Module", func(t *testing.T) {
 		s := pythonsidecar.New(pythonsidecar.Config{})
-		err := s.Start(ctx)
+		err := s.Start(ctx, "")
 		if err == nil || !strings.Contains(err.Error(), "Module cannot be empty") {
 			t.Fatalf("expected error about empty Module, got %v", err)
 		}
@@ -65,7 +65,6 @@ sys.exit(0)
 		t.Fatalf("failed to write module: %v", err)
 	}
 
-	t.Setenv("PYTHONPATH", tmpDir)
 	var stdout, stderr bytes.Buffer
 	cfg := pythonsidecar.Config{
 		Module: "test_module",
@@ -77,7 +76,7 @@ sys.exit(0)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := s.Start(ctx); err != nil {
+	if err := s.Start(ctx, tmpDir); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 
@@ -96,7 +95,6 @@ sys.exit(0)
 	}
 }
 
-
 func TestSidecar_ModuleServerWithTCPReady(t *testing.T) {
 	port := getFreePort(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -111,7 +109,7 @@ func TestSidecar_ModuleServerWithTCPReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := s.Start(ctx); err != nil {
+	if err := s.Start(ctx, ""); err != nil {
 		t.Fatalf("Start() with TCPReady failed: %v", err)
 	}
 
@@ -147,7 +145,7 @@ func TestSidecar_ReadinessFailureOnPrematureExit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	err := s.Start(ctx)
+	err := s.Start(ctx, "")
 	if err == nil {
 		t.Fatalf("expected Start() to fail when process exits prematurely")
 	}
