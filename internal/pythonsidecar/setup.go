@@ -141,7 +141,7 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 
 func install(ctx context.Context, reqPath string) (string, error) {
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
-	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--extra-index-url", "https://pypi.org/simple", "--target", pkgDir, "-r", reqPath)
+	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("pip install failed for %s: %w\nOutput:\n%s", reqPath, err, string(out))
