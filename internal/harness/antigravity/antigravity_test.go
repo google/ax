@@ -150,6 +150,12 @@ port = int(sys.argv[sys.argv.index("--port")+1])
 socketserver.TCPServer.allow_reuse_address = True
 socketserver.TCPServer(("127.0.0.1", port), socketserver.BaseRequestHandler).serve_forever()
 `
+	if err := os.WriteFile(filepath.Join(root, "python", "__init__.py"), []byte(""), 0644); err != nil {
+		t.Fatalf("write stub init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pkg, "__init__.py"), []byte(""), 0644); err != nil {
+		t.Fatalf("write stub init: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(pkg, "harness_server.py"), []byte(src), 0644); err != nil {
 		t.Fatalf("write stub: %v", err)
 	}

@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -42,12 +44,17 @@ type Config struct {
 	// ReadyFunc is an optional function to check if the server is ready to accept requests.
 	// When provided, Start will poll ReadyFunc until it returns nil or the context expires. (Optional)
 	ReadyFunc func(ctx context.Context) error
+	// Env specifies additional environment variables for the sidecar process (e.g. "KEY=value").
+	// If empty, the process inherits the environment of the calling process. (Optional)
+	Env []string
+	// PythonPath specifies a directory to prepend to PYTHONPATH when running the sidecar. (Optional)
+	PythonPath string
+	// PythonBinary specifies the python binary name or path to use for running the sidecar.
+	// Defaults to "python3" if empty. (Optional)
+	PythonBinary string
 }
 
-// TODO: AntigravityHarness should use pythonsidecar.
 // TODO: Use /var/ax_agy_harness_service for communication instead of TCP.
-// TODO: Use go:embed to embed python/ directory into the ax binary.
-// TODO: Add a Setup method to extract embedded assets, pip install, etc.
 
 // Sidecar manages the lifecycle of the underlying Python process.
 type Sidecar struct {
@@ -83,11 +90,41 @@ func (s *Sidecar) Start(ctx context.Context) error {
 		return fmt.Errorf("Module cannot be empty")
 	}
 
-	// Prepare arguments: python3 -u -m module [args...]
+	pyBin := s.cfg.PythonBinary
+	if pyBin == "" {
+		pyBin = "python3"
+	}
+	// Prepare arguments: python -u -m module [args...]
 	// -u forces unbuffered stdout/stderr so logs stream to Go instantly
 	fullArgs := append([]string{"-u", "-m", s.cfg.Module}, s.cfg.Args...)
 
-	cmd := exec.CommandContext(ctx, "python3", fullArgs...)
+	cmd := exec.CommandContext(ctx, pyBin, fullArgs...)
+
+	if len(s.cfg.Env) > 0 || s.cfg.PythonPath != "" {
+		env := append([]string(nil), os.Environ()...)
+		if len(s.cfg.Env) > 0 {
+			env = append(env, s.cfg.Env...)
+		}
+		if s.cfg.PythonPath != "" {
+			lastIdx := -1
+			for i, kv := range env {
+				if strings.HasPrefix(kv, "PYTHONPATH=") {
+					lastIdx = i
+				}
+			}
+			if lastIdx >= 0 {
+				existing := strings.TrimPrefix(env[lastIdx], "PYTHONPATH=")
+				if existing != "" {
+					env[lastIdx] = "PYTHONPATH=" + existing + string(os.PathListSeparator) + s.cfg.PythonPath
+				} else {
+					env[lastIdx] = "PYTHONPATH=" + s.cfg.PythonPath
+				}
+			} else {
+				env = append(env, "PYTHONPATH="+s.cfg.PythonPath)
+			}
+		}
+		cmd.Env = env
+	}
 
 	if s.cfg.Stdin != nil {
 		cmd.Stdin = s.cfg.Stdin
