@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/google/ax/internal/pythonsidecar"
@@ -33,9 +34,14 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 		t.Errorf("expected antigravity/__pycache__ to be ignored when embedding, but it was found")
 	}
 
+	testFS := fstest.MapFS{
+		"antigravity/harness_server.py": &fstest.MapFile{Data: []byte("print('hello')")},
+		"proto/ax_pb2.py":               &fstest.MapFile{Data: []byte("print('proto')")},
+	}
+
 	targetDir := filepath.Join(t.TempDir(), "target")
 	opts := pythonsidecar.SetupOptions{
-		FS:        python.FS,
+		FS:        testFS,
 		TargetDir: targetDir,
 	}
 
@@ -64,13 +70,16 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 }
 
 func TestSidecar_Setup(t *testing.T) {
+	testFS := fstest.MapFS{
+		"antigravity/harness_server.py": &fstest.MapFile{Data: []byte("print('hello')")},
+	}
 	tmpDir := filepath.Join(t.TempDir(), "target")
 	s := pythonsidecar.New(pythonsidecar.Config{
 		Module: "test_module",
 	})
 
 	err := s.Setup(context.Background(), pythonsidecar.SetupOptions{
-		FS:        python.FS,
+		FS:        testFS,
 		TargetDir: tmpDir,
 	})
 	if err != nil {
@@ -90,7 +99,7 @@ func TestSidecar_Setup(t *testing.T) {
 		t.Fatalf("Start() failed: %v", err)
 	}
 
-	if err := s.Setup(ctx, pythonsidecar.SetupOptions{FS: python.FS, TargetDir: tmpDir}); err == nil {
+	if err := s.Setup(ctx, pythonsidecar.SetupOptions{FS: testFS, TargetDir: tmpDir}); err == nil {
 		t.Errorf("expected Sidecar.Setup() to fail while running, got nil")
 	}
 
@@ -98,36 +107,34 @@ func TestSidecar_Setup(t *testing.T) {
 	_ = s.Wait()
 }
 
-func TestSidecar_PythonPathAndEnv(t *testing.T) {
+func TestSidecar_PythonPath(t *testing.T) {
 	tmpDir := t.TempDir()
-	modulePath := filepath.Join(tmpDir, "path_check.py")
+	customPath := filepath.Join(tmpDir, "custom_python_path")
+	if err := os.MkdirAll(customPath, 0755); err != nil {
+		t.Fatalf("failed to create custom path: %v", err)
+	}
+
+	modulePath := filepath.Join(customPath, "path_check.py")
 	moduleContent := `
 import sys, os
 print("SYSPATH:" + str(sys.path))
-print("CUSTOM_VAR:" + os.environ.get("CUSTOM_VAR", ""))
 sys.exit(0)
 `
 	if err := os.WriteFile(modulePath, []byte(moduleContent), 0644); err != nil {
 		t.Fatalf("failed to write path_check module: %v", err)
 	}
 
-	customPath := filepath.Join(tmpDir, "custom_python_path")
-	if err := os.MkdirAll(customPath, 0755); err != nil {
-		t.Fatalf("failed to create custom path: %v", err)
-	}
-
 	var stdout bytes.Buffer
 	cfg := pythonsidecar.Config{
-		Module:     "path_check",
-		Stdout:     &stdout,
-		PythonPath: customPath,
+		Module: "path_check",
+		Stdout: &stdout,
 	}
 
 	s := pythonsidecar.New(cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := s.Start(ctx, tmpDir); err != nil {
+	if err := s.Start(ctx, customPath); err != nil {
 		t.Fatalf("Start() failed: %v", err)
 	}
 	if err := s.Wait(); err != nil {

@@ -51,17 +51,26 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 	}
 
 	extractDir := filepath.Join(targetDir, "python")
+	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
+	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
+
 	if _, err := os.Stat(extractDir); err == nil {
+		if _, err := os.Stat(pkgDir); err == nil {
+			return targetDir + string(os.PathListSeparator) + pkgDir, nil
+		}
 		return targetDir, nil
 	}
 	if err := extractFS(ctx, opts.FS, extractDir); err != nil {
 		return "", fmt.Errorf("failed to extract embedded assets: %w", err)
 	}
 
-	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
 	if _, err := os.Stat(reqPath); err == nil {
-		if err := install(ctx, reqPath); err != nil {
+		pkgPath, err := install(ctx, reqPath)
+		if err != nil {
 			return "", err
+		}
+		if pkgPath != "" {
+			return targetDir + string(os.PathListSeparator) + pkgPath, nil
 		}
 	}
 
@@ -92,6 +101,15 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		name := d.Name()
+		if name == ".DS_Store" || strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") || strings.HasSuffix(name, ".go") {
+			return nil
 		}
 
 		destPath := filepath.Join(destDir, filepath.FromSlash(path))
@@ -136,11 +154,12 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 	})
 }
 
-func install(ctx context.Context, reqPath string) error {
-	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "-r", reqPath)
+func install(ctx context.Context, reqPath string) (string, error) {
+	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
+	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("pip install failed for %s: %w\nOutput:\n%s", reqPath, err, string(out))
+		return "", fmt.Errorf("pip install failed for %s: %w\nOutput:\n%s", reqPath, err, string(out))
 	}
-	return nil
+	return pkgDir, nil
 }
