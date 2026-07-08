@@ -44,8 +44,6 @@ type Config struct {
 	// ReadyFunc is an optional function to check if the server is ready to accept requests.
 	// When provided, Start will poll ReadyFunc until it returns nil or the context expires. (Optional)
 	ReadyFunc func(ctx context.Context) error
-	// PythonPath specifies a directory to prepend to PYTHONPATH when running the sidecar. (Optional)
-	PythonPath string
 }
 
 // TODO: Use /var/ax_agy_harness_service for communication instead of TCP.
@@ -89,27 +87,23 @@ func (s *Sidecar) Start(ctx context.Context, pythonPath string) error {
 	fullArgs := append([]string{"-u", "-m", s.cfg.Module}, s.cfg.Args...)
 
 	cmd := exec.CommandContext(ctx, "python3", fullArgs...)
-	pyPath := pythonPath
-	if pyPath == "" {
-		pyPath = s.cfg.PythonPath
-	}
-	if pyPath != "" {
+	if pythonPath != "" {
 		env := append([]string(nil), os.Environ()...)
 		var found bool
 		for i, kv := range env {
 			if strings.HasPrefix(kv, "PYTHONPATH=") {
 				existing := strings.TrimPrefix(kv, "PYTHONPATH=")
 				if existing != "" {
-					env[i] = "PYTHONPATH=" + pyPath + string(os.PathListSeparator) + existing
+					env[i] = "PYTHONPATH=" + pythonPath + string(os.PathListSeparator) + existing
 				} else {
-					env[i] = "PYTHONPATH=" + pyPath
+					env[i] = "PYTHONPATH=" + pythonPath
 				}
 				found = true
 				break
 			}
 		}
 		if !found {
-			env = append(env, "PYTHONPATH="+pyPath)
+			env = append(env, "PYTHONPATH="+pythonPath)
 		}
 		cmd.Env = env
 	}
