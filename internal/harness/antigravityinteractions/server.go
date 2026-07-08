@@ -141,6 +141,14 @@ func (s *server) Connect(stream proto.HarnessService_ConnectServer) error {
 	}
 
 	// Watch for a mid-stream cancel frame; it cancels the run's context.
+	//
+	// Note: mid-run steering (injecting extra human input while a turn is running)
+	// is intentionally NOT supported here. The execution can accept steering via
+	// Queue, but the HarnessRequest oneof only defines {start, cancel} -- there is
+	// no wire frame to carry additional input after start -- so a client cannot
+	// deliver steering over Connect. Multi-turn conversation is instead expressed
+	// as separate Connect executions that resume via the persisted cursor. Any
+	// non-cancel frame received here is therefore ignored.
 	go func() {
 		for {
 			r, err := stream.Recv()
