@@ -60,7 +60,7 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 
 	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
 	if _, err := os.Stat(reqPath); err == nil {
-		if err := installRequirements(ctx, reqPath); err != nil {
+		if err := install(ctx, reqPath); err != nil {
 			return "", err
 		}
 	}
@@ -136,7 +136,7 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 	})
 }
 
-func installRequirements(ctx context.Context, reqPath string) error {
+func install(ctx context.Context, reqPath string) error {
 	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
