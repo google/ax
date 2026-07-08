@@ -54,11 +54,13 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
 
+	result := targetDir + string(os.PathListSeparator) + extractDir
+
 	if _, err := os.Stat(extractDir); err == nil {
 		if _, err := os.Stat(pkgDir); err == nil {
-			return targetDir + string(os.PathListSeparator) + pkgDir, nil
+			return result + string(os.PathListSeparator) + pkgDir, nil
 		}
-		return targetDir, nil
+		return result, nil
 	}
 	if err := extractFS(ctx, opts.FS, extractDir); err != nil {
 		return "", fmt.Errorf("failed to extract embedded assets: %w", err)
@@ -70,11 +72,11 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 			return "", err
 		}
 		if pkgPath != "" {
-			return targetDir + string(os.PathListSeparator) + pkgPath, nil
+			return result + string(os.PathListSeparator) + pkgPath, nil
 		}
 	}
 
-	return targetDir, nil
+	return result, nil
 }
 
 // Setup extracts embedded Python assets as specified by opts.

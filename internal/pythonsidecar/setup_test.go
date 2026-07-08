@@ -49,8 +49,11 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Setup() failed: %v", err)
 	}
-	if gotDir != targetDir {
-		t.Errorf("expected targetDir=%q, got %q", targetDir, gotDir)
+	if !strings.HasPrefix(gotDir, targetDir) {
+		t.Errorf("expected gotDir to start with targetDir=%q, got %q", targetDir, gotDir)
+	}
+	if !strings.Contains(gotDir, "python") {
+		t.Errorf("expected gotDir to contain extracted python directory in PYTHONPATH, got %q", gotDir)
 	}
 
 	// Verify files were extracted under TargetDir/python

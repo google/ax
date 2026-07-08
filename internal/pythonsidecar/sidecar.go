@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -88,8 +89,29 @@ func (s *Sidecar) Start(ctx context.Context, pythonPath string) error {
 	fullArgs := append([]string{"-u", "-m", s.cfg.Module}, s.cfg.Args...)
 
 	cmd := exec.CommandContext(ctx, "python3", fullArgs...)
-	if pythonPath != "" {
-		cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonPath)
+	pyPath := pythonPath
+	if pyPath == "" {
+		pyPath = s.cfg.PythonPath
+	}
+	if pyPath != "" {
+		env := append([]string(nil), os.Environ()...)
+		var found bool
+		for i, kv := range env {
+			if strings.HasPrefix(kv, "PYTHONPATH=") {
+				existing := strings.TrimPrefix(kv, "PYTHONPATH=")
+				if existing != "" {
+					env[i] = "PYTHONPATH=" + pyPath + string(os.PathListSeparator) + existing
+				} else {
+					env[i] = "PYTHONPATH=" + pyPath
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			env = append(env, "PYTHONPATH="+pyPath)
+		}
+		cmd.Env = env
 	}
 
 	if s.cfg.Stdin != nil {
