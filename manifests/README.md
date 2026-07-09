@@ -79,6 +79,32 @@ The bundled Postgres uses an auto-generated password. To get its DSN:
 kubectl get secret ax-eventlog-postgres -n ax -o go-template='{{.data.dsn | base64decode}}'
 ```
 
+#### Vertex AI access for the Antigravity Interactions harness
+
+> [!NOTE]
+You may skip this if you only use the
+default harness.
+
+The Antigravity **Interactions** harness (`ax harness antigravity-interactions`,
+ActorTemplate `ax-harness-interactions-template`) calls the Vertex AI GenAI API
+and authenticates with the actor's Google Cloud credentials — unlike the default
+Antigravity harness, which uses `GEMINI_API_KEY`.
+
+The worker pods (WorkerPool `ax-harness-workerpool`, namespace `ax`) have no GSA
+annotation, so with Workload Identity the actor authenticates **directly as the
+Kubernetes ServiceAccount principal** `ax/default`. Grant that principal
+`roles/aiplatform.user` on the project the harness reads from `PROJECT_ID`, or
+Vertex calls fail with `PermissionDenied (403)`. IAM changes can take a minute or two to propagate.
+
+```bash
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+  --role=roles/aiplatform.user \
+  --member="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ax/sa/default" \
+  --condition=None
+```
+
 ### 2. Port-Forward Services
 
 ```bash
