@@ -93,7 +93,13 @@ def test_grpc_connect_success(mock_config, monkeypatch):
     asyncio.run(_run())
 
 
-def test_grpc_connect_agent_reused(mock_config, monkeypatch):
+def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp_path):
+    """Each turn spawns a fresh Agent with per-conv save_dir under
+    ~/.ax/antigravity/conversations/. Same AX conv_id -> same save_dir
+    (SDK-native resume)."""
+    import pathlib as _pathlib
+    monkeypatch.setattr(_pathlib.Path, "home", lambda: tmp_path)
+
     async def _run():
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer(mock_config)
@@ -106,8 +112,6 @@ def test_grpc_connect_agent_reused(mock_config, monkeypatch):
             stub = ax_pb2_grpc.HarnessServiceStub(channel)
             
             class MockConversation:
-                def __init__(self):
-                    self._steps = []
                 async def chat(self, text):
                     class MockResponse:
                         def __init__(self):
@@ -120,62 +124,43 @@ def test_grpc_connect_agent_reused(mock_config, monkeypatch):
             agent_instances = []
             class MockAgent:
                 def __init__(self, config):
+                    self.config = config
                     self.conversation = MockConversation()
-                    self.closed = False
                     agent_instances.append(self)
                 async def __aenter__(self):
                     return self
                 async def __aexit__(self, exc_type, exc, tb):
-                    self.closed = True
+                    pass
                     
             monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
-            
-            # Fire first turn for conv-1
-            req1 = ax_pb2.HarnessRequest(
-                conversation_id="conv-1",
-                harness_id="antigravity",
-                start=ax_pb2.HarnessStart(
-                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))]
+
+            async def fire(conv_id):
+                req = ax_pb2.HarnessRequest(
+                    conversation_id=conv_id,
+                    harness_id="antigravity",
+                    start=ax_pb2.HarnessStart(
+                        messages=[ax_pb2.Message(role="user",
+                            content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))]
+                    ),
                 )
-            )
-            async def req_iter1():
-                yield req1
-            async for _ in stub.Connect(req_iter1()):
-                pass
-            
-            # Fire second turn for same conv-1
-            req2 = ax_pb2.HarnessRequest(
-                conversation_id="conv-1",
-                harness_id="antigravity",
-                start=ax_pb2.HarnessStart(
-                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi again")))]
-                )
-            )
-            async def req_iter2():
-                yield req2
-            async for _ in stub.Connect(req_iter2()):
-                pass
-                
-            # Fire third turn for a different conv-2
-            req3 = ax_pb2.HarnessRequest(
-                conversation_id="conv-2",
-                harness_id="antigravity",
-                start=ax_pb2.HarnessStart(
-                    messages=[ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="New conv")))]
-                )
-            )
-            async def req_iter3():
-                yield req3
-            async for _ in stub.Connect(req_iter3()):
-                pass
-                
-            # Verify only 2 agents were instantiated (reused the first one)
-            assert len(agent_instances) == 2
-            
-            # Verify cleanup closes all agents
-            await servicer.cleanup()
-            assert all(a.closed for a in agent_instances)
-            
+                async def req_iter():
+                    yield req
+                async for _ in stub.Connect(req_iter()):
+                    pass
+
+            await fire("conv-1")
+            await fire("conv-1")
+            await fire("conv-2")
+
+            assert len(agent_instances) == 3
+            save_dirs = [a.config.save_dir for a in agent_instances]
+            assert save_dirs[0] == save_dirs[1]
+            assert save_dirs[0] != save_dirs[2]
+            assert save_dirs[0].endswith("/conv-1")
+            assert save_dirs[2].endswith("/conv-2")
+            # conversation_id only passed when trajectory exists (not in these mocked runs).
+            assert [a.config.conversation_id for a in agent_instances] == [None, None, None]
+
         await server.stop(0)
 
     asyncio.run(_run())

@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import logging
 import os
+import pathlib
 import re
 import sys
 from typing import TypedDict
@@ -135,38 +136,31 @@ def _has_credentials(config: AgentConfig | None) -> bool:
 
     return False
 
+def _existing_sdk_conv_id(save_dir: str) -> str | None:
+    # SDK persists each conversation as {save_dir}/{sdk_conv_id}.db where sdk_conv_id
+    # is SDK-picked (a hash), not our AX conversation_id. We give each AX conversation
+    # its own save_dir so at most one .db lives there; the SDK conv_id is its stem.
+    dbs = list(pathlib.Path(save_dir).glob("*.db"))
+    return dbs[0].stem if dbs else None
+
+
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     """Implements the ax.HarnessService protocol over gRPC."""
 
     def __init__(self, default_config: AgentConfig):
-        # TODO: Implement an eviction/idle-timeout policy to prevent unbounded memory growth in production.
         self._default_config = default_config
-        self._agents = {}
-        self._lock = asyncio.Lock()
 
-    async def _get_or_create_agent(self, conversation_id: str) -> Agent:
-        async with self._lock:
-            if conversation_id not in self._agents:
-                # TODO(#194): derive a per-conversation AgentConfig by layering
-                # request.start.harness_config on top of self._default_config,
-                # instead of using the default verbatim for every conversation.
-                if not self._default_config:
-                    raise ValueError("Agent config is not loaded on the server")
-                print(f"[gRPC] Creating new Agent instance for conv_id={conversation_id}")
-                agent = Agent(self._default_config)
-                await agent.__aenter__()
-                self._agents[conversation_id] = agent
-            return self._agents[conversation_id]
-
-    async def cleanup(self):
-        print("[gRPC] Cleaning up agent instances...")
-        async with self._lock:
-            for conv_id, agent in self._agents.items():
-                try:
-                    await agent.__aexit__(None, None, None)
-                except Exception as e:
-                    print(f"Error closing agent for conv_id={conv_id}: {e}")
-            self._agents.clear()
+    def _build_config_for(self, conversation_id: str) -> LocalAgentConfig:
+        # Per-AX-conv save_dir. Resume by SDK's own conv_id if a trajectory
+        # exists there. SDK auto-creates the directory.
+        # TODO(#269, #203): should be injected by the controller via
+        # harness_config; hardcoded here to mirror the Go-side
+        # antigravityinteractions.DefaultStateDir() convention.
+        save_dir = str(pathlib.Path.home() / ".ax" / "antigravity" / "conversations" / conversation_id)
+        update = {"save_dir": save_dir}
+        if sdk_conv_id := _existing_sdk_conv_id(save_dir):
+            update["conversation_id"] = sdk_conv_id
+        return self._default_config.model_copy(update=update)
 
     async def Connect(self, request_iterator, context):
         # Each HarnessRequest{start} drives one stateless turn; the stream stays
@@ -226,110 +220,108 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
         try:
-            agent = await self._get_or_create_agent(request.conversation_id)
-            conversation = agent.conversation
-            
-            # The harness is stateful: the SDK's cached Agent (per conversation_id)
-            # holds the conversation history across turns within this process
-            # lifetime. The controller only sends the new turn's input; no history
-            # hydration from the client side.
-            print(f"[gRPC] Running chat query: {latest_query_text}")
-            response = await conversation.chat(latest_query_text)
-            
-            # To avoid streaming individual tokens inside TextContent messages (which is not
-            # supported by the Interactions proto/TextContent specifications), we buffer
-            # contiguous blocks of text and thought chunks, yielding them only when the 
-            # contiguous block ends or a different chunk type is received.
-            text_chunks = []
-            thought_chunks = []
-            
-            def flush_text():
-                if not text_chunks:
-                    return None
-                msg = ax_pb2.Message(
-                    role="assistant",
-                    content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
-                )
-                text_chunks.clear()
-                return ax_pb2.HarnessResponse(
-                    conversation_id=request.conversation_id,
-                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                )
-                
-            def flush_thought():
-                if not thought_chunks:
-                    return None
+            per_conv_config = self._build_config_for(request.conversation_id)
+            print(f"[gRPC] Starting Agent for conv_id={request.conversation_id}, save_dir={per_conv_config.save_dir}")
+            async with Agent(per_conv_config) as agent:
+                conversation = agent.conversation
 
-                # Normalize Gemini's thinking output: collapse runs of 3+ newlines
-                # (emitted between reasoning sections) to exactly one blank line
-                # and strip trailing whitespace. Then append exactly one trailing
-                # newline so downstream displays render a blank line between the
-                # thinking block and whatever follows (next thought, tool call,
-                # or answer text). Without the trailing newline the display's
-                # transition logic emits only one newline, gluing blocks together.
-                raw_text = "".join(thought_chunks)
-                clean_text = re.sub(r'\n{3,}', '\n\n', raw_text).rstrip() + '\n'
-
-                summary = [
-                    content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text=clean_text))
-                ]
-                thought_chunks.clear()
-                msg = ax_pb2.Message(
-                    role="model",
-                    content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
-                )
-                return ax_pb2.HarnessResponse(
-                    conversation_id=request.conversation_id,
-                    outputs=ax_pb2.HarnessOutputs(messages=[msg])
-                )
+                print(f"[gRPC] Running chat query: {latest_query_text}")
+                response = await conversation.chat(latest_query_text)
             
-            async for chunk in response.chunks:
-                if isinstance(chunk, Text):
-                    if (resp := flush_thought()):
-                        yield resp
-                    text_chunks.append(chunk.text)
-                elif isinstance(chunk, Thought):
-                    if (resp := flush_text()):
-                        yield resp
-                    thought_chunks.append(chunk.text)
-                elif isinstance(chunk, ToolCall):
-                    # Flush all pending text/thought buffers before dispatching the tool call
-                    if (resp := flush_text()):
-                        yield resp
-                    if (resp := flush_thought()):
-                        yield resp
-                    
-                    struct_args = Struct()
-                    struct_args.update(chunk.args)
-                    
-                    func_call = content_pb2.FunctionCallContent(
-                        name=str(chunk.name),
-                        arguments=struct_args
+                # To avoid streaming individual tokens inside TextContent messages (which is not
+                # supported by the Interactions proto/TextContent specifications), we buffer
+                # contiguous blocks of text and thought chunks, yielding them only when the 
+                # contiguous block ends or a different chunk type is received.
+                text_chunks = []
+                thought_chunks = []
+            
+                def flush_text():
+                    if not text_chunks:
+                        return None
+                    msg = ax_pb2.Message(
+                        role="assistant",
+                        content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
                     )
+                    text_chunks.clear()
+                    return ax_pb2.HarnessResponse(
+                        conversation_id=request.conversation_id,
+                        outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                    )
+                
+                def flush_thought():
+                    if not thought_chunks:
+                        return None
+
+                    # Normalize Gemini's thinking output: collapse runs of 3+ newlines
+                    # (emitted between reasoning sections) to exactly one blank line
+                    # and strip trailing whitespace. Then append exactly one trailing
+                    # newline so downstream displays render a blank line between the
+                    # thinking block and whatever follows (next thought, tool call,
+                    # or answer text). Without the trailing newline the display's
+                    # transition logic emits only one newline, gluing blocks together.
+                    raw_text = "".join(thought_chunks)
+                    clean_text = re.sub(r'\n{3,}', '\n\n', raw_text).rstrip() + '\n'
+
+                    summary = [
+                        content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text=clean_text))
+                    ]
+                    thought_chunks.clear()
                     msg = ax_pb2.Message(
                         role="model",
-                        content=content_pb2.Content(tool_call=content_pb2.ToolCallContent(
-                            id=chunk.id or "",
-                            function_call=func_call
-                        ))
+                        content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
                     )
-                    yield ax_pb2.HarnessResponse(
+                    return ax_pb2.HarnessResponse(
                         conversation_id=request.conversation_id,
                         outputs=ax_pb2.HarnessOutputs(messages=[msg])
                     )
             
-            # Flush any remaining text/thought buffers after the generator loop ends
-            if (resp := flush_text()):
-                yield resp
-            if (resp := flush_thought()):
-                yield resp
+                async for chunk in response.chunks:
+                    if isinstance(chunk, Text):
+                        if (resp := flush_thought()):
+                            yield resp
+                        text_chunks.append(chunk.text)
+                    elif isinstance(chunk, Thought):
+                        if (resp := flush_text()):
+                            yield resp
+                        thought_chunks.append(chunk.text)
+                    elif isinstance(chunk, ToolCall):
+                        # Flush all pending text/thought buffers before dispatching the tool call
+                        if (resp := flush_text()):
+                            yield resp
+                        if (resp := flush_thought()):
+                            yield resp
+                    
+                        struct_args = Struct()
+                        struct_args.update(chunk.args)
+                    
+                        func_call = content_pb2.FunctionCallContent(
+                            name=str(chunk.name),
+                            arguments=struct_args
+                        )
+                        msg = ax_pb2.Message(
+                            role="model",
+                            content=content_pb2.Content(tool_call=content_pb2.ToolCallContent(
+                                id=chunk.id or "",
+                                function_call=func_call
+                            ))
+                        )
+                        yield ax_pb2.HarnessResponse(
+                            conversation_id=request.conversation_id,
+                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                        )
+            
+                # Flush any remaining text/thought buffers after the generator loop ends
+                if (resp := flush_text()):
+                    yield resp
+                if (resp := flush_thought()):
+                    yield resp
                         
-            # Yield completion end frame
-            yield ax_pb2.HarnessResponse(
-                conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_COMPLETED)
-            )
-            print("[gRPC] Turn completed successfully.")
+                # Yield completion end frame
+                yield ax_pb2.HarnessResponse(
+                    conversation_id=request.conversation_id,
+                    end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_COMPLETED)
+                )
+                print("[gRPC] Turn completed successfully.")
             
         except Exception as e:
             logging.exception("Error inside Connect servicer execution")
@@ -359,10 +351,7 @@ async def _serve(host: str, port: int, default_config: AgentConfig):
     server.add_insecure_port(listen_addr)
     print(f"Starting gRPC harness server on {listen_addr}...")
     await server.start()
-    try:
-        await server.wait_for_termination()
-    finally:
-        await servicer.cleanup()
+    await server.wait_for_termination()
 
 def _enhance_config_from_env(config) -> None:
     skills_dir = os.environ.get("SKILLS_DIR")
