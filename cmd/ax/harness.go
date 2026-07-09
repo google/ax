@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package main: the `ax harness` command. It supervises the Antigravity Python
-// sidecar server (which serves the HarnessService and gRPC health), forking it
-// as a child process and forwarding termination signals.
+// Package main: the `ax harness` command. It runs one harness in-process,
+// selected by the optional [harness-id] argument: "antigravity" (default)
+// or "antigravity-interactions"
 package main
 
 import (
@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/google/ax/internal/pythonsidecar"
 	"github.com/spf13/cobra"
@@ -46,8 +47,9 @@ var (
 const harnessReadyzPort = 8081
 
 var harnessCmd = &cobra.Command{
-	Use:    "harness",
+	Use:    "harness [harness-id]",
 	Short:  "Run the harness gRPC server",
+	Args:   cobra.MaximumNArgs(1),
 	Hidden: true,
 	RunE:   runHarness,
 }
@@ -73,10 +75,28 @@ func setHarnessWorkDir() error {
 	return nil
 }
 
-// runHarness forks the Antigravity Python sidecar server, which serves the
-// HarnessService (and gRPC health) on the configured port. ax harness supervises
-// the child: it forwards termination signals and exits with the child's status.
+// runHarness runs the harness selected by the optional [harness-id] argument:
+// "antigravity" (default) or "antigravity-interactions".
 func runHarness(cmd *cobra.Command, args []string) error {
+	harnessID := config.AntigravityHarnessID
+	if len(args) > 0 {
+		harnessID = args[0]
+	}
+	switch harnessID {
+	case config.AntigravityInteractionsHarnessID:
+		return runAntigravityInteractionsHarness(cmd.Context())
+	case config.AntigravityHarnessID:
+		return runAntigravityHarness(cmd)
+	default:
+		return fmt.Errorf("unknown harness %q (want %q or %q)",
+			harnessID, config.AntigravityHarnessID, config.AntigravityInteractionsHarnessID)
+	}
+}
+
+// runAntigravityHarness forks the Antigravity Python sidecar server, which serves
+// the HarnessService (and gRPC health) on the configured port. ax harness
+// supervises the child: it forwards termination signals and exits with its status.
+func runAntigravityHarness(cmd *cobra.Command) error {
 	if err := setHarnessWorkDir(); err != nil {
 		return err
 	}
@@ -116,7 +136,9 @@ func runHarness(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAntigravityInteractionsHarness(ctx context.Context, systemInstructions string) error {
+// runAntigravityInteractionsHarness runs the Go Antigravity Interactions harness
+// server (HarnessService + gRPC health + HTTP /readyz) on the configured ports.
+func runAntigravityInteractionsHarness(ctx context.Context) error {
 	if err := setHarnessWorkDir(); err != nil {
 		return err
 	}
@@ -125,8 +147,8 @@ func runAntigravityInteractionsHarness(ctx context.Context, systemInstructions s
 		return err
 	}
 	cfg := antigravityinteractions.AntigravityInteractionsConfig{
-		SystemInstruction: systemInstructions,
-		StateDir:          stateDir,
+		Agent:    antigravityinteractions.DefaultAgent,
+		StateDir: stateDir,
 	}
 	return antigravityinteractions.Serve(ctx, cfg, harnessHost, harnessPort, harnessReadyzPort)
 }

@@ -41,7 +41,7 @@ spec:
 apiVersion: ate.dev/v1alpha1
 kind: ActorTemplate
 metadata:
-  name: ax-harness-template
+  name: ax-harness-antigravity-template
   namespace: ax
 spec:
   workerSelector:
@@ -49,12 +49,13 @@ spec:
       workload: ax-harness
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
-    - name: "axharness"
+    - name: "axantigravity"
       image: ${AX_IMAGE}
       # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
-      # environment are specified here. `ax harness` forks the Antigravity Python
-      # sidecar, which serves on port 80 because substrate DNATs workerPodIP:80.
-      command: ["/ax-app/ax", "harness",
+      # environment are specified here. `ax harness antigravity` forks the
+      # Antigravity Python sidecar, which serves on port 80 because substrate
+      # DNATs workerPodIP:80.
+      command: ["/ax-app/ax", "harness", "antigravity",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
         - name: GEMINI_API_KEY
@@ -72,7 +73,37 @@ spec:
           path: /readyz
           port: 8081
   snapshotsConfig:
-    location: gs://${AX_SNAPSHOTS_BUCKET}/axharness/
+    location: gs://${AX_SNAPSHOTS_BUCKET}/axantigravity/
+---
+apiVersion: ate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: ax-harness-interactions-template
+  namespace: ax
+spec:
+  workerSelector:
+    matchLabels:
+      workload: ax-harness
+  pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
+  containers:
+    - name: "axinteractions"
+      image: ${AX_IMAGE}
+      # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
+      # environment are specified here. `ax harness antigravity-interactions` runs
+      # the Go Interactions harness on port 80 because substrate DNATs workerPodIP:80.
+      command: ["/ax-app/ax", "harness", "antigravity-interactions",
+                "--host", "0.0.0.0", "--port", "80"]
+      env:
+        - name: PROJECT_ID
+          value: "${PROJECT_ID}"
+        - name: AX_HARNESS_WORKDIR
+          value: "/workspace"
+      readyz:
+        httpGet:
+          path: /readyz
+          port: 8081
+  snapshotsConfig:
+    location: gs://${AX_SNAPSHOTS_BUCKET}/axinteractions/
 ---
 
 # ---------------------------------------------------------------------------

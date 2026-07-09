@@ -64,7 +64,7 @@ func New(harnessID string, endpoint string, namespace string, template string, p
 		namespace = "ax"
 	}
 	if template == "" {
-		template = "ax-harness-template"
+		template = "ax-harness-antigravity-template"
 	}
 	controlCreds := grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}))
 	client, err := ate.NewClient(namespace, template, endpoint, controlCreds)

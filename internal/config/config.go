@@ -34,6 +34,12 @@ const (
 	// Harness IDs reserved for AX's built-in harnesses.
 	AntigravityHarnessID             = "antigravity"
 	AntigravityInteractionsHarnessID = "antigravity-interactions"
+	// AntigravityHarnessTemplate is the substrate ActorTemplate that runs the
+	// Antigravity harness.
+	AntigravityHarnessTemplate = "ax-harness-antigravity-template"
+	// AntigravityInteractionsTemplate is the substrate ActorTemplate that runs
+	// the Antigravity Interactions harness.
+	AntigravityInteractionsTemplate = "ax-harness-interactions-template"
 )
 
 // Config represents the main configuration for the AX harness server.

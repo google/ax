@@ -236,6 +236,7 @@ deploy_ax_server() {
     -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
     -e "s|\${AX_IMAGE}|${ax_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
+    -e "s|\${PROJECT_ID}|${PROJECT_ID:-}|g"
   )
 
   # Render and apply the core manifest (namespace, harnesses, ax-server, ConfigMap).
@@ -267,9 +268,15 @@ deploy_ax_server() {
   fi
 
   # Wait for the antigravity ActorTemplate's golden snapshot to be ready.
-  log_step "wait for actortemplate/ax-harness-template to be Ready"
-  wait_with_spinner "waiting for golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
-    run_kubectl wait --for=condition=Ready actortemplate/ax-harness-template \
+  log_step "wait for actortemplate/ax-harness-antigravity-template to be Ready"
+  wait_with_spinner "waiting for antigravity golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
+    run_kubectl wait --for=condition=Ready actortemplate/ax-harness-antigravity-template \
+    -n ax --timeout="${AX_WAIT_TIMEOUT:-5m}"
+
+  # Wait for the interactions ActorTemplate's golden snapshot to be ready.
+  log_step "wait for actortemplate/ax-harness-interactions-template to be Ready"
+  wait_with_spinner "waiting for interactions golden snapshot (timeout ${AX_WAIT_TIMEOUT:-5m})" \
+    run_kubectl wait --for=condition=Ready actortemplate/ax-harness-interactions-template \
     -n ax --timeout="${AX_WAIT_TIMEOUT:-5m}"
 
   echo ""
@@ -289,7 +296,8 @@ delete_ax_server() {
   run_kubectl -n ax delete --ignore-not-found \
     replicaset/ax-server \
     configmap/ax-server-config \
-    actortemplate/ax-harness-template \
+    actortemplate/ax-harness-antigravity-template \
+    actortemplate/ax-harness-interactions-template \
     workerpool/ax-harness-workerpool
 }
 

@@ -77,7 +77,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
 	} else {
-		antigravityHarness, err = substrate.New(config.AntigravityHarnessID, "", "", "", 80)
+		antigravityHarness, err = substrate.New(config.AntigravityHarnessID, "", "", config.AntigravityHarnessTemplate, 80)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
@@ -108,7 +108,7 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 			StateDir: stateDir,
 		})
 	} else {
-		antigravityInteractionsHarness, err = substrate.New(config.AntigravityInteractionsHarnessID, "", "", "", 80)
+		antigravityInteractionsHarness, err = substrate.New(config.AntigravityInteractionsHarnessID, "", "", config.AntigravityInteractionsTemplate, 80)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("antigravity-interactions harness: %w", err)

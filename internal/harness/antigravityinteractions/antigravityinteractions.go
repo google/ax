@@ -69,6 +69,7 @@ import (
 
 const (
 	// interactionsEndpoint is the public Vertex GenAI dataplane endpoint.
+	// Use https://autopush-aiplatform.sandbox.googleapis.com for autopush.
 	interactionsEndpoint = "https://aiplatform.googleapis.com"
 	// interactionsAPIVersion is the Interactions API version this harness targets.
 	interactionsAPIVersion = "v1beta1"
@@ -77,7 +78,7 @@ const (
 
 	// Cloud project and location are read from these standard environment
 	// variables (see https://github.com/google/ax#authentication).
-	envCloudProject  = "GOOGLE_CLOUD_PROJECT"
+	envCloudProject  = "PROJECT_ID"
 	envCloudLocation = "GOOGLE_CLOUD_LOCATION"
 	// defaultLocation is used when GOOGLE_CLOUD_LOCATION is unset.
 	defaultLocation = "global"
@@ -94,7 +95,7 @@ var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
 // Use New, which fills sensible defaults.
 //
-// Cloud project and location come from the standard GOOGLE_CLOUD_PROJECT and
+// Cloud project and location come from the standard PROJECT_ID and
 // GOOGLE_CLOUD_LOCATION environment variables.
 type AntigravityInteractionsConfig struct {
 	// --- Required ---
@@ -145,7 +146,7 @@ func (c *AntigravityInteractionsConfig) withDefaults() {
 	}
 }
 
-// cloudProject returns the Cloud project id from GOOGLE_CLOUD_PROJECT.
+// cloudProject returns the Cloud project id from PROJECT_ID.
 func cloudProject() string {
 	return os.Getenv(envCloudProject)
 }
