@@ -82,8 +82,7 @@ kubectl get secret ax-eventlog-postgres -n ax -o go-template='{{.data.dsn | base
 #### Vertex AI access for the Antigravity Interactions harness
 
 > [!NOTE]
-You may skip this if you only use the
-default harness.
+> You may skip this if you only use the default harness.
 
 The Antigravity **Interactions** harness (`ax harness antigravity-interactions`,
 ActorTemplate `ax-harness-interactions-template`) calls the Vertex AI GenAI API
