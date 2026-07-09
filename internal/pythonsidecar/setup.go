@@ -124,6 +124,8 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) (bool, err
 func install(ctx context.Context, reqPath string, install bool) (string, error) {
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
 	if !install {
+		// Make sure that pip install ran once and we have
+		// the dependencies installed under site-packages.
 		if _, err := os.Stat(pkgDir); err == nil {
 			return pkgDir, nil
 		}
