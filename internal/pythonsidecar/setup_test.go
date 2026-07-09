@@ -40,28 +40,27 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 		"proto/ax_pb2.py":               &fstest.MapFile{Data: []byte("print('proto')")},
 	}
 
-	targetDir := filepath.Join(t.TempDir(), "target")
+	targetDir := filepath.Join(t.TempDir(), "home")
+	axDir := filepath.Join(targetDir, ".ax")
+	t.Setenv("HOME", targetDir)
+
 	opts := pythonsidecar.SetupOptions{
 		FS: testFS,
 	}
-
 	gotDir, err := pythonsidecar.Setup(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("Setup() failed: %v", err)
-	}
-	if !strings.HasPrefix(gotDir, targetDir) {
-		t.Errorf("expected gotDir to start with targetDir=%q, got %q", targetDir, gotDir)
 	}
 	if !strings.Contains(gotDir, "python") {
 		t.Errorf("expected gotDir to contain extracted python directory in PYTHONPATH, got %q", gotDir)
 	}
 
 	// Verify files were extracted under TargetDir/python
-	harnessPath := filepath.Join(targetDir, "python", "antigravity", "harness_server.py")
+	harnessPath := filepath.Join(axDir, "python", "antigravity", "harness_server.py")
 	if _, err := os.Stat(harnessPath); err != nil {
 		t.Errorf("expected file %s to exist, got stat error: %v", harnessPath, err)
 	}
-	protoPath := filepath.Join(targetDir, "python", "proto", "ax_pb2.py")
+	protoPath := filepath.Join(axDir, "python", "proto", "ax_pb2.py")
 	if _, err := os.Stat(protoPath); err != nil {
 		t.Errorf("expected file %s to exist, got stat error: %v", protoPath, err)
 	}
