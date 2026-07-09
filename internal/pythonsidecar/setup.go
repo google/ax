@@ -131,6 +131,9 @@ func install(ctx context.Context, reqPath string, install bool) (string, error) 
 		}
 	}
 	fmt.Println("Setting up Antigravity SDK, this may take a while...")
+
+	// Some corp machines are overriding the indexes, ensure that
+	// simple index is included where Antigravity SDK is distributed from.
 	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--extra-index-url", "https://pypi.org/simple", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
