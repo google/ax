@@ -60,9 +60,6 @@ func TestNewControllerFromConfig_InteractionsSubstrate(t *testing.T) {
 		},
 		Harnesses: config.HarnessesConfig{
 			Antigravity: config.AntigravityHarnessConfig{Default: true},
-			AntigravityInteractions: config.AntigravityInteractionsHarnessConfig{
-				Agent: "projects/p/locations/global/agents/a",
-			},
 		},
 	}
 
@@ -75,7 +72,6 @@ func TestNewControllerFromConfig_InteractionsSubstrate(t *testing.T) {
 	}
 	defer c.Close()
 
-	// In substrate mode the agent still gates registration (state_dir unneeded).
 	if _, err := c.Registry().Harness(config.AntigravityInteractionsHarnessID); err != nil {
 		t.Errorf("interactions harness not registered in substrate mode: %v", err)
 	}

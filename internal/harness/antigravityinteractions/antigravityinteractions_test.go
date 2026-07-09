@@ -223,7 +223,8 @@ func TestCursorStoreLoadSave(t *testing.T) {
 	}
 }
 
-// TestDefaultStateDir returns ~/.ax/cursors under the user's home directory.
+// TestDefaultStateDir returns ~/.ax/antigravityinteractions/cursors under the
+// user's home directory.
 func TestDefaultStateDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -232,7 +233,7 @@ func TestDefaultStateDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultStateDir: %v", err)
 	}
-	if want := filepath.Join(home, ".ax", "cursors"); got != want {
+	if want := filepath.Join(home, ".ax", "antigravityinteractions", "cursors"); got != want {
 		t.Errorf("DefaultStateDir() = %q, want %q", got, want)
 	}
 }

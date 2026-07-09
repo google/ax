@@ -66,27 +66,29 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-// cloudPlatformScope is the OAuth2 scope required to call Vertex AI.
-const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+const (
+	// interactionsEndpoint is the public Vertex GenAI dataplane endpoint.
+	interactionsEndpoint = "https://aiplatform.googleapis.com"
+	// interactionsAPIVersion is the Interactions API version this harness targets.
+	interactionsAPIVersion = "v1beta1"
+	// cloudPlatformScope is the OAuth2 scope required to call Vertex AI.
+	cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+	// Cloud project and location are read from these standard environment
+	// variables (see https://github.com/google/ax#authentication).
+	envCloudProject  = "GOOGLE_CLOUD_PROJECT"
+	envCloudLocation = "GOOGLE_CLOUD_LOCATION"
+	// defaultLocation is used when GOOGLE_CLOUD_LOCATION is unset.
+	defaultLocation = "global"
+
+	// DefaultAgent is the Interactions API agent used when the harness is
+	// registered without an explicit agent override.
+	DefaultAgent = "antigravity-preview-05-2026"
+)
 
 // Compile-time interface assertions.
 var _ harness.Harness = (*AntigravityInteractionsHarness)(nil)
 var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
-
-const interactionsAPIVersion = "v1beta1"
-
-// interactionsEndpoint is the public Vertex GenAI dataplane endpoint.
-const interactionsEndpoint = "https://aiplatform.googleapis.com"
-
-// Cloud project and location are read from these standard environment variables
-// (see https://github.com/google/ax#authentication).
-const (
-	envCloudProject  = "GOOGLE_CLOUD_PROJECT"
-	envCloudLocation = "GOOGLE_CLOUD_LOCATION"
-)
-
-// defaultLocation is used when GOOGLE_CLOUD_LOCATION is unset.
-const defaultLocation = "global"
 
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
 // Use New, which fills sensible defaults.
@@ -155,7 +157,7 @@ func cloudLocation() string {
 	return defaultLocation
 }
 
-// DefaultStateDir returns the default resume-cursor directory, ~/.ax/cursors,
+// DefaultStateDir returns the default resume-cursor directory, ~/.ax/antigravityinteractions/cursors,
 // used when a caller does not set StateDir explicitly. It lives outside the
 // agent's working directory on purpose: the working directory is the agent's
 // operating surface (it reads and edits files there), so AX's internal state is
@@ -166,7 +168,7 @@ func DefaultStateDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving home directory for resume-cursor state: %w", err)
 	}
-	return filepath.Join(home, ".ax", "cursors"), nil
+	return filepath.Join(home, ".ax", "antigravityinteractions", "cursors"), nil
 }
 
 // AntigravityInteractionsHarness implements Harness by talking to the public
