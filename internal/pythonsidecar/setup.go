@@ -131,9 +131,6 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 func install(ctx context.Context, reqPath string) (string, error) {
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
 	reqStat, err := os.Stat(reqPath)
-	if os.IsNotExist(err) {
-		return pkgDir, nil
-	}
 	if err != nil {
 		return "", fmt.Errorf("stat requirements file %s: %w", reqPath, err)
 	}
