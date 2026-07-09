@@ -236,3 +236,67 @@ func TestDefaultStateDir(t *testing.T) {
 		t.Errorf("DefaultStateDir() = %q, want %q", got, want)
 	}
 }
+
+// TestParseStreamedTurnSurfacesErrorEvent verifies that a server-emitted SSE
+// "error" event (e.g. INVALID_ARGUMENT for a malformed client tool result) is
+// surfaced as a real error, instead of being silently dropped and returned as a
+// completed-but-empty turn. Dropping it made an empty directory listing look
+// like a blank "no response" turn and poisoned the resume cursor with the
+// failing interaction's id.
+func TestParseStreamedTurnSurfacesErrorEvent(t *testing.T) {
+	sse := "" +
+		"event: interaction.created\n" +
+		`data: {"interaction":{"id":"INT-1","status":"in_progress"},"event_type":"interaction.created"}` + "\n\n" +
+		"event: error\n" +
+		`data: {"event_type":"error","error":{"message":"field 'results' must be a list_value, got unset","status":"INVALID_ARGUMENT"}}` + "\n\n" +
+		"event: done\n" +
+		"data: [DONE]\n\n"
+
+	h := &AntigravityInteractionsHarness{}
+	turn, err := h.parseStreamedTurn(strings.NewReader(sse))
+	if err == nil {
+		t.Fatalf("parseStreamedTurn() = %+v, nil error; want an error for the SSE error event", turn)
+	}
+	if !strings.Contains(err.Error(), "INVALID_ARGUMENT") {
+		t.Errorf("error = %q, want it to include the server status INVALID_ARGUMENT", err)
+	}
+	if !strings.Contains(err.Error(), "must be a list_value") {
+		t.Errorf("error = %q, want it to include the server message", err)
+	}
+}
+
+func TestServerErrorMessage(t *testing.T) {
+	tests := []struct {
+		name  string
+		event map[string]any
+		want  string
+	}{
+		{
+			name:  "message and status",
+			event: map[string]any{"error": map[string]any{"message": "boom", "status": "INVALID_ARGUMENT"}},
+			want:  "boom (INVALID_ARGUMENT)",
+		},
+		{
+			name:  "message only",
+			event: map[string]any{"error": map[string]any{"message": "boom"}},
+			want:  "boom",
+		},
+		{
+			name:  "status only",
+			event: map[string]any{"error": map[string]any{"status": "UNAVAILABLE"}},
+			want:  "UNAVAILABLE",
+		},
+		{
+			name:  "no error object",
+			event: map[string]any{"event_type": "error"},
+			want:  "unknown server error",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := serverErrorMessage(tt.event); got != tt.want {
+				t.Errorf("serverErrorMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

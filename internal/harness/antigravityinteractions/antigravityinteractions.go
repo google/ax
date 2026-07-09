@@ -797,6 +797,30 @@ func (h *AntigravityInteractionsHarness) postTurnOnce(ctx context.Context, token
 	return h.parseStreamedTurn(resp.Body)
 }
 
+// serverErrorMessage extracts a human-readable message from an SSE "error"
+// event. The error payload is an object with a "message" field (and often a
+// "status"/"code"); e.g. {"error":{"message":"...","status":"INVALID_ARGUMENT"}}.
+// Falls back to a generic string when the shape is unexpected so the caller
+// always gets a non-empty error.
+func serverErrorMessage(event map[string]any) string {
+	errObj, ok := event["error"].(map[string]any)
+	if !ok {
+		return "unknown server error"
+	}
+	msg, _ := errObj["message"].(string)
+	status, _ := errObj["status"].(string)
+	switch {
+	case msg != "" && status != "":
+		return fmt.Sprintf("%s (%s)", msg, status)
+	case msg != "":
+		return msg
+	case status != "":
+		return status
+	default:
+		return "unknown server error"
+	}
+}
+
 // parseStreamedTurn parses the event:/data: Server-Sent Events stream for one
 // interaction turn and extracts the tool calls the agent yielded and the model's
 // text output.
@@ -838,6 +862,19 @@ func (h *AntigravityInteractionsHarness) parseStreamedTurn(body io.Reader) (*tur
 			continue
 		}
 		switch event["event_type"] {
+		case "error":
+			// The server reports a turn-level failure (e.g. INVALID_ARGUMENT for a
+			// malformed client tool result) as an SSE "error" event. Surface it as
+			// a real error so the caller aborts the turn instead of treating the
+			// stream as a completed-but-empty turn. Silently dropping it made an
+			// empty directory listing look like a blank "no response, seq=0" turn
+			// AND caused the failing turn's interaction id to be persisted as a
+			// poisoned resume cursor.
+			return nil, fmt.Errorf(
+				"antigravity interactions: server error event: %s",
+				serverErrorMessage(event),
+			)
+
 		case "interaction.created", "interaction.completed", "interaction.status_update":
 			if interaction, ok := event["interaction"].(map[string]any); ok {
 				if id, ok := interaction["id"].(string); ok && id != "" {
