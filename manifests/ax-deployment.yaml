@@ -133,6 +133,4 @@ data:
     harnesses:
       antigravity:
         default: true
-      # TODO(wjjclaud): Uncomment when ready to enable.
-      # antigravity-interactions:
-      #   agent: "antigravity-preview-05-2026"
+      antigravity-interactions: {}
