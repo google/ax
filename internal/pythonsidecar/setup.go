@@ -23,15 +23,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/ax/internal/config"
 )
 
 // SetupOptions configures asset extraction and environment setup for a Python sidecar.
 type SetupOptions struct {
 	// FS is the embedded filesystem containing Python assets (e.g., python.FS). (Required)
 	FS fs.FS
-	// TargetDir is the directory on disk where assets will be extracted.
-	// If empty, it defaults to filepath.Join(os.UserHomeDir(), ".ax"). (Optional)
-	TargetDir string
 }
 
 // Setup extracts the embedded filesystem assets to TargetDir.
@@ -41,14 +40,11 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 		return "", fmt.Errorf("SetupOptions.FS cannot be nil")
 	}
 
-	targetDir := opts.TargetDir
-	if targetDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("resolving home directory for python target dir: %w", err)
-		}
-		targetDir = filepath.Join(home, ".ax")
+	axDir, err := config.AXAssetsDir()
+	if err != nil {
+		return "", err
 	}
+	targetDir := axDir
 
 	extractDir := filepath.Join(targetDir, "python")
 	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")

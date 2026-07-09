@@ -18,6 +18,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/harness/substrate"
@@ -207,4 +208,12 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func AXAssetsDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory: %w", err)
+	}
+	return filepath.Join(home, ".ax"), nil
 }

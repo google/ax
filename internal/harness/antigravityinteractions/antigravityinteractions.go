@@ -59,6 +59,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -164,11 +165,11 @@ func cloudLocation() string {
 // kept separate to avoid the agent seeing or clobbering it. New still requires a
 // non-empty StateDir; callers apply this default.
 func DefaultStateDir() (string, error) {
-	home, err := os.UserHomeDir()
+	axDir, err := config.AXAssetsDir()
 	if err != nil {
-		return "", fmt.Errorf("resolving home directory for resume-cursor state: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".ax", "antigravityinteractions", "cursors"), nil
+	return filepath.Join(axDir, "antigravityinteractions", "cursors"), nil
 }
 
 // AntigravityInteractionsHarness implements Harness by talking to the public
