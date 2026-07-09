@@ -15,6 +15,7 @@
 package pythonsidecar
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"time"
 
 	"github.com/google/ax/internal/config"
 )
@@ -70,10 +71,26 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 			return nil
 		}
 
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
 		destPath := filepath.Join(destDir, filepath.FromSlash(path))
-		rel, err := filepath.Rel(destDir, destPath)
-		if err != nil || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
-			return fmt.Errorf("illegal file path in embedded FS: %s", path)
+		// If the file already exists on disk with the exact same size and content,
+		// skip copying to preserve its timestamp and avoid false re-installations.
+		if stat, err := os.Stat(destPath); err == nil && stat.Size() == info.Size() {
+			src, err := filesystem.Open(path)
+			if err != nil {
+				return fmt.Errorf("opening embedded file %s: %w", path, err)
+			}
+			embedded, err := io.ReadAll(src)
+			_ = src.Close()
+			if err == nil {
+				if existing, err := os.ReadFile(destPath); err == nil && bytes.Equal(existing, embedded) {
+					return nil
+				}
+			}
 		}
 
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
@@ -86,9 +103,8 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 		}
 		defer src.Close()
 
-		info, err := d.Info()
 		mode := os.FileMode(0644)
-		if err == nil && info.Mode().Perm() != 0 {
+		if info.Mode().Perm() != 0 {
 			mode = info.Mode().Perm() | 0200
 		}
 
@@ -114,10 +130,28 @@ func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
 
 func install(ctx context.Context, reqPath string) (string, error) {
 	pkgDir := filepath.Join(filepath.Dir(reqPath), "site-packages")
+	reqStat, err := os.Stat(reqPath)
+	if os.IsNotExist(err) {
+		return pkgDir, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("stat requirements file %s: %w", reqPath, err)
+	}
+
+	// Skip pip install if site-packages/ already exists and is newer than or equal to requirements.txt.
+	// This avoids spawning Python or making network requests on every command execution when dependencies are up to date.
+	if pkgStat, err := os.Stat(pkgDir); err == nil && !reqStat.ModTime().After(pkgStat.ModTime()) {
+		return pkgDir, nil
+	}
+
 	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--extra-index-url", "https://pypi.org/simple", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("pip install failed for %s: %w\nOutput:\n%s", reqPath, err, string(out))
 	}
+	// Touch site-packages/ upon successful installation so its modification time is guaranteed
+	// to be newer than requirements.txt for subsequent runs.
+	now := time.Now()
+	_ = os.Chtimes(pkgDir, now, now)
 	return pkgDir, nil
 }
