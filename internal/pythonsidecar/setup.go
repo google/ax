@@ -128,6 +128,7 @@ func install(ctx context.Context, reqPath string, install bool) (string, error) 
 			return pkgDir, nil
 		}
 	}
+	fmt.Println("Setting up Antigravity SDK, this may take a while...")
 	cmd := exec.CommandContext(ctx, "python3", "-m", "pip", "install", "--extra-index-url", "https://pypi.org/simple", "--target", pkgDir, "-r", reqPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
