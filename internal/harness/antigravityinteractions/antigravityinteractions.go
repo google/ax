@@ -211,6 +211,10 @@ func newWithHTTPClient(cfg AntigravityInteractionsConfig, hc *http.Client) (*Ant
 		// for the next (with a new routable IP), which leaves any pooled keep-alive
 		// connection stale; reusing it makes the next turn's request fail. Opening a
 		// fresh connection per request avoids that at the cost of an extra handshake.
+		//
+		// Clone DefaultTransport (rather than a bare &http.Transport{}) so we inherit
+		// its production defaults -- proxy from the environment, dial/TLS/handshake
+		// timeouts, and HTTP/2 -- and only override keep-alives.
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.DisableKeepAlives = true
 		hc = &http.Client{Timeout: 10 * time.Minute, Transport: tr}
