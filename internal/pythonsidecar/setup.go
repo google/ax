@@ -39,28 +39,22 @@ func Setup(ctx context.Context, opts SetupOptions) (string, error) {
 	if opts.FS == nil {
 		return "", fmt.Errorf("SetupOptions.FS cannot be nil")
 	}
-
 	axDir, err := config.AXAssetsDir()
 	if err != nil {
 		return "", err
 	}
-	targetDir := axDir
-
-	extractDir := filepath.Join(targetDir, "python")
+	extractDir := filepath.Join(axDir, "python")
 	reqPath := filepath.Join(extractDir, "antigravity", "requirements.txt")
 
-	result := targetDir + string(os.PathListSeparator) + extractDir
-
+	pythonPath := axDir + string(os.PathListSeparator) + extractDir
 	if err := extractFS(ctx, opts.FS, extractDir); err != nil {
 		return "", fmt.Errorf("failed to extract embedded assets: %w", err)
 	}
-
 	pkgPath, err := install(ctx, reqPath)
 	if err != nil {
 		return "", err
 	}
-
-	return result + string(os.PathListSeparator) + pkgPath, nil
+	return pythonPath + string(os.PathListSeparator) + pkgPath, nil
 }
 
 func extractFS(ctx context.Context, filesystem fs.FS, destDir string) error {
