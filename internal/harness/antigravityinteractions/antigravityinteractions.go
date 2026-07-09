@@ -69,7 +69,6 @@ import (
 
 const (
 	// interactionsEndpoint is the public Vertex GenAI dataplane endpoint.
-	// Use https://autopush-aiplatform.sandbox.googleapis.com for autopush.
 	interactionsEndpoint = "https://aiplatform.googleapis.com"
 	// interactionsAPIVersion is the Interactions API version this harness targets.
 	interactionsAPIVersion = "v1beta1"
