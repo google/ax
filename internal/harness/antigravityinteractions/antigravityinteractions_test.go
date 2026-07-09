@@ -91,14 +91,13 @@ func (f *fakeInteractions) recorded() []interactionRequest {
 func newTestHarness(t *testing.T, fake *fakeInteractions, stateDir string) *AntigravityInteractionsHarness {
 	t.Helper()
 	t.Setenv(envCloudProject, "test-project")
-	h, err := New(AntigravityInteractionsConfig{
+	h, err := newWithHTTPClient(AntigravityInteractionsConfig{
 		Agent:       "test-agent",
 		StateDir:    stateDir,
-		HTTPClient:  &http.Client{Transport: fake},
 		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "fake-token"}),
-	})
+	}, &http.Client{Transport: fake})
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("newWithHTTPClient: %v", err)
 	}
 	return h
 }

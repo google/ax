@@ -97,8 +97,25 @@ var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
 // Cloud project and location come from the standard GOOGLE_CLOUD_PROJECT and
 // GOOGLE_CLOUD_LOCATION environment variables.
 type AntigravityInteractionsConfig struct {
-	// Agent is the Interactions API agent name to run.
+	// --- Required ---
+
+	// Agent is the Interactions API agent name to run. Required: the API rejects a
+	// request with no agent.
 	Agent string
+
+	// StateDir is the directory where each conversation's resume cursor is
+	// persisted, so a conversation can resume after a restart. Required: New
+	// returns an error if it is empty.
+	//
+	// Correctness relies on a single writer per conversation: writes are
+	// last-write-wins with no compare-and-swap. This is an expectation the caller
+	// must satisfy (e.g. by routing a conversation id to one worker, or resuming
+	// a worker from that conversation's snapshot) -- it is not currently enforced
+	// by the controller.
+	StateDir string
+
+	// --- Optional ---
+
 	// SystemInstruction, if set, is sent as the interaction's system_instruction
 	// (a free-form system prompt prepended to the agent's own instructions). It
 	// is sent on every turn of the interaction loop so it persists across them.
@@ -111,31 +128,15 @@ type AntigravityInteractionsConfig struct {
 	// (FR) the harness produces. Useful for observing the FC/FR exchange that is
 	// otherwise internal to the harness.
 	Debug bool
-
 	// ThirdPartyExecutor executes third-party (non-built-in) function tool calls
 	// and declares them to the agent. It is the seam for the controller to inject
 	// the caller's tool implementations. If nil, the harness advertises no
 	// third-party tools and any non-built-in call the agent attempts yields an
 	// error result.
 	ThirdPartyExecutor ThirdPartyExecutor
-
 	// TokenSource overrides how the bearer token is obtained. If nil, the harness
 	// builds an auto-refreshing source from Application Default Credentials.
 	TokenSource oauth2.TokenSource
-	// HTTPClient overrides the HTTP client. If nil, a default client with a long
-	// timeout is used.
-	HTTPClient *http.Client
-
-	// StateDir is the directory where each conversation's resume cursor is
-	// persisted, so a conversation can resume after a restart. It is required:
-	// New returns an error if it is empty.
-	//
-	// Correctness relies on a single writer per conversation: writes are
-	// last-write-wins with no compare-and-swap. This is an expectation the caller
-	// must satisfy (e.g. by routing a conversation id to one worker, or resuming
-	// a worker from that conversation's snapshot) -- it is not currently enforced
-	// by the controller.
-	StateDir string
 }
 
 func (c *AntigravityInteractionsConfig) withDefaults() {
@@ -191,15 +192,28 @@ type AntigravityInteractionsHarness struct {
 	tsErr  error
 }
 
-// New creates a harness from the given config,
-// filling in defaults for unset fields. It returns an error if cfg.StateDir is
-// empty or the cursor store cannot be created: resume-cursor persistence is
-// required, so a usable state directory must be provided.
+// New creates a harness from the given config, filling in defaults for unset
+// fields. It returns an error if cfg.StateDir is empty or the cursor store cannot
+// be created: resume-cursor persistence is required, so a usable state directory
+// must be provided.
 func New(cfg AntigravityInteractionsConfig) (*AntigravityInteractionsHarness, error) {
+	return newWithHTTPClient(cfg, nil)
+}
+
+// newWithHTTPClient is New with an injectable HTTP client. If hc is nil it builds
+// the default client. It exists so tests can inject a fake transport; the public
+// config intentionally does not expose an HTTP client override.
+func newWithHTTPClient(cfg AntigravityInteractionsConfig, hc *http.Client) (*AntigravityInteractionsHarness, error) {
 	cfg.withDefaults()
-	hc := cfg.HTTPClient
 	if hc == nil {
-		hc = &http.Client{Timeout: 10 * time.Minute}
+		// Disable HTTP keep-alives so no TCP/TLS connection is reused across
+		// requests. On substrate the actor is suspended after a turn and resumed
+		// for the next (with a new routable IP), which leaves any pooled keep-alive
+		// connection stale; reusing it makes the next turn's request fail. Opening a
+		// fresh connection per request avoids that at the cost of an extra handshake.
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.DisableKeepAlives = true
+		hc = &http.Client{Timeout: 10 * time.Minute, Transport: tr}
 	}
 	if cfg.StateDir == "" {
 		return nil, errors.New("AntigravityInteractionsConfig.StateDir must be set")
