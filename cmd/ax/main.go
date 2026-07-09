@@ -60,16 +60,20 @@ func connect(server string) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
+const currentVersion = "v1alpha"
+
 func newConfig(cmd *cobra.Command, configFile string) (*cliutil.Config, error) {
 	cfg, err := cliutil.LoadFromFile(configFile)
 	if errors.Is(err, os.ErrNotExist) && !cmd.Flags().Changed("config") {
-		return cliutil.DefaultConfig(), nil
+		cfg := cliutil.DefaultConfig()
+		cfg.Version = currentVersion
+		return cfg, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("error loading config file '%s': %w", configFile, err)
 	}
-	if cfg.Version != "v1alpha" {
-		return nil, fmt.Errorf("unsupported config version %q, must be \"v1alpha\"", cfg.Version)
+	if cfg.Version != currentVersion {
+		return nil, fmt.Errorf("unsupported config version %q, must be %q", cfg.Version, currentVersion)
 	}
 	return cfg, nil
 }
