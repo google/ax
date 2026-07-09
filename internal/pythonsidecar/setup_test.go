@@ -42,8 +42,7 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 
 	targetDir := filepath.Join(t.TempDir(), "target")
 	opts := pythonsidecar.SetupOptions{
-		FS:        testFS,
-		TargetDir: targetDir,
+		FS: testFS,
 	}
 
 	gotDir, err := pythonsidecar.Setup(context.Background(), opts)
