@@ -27,15 +27,6 @@ message TextContent {
   string text = 3;
 }
 
-// TextDeltaContent represents a streaming chunk of assistant text output.
-// Deltas are ordered, append-only pieces of the current contiguous text run;
-// consumers accumulate adjacent deltas until the role/kind changes, a
-// non-delta output arrives, or the stream ends. Modeled after the
-// TextDelta streaming primitive in google-genai.
-message TextDeltaContent {
-  string text = 1;
-}
-
 message ApprovalDecision {
   bool approved = 1;
 }
@@ -62,18 +53,6 @@ message ThoughtSummaryContent {
 
   oneof type {
     TextContent text = 1;
-  }
-}
-
-// ThoughtSummaryDeltaContent represents a streaming chunk of a thought
-// summary. Deltas are ordered, append-only pieces of the current contiguous
-// thought-summary run; consumers accumulate adjacent deltas until the
-// role/kind changes, a non-delta output arrives, or the stream ends.
-// Modeled after the ThoughtSummaryDelta streaming primitive in
-// google-genai.
-message ThoughtSummaryDeltaContent {
-  oneof type {
-    TextDeltaContent text = 1;
   }
 }
 
@@ -228,6 +207,20 @@ message VideoContent {
   MediaResolution resolution = 5;
 }
 
+// TextDeltaContent represents an incremental text chunk in a stream. Unlike 
+// TextContent, it is not a complete text block and is intended for low-latency
+// rendering while an execution is still producing output.
+message TextDeltaContent {
+  string text = 1;
+}
+
+// ThoughtSummaryDeltaContent represents an incremental thought-summary chunk in a stream. Unlike 
+// ThoughtSummaryContent, it is not a complete thought-summary block and is intended for low-latency
+// rendering while an execution is still producing output.
+message ThoughtSummaryDeltaContent {
+  string text = 1;
+}
+
 // Content represents a content input or output.
 message Content {
   reserved 1 to 4, 6 to 9, 15 to 23;
@@ -242,9 +235,6 @@ message Content {
     ConfirmationContent confirmation = 26; // TODO(jbd): Remove out of the Content.
     ToolCallContent tool_call = 24;
     ToolResultContent tool_result = 25;
-    // Streaming deltas: append-only chunks of the current contiguous text
-    // or thought-summary run. See TextDeltaContent /
-    // ThoughtSummaryDeltaContent for accumulation semantics.
     TextDeltaContent text_delta = 27;
     ThoughtSummaryDeltaContent thought_summary_delta = 28;
   }
