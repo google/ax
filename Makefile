@@ -1,7 +1,4 @@
-.PHONY: all build proto test clean install images
-
-# Default container registry for docker
-export KO_DOCKER_REPO ?= gcr.io/ax-container-images
+.PHONY: all build proto test clean install
 
 # Build all binaries
 all: proto build
@@ -42,11 +39,6 @@ install:
 	@go install ./cmd/ax
 	@echo "Install complete!"
 
-
-# Run remote agent example
-run-remote:
-	@go run ./examples/remote_agent
-
 # Install dependencies
 deps:
 	@echo "Installing dependencies..."
@@ -59,19 +51,3 @@ clean-logs:
 	@echo "Cleaning the event logs..."
 	rm -rf ./eventlog
 	mkdir ./eventlog
-
-ax-image:
-	@echo "Building container image with ko..."
-	ko build --base-import-paths ./cmd/ax
-
-ax-server-image:
-	@echo "Building ax-server container image with ko..."
-	ko build --base-import-paths ./cmd/ax
-
-ax-shell-image:
-	# Used to debug ax servers within a cluster.
-	@echo "Building ax shell container image with ko using busybox..."
-	KO_DOCKER_REPO=$(KO_DOCKER_REPO)/ax-shell KO_DEFAULTBASEIMAGE=busybox:1.36 ko build --base-import-paths ./cmd/ax
-
-# Build all container images
-images: ax-image ax-shell-image
