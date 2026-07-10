@@ -147,16 +147,15 @@ def _existing_sdk_conv_id(save_dir: str) -> str | None:
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     """Implements the ax.HarnessService protocol over gRPC."""
 
-    def __init__(self, default_config: AgentConfig):
+    def __init__(self, default_config: AgentConfig, state_dir: pathlib.Path):
         self._default_config = default_config
+        self._state_dir = state_dir
 
     def _build_config_for(self, conversation_id: str) -> LocalAgentConfig:
-        # Per-AX-conv save_dir. Resume by SDK's own conv_id if a trajectory
-        # exists there. SDK auto-creates the directory.
-        # TODO(#269, #203): should be injected by the controller via
-        # harness_config; hardcoded here to mirror the Go-side
-        # antigravityinteractions.DefaultStateDir() convention.
-        save_dir = str(pathlib.Path.home() / ".ax" / "antigravity" / "conversations" / conversation_id)
+        # Per-AX-conv save_dir under the configured state_dir base. Resume by
+        # SDK's own conv_id if a trajectory exists there. SDK auto-creates the
+        # directory.
+        save_dir = str(self._state_dir / conversation_id)
         update = {"save_dir": save_dir}
         if sdk_conv_id := _existing_sdk_conv_id(save_dir):
             update["conversation_id"] = sdk_conv_id
@@ -337,9 +336,9 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
 
-async def _serve(host: str, port: int, default_config: AgentConfig):
+async def _serve(host: str, port: int, default_config: AgentConfig, state_dir: pathlib.Path):
     server = grpc.aio.server()
-    servicer = AntigravityHarnessServiceServicer(default_config)
+    servicer = AntigravityHarnessServiceServicer(default_config, state_dir)
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
 
     # Serve the standard gRPC health protocol.
@@ -387,6 +386,7 @@ def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
     parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
     parser.add_argument("--host", default="localhost", help="Host to bind the server to")
+    parser.add_argument("--state-dir", default=str(pathlib.Path.home() / ".ax" / "antigravity" / "conversations"), help="Base directory for per-conversation trajectory storage")
     args = parser.parse_args()
 
     try:
@@ -407,7 +407,7 @@ def main():
     # having this entry even if it's the OCI image.
     _resolve_localhost()
         
-    asyncio.run(_serve(args.host, args.port, default_config))
+    asyncio.run(_serve(args.host, args.port, default_config, pathlib.Path(args.state_dir)))
 
 if __name__ == "__main__":
     main()

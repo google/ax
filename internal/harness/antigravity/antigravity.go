@@ -48,8 +48,10 @@ type AntigravityHarness struct {
 }
 
 // New creates a new AntigravityHarness. When autoStart is true, New forks the
-// Antigravity Python sidecar and waits for it to become reachable.
-func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarness, error) {
+// Antigravity Python sidecar and waits for it to become reachable. If
+// stateDir is non-empty, it is passed to the sidecar as --state-dir; empty
+// stateDir lets the sidecar apply its own default.
+func New(ctx context.Context, address, stateDir string, autoStart bool) (*AntigravityHarness, error) {
 	if address == "" {
 		address = "127.0.0.1:50053"
 	}
@@ -61,12 +63,13 @@ func New(ctx context.Context, address string, autoStart bool) (*AntigravityHarne
 	if err != nil {
 		return nil, fmt.Errorf("antigravity: invalid address %q: %w", address, err)
 	}
+	args := []string{"--host", host, "--port", port}
+	if stateDir != "" {
+		args = append(args, "--state-dir", stateDir)
+	}
 	cfg := pythonsidecar.Config{
-		Module: "python.antigravity.harness_server",
-		Args: []string{
-			"--host", host,
-			"--port", port,
-		},
+		Module:    "python.antigravity.harness_server",
+		Args:      args,
 		ReadyFunc: pythonsidecar.TCPReady(address),
 	}
 	sidecar := pythonsidecar.New(cfg)

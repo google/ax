@@ -28,7 +28,7 @@ def test_grpc_connect_success(mock_config, monkeypatch):
     async def _run():
         # 1. Start temporary local gRPC server on random open port
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer(mock_config)
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -102,7 +102,7 @@ def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp
 
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer(mock_config)
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -166,13 +166,13 @@ def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp
     asyncio.run(_run())
 
 
-def test_health_check():
+def test_health_check(tmp_path):
     async def _run():
         from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
         cfg = LocalAgentConfig(system_instructions="health-check stub")
         server = grpc.aio.server()
-        ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(cfg), server)
+        ax_pb2_grpc.add_HarnessServiceServicer_to_server(AntigravityHarnessServiceServicer(cfg, tmp_path), server)
         health_servicer = health.aio.HealthServicer()
         health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
         await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
@@ -230,7 +230,7 @@ def test_has_credentials_vertex_express_mode(monkeypatch):
     assert _has_credentials(cfg) is True
 
 
-def test_grpc_connect_programmatic_credentials(monkeypatch):
+def test_grpc_connect_programmatic_credentials(monkeypatch, tmp_path):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
@@ -241,7 +241,7 @@ def test_grpc_connect_programmatic_credentials(monkeypatch):
 
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer(cfg)
+        servicer = AntigravityHarnessServiceServicer(cfg, tmp_path)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -319,7 +319,7 @@ def test_enhance_config_from_env(monkeypatch, tmp_path):
 def test_grpc_connect_buffering(mock_config, monkeypatch):
     async def _run():
         server = grpc.aio.server()
-        servicer = AntigravityHarnessServiceServicer(mock_config)
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
         port = server.add_insecure_port("localhost:0")
         await server.start()
@@ -473,14 +473,14 @@ def test_servicer_requires_default_config():
         AntigravityHarnessServiceServicer()
 
 
-def test_run_turn_guards_against_missing_default_config(monkeypatch):
+def test_run_turn_guards_against_missing_default_config(monkeypatch, tmp_path):
     """If something sets _default_config to None at runtime (future bug in
     per-request layering, #194), _run_turn returns STATE_FAILED instead of
     crashing the server.
     """
     async def _run():
         cfg = LocalAgentConfig(system_instructions="will be set to None")
-        servicer = AntigravityHarnessServiceServicer(cfg)
+        servicer = AntigravityHarnessServiceServicer(cfg, tmp_path)
         servicer._default_config = None
         server = grpc.aio.server()
         ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)

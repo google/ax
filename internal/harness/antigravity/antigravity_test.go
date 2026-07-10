@@ -30,7 +30,7 @@ func TestRun_AutoStartFalse_ServerOK_Succeeds(t *testing.T) {
 	srv := &harnesstest.MockHarnessServer{
 		Outputs: []*proto.Message{harnesstest.ThoughtText("Analyzing"), harnesstest.AssistantText("Hello world")},
 	}
-	harnessClient, err := New(context.Background(), harnesstest.StartHarnessServer(t, srv), false)
+	harnessClient, err := New(context.Background(), harnesstest.StartHarnessServer(t, srv), "", false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRun_AutoStartFalse_ServerOK_Succeeds(t *testing.T) {
 
 func TestRun_AutoStartFalse_ServerErrorFrame_Fails(t *testing.T) {
 	srv := &harnesstest.MockHarnessServer{FailConnect: true, ErrMessage: "internal mock server crash"}
-	harnessClient, err := New(context.Background(), harnesstest.StartHarnessServer(t, srv), false)
+	harnessClient, err := New(context.Background(), harnesstest.StartHarnessServer(t, srv), "", false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRun_AutoStartFalse_ServerErrorFrame_Fails(t *testing.T) {
 
 // TestNew_AutoStartFalse_NilSidecar: autoStart=false leaves sidecar nil.
 func TestNew_AutoStartFalse_NilSidecar(t *testing.T) {
-	h, err := New(context.Background(), "127.0.0.1:1", false)
+	h, err := New(context.Background(), "127.0.0.1:1", "", false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

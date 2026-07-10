@@ -97,7 +97,8 @@ type HarnessesConfig struct {
 // AntigravityHarnessConfig registers the built-in Antigravity harness.
 type AntigravityHarnessConfig struct {
 	Default  bool   `yaml:"default,omitempty"`
-	Endpoint string `yaml:"endpoint,omitempty"` // HarnessService address
+	Endpoint string `yaml:"endpoint,omitempty"`  // HarnessService address
+	StateDir string `yaml:"state_dir,omitempty"` // Trajectory storage dir (optional; sidecar defaults to ~/.ax/antigravity/conversations)
 }
 
 // AntigravityInteractionsHarnessConfig registers the built-in Antigravity

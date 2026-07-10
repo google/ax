@@ -71,8 +71,9 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		// Local mode: the harness owns the Python sidecar.
-		antigravityHarness, err = antigravity.New(ctx, address, true)
+		// Local mode: the harness owns the Python sidecar. Empty StateDir
+		// means the sidecar applies its own default
+		antigravityHarness, err = antigravity.New(ctx, address, cfg.Harnesses.Antigravity.StateDir, true)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}

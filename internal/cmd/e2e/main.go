@@ -75,7 +75,7 @@ func main() {
 		conn.Close()
 		fmt.Printf("Connected to Antigravity gRPC harness server at %s\n", address)
 		// TODO: add a companion demo that uses autoStart=true (mirrors ax exec local mode).
-		h, _ := antigravity.New(ctx, address, false)
+		h, _ := antigravity.New(ctx, address, "", false)
 		reg.RegisterHarness("antigravity", h)
 	})
 }
