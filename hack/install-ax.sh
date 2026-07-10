@@ -236,7 +236,6 @@ deploy_ax_server() {
     -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
     -e "s|\${AX_IMAGE}|${ax_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
-    -e "s|\${PROJECT_ID}|${GOOGLE_CLOUD_PROJECT:-}|g"
     -e "s|\${GOOGLE_CLOUD_PROJECT}|${GOOGLE_CLOUD_PROJECT:-}|g"
   )
 

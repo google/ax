@@ -45,7 +45,7 @@ with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
 #### Registry authentication
 
-`PROJECT_ID` sets `AX_IMAGE_REPO=gcr.io/$PROJECT_ID`. The deploy pushes two
+`GOOGLE_CLOUD_PROJECT` sets `AX_IMAGE_REPO=gcr.io/$GOOGLE_CLOUD_PROJECT`. The deploy pushes two
 images — the **ax** image (via your container engine) and the **ateom** image
 (via `ko`) — and both authenticate through the gcloud credential helper:
 
@@ -61,9 +61,9 @@ The event log is stored in Postgres. By default ax-server connects to an
 create a **bundled** Postgres in-cluster instead (for testing).
 
 ```bash
-export PROJECT_ID="ax-substrate" # Your GCP project ID
+export GOOGLE_CLOUD_PROJECT="ax-substrate" # Your GCP project ID
 export GEMINI_API_KEY="your-api-key"
-export AX_SNAPSHOTS_BUCKET="snapshot-substrate-test-$PROJECT_ID"
+export AX_SNAPSHOTS_BUCKET="snapshot-substrate-test-$GOOGLE_CLOUD_PROJECT"
 
 # Connect to your existing Postgres:
 export AX_EVENTLOG_DSN="postgres://user:pass@host:5432/db?sslmode=require"
@@ -92,15 +92,15 @@ Antigravity harness, which uses `GEMINI_API_KEY`.
 The worker pods (WorkerPool `ax-harness-workerpool`, namespace `ax`) have no GSA
 annotation, so with Workload Identity the actor authenticates **directly as the
 Kubernetes ServiceAccount principal** `ax/default`. Grant that principal
-`roles/aiplatform.user` on the project the harness reads from `PROJECT_ID`, or
+`roles/aiplatform.user` on the project the harness reads from `GOOGLE_CLOUD_PROJECT`, or
 Vertex calls fail with `PermissionDenied (403)`. IAM changes can take a minute or two to propagate.
 
 ```bash
-PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+PROJECT_NUMBER="$(gcloud projects describe "${GOOGLE_CLOUD_PROJECT}" --format='value(projectNumber)')"
 
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+gcloud projects add-iam-policy-binding "${GOOGLE_CLOUD_PROJECT}" \
   --role=roles/aiplatform.user \
-  --member="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ax/sa/default" \
+  --member="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${GOOGLE_CLOUD_PROJECT}.svc.id.goog/subject/ns/ax/sa/default" \
   --condition=None
 ```
 
