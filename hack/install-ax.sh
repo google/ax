@@ -20,8 +20,8 @@ set -o pipefail
 ROOT=$(git rev-parse --show-toplevel)
 cd "${ROOT}"
 
-if [[ -n "${PROJECT_ID:-}" ]]; then
-  export AX_IMAGE_REPO="gcr.io/${PROJECT_ID}"
+if [[ -n "${GOOGLE_CLOUD_PROJECT:-}" ]]; then
+  export AX_IMAGE_REPO="gcr.io/${GOOGLE_CLOUD_PROJECT}"
   echo "Using AX_IMAGE_REPO: ${AX_IMAGE_REPO}" >&2
 fi
 
@@ -236,7 +236,8 @@ deploy_ax_server() {
     -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
     -e "s|\${AX_IMAGE}|${ax_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
-    -e "s|\${PROJECT_ID}|${PROJECT_ID:-}|g"
+    -e "s|\${PROJECT_ID}|${GOOGLE_CLOUD_PROJECT:-}|g"
+    -e "s|\${GOOGLE_CLOUD_PROJECT}|${GOOGLE_CLOUD_PROJECT:-}|g"
   )
 
   # Render and apply the core manifest (namespace, harnesses, ax-server, ConfigMap).
