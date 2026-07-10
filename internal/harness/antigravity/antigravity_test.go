@@ -106,3 +106,35 @@ func TestNew_AutoStartFalse_NilSidecar(t *testing.T) {
 		t.Errorf("expected sidecar to be nil, got %v", h.sidecar)
 	}
 }
+
+// TestBuildSidecarArgs: --state-dir forwarding rule (P3 review comment).
+func TestBuildSidecarArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		stateDir string
+		want     []string
+	}{
+		{"empty state_dir omits flag", "", []string{"--host", "127.0.0.1", "--port", "50053"}},
+		{"non-empty state_dir forwarded", "/custom/path", []string{"--host", "127.0.0.1", "--port", "50053", "--state-dir", "/custom/path"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSidecarArgs("127.0.0.1", "50053", tt.stateDir)
+			if !slicesEqual(got, tt.want) {
+				t.Errorf("buildSidecarArgs: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

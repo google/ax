@@ -407,7 +407,7 @@ def main():
     # having this entry even if it's the OCI image.
     _resolve_localhost()
         
-    asyncio.run(_serve(args.host, args.port, default_config, pathlib.Path(args.state_dir)))
+    asyncio.run(_serve(args.host, args.port, default_config, pathlib.Path(args.state_dir).expanduser()))
 
 if __name__ == "__main__":
     main()

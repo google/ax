@@ -140,3 +140,19 @@ eventlog:
 		t.Errorf("cfg.Version = %q, want %q", cfg.Version, "1.2.3")
 	}
 }
+
+// TestLoadFromFile_AntigravityStateDir: yaml -> AntigravityHarnessConfig.StateDir.
+func TestLoadFromFile_AntigravityStateDir(t *testing.T) {
+	data := `
+harnesses:
+  antigravity:
+    state_dir: /custom/path
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(data), &cfg); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got, want := cfg.Harnesses.Antigravity.StateDir, "/custom/path"; got != want {
+		t.Errorf("StateDir = %q, want %q", got, want)
+	}
+}

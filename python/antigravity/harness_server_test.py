@@ -24,7 +24,7 @@ def mock_config(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "mock-api-key")
     return LocalAgentConfig(system_instructions="Test instructions")
 
-def test_grpc_connect_success(mock_config, monkeypatch):
+def test_grpc_connect_success(mock_config, monkeypatch, tmp_path):
     async def _run():
         # 1. Start temporary local gRPC server on random open port
         server = grpc.aio.server()
@@ -316,7 +316,7 @@ def test_enhance_config_from_env(monkeypatch, tmp_path):
     assert str(skills_dir) in cfg.skills_paths
 
 
-def test_grpc_connect_buffering(mock_config, monkeypatch):
+def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
     async def _run():
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
