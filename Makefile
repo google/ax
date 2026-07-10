@@ -1,4 +1,4 @@
-.PHONY: all build proto test clean install
+.PHONY: all build proto test test-python clean install
 
 # Build all binaries
 all: proto build
@@ -21,10 +21,19 @@ proto:
 	@python3 -m grpc_tools.protoc -I. --python_out=python --grpc_python_out=python proto/ax.proto proto/content.proto
 	@echo "Protobuf generation complete!"
 
-# Run tests
+# Run Go tests
 test:
-	@echo "Running tests..."
+	@echo "Running Go tests..."
 	@go test -v ./...
+
+# Run Python tests for the antigravity harness sidecar.
+# Assumes deps are installed for the same interpreter as `python3`, e.g.:
+#   python3 -m pip install -r python/antigravity/requirements.txt \
+#     'pytest>=7.0' 'pytest-timeout>=2.0'
+# --timeout guards against hung gRPC servers.
+test-python:
+	@echo "Running Python tests..."
+	@python3 -m pytest python/antigravity/ --timeout=30 --timeout-method=thread
 
 # Clean build artifacts
 clean:
