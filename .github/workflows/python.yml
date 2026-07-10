@@ -1,0 +1,51 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Runs pytest against the antigravity harness sidecar
+# (python/antigravity/harness_server_test.py). Split from go.yml so the
+# Go workflow stays Go-only and this can evolve independently as more
+# Python surface area lands.
+
+name: Python
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python deps
+      # Runtime deps from python/antigravity/requirements.txt plus test-only
+      # tooling. Version floors on pytest match the upstream google-antigravity
+      # SDK's own dev extras (see google-antigravity/antigravity-sdk-python
+      # pyproject.toml) so this doesn't drift. pytest-timeout is added here
+      # only -- our tests spin up real gRPC servers on random ports and can hang.
+      run: pip install -r python/antigravity/requirements.txt 'pytest>=7.0' 'pytest-timeout>=2.0'
+
+    - name: Run Python tests
+      # --timeout guards against hung gRPC servers so a stuck test can't
+      # eat the whole workflow budget.
+      run: python -m pytest python/antigravity/ --timeout=30 --timeout-method=thread -v
