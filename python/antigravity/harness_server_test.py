@@ -83,7 +83,7 @@ def test_grpc_connect_success(mock_config, monkeypatch):
                 
             # 4. Assert outputs are correctly mapped and completed
             assert len(responses) == 3 # Thought + Text + End
-            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Thinking details"
+            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Thinking details\n"
             assert responses[1].outputs.messages[0].content.text.text == "Hello human"
             assert responses[2].WhichOneof('type') == 'end'
             assert responses[2].end.state == ax_pb2.STATE_COMPLETED
@@ -380,7 +380,7 @@ def test_grpc_connect_buffering(mock_config, monkeypatch):
             
             # Assert 1st response: Thought summary text is "Think1 Think2"
             assert responses[0].outputs.messages[0].content.WhichOneof('type') == 'thought'
-            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Think1 Think2"
+            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Think1 Think2\n"
             
             # Assert 2nd response: ToolCall name is "tool1"
             assert responses[1].outputs.messages[0].content.WhichOneof('type') == 'tool_call'
