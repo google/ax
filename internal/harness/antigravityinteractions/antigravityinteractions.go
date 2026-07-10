@@ -77,7 +77,7 @@ const (
 
 	// Cloud project and location are read from these standard environment
 	// variables (see https://github.com/google/ax#authentication).
-	envCloudProject  = "PROJECT_ID"
+	envCloudProject  = "GOOGLE_CLOUD_PROJECT"
 	envCloudLocation = "GOOGLE_CLOUD_LOCATION"
 	// defaultLocation is used when GOOGLE_CLOUD_LOCATION is unset.
 	defaultLocation = "global"
@@ -94,7 +94,7 @@ var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
 // Use New, which fills sensible defaults.
 //
-// Cloud project and location come from the standard PROJECT_ID and
+// Cloud project and location come from the standard GOOGLE_CLOUD_PROJECT and
 // GOOGLE_CLOUD_LOCATION environment variables.
 type AntigravityInteractionsConfig struct {
 	// --- Required ---
@@ -145,7 +145,7 @@ func (c *AntigravityInteractionsConfig) withDefaults() {
 	}
 }
 
-// cloudProject returns the Cloud project id from PROJECT_ID.
+// cloudProject returns the Cloud project id from GOOGLE_CLOUD_PROJECT.
 func cloudProject() string {
 	return os.Getenv(envCloudProject)
 }

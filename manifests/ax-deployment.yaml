@@ -94,8 +94,8 @@ spec:
       command: ["/ax-app/ax", "harness", "antigravity-interactions",
                 "--host", "0.0.0.0", "--port", "80"]
       env:
-        - name: PROJECT_ID
-          value: "${PROJECT_ID}"
+        - name: GOOGLE_CLOUD_PROJECT
+          value: "${GOOGLE_CLOUD_PROJECT}"
         - name: AX_HARNESS_WORKDIR
           value: "/workspace"
       readyz:
