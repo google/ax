@@ -147,30 +147,6 @@ def _has_credentials(config: AgentConfig | None) -> bool:
 
     return False
 
-def _parse_harness_config(raw_config: bytes) -> dict[str, object]:
-    if not raw_config:
-        return {}
-
-    try:
-        config = json.loads(raw_config.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HarnessConfigError(f"expected UTF-8 JSON: {exc}") from exc
-
-    if not isinstance(config, dict):
-        raise HarnessConfigError("top-level JSON value must be an object")
-
-    managed = sorted(set(config) & _AX_MANAGED_CONFIG_FIELDS)
-    if managed:
-        raise HarnessConfigError(
-            f"AX-managed field(s) cannot be set: {', '.join(managed)}"
-        )
-
-    # TODO: reject fields the SDK doesn't know. Pydantic defaults to
-    # extra="ignore", so a field-name typo is silently dropped instead of
-    # erroring; check against LocalAgentConfig.model_fields and raise.
-    return config
-
-
 def _existing_sdk_conv_id(save_dir: str) -> str | None:
     # SDK persists each conversation as {save_dir}/{sdk_conv_id}.db where sdk_conv_id
     # is SDK-picked (a hash), not our AX conversation_id. We give each AX conversation
@@ -189,13 +165,31 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     def _build_config_for(
         self, conversation_id: str, harness_config: bytes = b""
     ) -> LocalAgentConfig:
-        # Request overlay first, then AX-managed persistence values last so a
-        # request can never redirect trajectory storage.
-        overrides = _parse_harness_config(harness_config)
+        # Overlay the request's harness_config (JSON-in-bytes) onto the server
+        # default. The parsed dict is a local intermediate only; this method's
+        # boundary type is the validated LocalAgentConfig.
+        if harness_config:
+            try:
+                overrides = json.loads(harness_config.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise HarnessConfigError(f"expected UTF-8 JSON: {exc}") from exc
+            if not isinstance(overrides, dict):
+                raise HarnessConfigError("top-level JSON value must be an object")
+            managed = sorted(set(overrides) & _AX_MANAGED_CONFIG_FIELDS)
+            if managed:
+                raise HarnessConfigError(
+                    f"AX-managed field(s) cannot be set: {', '.join(managed)}"
+                )
+            # TODO: reject fields the SDK doesn't know. Pydantic defaults to
+            # extra="ignore", so a field-name typo is silently dropped instead
+            # of erroring; check against LocalAgentConfig.model_fields and raise.
+        else:
+            overrides = {}
 
-        # Per-AX-conv save_dir under the configured state_dir base. Resume by
-        # SDK's own conv_id if a trajectory exists there. SDK auto-creates the
-        # directory.
+        # AX-managed persistence values go on last so a request can never
+        # redirect trajectory storage. Per-AX-conv save_dir under the configured
+        # state_dir base; resume by the SDK's own conv_id if a trajectory
+        # already exists there. SDK auto-creates the directory.
         overrides["save_dir"] = str(self._state_dir / conversation_id)
         if sdk_conv_id := _existing_sdk_conv_id(overrides["save_dir"]):
             overrides["conversation_id"] = sdk_conv_id

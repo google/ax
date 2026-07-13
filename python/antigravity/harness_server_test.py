@@ -96,11 +96,9 @@ def test_grpc_connect_success(mock_config, monkeypatch, tmp_path):
 
 
 def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp_path):
-    """Each turn spawns a fresh Agent with per-conv save_dir under
-    ~/.ax/antigravity/conversations/. Same AX conv_id -> same save_dir
+    """Each turn spawns a fresh Agent with per-conv save_dir under the
+    configured state_dir. Same AX conv_id -> same save_dir
     (SDK-native resume)."""
-    import pathlib as _pathlib
-    monkeypatch.setattr(_pathlib.Path, "home", lambda: tmp_path)
 
     async def _run():
         server = grpc.aio.server()
@@ -158,8 +156,8 @@ def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp
             save_dirs = [a.config.save_dir for a in agent_instances]
             assert save_dirs[0] == save_dirs[1]
             assert save_dirs[0] != save_dirs[2]
-            assert save_dirs[0].endswith("/conv-1")
-            assert save_dirs[2].endswith("/conv-2")
+            assert save_dirs[0] == str(tmp_path / "conv-1")
+            assert save_dirs[2] == str(tmp_path / "conv-2")
             # conversation_id only passed when trajectory exists (not in these mocked runs).
             assert [a.config.conversation_id for a in agent_instances] == [None, None, None]
 
@@ -541,7 +539,7 @@ def test_harness_config_overlay_keeps_ax_managed_save_dir(mock_config, tmp_path)
     config = servicer._build_config_for("conv-1", raw)
 
     assert config.system_instructions == "x"
-    assert config.save_dir.endswith("/conv-1")
+    assert config.save_dir == str(tmp_path / "conv-1")
 
 
 def test_harness_config_overlay_does_not_mutate_default(mock_config, tmp_path):
