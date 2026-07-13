@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import asyncio
+import json
 import pytest
 import grpc
 from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
 from python.antigravity.harness_server import AntigravityHarnessServiceServicer
+from python.antigravity.harness_server import HarnessConfigError
 from google.antigravity import LocalAgentConfig
 
 @pytest.fixture
@@ -510,3 +512,95 @@ def test_run_turn_guards_against_missing_default_config(monkeypatch, tmp_path):
             await server.stop(0)
     asyncio.run(_run())
 
+
+def test_harness_config_empty_is_noop(mock_config, tmp_path):
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    assert servicer._build_config_for("conv-1", b"").system_instructions == (
+        mock_config.system_instructions
+    )
+    assert servicer._build_config_for("conv-1", b"{}").system_instructions == (
+        mock_config.system_instructions
+    )
+
+
+def test_harness_config_overlay_applies(mock_config, tmp_path):
+    # Fields flow through to the SDK, which validates values.
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    raw = json.dumps({"system_instructions": "Answer in one sentence."}).encode()
+
+    config = servicer._build_config_for("conv-1", raw)
+
+    assert config.system_instructions == "Answer in one sentence."
+
+
+def test_harness_config_overlay_keeps_ax_managed_save_dir(mock_config, tmp_path):
+    # A valid overlay must not disturb the AX-injected save_dir.
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    raw = json.dumps({"system_instructions": "x"}).encode()
+
+    config = servicer._build_config_for("conv-1", raw)
+
+    assert config.system_instructions == "x"
+    assert config.save_dir.endswith("/conv-1")
+
+
+def test_harness_config_overlay_does_not_mutate_default(mock_config, tmp_path):
+    # Reconstruction must not mutate the shared server default.
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    servicer._build_config_for(
+        "conv-1", json.dumps({"system_instructions": "overridden"}).encode()
+    )
+    assert mock_config.system_instructions == "Test instructions"
+
+
+def test_harness_config_overlay_applies_multiple_fields(mock_config, tmp_path):
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    raw = json.dumps({
+        "system_instructions": "x",
+        "model": "gemini-2.5-pro",
+    }).encode()
+
+    config = servicer._build_config_for("conv-1", raw)
+
+    assert config.system_instructions == "x"
+    assert config.model == "gemini-2.5-pro"
+
+
+@pytest.mark.parametrize(("raw_config", "error"), [
+    (b"{", "expected UTF-8 JSON"),
+    (b"\xff", "expected UTF-8 JSON"),
+    (json.dumps([]).encode(), "top-level JSON value must be an object"),
+    (json.dumps({"save_dir": "/tmp/other"}).encode(), "AX-managed field"),
+    (json.dumps({"conversation_id": "other"}).encode(), "AX-managed field"),
+    (
+        json.dumps({"capabilities": {"enabled_tools": ["not-a-tool"]}}).encode(),
+        "validation error",
+    ),
+])
+def test_harness_config_rejects(mock_config, tmp_path, raw_config, error):
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    with pytest.raises(HarnessConfigError, match=error):
+        servicer._build_config_for("conv-1", raw_config)
+
+
+def test_run_turn_invalid_harness_config_maps_to_invalid_argument(mock_config, tmp_path):
+    async def _run():
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+        req = ax_pb2.HarnessRequest(
+            conversation_id="conv-1",
+            harness_id="antigravity",
+            start=ax_pb2.HarnessStart(
+                harness_config=b"{",
+                messages=[ax_pb2.Message(
+                    role="user",
+                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
+                )],
+            ),
+        )
+        responses = [r async for r in servicer._run_turn(req)]
+        assert len(responses) == 1
+        assert responses[0].end.state == ax_pb2.STATE_FAILED
+        assert responses[0].end.error.code == 3
+        assert "Invalid harness_config" in responses[0].end.error.description
+
+    asyncio.run(_run())

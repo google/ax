@@ -19,6 +19,7 @@
 import argparse
 
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -39,6 +40,16 @@ from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
+
+# AX owns these fields for resumption; a request must not set them.
+# TODO: add validation for fields that are unsafe to set per execution
+# (e.g. credentials, deployment routing) or that may only be set at
+# conversation creation.
+_AX_MANAGED_CONFIG_FIELDS = frozenset({"conversation_id", "save_dir"})
+
+
+class HarnessConfigError(ValueError):
+    """Raised when request harness_config is not a valid overlay."""
 
 
 class VertexKwargs(TypedDict, total=False):
@@ -136,6 +147,30 @@ def _has_credentials(config: AgentConfig | None) -> bool:
 
     return False
 
+def _parse_harness_config(raw_config: bytes) -> dict[str, object]:
+    if not raw_config:
+        return {}
+
+    try:
+        config = json.loads(raw_config.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HarnessConfigError(f"expected UTF-8 JSON: {exc}") from exc
+
+    if not isinstance(config, dict):
+        raise HarnessConfigError("top-level JSON value must be an object")
+
+    managed = sorted(set(config) & _AX_MANAGED_CONFIG_FIELDS)
+    if managed:
+        raise HarnessConfigError(
+            f"AX-managed field(s) cannot be set: {', '.join(managed)}"
+        )
+
+    # TODO: reject fields the SDK doesn't know. Pydantic defaults to
+    # extra="ignore", so a field-name typo is silently dropped instead of
+    # erroring; check against LocalAgentConfig.model_fields and raise.
+    return config
+
+
 def _existing_sdk_conv_id(save_dir: str) -> str | None:
     # SDK persists each conversation as {save_dir}/{sdk_conv_id}.db where sdk_conv_id
     # is SDK-picked (a hash), not our AX conversation_id. We give each AX conversation
@@ -151,15 +186,29 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         self._default_config = default_config
         self._state_dir = state_dir
 
-    def _build_config_for(self, conversation_id: str) -> LocalAgentConfig:
+    def _build_config_for(
+        self, conversation_id: str, harness_config: bytes = b""
+    ) -> LocalAgentConfig:
+        # Request overlay first, then AX-managed persistence values last so a
+        # request can never redirect trajectory storage.
+        overrides = _parse_harness_config(harness_config)
+
         # Per-AX-conv save_dir under the configured state_dir base. Resume by
         # SDK's own conv_id if a trajectory exists there. SDK auto-creates the
         # directory.
-        save_dir = str(self._state_dir / conversation_id)
-        update = {"save_dir": save_dir}
-        if sdk_conv_id := _existing_sdk_conv_id(save_dir):
-            update["conversation_id"] = sdk_conv_id
-        return self._default_config.model_copy(update=update)
+        overrides["save_dir"] = str(self._state_dir / conversation_id)
+        if sdk_conv_id := _existing_sdk_conv_id(overrides["save_dir"]):
+            overrides["conversation_id"] = sdk_conv_id
+
+        # Reconstruct (not model_copy) so the SDK re-validates overlaid values
+        # and surfaces its own error.
+        values = {name: getattr(self._default_config, name)
+                  for name in self._default_config.model_fields_set}
+        values.update(overrides)
+        try:
+            return LocalAgentConfig(**values)
+        except (TypeError, ValueError) as exc:
+            raise HarnessConfigError(str(exc)) from exc
 
     async def Connect(self, request_iterator, context):
         # Each HarnessRequest{start} drives one stateless turn; the stream stays
@@ -205,7 +254,6 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             return
         latest_query_text = latest_message.content.text.text
         
-        # TODO(#194): parse and validate request.start.harness_config here.
         if not self._default_config:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
@@ -219,7 +267,9 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
         try:
-            per_conv_config = self._build_config_for(request.conversation_id)
+            per_conv_config = self._build_config_for(
+                request.conversation_id, request.start.harness_config
+            )
             print(f"[gRPC] Starting Agent for conv_id={request.conversation_id}, save_dir={per_conv_config.save_dir}")
             async with Agent(per_conv_config) as agent:
                 conversation = agent.conversation
@@ -322,6 +372,18 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 )
                 print("[gRPC] Turn completed successfully.")
             
+        except HarnessConfigError as exc:
+            yield ax_pb2.HarnessResponse(
+                conversation_id=request.conversation_id,
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description=f"Invalid harness_config: {exc}",
+                    ),
+                ),
+            )
+            return
         except Exception as e:
             logging.exception("Error inside Connect servicer execution")
             yield ax_pb2.HarnessResponse(
