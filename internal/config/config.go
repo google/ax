@@ -48,6 +48,11 @@ type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	EventLog  EventLogConfig  `yaml:"eventlog"`
 	Harnesses HarnessesConfig `yaml:"harnesses,omitempty"`
+	// Skills sources skills from the Gemini Enterprise Skill Registry into on-disk folders
+	// before the harness starts. It is harness-agnostic: each actor runs exactly
+	// one harness, which consumes the materialized folder(s). Optional; disabled
+	// when no registry is enabled.
+	Skills    SkillsConfig    `yaml:"skills,omitempty"`
 	Telemetry TelemetryConfig `yaml:"telemetry,omitempty"`
 }
 
@@ -105,6 +110,101 @@ type AntigravityHarnessConfig struct {
 type AntigravityInteractionsHarnessConfig struct {
 	Default bool   `yaml:"default,omitempty"` // Default harness or not
 	Agent   string `yaml:"agent,omitempty"`   // Interactions API agent (default: antigravityinteractions.DefaultAgent)
+	// SystemInstruction is a free-form system prompt sent on every turn.
+	SystemInstruction string `yaml:"system_instruction,omitempty"`
+}
+
+// SkillsConfig configures optional skill sources (top-level, harness-agnostic).
+// Today the only source type is the Gemini Enterprise Skill Registry; it may source from more
+// than one registry (e.g. a shared org-wide registry plus a team-specific one),
+// each with its own project/location, selection, and target directory.
+type SkillsConfig struct {
+	Registries []SkillsRegistryConfig `yaml:"registries,omitempty"`
+}
+
+// Validate checks the (top-level) skills config.
+func (s SkillsConfig) Validate() error {
+	for i := range s.Registries {
+		if err := s.Registries[i].validate(i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validate enforces that, when this registry source is enabled, exactly one
+// selection mode is set (skills, query, or all) — a config-level "oneof". idx is
+// the registry's index within the registries list, for error context.
+func (rc SkillsRegistryConfig) validate(idx int) error {
+	if !rc.Enabled {
+		return nil
+	}
+	if rc.TargetDir == "" {
+		return fmt.Errorf("skills.registries[%d] requires target_dir (skills materialize to <target_dir>/<skill-id>/)", idx)
+	}
+	modes := 0
+	if len(rc.Skills) > 0 {
+		modes++
+	}
+	if rc.Query != nil {
+		modes++
+	}
+	if rc.All {
+		modes++
+	}
+	switch {
+	case modes == 0:
+		return fmt.Errorf("skills.registries[%d] requires exactly one selection mode (set one of skills, query, or all)", idx)
+	case modes > 1:
+		return fmt.Errorf("skills.registries[%d] sets multiple selection modes; set exactly one of skills, query, or all", idx)
+	}
+	if rc.Query != nil && rc.Query.Text == "" {
+		return fmt.Errorf("skills.registries[%d].query requires a non-empty text", idx)
+	}
+	return nil
+}
+
+// SkillsRegistryConfig sources agentskills.io skills from the Gemini Skill
+// Registry. When Enabled, exactly one selection mode should be set (Skills,
+// Query, or All); if none is set, all skills are materialized.
+type SkillsRegistryConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	// Project owns the skills (projects/{Project}/locations/{Location}/skills).
+	// Empty falls back to the GOOGLE_CLOUD_PROJECT environment variable.
+	Project string `yaml:"project,omitempty"`
+	// Location is the registry region, e.g. "us-central1". Empty falls back to
+	// GOOGLE_CLOUD_LOCATION, then a built-in default.
+	Location string `yaml:"location,omitempty"`
+
+	// --- selection (choose one) ---
+
+	// Skills is an explicit allowlist of skills, each optionally pinned to a
+	// revision. Takes precedence over Query and All.
+	Skills []SkillRefConfig `yaml:"skills,omitempty"`
+	// Query is a semantic search selection; its top matches are materialized.
+	// TopK lives inside it because it only has meaning for a query.
+	Query *SkillsQueryConfig `yaml:"query,omitempty"`
+	// All materializes every skill in the project/location (used when neither
+	// Skills nor Query is set; can also be set explicitly).
+	All bool `yaml:"all,omitempty"`
+
+	// TargetDir is the base directory skills are materialized into: each skill
+	// is written to <TargetDir>/<skill-id>/. Required when Enabled.
+	TargetDir string `yaml:"target_dir,omitempty"`
+}
+
+// SkillsQueryConfig selects skills by semantic search.
+type SkillsQueryConfig struct {
+	// Text is the semantic search string (required for query selection).
+	Text string `yaml:"text"`
+	// TopK bounds the number of matches (<=0 uses the server default).
+	TopK int `yaml:"top_k,omitempty"`
+}
+
+// SkillRefConfig identifies a skill to materialize, optionally pinned.
+type SkillRefConfig struct {
+	ID       string `yaml:"id"`
+	Revision string `yaml:"revision,omitempty"`
 }
 
 // SubstrateHarnessConfig registers a custom harness deployed on substrate
@@ -214,6 +314,10 @@ func (c *Config) Validate() error {
 
 	if defaultCount > 1 {
 		return fmt.Errorf("multiple harnesses marked as default")
+	}
+
+	if err := c.Skills.Validate(); err != nil {
+		return err
 	}
 
 	return nil

@@ -26,6 +26,7 @@ import (
 	"github.com/google/ax/internal/harness/antigravity"
 	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/google/ax/internal/harness/substrate"
+	"github.com/google/ax/internal/skills/geminienterprise"
 )
 
 // Controller is the active controller type for this build.
@@ -64,6 +65,22 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	var defaultHarnessID string
 	var err error
 
+	// Materialize registry skills once, up front (skills config is top-level and
+	// harness-agnostic; each actor runs a single harness that consumes the
+	// materialized folder). Unconditional when configured. Fail-safe: a registry
+	// error degrades capability but never blocks harness creation. The
+	// interactions harness (no SKILLS_DIR concept) is told where the materialized
+	// skills are via a pointer appended to its system instruction. Only the local
+	// path materializes; substrate/pod does not yet read ax.yaml.
+	//
+	// TODO(joycel): wire the Antigravity SDK harness too. It discovers skills via
+	// SKILLS_DIR, so its SKILLS_DIR needs to be pointed at the materialized
+	// target_dir; currently only the interactions harness is fully wired.
+	var skillsPointer string
+	if !substrateMode {
+		skillsPointer = antigravityinteractions.SkillsSystemInstruction(geminienterprise.Materialize(ctx, cfg.Skills))
+	}
+
 	// Built-in Antigravity harness.
 	var antigravityHarness harness.Harness
 	if !substrateMode {
@@ -98,7 +115,8 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	// Built-in Antigravity Interactions harness.
 	var antigravityInteractionsHarness harness.Harness
 	if !substrateMode {
-		agent := cfg.Harnesses.AntigravityInteractions.Agent
+		aiCfg := cfg.Harnesses.AntigravityInteractions
+		agent := aiCfg.Agent
 		if agent == "" {
 			agent = antigravityinteractions.DefaultAgent
 		}
@@ -108,9 +126,12 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if sErr != nil {
 			return nil, fmt.Errorf("antigravity-interactions harness: %w", sErr)
 		}
+		// skillsPointer was built once, up front, from the top-level skills
+		// config (see above). Append it to any configured system instruction.
 		antigravityInteractionsHarness, err = antigravityinteractions.New(antigravityinteractions.AntigravityInteractionsConfig{
-			Agent:    agent,
-			StateDir: stateDir,
+			Agent:             agent,
+			SystemInstruction: antigravityinteractions.JoinSystemInstruction(aiCfg.SystemInstruction, skillsPointer),
+			StateDir:          stateDir,
 		})
 	} else {
 		antigravityInteractionsHarness, err = substrate.New(config.AntigravityInteractionsHarnessID, "", "", config.AntigravityInteractionsTemplate, 80)
