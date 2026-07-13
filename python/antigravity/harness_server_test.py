@@ -568,12 +568,14 @@ def test_harness_config_overlay_applies_multiple_fields(mock_config, tmp_path):
     (b"{", "expected UTF-8 JSON"),
     (b"\xff", "expected UTF-8 JSON"),
     (json.dumps([]).encode(), "top-level JSON value must be an object"),
-    (json.dumps({"save_dir": "/tmp/other"}).encode(), "AX-managed field"),
-    (json.dumps({"conversation_id": "other"}).encode(), "AX-managed field"),
+    (json.dumps({"save_dir": "/tmp/other"}).encode(), "managed outside harness_config"),
+    (json.dumps({"conversation_id": "other"}).encode(), "managed outside harness_config"),
     (
         json.dumps({"capabilities": {"enabled_tools": ["not-a-tool"]}}).encode(),
         "validation error",
     ),
+    (json.dumps({"system_instruction": "typo"}).encode(), "unknown config field"),
+    (json.dumps({"model": "m", "frobnicate": True}).encode(), "unknown config field"),
 ])
 def test_harness_config_rejects(mock_config, tmp_path, raw_config, error):
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
@@ -602,3 +604,17 @@ def test_run_turn_invalid_harness_config_maps_to_invalid_argument(mock_config, t
         assert "Invalid harness_config" in responses[0].end.error.description
 
     asyncio.run(_run())
+
+
+def test_harness_config_unknown_field_names_are_reported(mock_config, tmp_path):
+    # The error lists the offending field(s), sorted, so a typo is actionable;
+    # any unknown field rejects the whole overlay (no silent drop) and valid
+    # fields in the same request are not flagged.
+    servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    raw = json.dumps({"zzz_bad": 1, "aaa_bad": 2, "system_instructions": "ok"}).encode()
+    with pytest.raises(HarnessConfigError) as excinfo:
+        servicer._build_config_for("conv-1", raw)
+    msg = str(excinfo.value)
+    assert "unknown config field(s): aaa_bad, zzz_bad" in msg
+    assert "system_instructions" not in msg
+

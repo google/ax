@@ -41,11 +41,13 @@ from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
 
-# AX owns these fields for resumption; a request must not set them.
+# Fields that come from outside harness_config and must not be set through it:
+#   - conversation_id: taken from the runtime request (request.conversation_id).
+#   - save_dir: derived at the server level from the configured state_dir.
 # TODO: add validation for fields that are unsafe to set per execution
 # (e.g. credentials, deployment routing) or that may only be set at
 # conversation creation.
-_AX_MANAGED_CONFIG_FIELDS = frozenset({"conversation_id", "save_dir"})
+_NON_HARNESS_CONFIG_FIELDS = frozenset({"conversation_id", "save_dir"})
 
 
 class HarnessConfigError(ValueError):
@@ -155,6 +157,27 @@ def _existing_sdk_conv_id(save_dir: str) -> str | None:
     return dbs[0].stem if dbs else None
 
 
+def _reject_disallowed_fields(overrides: dict[str, object]) -> None:
+    """Best-effort validation of a request harness_config overlay's keys.
+
+    Rejects fields managed outside harness_config and unknown top-level
+    fields (typos that LocalAgentConfig's extra="ignore" would otherwise
+    silently drop).
+    Top-level only: nested-key and value/type validation is delegated to the
+    SDK's own LocalAgentConfig validation when the config is constructed.
+    """
+    managed = sorted(set(overrides) & _NON_HARNESS_CONFIG_FIELDS)
+    if managed:
+        raise HarnessConfigError(
+            f"field(s) managed outside harness_config cannot be set: {', '.join(managed)}"
+        )
+    unknown = sorted(set(overrides) - set(LocalAgentConfig.model_fields))
+    if unknown:
+        raise HarnessConfigError(
+            f"unknown config field(s): {', '.join(unknown)}"
+        )
+
+
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
     """Implements the ax.HarnessService protocol over gRPC."""
 
@@ -175,21 +198,14 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 raise HarnessConfigError(f"expected UTF-8 JSON: {exc}") from exc
             if not isinstance(overrides, dict):
                 raise HarnessConfigError("top-level JSON value must be an object")
-            managed = sorted(set(overrides) & _AX_MANAGED_CONFIG_FIELDS)
-            if managed:
-                raise HarnessConfigError(
-                    f"AX-managed field(s) cannot be set: {', '.join(managed)}"
-                )
-            # TODO: reject fields the SDK doesn't know. Pydantic defaults to
-            # extra="ignore", so a field-name typo is silently dropped instead
-            # of erroring; check against LocalAgentConfig.model_fields and raise.
+            _reject_disallowed_fields(overrides)
         else:
             overrides = {}
 
-        # AX-managed persistence values go on last so a request can never
-        # redirect trajectory storage. Per-AX-conv save_dir under the configured
-        # state_dir base; resume by the SDK's own conv_id if a trajectory
-        # already exists there. SDK auto-creates the directory.
+        # Persistence values managed outside harness_config go on last so a
+        # request can never redirect trajectory storage. Per-AX-conv save_dir
+        # under the configured state_dir base; resume by the SDK's own conv_id
+        # if a trajectory already exists there. SDK auto-creates the directory.
         overrides["save_dir"] = str(self._state_dir / conversation_id)
         if sdk_conv_id := _existing_sdk_conv_id(overrides["save_dir"]):
             overrides["conversation_id"] = sdk_conv_id
