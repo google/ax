@@ -160,13 +160,11 @@ func runAntigravityInteractionsHarness(ctx context.Context) error {
 	if agent == "" {
 		agent = antigravityinteractions.DefaultAgent
 	}
-	stateDir := hc.StateDir
-	if stateDir == "" {
-		var err error
-		stateDir, err = antigravityinteractions.DefaultStateDir()
-		if err != nil {
-			return err
-		}
+	// AX owns the resume-cursor path (a harness implementation detail), so it's
+	// derived internally rather than read from ax.yaml.
+	stateDir, err := antigravityinteractions.DefaultStateDir()
+	if err != nil {
+		return err
 	}
 
 	cfg := antigravityinteractions.AntigravityInteractionsConfig{

@@ -115,8 +115,7 @@ func TestValidate_InteractionsIDReserved(t *testing.T) {
 func TestValidate_InteractionsValid(t *testing.T) {
 	c := validConfig()
 	c.Harnesses.AntigravityInteractions = AntigravityInteractionsHarnessConfig{
-		Agent:    "projects/p/locations/global/agents/a",
-		StateDir: "interactions-state",
+		Agent: "projects/p/locations/global/agents/a",
 	}
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate() = %v, want nil", err)
@@ -138,22 +137,6 @@ eventlog:
 	}
 	if cfg.Version != "1.2.3" {
 		t.Errorf("cfg.Version = %q, want %q", cfg.Version, "1.2.3")
-	}
-}
-
-// TestLoadFromFile_AntigravityStateDir: yaml -> AntigravityHarnessConfig.StateDir.
-func TestLoadFromFile_AntigravityStateDir(t *testing.T) {
-	data := `
-harnesses:
-  antigravity:
-    state_dir: /custom/path
-`
-	var cfg Config
-	if err := yaml.Unmarshal([]byte(data), &cfg); err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
-	if got, want := cfg.Harnesses.Antigravity.StateDir, "/custom/path"; got != want {
-		t.Errorf("StateDir = %q, want %q", got, want)
 	}
 }
 

@@ -97,16 +97,14 @@ type HarnessesConfig struct {
 // AntigravityHarnessConfig registers the built-in Antigravity harness.
 type AntigravityHarnessConfig struct {
 	Default  bool   `yaml:"default,omitempty"`
-	Endpoint string `yaml:"endpoint,omitempty"`  // HarnessService address
-	StateDir string `yaml:"state_dir,omitempty"` // Trajectory storage dir (optional; sidecar defaults to ~/.ax/antigravity/conversations)
+	Endpoint string `yaml:"endpoint,omitempty"` // HarnessService address
 }
 
 // AntigravityInteractionsHarnessConfig registers the built-in Antigravity
 // Interactions harness (over the Vertex GenAI Interactions API).
 type AntigravityInteractionsHarnessConfig struct {
-	Default  bool   `yaml:"default,omitempty"`   // Default harness or not
-	Agent    string `yaml:"agent,omitempty"`     // Interactions API agent (default: antigravityinteractions.DefaultAgent)
-	StateDir string `yaml:"state_dir,omitempty"` // Resume-cursor directory (optional; defaults to ~/.ax/antigravityinteractions/cursors)
+	Default bool   `yaml:"default,omitempty"` // Default harness or not
+	Agent   string `yaml:"agent,omitempty"`   // Interactions API agent (default: antigravityinteractions.DefaultAgent)
 }
 
 // SubstrateHarnessConfig registers a custom harness deployed on substrate
