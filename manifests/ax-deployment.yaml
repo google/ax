@@ -98,6 +98,9 @@ spec:
           value: "${GOOGLE_CLOUD_PROJECT}"
         - name: AX_HARNESS_WORKDIR
           value: "/workspace"
+        # Content of manifests/ax.yaml
+        - name: AX_CONFIG_CONTENT
+          value: "${AX_CONFIG_CONTENT}"
       readyz:
         httpGet:
           path: /readyz
@@ -149,19 +152,3 @@ spec:
         - name: ax-config
           configMap:
             name: ax-server-config
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ax-server-config
-  namespace: ax
-data:
-  ax.yaml: |
-    version: v1alpha
-    eventlog:
-      postgres:
-        dsn: ${AX_EVENTLOG_DSN}
-    harnesses:
-      antigravity:
-        default: true
-      antigravity-interactions: {}

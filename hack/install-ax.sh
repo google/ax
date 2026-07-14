@@ -230,6 +230,12 @@ deploy_ax_server() {
     echo "Using existing Postgres via AX_EVENTLOG_DSN." >&2
   fi
 
+  # Base64 of the single-source config file (manifests/ax.yaml), injected into
+  # each ActorTemplate's AX_CONFIG_CONTENT env so substrate actors read their config
+  # without a mounted ConfigMap.
+  local ax_config_content
+  ax_config_content="$(base64 < manifests/ax.yaml | tr -d '\n')"
+
   # Common substitutions applied to every rendered manifest.
   local render_sed=(
     -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g"
@@ -237,9 +243,10 @@ deploy_ax_server() {
     -e "s|\${AX_IMAGE}|${ax_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
     -e "s|\${GOOGLE_CLOUD_PROJECT}|${GOOGLE_CLOUD_PROJECT:-}|g"
+    -e "s|\${AX_CONFIG_CONTENT}|${ax_config_content}|g"
   )
 
-  # Render and apply the core manifest (namespace, harnesses, ax-server, ConfigMap).
+  # Render and apply the core manifest (namespace, harnesses, ax-server).
   if ! sed "${render_sed[@]}" manifests/ax-deployment.yaml | run_kubectl apply -f -; then
     echo >&2
     echo "Error: cluster rejected the manifest. An \"unknown field\" error usually means the" >&2
@@ -247,6 +254,13 @@ deploy_ax_server() {
     echo "manifests/README.md (\"Substrate compatibility\")." >&2
     exit 1
   fi
+
+  # Create/update the controller ConfigMap from the single-source config file
+  # (manifests/ax.yaml) -- the same file that seeds the actors' AX_CONFIG_CONTENT.
+  # ax-server mounts it at /etc/ax/ax.yaml.
+  run_kubectl -n ax create configmap ax-server-config \
+    --from-file=ax.yaml=manifests/ax.yaml \
+    --dry-run=client -o yaml | run_kubectl apply -f -
 
   # Create/update the event-log Secret with the DSN (and, for the bundled Postgres,
   # its password). ax-server reads AX_EVENTLOG_DSN from this Secret's dsn key.

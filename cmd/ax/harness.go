@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -142,12 +143,34 @@ func runAntigravityInteractionsHarness(ctx context.Context) error {
 	if err := setHarnessWorkDir(); err != nil {
 		return err
 	}
-	stateDir, err := antigravityinteractions.DefaultStateDir()
-	if err != nil {
-		return err
+
+	// Read harness config from ax.yaml handed to the actor via AX_CONFIG_CONTENT.
+	// Fall back to built-in defaults.
+	var hc config.AntigravityInteractionsHarnessConfig
+	if raw := os.Getenv("AX_CONFIG_CONTENT"); raw != "" {
+		if data, err := base64.StdEncoding.DecodeString(raw); err != nil {
+			log.Printf("AX_CONFIG_CONTENT: base64 decode failed, using defaults: %v", err)
+		} else if cfg, err := config.LoadFromBytes(data); err != nil {
+			log.Printf("AX_CONFIG_CONTENT: parse failed, using defaults: %v", err)
+		} else {
+			hc = cfg.Harnesses.AntigravityInteractions
+		}
 	}
+	agent := hc.Agent
+	if agent == "" {
+		agent = antigravityinteractions.DefaultAgent
+	}
+	stateDir := hc.StateDir
+	if stateDir == "" {
+		var err error
+		stateDir, err = antigravityinteractions.DefaultStateDir()
+		if err != nil {
+			return err
+		}
+	}
+
 	cfg := antigravityinteractions.AntigravityInteractionsConfig{
-		Agent:    antigravityinteractions.DefaultAgent,
+		Agent:    agent,
 		StateDir: stateDir,
 	}
 	return antigravityinteractions.Serve(ctx, cfg, harnessHost, harnessPort, harnessReadyzPort)

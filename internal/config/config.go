@@ -144,10 +144,14 @@ func LoadFromFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+	return LoadFromBytes(data)
+}
 
+// LoadFromBytes parses configuration from YAML bytes and applies defaults.
+func LoadFromBytes(data []byte) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	cfg.setDefaults()

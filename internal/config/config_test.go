@@ -156,3 +156,32 @@ harnesses:
 		t.Errorf("StateDir = %q, want %q", got, want)
 	}
 }
+
+func TestLoadFromBytes(t *testing.T) {
+	cfg, err := LoadFromBytes([]byte(`
+version: v1alpha
+harnesses:
+  antigravity:
+    default: true
+`))
+	if err != nil {
+		t.Fatalf("LoadFromBytes: %v", err)
+	}
+	if cfg.Version != "v1alpha" {
+		t.Errorf("Version = %q, want %q", cfg.Version, "v1alpha")
+	}
+	if !cfg.Harnesses.Antigravity.Default {
+		t.Error("Harnesses.Antigravity.Default = false, want true")
+	}
+	// setDefaults must run (same as LoadFromFile).
+	if got, want := cfg.Server.Address, ":8494"; got != want {
+		t.Errorf("Server.Address = %q, want default %q", got, want)
+	}
+}
+
+// TestLoadFromBytes_Invalid returns an error on malformed YAML.
+func TestLoadFromBytes_Invalid(t *testing.T) {
+	if _, err := LoadFromBytes([]byte("harnesses: [unterminated")); err == nil {
+		t.Fatal("LoadFromBytes(invalid): got nil error, want error")
+	}
+}
