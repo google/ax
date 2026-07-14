@@ -18,22 +18,27 @@ The target Kubernetes cluster is assumed to have
 ### 1. Build and Deploy
 
 > [!NOTE]
-> Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${AX_SNAPSHOTS_BUCKET}`, and the built `${AX_IMAGE}` and `${ATEOM_IMAGE}` references during deployment.
+> Do not manually edit `manifests/ax-deployment.yaml`. The installation script automatically injects your `${GEMINI_API_KEY}`, `${AX_SNAPSHOTS_BUCKET}`, and the built `${AX_IMAGE}`, `${AX_ANTIGRAVITY_IMAGE}`, and `${ATEOM_IMAGE}` references during deployment.
 
 The installation script builds the required images and applies the resolved
 manifests to your cluster:
 
-- the comprehensive **ax** image, built from `cmd/ax/Dockerfile`,
+- the **ax** image (the Go `ax` binary only), built from the `ax`
+  target of `cmd/ax/Dockerfile`; used by the ax-server and the Go interactions
+  harness,
+- the **ax-antigravity** image (the Antigravity Python
+  sidecar: SDK, localharness, agent), built from the `antigravity` target of
+  `cmd/ax/Dockerfile`; used by the antigravity harness actor,
 - the **ateom-gvisor** worker image, built with `ko` from the `go.mod` pinned
   substrate module.
 
 #### Build prerequisites
 
-The ax image bundles the antigravity SDK, installed from PyPI at build time.
-The image targets the cluster's **linux/amd64**
-nodes and is built with `--platform linux/amd64`.
+The ax-antigravity image bundles the antigravity SDK, installed from PyPI at
+build time. Both images target the cluster's **linux/amd64**
+nodes and are built with `--platform linux/amd64`.
 
-You also need a container engine to build and push the ax image. The script
+You also need a container engine to build and push the ax images. The script
 auto-detects one (preferring a **running** docker, then podman); force a choice
 with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
@@ -45,9 +50,10 @@ with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`:
 
 #### Registry authentication
 
-`GOOGLE_CLOUD_PROJECT` sets `AX_IMAGE_REPO=gcr.io/$GOOGLE_CLOUD_PROJECT`. The deploy pushes two
-images — the **ax** image (via your container engine) and the **ateom** image
-(via `ko`) — and both authenticate through the gcloud credential helper:
+`GOOGLE_CLOUD_PROJECT` sets `AX_IMAGE_REPO=gcr.io/$GOOGLE_CLOUD_PROJECT`. The deploy pushes three
+images — the **ax** and **ax-antigravity** images (via your container engine) and
+the **ateom** image (via `ko`) — and all authenticate through the gcloud
+credential helper:
 
 ```bash
 gcloud auth login              # authenticate gcloud

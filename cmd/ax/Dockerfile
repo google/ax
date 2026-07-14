@@ -12,14 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Comprehensive AX image: the Go `ax` binary plus the Antigravity Python sidecar
-# (SDK, localharness, agent), on a Debian-based image with shell tooling for
-# skills/code execution. Used by both the ax-server (`ax serve`) and the harness
-# actor (`ax harness`, which forks the Python sidecar).
+# Multi-target AX image build:
+#   --target antigravity : python:3.13-slim + the Antigravity Python sidecar
+#                          (SDK, localharness, agent). Used by the antigravity
+#                          harness actor (`ax harness antigravity`).
+#   --target ax          : debian:stable-slim + the Go `ax` binary. Used by 
+#                          the ax-server (`ax serve`) and the Go interactions 
+#                          harness actor (`ax harness antigravity-interactions`).
 #
-# Build context: repository root. The image targets the cluster's linux/amd64
-# nodes, so it is built with `--platform linux/amd64`. For a standalone build:
-#   docker build --platform linux/amd64 -f cmd/ax/Dockerfile -t <ref> . && docker push <ref>
+# Build context: repository root. Images target the cluster's linux/amd64 nodes,
+# so build with `--platform linux/amd64`. 
+# For a standalone build:
+#   docker build --platform linux/amd64 --target antigravity -f cmd/ax/Dockerfile -t <ref> . && docker push <ref>
+#   docker build --platform linux/amd64 --target ax -f cmd/ax/Dockerfile -t <ref> . && docker push <ref>
 
 # --- Stage 1: build the ax Go binary (with the harness build tag) -------------
 FROM --platform=$BUILDPLATFORM golang:1.26 AS build
@@ -32,7 +37,8 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -o /out/ax ./cmd/ax
 
-FROM python:3.13-slim
+# --- antigravity image -------
+FROM python:3.13-slim AS antigravity
 WORKDIR /workspace
 
 RUN apt-get update \
@@ -72,4 +78,24 @@ EXPOSE 80
 # the ActorTemplate `command` instead. `ax harness` forks the Python sidecar,
 # which serves the HarnessService on :80.
 CMD ["/ax-app/ax", "harness", \
+     "--host", "0.0.0.0", "--port", "80"]
+
+# --- ax image (Go-only) for the interactions harness and ax-server -----------
+FROM debian:stable-slim AS ax
+WORKDIR /workspace
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        less \
+        procps \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/ax /ax-app/ax
+
+EXPOSE 80
+
+CMD ["/ax-app/ax", "harness", "antigravity-interactions", \
      "--host", "0.0.0.0", "--port", "80"]

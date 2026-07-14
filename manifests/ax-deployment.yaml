@@ -50,7 +50,7 @@ spec:
   pauseImage: "gcr.io/gke-release/pause@sha256:bcbd57ba5653580ec647b16d8163cdd1112df3609129b01f912a8032e48265da"
   containers:
     - name: "axantigravity"
-      image: ${AX_IMAGE}
+      image: ${AX_ANTIGRAVITY_IMAGE}
       # Substrate ignores the image CMD/ENV/WORKDIR, so the harness command and
       # environment are specified here. `ax harness antigravity` forks the
       # Antigravity Python sidecar, which serves on port 80 because substrate

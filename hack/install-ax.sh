@@ -105,10 +105,13 @@ detect_container_engine() {
   fi
 }
 
-# build_ax_image builds and pushes the comprehensive ax image (the Go ax binary
-# plus the Antigravity Python sidecar) and echoes its digest-pinned reference on
-# stdout. Requires AX_IMAGE_REPO and a container engine.
-build_ax_image() {
+# _build_and_push_ax builds one target of cmd/ax/Dockerfile into ${repo}:<git-sha>,
+# pushes it, and echoes the digest-pinned reference on stdout. Args:
+#   $1 repo   - fully-qualified image repo (e.g. gcr.io/proj/ax)
+#   $2 target - Dockerfile target stage (ax | antigravity)
+# Requires AX_IMAGE_REPO and a container engine.
+_build_and_push_ax() {
+  local repo="$1" target="$2"
   if [[ -z "${AX_IMAGE_REPO:-}" ]]; then
     echo "Error: AX_IMAGE_REPO environment variable must be set" >&2
     exit 1
@@ -120,14 +123,14 @@ build_ax_image() {
     exit 1
   fi
 
-  local repo tag image digest
-  repo="${AX_IMAGE_REPO}/ax"
+  local tag image digest
   tag="$(git rev-parse --short HEAD)"
   image="${repo}:${tag}"
 
-  log_step "build_ax_image -> ${image}" >&2
+  log_step "build ${target} -> ${image}" >&2
   "${CONTAINER_ENGINE}" build \
     --platform linux/amd64 \
+    --target "${target}" \
     -f cmd/ax/Dockerfile \
     -t "${image}" \
     . 2>&1 \
@@ -154,6 +157,18 @@ build_ax_image() {
   fi
 
   echo "${repo}@${digest}"
+}
+
+# build_ax_image builds and pushes the Go-only ax image used by the ax-server and the
+# Go interactions harness.
+build_ax_image() {
+  _build_and_push_ax "${AX_IMAGE_REPO}/ax" ax
+}
+
+# build_ax_antigravity_image builds and pushes the antigravity image used by the
+# antigravity harness.
+build_ax_antigravity_image() {
+  _build_and_push_ax "${AX_IMAGE_REPO}/ax-antigravity" antigravity
 }
 
 build_ateom_image() {
@@ -206,8 +221,9 @@ deploy_ax_server() {
   echo "Using GCS Bucket: ${AX_SNAPSHOTS_BUCKET}"
 
   # Build and push the images, capturing their digest-pinned references.
-  local ax_image ateom_image
+  local ax_image ax_antigravity_image ateom_image
   ax_image=$(build_ax_image)
+  ax_antigravity_image=$(build_ax_antigravity_image)
   ateom_image=$(build_ateom_image)
 
   # Resolve the event-log Postgres DSN. By default ax-server connects to an
@@ -235,6 +251,7 @@ deploy_ax_server() {
     -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY}|g"
     -e "s|\${AX_SNAPSHOTS_BUCKET}|${AX_SNAPSHOTS_BUCKET}|g"
     -e "s|\${AX_IMAGE}|${ax_image}|g"
+    -e "s|\${AX_ANTIGRAVITY_IMAGE}|${ax_antigravity_image}|g"
     -e "s|\${ATEOM_IMAGE}|${ateom_image}|g"
     -e "s|\${GOOGLE_CLOUD_PROJECT}|${GOOGLE_CLOUD_PROJECT:-}|g"
   )
