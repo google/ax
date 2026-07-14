@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -75,6 +76,16 @@ func (h *AntigravityInteractionsHarness) executeTool(ctx context.Context, call c
 // the step's own output (content, Output/ExitCode, results).
 // ---------------------------------------------------------------------------
 
+// view_file result caps. Mirrors the Antigravity view_file contract:
+// StartLine/EndLine are 1-indexed inclusive, at most viewFileMaxLines lines are
+// returned per view, and content is byte-capped with a ContentOffset
+// continuation so a large file can't blob a multi-hundred-KB tool result that
+// stalls the turn / blows past API context limits.
+const (
+	viewFileMaxLines = 2000
+	viewFileMaxBytes = 256 * 1024 // 256 KiB
+)
+
 func execViewFile(call capturedToolCall) any {
 	path := stringArg(call.arguments, "AbsolutePath")
 	if path == "" {
@@ -84,7 +95,90 @@ func execViewFile(call capturedToolCall) any {
 	if err != nil {
 		return map[string]any{"error": fmt.Sprintf("view_file: %v", err)}
 	}
-	return map[string]any{"content": string(data)}
+
+	// Resolve the 1-indexed inclusive line window using slice notation (see
+	// resolveLineWindow), then apply the byte cap, honoring ContentOffset as the
+	// read position within the windowed content. The caps bound the result size so
+	// a large file can't blob; the returned payload is just the content slice (the
+	// result schema for view_file is defined server-side, so we don't add fields).
+	start, startSet := intArgOK(call.arguments, "StartLine")
+	end, endSet := intArgOK(call.arguments, "EndLine")
+	offset := intArg(call.arguments, "ContentOffset")
+
+	windowed := resolveLineWindow(string(data), start, startSet, end, endSet)
+	content := applyByteWindow(windowed, offset)
+
+	return map[string]any{"content": content}
+}
+
+// resolveLineWindow returns the requested line window of content, following the
+// Antigravity view_file slice notation over 1-indexed inclusive [start, end]:
+//
+//   - neither set: the first viewFileMaxLines lines (or the whole file if smaller)
+//   - start only:  viewFileMaxLines lines starting at start (forward window)
+//   - end only:    viewFileMaxLines lines ending at end (backward window)
+//   - both set:    lines [start, end], capped to viewFileMaxLines from start
+//
+// It returns the joined lines for the window.
+func resolveLineWindow(content string, start int, startSet bool, end int, endSet bool) string {
+	lines := strings.Split(content, "\n")
+	// strings.Split on a trailing newline yields a final empty element; drop it so
+	// line counts match the file's logical lines.
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n-1]
+	}
+	total := len(lines)
+	if total == 0 {
+		return ""
+	}
+
+	// Compute a 1-indexed inclusive [lo, hi] window per slice notation.
+	var lo, hi int
+	switch {
+	case !startSet && !endSet:
+		lo, hi = 1, viewFileMaxLines
+	case startSet && !endSet:
+		lo = start
+		hi = start + viewFileMaxLines - 1
+	case !startSet && endSet:
+		hi = end
+		lo = end - viewFileMaxLines + 1
+	default: // both set
+		lo, hi = start, end
+		if hi-lo+1 > viewFileMaxLines {
+			hi = lo + viewFileMaxLines - 1
+		}
+	}
+
+	// Clamp to the file bounds.
+	if lo < 1 {
+		lo = 1
+	}
+	if hi > total {
+		hi = total
+	}
+	if lo > total || hi < lo {
+		// Window is entirely past EOF (or inverted after clamping): nothing to show.
+		return ""
+	}
+
+	return strings.Join(lines[lo-1:hi], "\n")
+}
+
+// applyByteWindow returns the slice of content starting at offset (the agent's
+// ContentOffset), capped to viewFileMaxBytes so a large window can't blob.
+func applyByteWindow(content string, offset int) string {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(content) {
+		offset = len(content)
+	}
+	remaining := content[offset:]
+	if len(remaining) > viewFileMaxBytes {
+		return remaining[:viewFileMaxBytes]
+	}
+	return remaining
 }
 
 // runCommandTimeout bounds how long a single run_command may take, so a runaway
@@ -351,4 +445,33 @@ func boolArg(args map[string]any, name string) bool {
 		return v
 	}
 	return false
+}
+
+// intArg reads an integer argument. JSON numbers decode to float64, but tolerate
+// int and numeric strings too. Returns 0 when absent or unparseable.
+func intArg(args map[string]any, name string) int {
+	n, _ := intArgOK(args, name)
+	return n
+}
+
+// intArgOK is like intArg but also reports whether the argument was present and
+// parseable. Callers use the ok flag to distinguish "unset" from an explicit 0
+// (needed for view_file slice notation, where start-only vs end-only differ).
+func intArgOK(args map[string]any, name string) (int, bool) {
+	if args == nil {
+		return 0, false
+	}
+	switch v := args[name].(type) {
+	case float64:
+		return int(v), true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
 }
