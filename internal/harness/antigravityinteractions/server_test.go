@@ -24,6 +24,7 @@ import (
 	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -106,6 +107,61 @@ func TestConnect_StartToEnd(t *testing.T) {
 	}
 	if reqs[0].PreviousInteractionID != "" {
 		t.Errorf("previous_interaction_id = %q, want empty", reqs[0].PreviousInteractionID)
+	}
+}
+
+// TestConnect_InvalidHarnessConfigIsInvalidArgument verifies that a rejected
+// harness_config terminates the stream with STATE_FAILED and maps to the gRPC
+// InvalidArgument (code 3) status code, not a generic failure.
+func TestConnect_InvalidHarnessConfigIsInvalidArgument(t *testing.T) {
+	fake := &fakeInteractions{}
+	h := newTestHarness(t, fake, t.TempDir())
+	client := startTestServer(t, h)
+
+	stream, err := client.Connect(context.Background())
+	if err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if err := stream.Send(&proto.HarnessRequest{
+		ConversationId: "conv-1",
+		HarnessId:      "antigravity-interactions",
+		Type: &proto.HarnessRequest_Start{
+			Start: &proto.HarnessStart{
+				HarnessConfig: []byte(`{"model":"nope"}`), // unknown field
+				Messages:      []*proto.Message{harnesstest.UserText("hello")},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send start: %v", err)
+	}
+	_ = stream.CloseSend()
+
+	var gotEnd *proto.HarnessEnd
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("recv: %v", err)
+		}
+		if end := resp.GetEnd(); end != nil {
+			gotEnd = end
+		}
+	}
+
+	if gotEnd == nil {
+		t.Fatal("stream ended without a HarnessEnd frame")
+	}
+	if gotEnd.GetState() != proto.State_STATE_FAILED {
+		t.Errorf("terminal state = %v, want FAILED", gotEnd.GetState())
+	}
+	if got, want := gotEnd.GetError().GetCode(), int32(codes.InvalidArgument); got != want {
+		t.Errorf("error code = %d, want %d (InvalidArgument)", got, want)
+	}
+	// A rejected config must not reach the API.
+	if n := len(fake.recorded()); n != 0 {
+		t.Errorf("fake received %d requests, want 0 for rejected config", n)
 	}
 }
 

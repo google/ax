@@ -91,6 +91,86 @@ const (
 var _ harness.Harness = (*AntigravityInteractionsHarness)(nil)
 var _ harness.Execution = (*antigravityInteractionsExecution)(nil)
 
+// HarnessConfigError marks an invalid request harness_config. The harness
+// server maps it to a gRPC InvalidArgument (code 3) status so a caller learns
+// their config was rejected rather than seeing a generic failure.
+type HarnessConfigError struct{ msg string }
+
+func (e *HarnessConfigError) Error() string { return e.msg }
+
+func newHarnessConfigError(format string, args ...any) *HarnessConfigError {
+	return &HarnessConfigError{msg: fmt.Sprintf(format, args...)}
+}
+
+// requestOverlay is the per-request harness_config: the subset of
+// interactionRequest fields a caller may set through HarnessStart.harness_config
+// (JSON), applied when the harness builds each turn's request. Keys and types
+// match interactionRequest. The rest of interactionRequest is not caller-settable
+// -- harness-managed plumbing (stream, background, store, environment, tools),
+// the resume cursor (previous_interaction_id), or the runtime prompt (input).
+// Pointers distinguish an absent key from an explicit value.
+type requestOverlay struct {
+	Agent             *string `json:"agent"`
+	SystemInstruction *string `json:"system_instruction"`
+}
+
+// parseRequestOverlay parses a request's harness_config JSON into a requestOverlay.
+// An empty payload yields a zero overlay (a no-op). The payload must be a single
+// JSON object whose keys are known interactionRequest fields; unknown keys, an
+// explicit null for a present key (which would silently no-op), a non-object, and
+// trailing data are all rejected as HarnessConfigError so the server maps them to
+// InvalidArgument.
+func parseRequestOverlay(raw []byte) (requestOverlay, error) {
+	var overlay requestOverlay
+	if len(raw) == 0 {
+		return overlay, nil
+	}
+
+	// Reject unknown keys and non-objects, and capture raw values so an explicit
+	// null can be told from an absent key.
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var fields map[string]json.RawMessage
+	if err := dec.Decode(&fields); err != nil {
+		return requestOverlay{}, newHarnessConfigError("invalid harness_config: %v", err)
+	}
+	if fields == nil {
+		// Valid JSON that is the literal null: not an object.
+		return requestOverlay{}, newHarnessConfigError("invalid harness_config: expected a JSON object")
+	}
+	// Require the object to be the only value: a second decode must hit EOF.
+	// (json.Decoder.More is false for trailing data outside a container, e.g.
+	// "{}]", so it cannot be used for this check.)
+	if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
+		return requestOverlay{}, newHarnessConfigError("invalid harness_config: unexpected trailing data")
+	}
+	for key, v := range fields {
+		if string(bytes.TrimSpace(v)) == "null" {
+			return requestOverlay{}, newHarnessConfigError("invalid harness_config: %s must not be null", key)
+		}
+	}
+
+	// Decode into the typed overlay (DisallowUnknownFields already rejected
+	// unknown keys above; this enforces field types).
+	tdec := json.NewDecoder(bytes.NewReader(raw))
+	tdec.DisallowUnknownFields()
+	if err := tdec.Decode(&overlay); err != nil {
+		return requestOverlay{}, newHarnessConfigError("invalid harness_config: %v", err)
+	}
+	return overlay, nil
+}
+
+// applyTo overlays the caller-set fields onto an interactionRequest, taking
+// precedence over the harness defaults already set on it.
+func (o requestOverlay) applyTo(req *interactionRequest) {
+	if o.Agent != nil {
+		req.Agent = *o.Agent
+	}
+	if o.SystemInstruction != nil {
+		req.SystemInstruction = *o.SystemInstruction
+	}
+}
+
 // AntigravityInteractionsConfig configures an AntigravityInteractionsHarness.
 // Use New, which fills sensible defaults.
 //
@@ -233,11 +313,15 @@ func newWithHTTPClient(cfg AntigravityInteractionsConfig, hc *http.Client) (*Ant
 // cursor for conversationID so the returned Execution resumes the existing
 // interaction chain instead of starting a new one.
 func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
+	overlay, err := parseRequestOverlay(harnessConfig)
+	if err != nil {
+		return nil, err
+	}
 	e := &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
-		harnessConfig:  harnessConfig,
+		overlay:        overlay,
 	}
 
 	cur, found, err := h.cursors.load(conversationID)
@@ -263,7 +347,9 @@ type antigravityInteractionsExecution struct {
 	harness        *AntigravityInteractionsHarness
 	conversationID string
 	id             string
-	harnessConfig  []byte
+	// overlay is the request's harness_config for this conversation, applied to
+	// every initial and continuation request built for it.
+	overlay requestOverlay
 
 	mu     sync.Mutex
 	queued []*proto.Message
@@ -365,7 +451,7 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler harn
 		return fmt.Errorf("Run called with no queued input and no work pending")
 	}
 
-	res, err := e.harness.postTurn(ctx, token, e.harness.newRequest(input, prevID))
+	res, err := e.harness.postTurn(ctx, token, e.harness.newRequest(e.overlay, input, prevID))
 	if err != nil {
 		return fmt.Errorf("interaction turn failed: %w", err)
 	}
@@ -405,7 +491,7 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler harn
 			return handler.OnComplete(ctx, e.id)
 		}
 
-		res, err = e.harness.postTurn(ctx, token, e.harness.newRequest(next, prevID))
+		res, err = e.harness.postTurn(ctx, token, e.harness.newRequest(e.overlay, next, prevID))
 		if err != nil {
 			return fmt.Errorf("continuation turn failed: %w", err)
 		}
@@ -655,12 +741,12 @@ func newTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 // is always the client-side ("local") environment -- this harness exists to
 // execute the agent's built-in env tools locally. Tools are re-declared on every
 // turn so they stay known to the agent across the turns of the interaction loop.
-func (h *AntigravityInteractionsHarness) newRequest(input []any, previousID string) interactionRequest {
+func (h *AntigravityInteractionsHarness) newRequest(overlay requestOverlay, input []any, previousID string) interactionRequest {
 	var tools []FunctionTool
 	if h.cfg.ThirdPartyExecutor != nil {
 		tools = h.cfg.ThirdPartyExecutor.Declarations()
 	}
-	return interactionRequest{
+	req := interactionRequest{
 		Stream:                true,
 		Background:            true,
 		Store:                 true,
@@ -671,6 +757,9 @@ func (h *AntigravityInteractionsHarness) newRequest(input []any, previousID stri
 		Input:                 input,
 		Tools:                 tools,
 	}
+	// Per-request harness_config overrides the harness defaults for this turn.
+	overlay.applyTo(&req)
+	return req
 }
 
 // retryableHTTPError marks a transient HTTP response that should be retried.

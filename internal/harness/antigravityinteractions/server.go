@@ -30,6 +30,7 @@ import (
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -217,6 +218,12 @@ func sendEnd(stream proto.HarnessService_ConnectServer, convID string, state pro
 	end := &proto.HarnessEnd{State: state}
 	if err != nil {
 		end.Error = &proto.Error{Description: err.Error()}
+		// A rejected request harness_config is a client error: surface it as
+		// InvalidArgument (code 3) rather than a generic failure.
+		var cfgErr *HarnessConfigError
+		if errors.As(err, &cfgErr) {
+			end.Error.Code = int32(codes.InvalidArgument)
+		}
 	}
 	return stream.Send(&proto.HarnessResponse{
 		ConversationId: convID,
