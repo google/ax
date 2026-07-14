@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/google/ax/internal/config"
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/pythonsidecar"
 	"github.com/google/ax/proto"
@@ -39,6 +41,20 @@ import (
 // Compile-time interface assertions.
 var _ harness.Harness = (*AntigravityHarness)(nil)
 var _ harness.Execution = (*antigravityExecution)(nil)
+
+// DefaultStateDir returns the default trajectory storage directory,
+// ~/.ax/antigravity/conversations. AX owns this path so it stays a harness
+// implementation detail rather than a user-facing ax.yaml knob. It lives
+// outside the agent's working directory on purpose: the working directory is
+// the agent's operating surface (it reads and edits files there), so AX's
+// internal state is kept separate to avoid the agent seeing or clobbering it.
+func DefaultStateDir() (string, error) {
+	axDir, err := config.AXAssetsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(axDir, "antigravity", "conversations"), nil
+}
 
 // AntigravityHarness implements the Harness interface by connecting to the
 // Antigravity Python agent server over gRPC.

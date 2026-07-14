@@ -17,6 +17,7 @@ package antigravity
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -104,5 +105,20 @@ func TestNew_AutoStartFalse_NilSidecar(t *testing.T) {
 	}
 	if h.sidecar != nil {
 		t.Errorf("expected sidecar to be nil, got %v", h.sidecar)
+	}
+}
+
+// TestDefaultStateDir returns ~/.ax/antigravity/conversations under the user's
+// home directory.
+func TestDefaultStateDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	got, err := DefaultStateDir()
+	if err != nil {
+		t.Fatalf("DefaultStateDir: %v", err)
+	}
+	if want := filepath.Join(home, ".ax", "antigravity", "conversations"); got != want {
+		t.Errorf("DefaultStateDir() = %q, want %q", got, want)
 	}
 }

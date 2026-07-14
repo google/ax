@@ -71,9 +71,14 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if address == "" {
 			address = "127.0.0.1:50053"
 		}
-		// Local mode: the harness owns the Python sidecar. Empty StateDir
-		// means the sidecar applies its own default
-		antigravityHarness, err = antigravity.New(ctx, address, cfg.Harnesses.Antigravity.StateDir, true)
+		// Local mode: the harness owns the Python sidecar. AX owns the
+		// trajectory storage path (a harness implementation detail), so it's
+		// derived internally rather than exposed in ax.yaml.
+		stateDir, sErr := antigravity.DefaultStateDir()
+		if sErr != nil {
+			return nil, fmt.Errorf("antigravity harness: %w", sErr)
+		}
+		antigravityHarness, err = antigravity.New(ctx, address, stateDir, true)
 		if err != nil {
 			return nil, fmt.Errorf("antigravity harness: %w", err)
 		}
@@ -97,12 +102,11 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		if agent == "" {
 			agent = antigravityinteractions.DefaultAgent
 		}
-		stateDir := cfg.Harnesses.AntigravityInteractions.StateDir
-		if stateDir == "" {
-			stateDir, err = antigravityinteractions.DefaultStateDir()
-			if err != nil {
-				return nil, fmt.Errorf("antigravity-interactions harness: %w", err)
-			}
+		// AX owns the resume-cursor path (a harness implementation detail), so
+		// it's derived internally rather than exposed in ax.yaml.
+		stateDir, sErr := antigravityinteractions.DefaultStateDir()
+		if sErr != nil {
+			return nil, fmt.Errorf("antigravity-interactions harness: %w", sErr)
 		}
 		antigravityInteractionsHarness, err = antigravityinteractions.New(antigravityinteractions.AntigravityInteractionsConfig{
 			Agent:    agent,
