@@ -239,10 +239,10 @@ ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let
 # Execute using server mode
 ax exec --server localhost:8494 --input "Hello agents!"
 
-# Execute using the built-in Antigravity harness
-ax exec --input "Write me a cool Go program!"
+# Execute using a specific harness
+ax exec --harness antigravity --input "Write me a cool Go program!"
 
-# Execute using the built-in Antigravity harness with per-request config
+# Execute with per-request harness config
 ax exec \
   --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
   --input "Explain durable execution."
