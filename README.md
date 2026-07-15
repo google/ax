@@ -88,11 +88,6 @@ We highly encourage you to give us feedback.
 
 ## Installation
 
-### Local Antigravity requirements
-
-Local Antigravity execution requires Python 3 with `pip`. AX starts the Python
-sidecar and installs its pinned SDK dependencies automatically on first use.
-
 Install the ax CLI directly from the repository:
 
 ```bash
@@ -119,6 +114,10 @@ use. For more details on setup and configuration, see the
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
 
+### Built-in Antigravity harness
+
+Antigravity SDK is the default harness and its local execution requires Python 3 with `pip` and Antigravity SDK wheel. When you run the ax exec command for the first time, AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use.
+
 ## Authentication
 
 The built-in Antigravity harness supports Google AI Studio and Vertex AI.
@@ -143,15 +142,14 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 
 ### Execute
 
-The CLI starts the built-in Antigravity harness automatically when it is
-selected. No separate harness server setup is required.
+The CLI starts the built-in Antigravity harness automatically. No separate harness server setup is required.
 
 ```bash
 # Run the built-in Antigravity harness locally
-ax exec --harness antigravity --input "Can you list this directory?"
+ax exec --input "Can you list this directory?"
 
 # Using exec with an AX server
-ax exec --harness antigravity --input "Can you list this directory?" --server localhost:8494
+ax exec --input "Can you list this directory?" --server localhost:8494
 ```
 
 Conversations can be continued any time:
@@ -159,7 +157,6 @@ Conversations can be continued any time:
 ```bash
 ax exec \
   --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
-  --harness antigravity \
   --input "Show me the contents of README.md"
 ```
 
@@ -172,9 +169,17 @@ In this example, we catch up a client from sequence number 12:
 ```bash
 ax exec \
   --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
-  --harness antigravity \
   --last-seq 12 \
   --resume
+```
+
+Instead of running the default harness, you can start executing
+any registered harness:
+
+```bash
+ax exec \
+  --harness antigravity \
+  --input "Can you write me a simple HTTP server in Python?"
 ```
 
 If anything goes wrong during the execution of a harness,
@@ -219,44 +224,28 @@ Options:
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
 - `--last-seq`: Last sequence number seen by the client to resume from (optional). The server replays any later events so the client can catch up after a disconnect.
 
-#### Per-request Antigravity configuration
-
-The Antigravity harness accepts an optional JSON configuration object for a
-single request. Pass it inline with `--harness-config-json`:
-
-```bash
-ax exec \
-  --harness antigravity \
-  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
-  --input "Explain durable execution."
-```
-
-To keep the same JSON in a file, use `--harness-config` instead:
-
-```bash
-ax exec \
-  --harness antigravity \
-  --harness-config antigravity.json \
-  --input "Explain durable execution."
-```
-
-The two flags are mutually exclusive. In an interactive session, enter
-`/config` to set the configuration for the next request.
-
 **Examples:**
 
 ```bash
 # Execute a new execution
-ax exec --harness antigravity --input "Hello agents!"
+ax exec --input "Hello agents!"
 
 # Resume an existing execution with new input
-ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --harness antigravity --input "Ok, now let's do something else..."
+ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let's do something else..."
 
 # Execute using server mode
-ax exec --server localhost:8494 --harness antigravity --input "Hello agents!"
+ax exec --server localhost:8494 --input "Hello agents!"
 
 # Execute using the built-in Antigravity harness
-ax exec --harness antigravity --input "Write me a cool Go program!"
+ax exec --input "Write me a cool Go program!"
+
+# Execute using the built-in Antigravity harness with per-request config
+ax exec \
+  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
+  --input "Explain durable execution."
+
+#To keep the same JSON in a file, use `--harness-config` instead:
+ax exec --harness-config antigravity.json --input "Explain durable execution."
 ```
 
 ### Serve
