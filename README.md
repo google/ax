@@ -234,6 +234,11 @@ server:
 eventlog:
   sqlite:
     filename: "eventlog/log.sqlite"
+
+telemetry:
+  otlp:
+    enabled: false
+    # endpoint: "localhost:4317"   # OTLP collector endpoint
 ```
 
 Example:
@@ -244,6 +249,19 @@ ax serve
 # Start server with custom config
 ax serve --config my-config.yaml
 ```
+
+### Dashboard
+
+```bash
+ax dashboard [--addr <address>] [--config <path>]
+```
+
+Starts a local web UI for browsing conversations and executions, including
+tool-call approval state. It reads the SQLite event log only.
+
+Options:
+- `--addr`: Address to listen on (default: "localhost:8080")
+- `--config`: Path to YAML configuration file (default: "ax.yaml")
 
 ### Authentication
 
