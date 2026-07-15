@@ -144,13 +144,8 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 
 The CLI starts the built-in Antigravity harness automatically. No separate harness server setup is required.
 
-> [!NOTE]
-> The examples below omit `--harness` and assume an `ax.yaml` that marks a
-> default harness (e.g. `antigravity: { default: true }`). Without a default
-> harness configured, pass `--harness antigravity` explicitly.
-
 ```bash
-# Run the built-in Antigravity harness locally
+# Using default ax.yaml which runs built-in Antigravity harness
 ax exec --input "Can you list this directory?"
 
 # Using exec with an AX server
