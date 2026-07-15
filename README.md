@@ -116,7 +116,7 @@ that provides higher density to agentic workloads on Kubernetes.
 
 ### Built-in Antigravity harness
 
-Antigravity SDK is the default harness and its local execution requires Python 3 with `pip` and Antigravity SDK wheel. When you run the ax exec command for the first time, AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use.
+Antigravity SDK is a reference harness implementation. Its local execution requires Python 3 with `pip` and Antigravity SDK wheel. When you run the `ax exec` command for the first time, AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use. 
 
 ## Authentication
 
@@ -143,6 +143,11 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 ### Execute
 
 The CLI starts the built-in Antigravity harness automatically. No separate harness server setup is required.
+
+> [!NOTE]
+> The examples below omit `--harness` and assume an `ax.yaml` that marks a
+> default harness (e.g. `antigravity: { default: true }`). Without a default
+> harness configured, pass `--harness antigravity` explicitly.
 
 ```bash
 # Run the built-in Antigravity harness locally
