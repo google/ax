@@ -116,7 +116,8 @@ that provides higher density to agentic workloads on Kubernetes.
 
 ### Built-in Antigravity harness
 
-Antigravity SDK is a reference harness implementation. Its local execution requires Python 3 with `pip` and Antigravity SDK wheel. When you run the `ax exec` command for the first time, AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use. 
+Antigravity SDK is a reference harness implementation. Local execution requires Python 3 with `pip`.
+AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use.
 
 ## Authentication
 
@@ -145,7 +146,7 @@ export GOOGLE_GENAI_USE_VERTEXAI=true
 The CLI starts the built-in Antigravity harness automatically. No separate harness server setup is required.
 
 ```bash
-# Using default ax.yaml which runs built-in Antigravity harness
+# Using the checked-in ax.yaml, which sets Antigravity as the default harness.
 ax exec --input "Can you list this directory?"
 
 # Using exec with an AX server
@@ -244,7 +245,7 @@ ax exec \
   --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
   --input "Explain durable execution."
 
-#To keep the same JSON in a file, use `--harness-config` instead:
+# To keep the same JSON in a file, use `--harness-config` instead:
 ax exec --harness-config antigravity.json --input "Explain durable execution."
 ```
 
