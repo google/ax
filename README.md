@@ -111,6 +111,9 @@ AX is natively supported on
 on Kubernetes and it's the recommended deployment option for production
 use. For more details on setup and configuration, see the
 [deployment guide](./manifests/README.md).
+The current manifests and install script (`hack/install-ax.sh`) are
+experimental; treat them as a reference deployment, not a stable production
+distribution yet.
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
 
@@ -264,10 +267,33 @@ export GOOGLE_GENAI_USE_VERTEXAI=True
 
 ### Harnesses
 
-AX provides built-in harnesses (e.g. Antigravity) but you can bring your
-own harness implementation by implementing `HarnessService`. On supported
-compute services (e.g. Agent Substrate), AX automatically runs the
-harness in isolation with automatic resumption and suspension.
+AX provides built-in harnesses but you can bring your own harness
+implementation by implementing `HarnessService`. On supported compute
+services (e.g. Agent Substrate), AX automatically runs the harness in
+isolation with automatic resumption and suspension.
+
+Two built-in harnesses ship today:
+
+- `antigravity`: the Antigravity SDK running as a local Python sidecar
+  (AI Studio API key or Vertex AI).
+- `antigravity-interactions`: backed by the Vertex GenAI Interactions API
+  (requires Vertex AI with Application Default Credentials).
+
+Select one with `ax exec --harness <id>`.
+
+Custom harnesses can be registered today on Agent Substrate from a
+user-provided container image via your own `ActorTemplate`. This requires
+running `ax` with `AX_SUBSTRATE=1`:
+
+```yaml
+harnesses:
+  substrate:
+    - id: my-harness
+      namespace: my-team          # ActorTemplate namespace (user-owned)
+      template: my-harness-template
+      port: 80                    # HarnessService port
+      default: true
+```
 
 Traditional agents (e.g. tool use or workflow agents), or
 language models can be implemented as harnesses.
@@ -290,8 +316,8 @@ and making calls to MCP tools when they are configured.
   to build agents.
 * A specific harness like a specific coding agent, e.g. Antigravity.
   AX provides the serving layer around harnesses and is agnostic of the
-  harness implementation. Soon, we will allow users to bring their own
-  harnesses.
+  harness implementation. Users can bring their own harnesses by
+  implementing `HarnessService`; custom harnesses run on Agent Substrate.
 * A model specific controller. AX is agnostic of the models used.
 
 ## Roadmap
