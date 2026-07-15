@@ -116,8 +116,10 @@ that provides higher density to agentic workloads on Kubernetes.
 
 ### Built-in Antigravity harness
 
-Antigravity SDK is a reference harness implementation. Local execution requires Python 3 with `pip`.
-AX starts the harness server as a Python sidecar and installs its pinned SDK dependencies automatically on first use.
+Antigravity SDK is a reference harness implementation. Local execution needs
+`python3` and `pip` available on your `PATH`. AX handles the rest: on first
+`ax exec` it starts the harness server as a Python sidecar and installs the
+pinned Antigravity SDK dependencies for you.
 
 ## Authentication
 
