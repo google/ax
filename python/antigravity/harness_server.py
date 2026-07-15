@@ -50,6 +50,30 @@ class HarnessConfigError(ValueError):
     """Raised when request harness_config is not a valid overlay."""
 
 
+class ConversationIdError(ValueError):
+    """Raised when a request's conversation_id is unusable as a save_dir name."""
+
+
+def _validate_conversation_id(conversation_id: str) -> None:
+    """Guards conversation_id for safe use as a save_dir path component.
+
+    Rejects empty ids and path separators / "." / ".." so a request cannot
+    escape state_dir. The id-format contract (length, charset) is left to the
+    Antigravity harness (forwarded cascade_id) to avoid the layers drifting.
+    """
+    if not conversation_id:
+        raise ConversationIdError("conversation_id must be set")
+    if "/" in conversation_id or "\\" in conversation_id:
+        raise ConversationIdError(
+            "conversation_id must not contain a path separator, got "
+            f"{conversation_id!r}"
+        )
+    if conversation_id in (".", ".."):
+        raise ConversationIdError(
+            f"conversation_id must not be a path component, got {conversation_id!r}"
+        )
+
+
 class VertexKwargs(TypedDict, total=False):
     """Typed subset of LocalAgentConfig kwargs needed to enable Vertex AI.
 
@@ -235,6 +259,24 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
 
     async def _run_turn(self, request):
         print(f"[gRPC] Connect turn requested. conv_id={request.conversation_id}")
+
+        # Guard conversation_id for safe use as a save_dir path component
+        # below. The id-format contract (length, charset) is owned by the
+        # Antigravity harness via the forwarded cascade_id.
+        try:
+            _validate_conversation_id(request.conversation_id)
+        except ConversationIdError as exc:
+            yield ax_pb2.HarnessResponse(
+                conversation_id=request.conversation_id,
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description=f"Invalid conversation_id: {exc}",
+                    ),
+                ),
+            )
+            return
 
         # 1. Retrieve and check messages
         ax_messages = request.start.messages

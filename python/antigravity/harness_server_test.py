@@ -18,7 +18,9 @@ import pytest
 import grpc
 from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
 from python.antigravity.harness_server import AntigravityHarnessServiceServicer
+from python.antigravity.harness_server import ConversationIdError
 from python.antigravity.harness_server import HarnessConfigError
+from python.antigravity.harness_server import _validate_conversation_id
 from google.antigravity import LocalAgentConfig
 
 @pytest.fixture
@@ -618,3 +620,76 @@ def test_harness_config_unknown_field_names_are_reported(mock_config, tmp_path):
     assert "unknown config field(s): aaa_bad, zzz_bad" in msg
     assert "system_instructions" not in msg
 
+
+
+@pytest.mark.parametrize("conv_id", [
+    "conv-1",  # short ids are fine here; the harness owns the format contract
+    "conv-test",
+    "11111111-2222-3333-4444-555555555555",
+    "a",  # single char, still a safe dir name
+])
+def test_validate_conversation_id_accepts_path_safe(conv_id):
+    # Should not raise: these are all usable as a save_dir path component.
+    _validate_conversation_id(conv_id)
+
+
+@pytest.mark.parametrize(("conv_id", "error"), [
+    ("", "must be set"),
+    ("..", "path component"),
+    (".", "path component"),
+    ("../escape", "path separator"),
+    ("a/b", "path separator"),
+    ("nested/../conv", "path separator"),
+    ("back\\slash", "path separator"),
+])
+def test_validate_conversation_id_rejects_unsafe(conv_id, error):
+    with pytest.raises(ConversationIdError, match=error):
+        _validate_conversation_id(conv_id)
+
+
+def test_run_turn_unsafe_conversation_id_maps_to_invalid_argument(mock_config, tmp_path):
+    # An unsafe conversation_id is rejected at the boundary: the turn yields a
+    # single STATE_FAILED end frame with INVALID_ARGUMENT, before any agent runs.
+    async def _run():
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+        req = ax_pb2.HarnessRequest(
+            conversation_id="../escape",
+            harness_id="antigravity",
+            start=ax_pb2.HarnessStart(
+                messages=[ax_pb2.Message(
+                    role="user",
+                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
+                )],
+            ),
+        )
+        responses = [r async for r in servicer._run_turn(req)]
+        assert len(responses) == 1
+        assert responses[0].end.state == ax_pb2.STATE_FAILED
+        assert responses[0].end.error.code == 3
+        assert "Invalid conversation_id" in responses[0].end.error.description
+
+    asyncio.run(_run())
+
+
+def test_run_turn_rejects_conversation_id_before_creating_save_dir(mock_config, tmp_path):
+    # Validation must happen before conversation_id is used as a storage
+    # directory name, so a rejected id leaves no directory behind under (or
+    # outside) state_dir.
+    async def _run():
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+        req = ax_pb2.HarnessRequest(
+            conversation_id="../escape",
+            harness_id="antigravity",
+            start=ax_pb2.HarnessStart(
+                messages=[ax_pb2.Message(
+                    role="user",
+                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
+                )],
+            ),
+        )
+        responses = [r async for r in servicer._run_turn(req)]
+        assert len(responses) == 1
+        assert responses[0].end.state == ax_pb2.STATE_FAILED
+        assert list(tmp_path.iterdir()) == []
+
+    asyncio.run(_run())
