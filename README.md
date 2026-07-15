@@ -209,8 +209,8 @@ ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let
 # Execute using server mode
 ax exec --server localhost:8494 --input "Hello agents!"
 
-# Execute using a custom agent
-ax exec --harness coding --input "Hello coding agent, write me a cool Go program!"
+# Execute using a specific harness
+ax exec --harness antigravity --input "Write me a cool Go program!"
 ```
 
 ### Serve
