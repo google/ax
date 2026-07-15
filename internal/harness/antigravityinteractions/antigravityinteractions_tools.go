@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // executeTool runs a tool call the agent yielded and returns the result value to
@@ -99,16 +100,39 @@ func execViewFile(call capturedToolCall) any {
 	// Resolve the 1-indexed inclusive line window using slice notation (see
 	// resolveLineWindow), then apply the byte cap, honoring ContentOffset as the
 	// read position within the windowed content. The caps bound the result size so
-	// a large file can't blob; the returned payload is just the content slice (the
-	// result schema for view_file is defined server-side, so we don't add fields).
+	// a large file can't blob.
 	start, startSet := intArgOK(call.arguments, "StartLine")
 	end, endSet := intArgOK(call.arguments, "EndLine")
 	offset := intArg(call.arguments, "ContentOffset")
 
-	windowed := resolveLineWindow(string(data), start, startSet, end, endSet)
+	whole := string(data)
+	windowed, lo, hi, totalLines := resolveLineWindow(whole, start, startSet, end, endSet)
 	content := applyByteWindow(windowed, offset)
 
-	return map[string]any{"content": content}
+	// Return the metadata the server needs to distinguish a complete read from a
+	// paginated/byte-truncated one:
+	//   - start_line/end_line: 0-indexed inclusive served line range (the result
+	//     is 0-indexed; the tool-call StartLine/EndLine args are 1-indexed).
+	//   - content_offset: byte offset within the line-range content this slice
+	//     starts at (for pagination continuation).
+	//   - line_range_bytes: total bytes of the selected line range *before* byte
+	//     truncation; the server compares content_offset+len(content) against
+	//     this to detect byte truncation.
+	//   - num_lines/num_bytes: whole-file totals.
+	result := map[string]any{
+		"content":          content,
+		"content_offset":   offset,
+		"line_range_bytes": len(windowed),
+		"num_lines":        totalLines,
+		"num_bytes":        len(whole),
+	}
+	// Only report a concrete served range when there was content to serve;
+	// otherwise leave the (0,0) default.
+	if lo > 0 && hi >= lo {
+		result["start_line"] = lo - 1 // 1-indexed -> 0-indexed
+		result["end_line"] = hi - 1
+	}
+	return result
 }
 
 // resolveLineWindow returns the requested line window of content, following the
@@ -119,21 +143,21 @@ func execViewFile(call capturedToolCall) any {
 //   - end only:    viewFileMaxLines lines ending at end (backward window)
 //   - both set:    lines [start, end], capped to viewFileMaxLines from start
 //
-// It returns the joined lines for the window.
-func resolveLineWindow(content string, start int, startSet bool, end int, endSet bool) string {
+// It returns the joined window text, the served 1-indexed inclusive [lo, hi]
+// range (0, 0 when nothing is served), and the whole-file total line count.
+func resolveLineWindow(content string, start int, startSet bool, end int, endSet bool) (windowed string, lo, hi, total int) {
 	lines := strings.Split(content, "\n")
 	// strings.Split on a trailing newline yields a final empty element; drop it so
 	// line counts match the file's logical lines.
 	if n := len(lines); n > 0 && lines[n-1] == "" {
 		lines = lines[:n-1]
 	}
-	total := len(lines)
+	total = len(lines)
 	if total == 0 {
-		return ""
+		return "", 0, 0, 0
 	}
 
 	// Compute a 1-indexed inclusive [lo, hi] window per slice notation.
-	var lo, hi int
 	switch {
 	case !startSet && !endSet:
 		lo, hi = 1, viewFileMaxLines
@@ -159,14 +183,20 @@ func resolveLineWindow(content string, start int, startSet bool, end int, endSet
 	}
 	if lo > total || hi < lo {
 		// Window is entirely past EOF (or inverted after clamping): nothing to show.
-		return ""
+		return "", 0, 0, total
 	}
 
-	return strings.Join(lines[lo-1:hi], "\n")
+	return strings.Join(lines[lo-1:hi], "\n"), lo, hi, total
 }
 
 // applyByteWindow returns the slice of content starting at offset (the agent's
-// ContentOffset), capped to viewFileMaxBytes so a large window can't blob.
+// ContentOffset), capped to viewFileMaxBytes so a large window can't blob. When
+// it truncates, the cut is backed off to the last complete UTF-8 rune so the
+// returned string is always valid UTF-8 (never a split multi-byte character).
+//
+// Callers detect truncation and the resume point from the returned slice: the
+// window was truncated when offset+len(out) < len(content), and the agent
+// resumes by re-reading with ContentOffset == offset+len(out).
 func applyByteWindow(content string, offset int) string {
 	if offset < 0 {
 		offset = 0
@@ -175,10 +205,24 @@ func applyByteWindow(content string, offset int) string {
 		offset = len(content)
 	}
 	remaining := content[offset:]
-	if len(remaining) > viewFileMaxBytes {
-		return remaining[:viewFileMaxBytes]
+	if len(remaining) <= viewFileMaxBytes {
+		return remaining
 	}
-	return remaining
+
+	// Cap at viewFileMaxBytes, then back off to a valid UTF-8 boundary so we
+	// don't split a multi-byte rune across the cut.
+	cut := viewFileMaxBytes
+	for cut > 0 && !utf8.RuneStart(remaining[cut]) {
+		cut--
+	}
+	// remaining[cut] is now the start of a rune (or cut == 0). Guard the
+	// pathological case of a single rune larger than the cap: emit at least that
+	// rune so we always make forward progress.
+	if cut == 0 {
+		_, size := utf8.DecodeRuneInString(remaining)
+		cut = size
+	}
+	return remaining[:cut]
 }
 
 // runCommandTimeout bounds how long a single run_command may take, so a runaway
