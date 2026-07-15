@@ -88,6 +88,11 @@ We highly encourage you to give us feedback.
 
 ## Installation
 
+### Local Antigravity requirements
+
+Local Antigravity execution requires Python 3 with `pip`. AX starts the Python
+sidecar and installs its pinned SDK dependencies automatically on first use.
+
 Install the ax CLI directly from the repository:
 
 ```bash
@@ -114,19 +119,39 @@ use. For more details on setup and configuration, see the
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
 
-## Quick Start
+## Authentication
 
-### 1. Execute
+The built-in Antigravity harness supports Google AI Studio and Vertex AI.
 
-The CLI provides an easy way to execute by using the
-agents and built-in tools already linked into the AX binary.
+For Google AI Studio, set a Gemini API key:
 
 ```bash
-# Using default ax.yaml
-ax exec --input "Can you list me this directory?"
+export GEMINI_API_KEY="your-api-key"
+```
+
+For Vertex AI, configure Application Default Credentials and the target project
+and location:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export GOOGLE_GENAI_USE_VERTEXAI=true
+```
+
+## Quick Start
+
+### Execute
+
+The CLI starts the built-in Antigravity harness automatically when it is
+selected. No separate harness server setup is required.
+
+```bash
+# Run the built-in Antigravity harness locally
+ax exec --harness antigravity --input "Can you list this directory?"
 
 # Using exec with an AX server
-ax exec --input "Can you list me this directory?" --server localhost:8494
+ax exec --harness antigravity --input "Can you list this directory?" --server localhost:8494
 ```
 
 Conversations can be continued any time:
@@ -134,6 +159,7 @@ Conversations can be continued any time:
 ```bash
 ax exec \
   --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
+  --harness antigravity \
   --input "Show me the contents of README.md"
 ```
 
@@ -146,20 +172,12 @@ In this example, we catch up a client from sequence number 12:
 ```bash
 ax exec \
   --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
+  --harness antigravity \
   --last-seq 12 \
   --resume
 ```
 
-Instead of running the default harness, you can start executing
-any registered harness:
-
-```bash
-ax exec \
-  --harness antigravity \
-  --input "Can you write me a simple HTTP server in Python?"
-```
-
-If anything goes wrong during the execution of an agent,
+If anything goes wrong during the execution of a harness,
 you can resume an incomplete execution in a conversation:
 ```bash
 ax exec \
@@ -180,6 +198,8 @@ ax exec \
     [--input <text>] \
     [--conversation <id>] \
     [--harness <id>] \
+    [--harness-config <file.json>] \
+    [--harness-config-json <json>] \
     [--server <address>] \
     [--config <file>] \
     [--resume] \
@@ -192,24 +212,50 @@ Options:
 - `--input`: Input message to send to agents (optional if `--resume` is set, otherwise required)
 - `--conversation`: Conversation ID (optional, generates UUID if not provided, or resumes if exists)
 - `--harness`: Harness ID to use (optional, defaults to the default harness)
+- `--harness-config`: Path to a JSON file with per-request harness configuration (optional)
+- `--harness-config-json`: Per-request harness configuration as an inline JSON string (optional, mutually exclusive with `--harness-config`)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
 - `--last-seq`: Last sequence number seen by the client to resume from (optional). The server replays any later events so the client can catch up after a disconnect.
 
+#### Per-request Antigravity configuration
+
+The Antigravity harness accepts an optional JSON configuration object for a
+single request. Pass it inline with `--harness-config-json`:
+
+```bash
+ax exec \
+  --harness antigravity \
+  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
+  --input "Explain durable execution."
+```
+
+To keep the same JSON in a file, use `--harness-config` instead:
+
+```bash
+ax exec \
+  --harness antigravity \
+  --harness-config antigravity.json \
+  --input "Explain durable execution."
+```
+
+The two flags are mutually exclusive. In an interactive session, enter
+`/config` to set the configuration for the next request.
+
 **Examples:**
 
 ```bash
 # Execute a new execution
-ax exec --input "Hello agents!"
+ax exec --harness antigravity --input "Hello agents!"
 
 # Resume an existing execution with new input
-ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let's do something else..."
+ax exec --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --harness antigravity --input "Ok, now let's do something else..."
 
 # Execute using server mode
-ax exec --server localhost:8494 --input "Hello agents!"
+ax exec --server localhost:8494 --harness antigravity --input "Hello agents!"
 
-# Execute using a specific harness
+# Execute using the built-in Antigravity harness
 ax exec --harness antigravity --input "Write me a cool Go program!"
 ```
 
@@ -243,21 +289,6 @@ ax serve
 
 # Start server with custom config
 ax serve --config my-config.yaml
-```
-
-### Authentication
-
-The built-in Antigravity agent supports authentication using either Google AI Studio or Vertex AI:
-
-```bash
-# AI Studio API key based authentication.
-export GEMINI_API_KEY="your-api-key"
-
-# Vertex AI based authentication, ensure application
-# default credentials are set up, gcloud auth application-default login.
-export GOOGLE_CLOUD_PROJECT="your-project-id"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-export GOOGLE_GENAI_USE_VERTEXAI=True
 ```
 
 ## Extensions
