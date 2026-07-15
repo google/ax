@@ -26,7 +26,9 @@ import (
 	"github.com/google/ax/internal/harness/antigravity"
 	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/google/ax/internal/harness/substrate"
+	"github.com/google/ax/internal/skills"
 	"github.com/google/ax/internal/skills/geminienterprise"
+	"github.com/google/ax/internal/skills/local"
 )
 
 // Controller is the active controller type for this build.
@@ -67,20 +69,28 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	var defaultHarnessID string
 	var err error
 
-	// Materialize registry skills once, up front (skills config is top-level and
+	// Resolve skills once, up front (skills config is top-level and
 	// harness-agnostic; each actor runs a single harness that consumes the
-	// materialized folder). Unconditional when configured. Fail-safe: a registry
-	// error degrades capability but never blocks harness creation. The
-	// interactions harness (no SKILLS_DIR concept) is told where the materialized
-	// skills are via a pointer appended to its system instruction. Only the local
-	// path materializes; substrate/pod does not yet read ax.yaml.
+	// resulting folder). Two parallel sources feed the same result:
+	//   - Registries: fetched from the Gemini Enterprise Skill Registry and
+	//     materialized to their target_dir.
+	//   - Local: directories already on disk, used as-is.
+	// Both are unconditional when configured and fail-safe: a source error
+	// degrades capability but never blocks harness creation. The interactions
+	// harness (no SKILLS_DIR concept) is told where the skills are via a pointer
+	// appended to its system instruction. Only the local process path resolves
+	// skills; substrate/pod does not yet read ax.yaml.
 	//
 	// TODO(joycel): wire the Antigravity SDK harness too. It discovers skills via
-	// SKILLS_DIR, so its SKILLS_DIR needs to be pointed at the materialized
-	// target_dir; currently only the interactions harness is fully wired.
+	// SKILLS_DIR, so its SKILLS_DIR needs to be pointed at the resolved skill
+	// directories (registry target_dir(s) and/or local path(s)); currently only
+	// the interactions harness is fully wired.
 	var skillsPointer string
 	if !substrateMode {
-		skillsPointer = antigravityinteractions.SkillsSystemInstruction(geminienterprise.Materialize(ctx, cfg.Skills))
+		var avail skills.Available
+		avail.Groups = append(avail.Groups, geminienterprise.Materialize(ctx, cfg.Skills).Groups...)
+		avail.Groups = append(avail.Groups, local.Discover(cfg.Skills).Groups...)
+		skillsPointer = antigravityinteractions.SkillsSystemInstruction(avail)
 	}
 
 	// Built-in Antigravity harness.

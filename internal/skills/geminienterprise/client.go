@@ -144,7 +144,7 @@ type skillRef struct {
 // fetchResult reports the outcome of a fetch call. fetch is fail-safe: a skill
 // that cannot be fetched or unzipped is recorded in skipped.
 type fetchResult struct {
-	materialized []MaterializedSkill
+	materialized []materializedSkill
 	skipped      []skippedSkill
 }
 
@@ -215,7 +215,7 @@ func (c *client) resolveSelection(ctx context.Context, sel selection) ([]skillRe
 }
 
 // fetchAndWrite fetches one skill's payload (latest or pinned) and unzips it.
-func (c *client) fetchAndWrite(ctx context.Context, ref skillRef, targetDir string) (*MaterializedSkill, error) {
+func (c *client) fetchAndWrite(ctx context.Context, ref skillRef, targetDir string) (*materializedSkill, error) {
 	if ref.SkillID == "" {
 		return nil, errors.New("skill ref has empty SkillID")
 	}
@@ -237,7 +237,7 @@ func (c *client) fetchAndWrite(ctx context.Context, ref skillRef, targetDir stri
 		_ = os.RemoveAll(skillDir)
 		return nil, fmt.Errorf("unzipping: %w", err)
 	}
-	return &MaterializedSkill{SkillID: ref.SkillID, Revision: revision, Dir: skillDir}, nil
+	return &materializedSkill{SkillID: ref.SkillID, Revision: revision, Dir: skillDir}, nil
 }
 
 // fetchPayload returns the base64 zippedFilesystem and the concrete revision id
