@@ -31,15 +31,11 @@ from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
 
 
-
-
-
 from python.proto import ax_pb2
 from python.proto import ax_pb2_grpc
 from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
-
 
 # Fields that come from outside harness_config and must not be set through it:
 #   - conversation_id: taken from the runtime request (request.conversation_id).
@@ -60,6 +56,7 @@ class VertexKwargs(TypedDict, total=False):
     `total=False` so {} is a valid value (returned when env does not request
     Vertex). When populated, all three keys are present.
     """
+
     vertex: bool
     project: str
     location: str
@@ -67,10 +64,11 @@ class VertexKwargs(TypedDict, total=False):
 
 def _env_use_vertex() -> bool:
     """True if env requests the Vertex AI backend (vs. AI Studio API key)."""
-    return (
-        os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in ("true", "1") or
-        os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE", "").lower() in ("true", "1")
-    )
+    return os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in (
+        "true",
+        "1",
+    ) or os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE", "").lower() in ("true", "1")
+
 
 def _vertex_kwargs_from_env() -> VertexKwargs:
     """Returns LocalAgentConfig kwargs from GOOGLE_CLOUD_{PROJECT,LOCATION} env.
@@ -92,10 +90,12 @@ def _vertex_kwargs_from_env() -> VertexKwargs:
     location = os.environ.get("GOOGLE_CLOUD_LOCATION", "")
 
     missing = [
-        name for name, value in (
+        name
+        for name, value in (
             ("project (set GOOGLE_CLOUD_PROJECT)", project),
             ("location (set GOOGLE_CLOUD_LOCATION)", location),
-        ) if not value
+        )
+        if not value
     ]
     if missing:
         raise ValueError(
@@ -105,6 +105,7 @@ def _vertex_kwargs_from_env() -> VertexKwargs:
 
     print(f"Vertex AI backend configured: project={project} location={location}")
     return {"vertex": True, "project": project, "location": location}
+
 
 def _build_default_config() -> LocalAgentConfig:
     """Builds the default agent config the sidecar serves on startup.
@@ -119,6 +120,7 @@ def _build_default_config() -> LocalAgentConfig:
         system_instructions="You are a helpful agent.",
         **_vertex_kwargs_from_env(),
     )
+
 
 def _has_credentials(config: AgentConfig | None) -> bool:
     """Checks if Gemini credentials are set per AGY's accepted sources.
@@ -149,6 +151,7 @@ def _has_credentials(config: AgentConfig | None) -> bool:
 
     return False
 
+
 def _existing_sdk_conv_id(save_dir: str) -> str | None:
     # SDK persists each conversation as {save_dir}/{sdk_conv_id}.db where sdk_conv_id
     # is SDK-picked (a hash), not our AX conversation_id. We give each AX conversation
@@ -173,9 +176,7 @@ def _reject_disallowed_fields(overrides: dict[str, object]) -> None:
         )
     unknown = sorted(set(overrides) - set(LocalAgentConfig.model_fields))
     if unknown:
-        raise HarnessConfigError(
-            f"unknown config field(s): {', '.join(unknown)}"
-        )
+        raise HarnessConfigError(f"unknown config field(s): {', '.join(unknown)}")
 
 
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
@@ -212,8 +213,10 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
 
         # Reconstruct (not model_copy) so the SDK re-validates overlaid values
         # and surfaces its own error.
-        values = {name: getattr(self._default_config, name)
-                  for name in self._default_config.model_fields_set}
+        values = {
+            name: getattr(self._default_config, name)
+            for name in self._default_config.model_fields_set
+        }
         values.update(overrides)
         try:
             return LocalAgentConfig(**values)
@@ -226,13 +229,13 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         async for request in request_iterator:
             if request.WhichOneof("type") != "start":
                 continue  # cancel frames not handled yet
-            
+
             async for response in self._run_turn(request):
                 yield response
 
     async def _run_turn(self, request):
         print(f"[gRPC] Connect turn requested. conv_id={request.conversation_id}")
-        
+
         # 1. Retrieve and check messages
         ax_messages = request.start.messages
         if not ax_messages:
@@ -247,10 +250,10 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 ),
             )
             return
-            
+
         latest_message = ax_messages[-1]
-        
-        if latest_message.content.WhichOneof('type') != 'text':
+
+        if latest_message.content.WhichOneof("type") != "text":
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
@@ -263,7 +266,7 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
         latest_query_text = latest_message.content.text.text
-        
+
         if not self._default_config:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
@@ -280,33 +283,37 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             per_conv_config = self._build_config_for(
                 request.conversation_id, request.start.harness_config
             )
-            print(f"[gRPC] Starting Agent for conv_id={request.conversation_id}, save_dir={per_conv_config.save_dir}")
+            print(
+                f"[gRPC] Starting Agent for conv_id={request.conversation_id}, save_dir={per_conv_config.save_dir}"
+            )
             async with Agent(per_conv_config) as agent:
                 conversation = agent.conversation
 
                 print(f"[gRPC] Running chat query: {latest_query_text}")
                 response = await conversation.chat(latest_query_text)
-            
+
                 # To avoid streaming individual tokens inside TextContent messages (which is not
                 # supported by the Interactions proto/TextContent specifications), we buffer
-                # contiguous blocks of text and thought chunks, yielding them only when the 
+                # contiguous blocks of text and thought chunks, yielding them only when the
                 # contiguous block ends or a different chunk type is received.
                 text_chunks = []
                 thought_chunks = []
-            
+
                 def flush_text():
                     if not text_chunks:
                         return None
                     msg = ax_pb2.Message(
                         role="assistant",
-                        content=content_pb2.Content(text=content_pb2.TextContent(text="".join(text_chunks)))
+                        content=content_pb2.Content(
+                            text=content_pb2.TextContent(text="".join(text_chunks))
+                        ),
                     )
                     text_chunks.clear()
                     return ax_pb2.HarnessResponse(
                         conversation_id=request.conversation_id,
-                        outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                        outputs=ax_pb2.HarnessOutputs(messages=[msg]),
                     )
-                
+
                 def flush_thought():
                     if not thought_chunks:
                         return None
@@ -319,69 +326,73 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                     # or answer text). Without the trailing newline the display's
                     # transition logic emits only one newline, gluing blocks together.
                     raw_text = "".join(thought_chunks)
-                    clean_text = re.sub(r'\n{3,}', '\n\n', raw_text).rstrip() + '\n'
+                    clean_text = re.sub(r"\n{3,}", "\n\n", raw_text).rstrip() + "\n"
 
                     summary = [
-                        content_pb2.ThoughtSummaryContent(text=content_pb2.TextContent(text=clean_text))
+                        content_pb2.ThoughtSummaryContent(
+                            text=content_pb2.TextContent(text=clean_text)
+                        )
                     ]
                     thought_chunks.clear()
                     msg = ax_pb2.Message(
                         role="model",
-                        content=content_pb2.Content(thought=content_pb2.ThoughtContent(summary=summary))
+                        content=content_pb2.Content(
+                            thought=content_pb2.ThoughtContent(summary=summary)
+                        ),
                     )
                     return ax_pb2.HarnessResponse(
                         conversation_id=request.conversation_id,
-                        outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                        outputs=ax_pb2.HarnessOutputs(messages=[msg]),
                     )
-            
+
                 async for chunk in response.chunks:
                     if isinstance(chunk, Text):
-                        if (resp := flush_thought()):
+                        if resp := flush_thought():
                             yield resp
                         text_chunks.append(chunk.text)
                     elif isinstance(chunk, Thought):
-                        if (resp := flush_text()):
+                        if resp := flush_text():
                             yield resp
                         thought_chunks.append(chunk.text)
                     elif isinstance(chunk, ToolCall):
                         # Flush all pending text/thought buffers before dispatching the tool call
-                        if (resp := flush_text()):
+                        if resp := flush_text():
                             yield resp
-                        if (resp := flush_thought()):
+                        if resp := flush_thought():
                             yield resp
-                    
+
                         struct_args = Struct()
                         struct_args.update(chunk.args)
-                    
+
                         func_call = content_pb2.FunctionCallContent(
-                            name=str(chunk.name),
-                            arguments=struct_args
+                            name=str(chunk.name), arguments=struct_args
                         )
                         msg = ax_pb2.Message(
                             role="model",
-                            content=content_pb2.Content(tool_call=content_pb2.ToolCallContent(
-                                id=chunk.id or "",
-                                function_call=func_call
-                            ))
+                            content=content_pb2.Content(
+                                tool_call=content_pb2.ToolCallContent(
+                                    id=chunk.id or "", function_call=func_call
+                                )
+                            ),
                         )
                         yield ax_pb2.HarnessResponse(
                             conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg])
+                            outputs=ax_pb2.HarnessOutputs(messages=[msg]),
                         )
-            
+
                 # Flush any remaining text/thought buffers after the generator loop ends
-                if (resp := flush_text()):
+                if resp := flush_text():
                     yield resp
-                if (resp := flush_thought()):
+                if resp := flush_thought():
                     yield resp
-                        
+
                 # Yield completion end frame
                 yield ax_pb2.HarnessResponse(
                     conversation_id=request.conversation_id,
-                    end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_COMPLETED)
+                    end=ax_pb2.HarnessEnd(state=ax_pb2.STATE_COMPLETED),
                 )
                 print("[gRPC] Turn completed successfully.")
-            
+
         except HarnessConfigError as exc:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
@@ -408,7 +419,10 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
 
-async def _serve(host: str, port: int, default_config: AgentConfig, state_dir: pathlib.Path):
+
+async def _serve(
+    host: str, port: int, default_config: AgentConfig, state_dir: pathlib.Path
+):
     server = grpc.aio.server()
     servicer = AntigravityHarnessServiceServicer(default_config, state_dir)
     ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
@@ -417,12 +431,13 @@ async def _serve(host: str, port: int, default_config: AgentConfig, state_dir: p
     health_servicer = health.aio.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
     await health_servicer.set("", health_pb2.HealthCheckResponse.SERVING)
-    
+
     listen_addr = f"{host}:{port}"
     server.add_insecure_port(listen_addr)
     print(f"Starting gRPC harness server on {listen_addr}...")
     await server.start()
     await server.wait_for_termination()
+
 
 def _enhance_config_from_env(config) -> None:
     skills_dir = os.environ.get("SKILLS_DIR")
@@ -433,6 +448,7 @@ def _enhance_config_from_env(config) -> None:
         config.skills_paths = list(config.skills_paths)
         if skills_dir not in config.skills_paths:
             config.skills_paths.append(skills_dir)
+
 
 def _resolve_localhost():
     """Ensure `localhost` resolves to 127.0.0.1.
@@ -451,14 +467,24 @@ def _resolve_localhost():
         with open("/etc/hosts", "a") as f:
             f.write("127.0.0.1\tlocalhost\n")
     except OSError as e:
-        print(f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr)
+        print(
+            f"WARNING: could not ensure localhost in /etc/hosts: {e}", file=sys.stderr
+        )
 
 
 def main():
     parser = argparse.ArgumentParser(description="Antigravity gRPC Harness Server")
-    parser.add_argument("--port", type=int, default=50053, help="Port to bind the server to")
-    parser.add_argument("--host", default="localhost", help="Host to bind the server to")
-    parser.add_argument("--state-dir", default=str(pathlib.Path.home() / ".ax" / "antigravity" / "conversations"), help="Base directory for per-conversation trajectory storage")
+    parser.add_argument(
+        "--port", type=int, default=50053, help="Port to bind the server to"
+    )
+    parser.add_argument(
+        "--host", default="localhost", help="Host to bind the server to"
+    )
+    parser.add_argument(
+        "--state-dir",
+        default=str(pathlib.Path.home() / ".ax" / "antigravity" / "conversations"),
+        help="Base directory for per-conversation trajectory storage",
+    )
     args = parser.parse_args()
 
     try:
@@ -478,8 +504,16 @@ def main():
     # This is a hack, on Agent Substrate /etc/hosts end up not
     # having this entry even if it's the OCI image.
     _resolve_localhost()
-        
-    asyncio.run(_serve(args.host, args.port, default_config, pathlib.Path(args.state_dir).expanduser()))
+
+    asyncio.run(
+        _serve(
+            args.host,
+            args.port,
+            default_config,
+            pathlib.Path(args.state_dir).expanduser(),
+        )
+    )
+
 
 if __name__ == "__main__":
     main()
