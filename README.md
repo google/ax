@@ -114,19 +114,45 @@ use. For more details on setup and configuration, see the
 Read more about [this new layer](https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate)
 that provides higher density to agentic workloads on Kubernetes.
 
-## Quick Start
+### Built-in Antigravity harness
 
-### 1. Execute
+Antigravity SDK is a reference harness implementation. Local execution needs
+`python3` and `pip` available on your `PATH`. AX handles the rest: on first
+`ax exec` it starts the harness server as a Python sidecar and installs the
+pinned Antigravity SDK dependencies for you.
 
-The CLI provides an easy way to execute by using the
-agents and built-in tools already linked into the AX binary.
+## Authentication
+
+The built-in Antigravity harness supports Google AI Studio and Vertex AI.
+
+For Google AI Studio, set a Gemini API key:
 
 ```bash
-# Using default ax.yaml
-ax exec --input "Can you list me this directory?"
+export GEMINI_API_KEY="your-api-key"
+```
+
+For Vertex AI, configure Application Default Credentials and the target project
+and location:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+export GOOGLE_GENAI_USE_VERTEXAI=true
+```
+
+## Quick Start
+
+### Execute
+
+The CLI starts the built-in Antigravity harness automatically. No separate harness server setup is required.
+
+```bash
+# Using the checked-in ax.yaml, which sets Antigravity as the default harness.
+ax exec --input "Can you list this directory?"
 
 # Using exec with an AX server
-ax exec --input "Can you list me this directory?" --server localhost:8494
+ax exec --input "Can you list this directory?" --server localhost:8494
 ```
 
 Conversations can be continued any time:
@@ -159,7 +185,7 @@ ax exec \
   --input "Can you write me a simple HTTP server in Python?"
 ```
 
-If anything goes wrong during the execution of an agent,
+If anything goes wrong during the execution of a harness,
 you can resume an incomplete execution in a conversation:
 ```bash
 ax exec \
@@ -180,6 +206,8 @@ ax exec \
     [--input <text>] \
     [--conversation <id>] \
     [--harness <id>] \
+    [--harness-config <file.json>] \
+    [--harness-config-json <json>] \
     [--server <address>] \
     [--config <file>] \
     [--resume] \
@@ -192,6 +220,8 @@ Options:
 - `--input`: Input message to send to agents (optional if `--resume` is set, otherwise required)
 - `--conversation`: Conversation ID (optional, generates UUID if not provided, or resumes if exists)
 - `--harness`: Harness ID to use (optional, defaults to the default harness)
+- `--harness-config`: Path to a JSON file with per-request harness configuration (optional)
+- `--harness-config-json`: Per-request harness configuration as an inline JSON string (optional, mutually exclusive with `--harness-config`)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
 - `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
@@ -211,6 +241,14 @@ ax exec --server localhost:8494 --input "Hello agents!"
 
 # Execute using a specific harness
 ax exec --harness antigravity --input "Write me a cool Go program!"
+
+# Execute with per-request harness config
+ax exec \
+  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
+  --input "Explain durable execution."
+
+# To keep the same JSON in a file, use `--harness-config` instead:
+ax exec --harness-config antigravity.json --input "Explain durable execution."
 ```
 
 ### Serve
@@ -243,21 +281,6 @@ ax serve
 
 # Start server with custom config
 ax serve --config my-config.yaml
-```
-
-### Authentication
-
-The built-in Antigravity agent supports authentication using either Google AI Studio or Vertex AI:
-
-```bash
-# AI Studio API key based authentication.
-export GEMINI_API_KEY="your-api-key"
-
-# Vertex AI based authentication, ensure application
-# default credentials are set up, gcloud auth application-default login.
-export GOOGLE_CLOUD_PROJECT="your-project-id"
-export GOOGLE_CLOUD_LOCATION="us-central1"
-export GOOGLE_GENAI_USE_VERTEXAI=True
 ```
 
 ## Extensions
