@@ -274,8 +274,36 @@ language models can be implemented as harnesses.
 
 ### Skills
 
-Built-in harnesses like Antigravity includes built-in support for
-Agent Skills. See [Skills](examples/skills) for more.
+Built-in harnesses support [Agent Skills](https://agentskills.io).
+
+**Local skills.** The Antigravity SDK harness discovers skills from a local
+directory named by the `SKILLS_DIR` environment variable. See
+[examples/skills](examples/skills) for sample skills.
+
+**Registry skills (experimental).** AX can also materialize skills from the
+Gemini Enterprise Skill Registry into on-disk folders before the harness
+starts, configured under a top-level `skills:` block in `ax.yaml`. Each skill
+is written to `<target_dir>/<skill-id>/`:
+
+```yaml
+skills:
+  registries:
+    - enabled: true
+      project: "my-gcp-project"   # optional; falls back to GOOGLE_CLOUD_PROJECT
+      location: "us-central1"     # optional; falls back to GOOGLE_CLOUD_LOCATION
+      target_dir: "./skills"      # required when enabled
+      # Choose exactly one selection mode:
+      all: true                   # every skill in the project/location
+      # skills:                   # or an explicit allowlist:
+      #   - id: my-skill
+      #     revision: "3"         # optional; pins a revision
+      # query:                    # or a semantic search:
+      #   text: "pdf tools"
+      #   top_k: 5                # optional
+```
+
+Registry sourcing is fail-safe: a registry error never blocks harness
+startup.
 
 ### MCP Tools
 
