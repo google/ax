@@ -138,14 +138,10 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 		}
 	}
 
-	// Register the configured default harness.
+	// Set the default harness.
 	if defaultHarnessID != "" {
-		h, err := reg.Harness(defaultHarnessID)
-		if err != nil {
-			return nil, fmt.Errorf("default harness %q not found", defaultHarnessID)
-		}
-		if err := reg.RegisterHarness("", h); err != nil {
-			return nil, fmt.Errorf("register default harness %q: %w", defaultHarnessID, err)
+		if err := reg.SetDefaultHarness(defaultHarnessID); err != nil {
+			return nil, fmt.Errorf("set default harness %q: %w", defaultHarnessID, err)
 		}
 	}
 

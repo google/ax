@@ -23,8 +23,9 @@ import (
 
 // Registry manages a collection of harnesses.
 type Registry struct {
-	mu        sync.RWMutex
-	harnesses map[string]harness.Harness
+	mu             sync.RWMutex
+	harnesses      map[string]harness.Harness
+	defaultHarness string
 }
 
 // NewRegistry creates a new harness registry.
@@ -34,13 +35,10 @@ func NewRegistry() *Registry {
 	}
 }
 
-// RegisterHarness registers a harness under the given id. An empty id registers
-// the harness as the default, used when a request specifies no agent id.
+// RegisterHarness registers a harness under the given id.
 func (r *Registry) RegisterHarness(id string, h harness.Harness) error {
-	if id != "" {
-		if err := validateID(id); err != nil {
-			return err
-		}
+	if err := validateID(id); err != nil {
+		return err
 	}
 
 	r.mu.Lock()
@@ -62,6 +60,17 @@ func (r *Registry) Harness(id string) (harness.Harness, error) {
 		return nil, fmt.Errorf("harness %s not found", id)
 	}
 	return h, nil
+}
+
+// SetDefaultHarness marks a registered harness id as the default.
+func (r *Registry) SetDefaultHarness(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.harnesses[id]; !ok {
+		return fmt.Errorf("harness %q not found", id)
+	}
+	r.defaultHarness = id
+	return nil
 }
 
 // Close releases resources held by the registry.

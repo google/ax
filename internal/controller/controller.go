@@ -73,15 +73,31 @@ func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler E
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
-	h, err := d.registry.Harness(req.HarnessId)
-	if err != nil {
-		return fmt.Errorf("failed to get harness %q: %w", req.HarnessId, err)
-	}
-
 	l := newLogger(d.eventLog, req.ConversationId, req.HarnessId)
-	state, err := l.ResumptionState(ctx)
+	state, storedHarnessID, err := l.ResumptionState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check resumption state: %w", err)
+	}
+
+	// On resume, use the conversation's recorded harness. Using a different harness
+	// for the same conversation is not allowed.
+	if req.HarnessId != "" && storedHarnessID != "" && req.HarnessId != storedHarnessID {
+		return fmt.Errorf("resumption not allowed: harness ID changed from %s to %s", storedHarnessID, req.HarnessId)
+	}
+	harnessID := req.HarnessId
+	// Use the conversations's stored harness if no harness is specified.
+	if harnessID == "" {
+		harnessID = storedHarnessID
+	}
+	// For new conversations, use the default harness if no harness is specified.
+	if harnessID == "" {
+		harnessID = d.registry.defaultHarness
+	}
+	l.harnessID = harnessID
+
+	h, err := d.registry.Harness(harnessID)
+	if err != nil {
+		return fmt.Errorf("failed to get harness %q: %w", harnessID, err)
 	}
 
 	hhandler := &harnessHandler{
@@ -207,16 +223,18 @@ type logger struct {
 	harnessID      string
 }
 
-func (l *logger) ResumptionState(ctx context.Context) (proto.State, error) {
+// ResumptionState returns the conversation's current state and the harness it used.
+func (l *logger) ResumptionState(ctx context.Context) (proto.State, string, error) {
 	events, err := l.el.Events(ctx, l.conversationID)
 	if err != nil {
-		return proto.State_STATE_UNSPECIFIED, err
+		return proto.State_STATE_UNSPECIFIED, "", err
 	}
 
 	var state proto.State
+	var harnessID string
 	for _, ev := range events {
-		if ev.HarnessId != "" && ev.HarnessId != l.harnessID {
-			return proto.State_STATE_UNSPECIFIED, fmt.Errorf("resumption not allowed: harness ID changed from %s to %s", ev.HarnessId, l.harnessID)
+		if harnessID == "" && ev.HarnessId != "" {
+			harnessID = ev.HarnessId
 		}
 		if l.execID == "" || ev.ExecId == l.execID {
 			if ev.State != proto.State_STATE_UNSPECIFIED {
@@ -224,7 +242,7 @@ func (l *logger) ResumptionState(ctx context.Context) (proto.State, error) {
 			}
 		}
 	}
-	return state, nil
+	return state, harnessID, nil
 }
 
 func (l *logger) LogInputs(ctx context.Context, inputs []*proto.Message, harnessConfig []byte) (int32, error) {

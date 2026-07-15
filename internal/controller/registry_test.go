@@ -45,9 +45,9 @@ func TestRegistry_RegisterHarness(t *testing.T) {
 		t.Error("expected error registering invalid id, got nil")
 	}
 
-	// Empty id (the default) bypasses validation and is allowed.
-	if err := r.RegisterHarness("", h); err != nil {
-		t.Fatalf("RegisterHarness(default): %v", err)
+	// Empty id is reserved for the default harness.
+	if err := r.RegisterHarness("", h); err == nil {
+		t.Error("expected error registering empty id, got nil")
 	}
 }
 
@@ -63,5 +63,25 @@ func TestRegistry_FindHarness(t *testing.T) {
 	}
 	if _, err := r.Harness("missing"); err == nil {
 		t.Error("expected error looking up missing harness, got nil")
+	}
+}
+
+func TestRegistry_SetDefaultHarness(t *testing.T) {
+	r := NewRegistry()
+	if err := r.RegisterHarness("antigravity", &dummyHarness{}); err != nil {
+		t.Fatalf("RegisterHarness: %v", err)
+	}
+
+	// An unregistered id is rejected.
+	if err := r.SetDefaultHarness("missing"); err == nil {
+		t.Error("SetDefaultHarness(missing): expected error, got nil")
+	}
+
+	// A registered id becomes the default.
+	if err := r.SetDefaultHarness("antigravity"); err != nil {
+		t.Fatalf("SetDefaultHarness(antigravity): %v", err)
+	}
+	if r.defaultHarness != "antigravity" {
+		t.Errorf("defaultHarness = %q, want %q", r.defaultHarness, "antigravity")
 	}
 }

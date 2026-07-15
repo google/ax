@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/controller/eventlog"
@@ -72,7 +73,10 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 
 	log := &eventlogtest.MemoryEventLog{}
 	reg := NewRegistry()
-	if err := reg.RegisterHarness("", &fakeHarness{}); err != nil {
+	if err := reg.RegisterHarness("default-harness", &fakeHarness{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.SetDefaultHarness("default-harness"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -513,4 +517,149 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 			t.Errorf("expected second session to have 1 Run call, got %d", execs[1].runCalls)
 		}
 	})
+}
+
+// A conversation started on one harness must resume on that harness when the
+// harness id is empty, not fall back to the registry default.
+func TestExec_ResumeEmptyHarnessUsesStored(t *testing.T) {
+	ctx := context.Background()
+	cid := "resume-empty"
+	log := &eventlogtest.MemoryEventLog{}
+	reg := NewRegistry()
+
+	def := &testHarness{startFunc: func(context.Context, string) (harness.Execution, error) {
+		return &testExecution{}, nil
+	}}
+	stored := &testHarness{startFunc: func(context.Context, string) (harness.Execution, error) {
+		return &testExecution{}, nil
+	}}
+	if err := reg.RegisterHarness("harness-a", def); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RegisterHarness("harness-b", stored); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.SetDefaultHarness("harness-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := New(ctx, Config{
+		Registry:        reg,
+		EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+
+	// Turn 1: explicitly run the NON-default harness.
+	if err := c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		HarnessId:      "harness-b",
+		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
+	}, noop); err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+
+	// Turn 2: resume WITHOUT a harness id. Must reuse harness-b, not the default.
+	before := stored.startCalls
+	if err := c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
+	}, noop); err != nil {
+		t.Fatalf("turn 2 (resume, empty harness): %v", err)
+	}
+	if stored.startCalls <= before {
+		t.Errorf("stored harness not used on resume (startCalls stayed %d)", stored.startCalls)
+	}
+	if def.startCalls != 0 {
+		t.Errorf("default harness used on resume (startCalls=%d), want the stored harness", def.startCalls)
+	}
+}
+
+// Verifies that an explicit harness change during resume is rejected.
+func TestExec_ResumeExplicitDifferentHarnessRejected(t *testing.T) {
+	ctx := context.Background()
+	cid := "resume-mismatch"
+	log := &eventlogtest.MemoryEventLog{}
+	reg := NewRegistry()
+	if err := reg.RegisterHarness("harness-a", &testHarness{startFunc: func(context.Context, string) (harness.Execution, error) {
+		return &testExecution{}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.RegisterHarness("harness-b", &testHarness{startFunc: func(context.Context, string) (harness.Execution, error) {
+		return &testExecution{}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := New(ctx, Config{
+		Registry:        reg,
+		EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+
+	if err := c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		HarnessId:      "harness-a",
+		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
+	}, noop); err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	err = c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		HarnessId:      "harness-b",
+		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
+	}, noop)
+	if err == nil || !strings.Contains(err.Error(), "harness ID changed from harness-a to harness-b") {
+		t.Fatalf("resume with a different harness: got %v, want error 'harness ID changed from harness-a to harness-b'", err)
+	}
+}
+
+// Verifies that a new conversation started without a harness id records the
+// default harness's canonical id, not "".
+func TestExec_NewConversationLogsCanonicalDefault(t *testing.T) {
+	ctx := context.Background()
+	cid := "canonical-log"
+	log := &eventlogtest.MemoryEventLog{}
+	reg := NewRegistry()
+	if err := reg.RegisterHarness("harness-a", &testHarness{startFunc: func(context.Context, string) (harness.Execution, error) {
+		return &testExecution{}, nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.SetDefaultHarness("harness-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := New(ctx, Config{
+		Registry:        reg,
+		EventLogBuilder: func() (eventlog.EventLog, error) { return log, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	if err := c.Exec(ctx, &proto.ExecRequest{
+		ConversationId: cid,
+		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
+	}, ExecHandler(func(*proto.ExecResponse) error { return nil })); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	_, stored, err := newLogger(log, cid, "").ResumptionState(ctx)
+	if err != nil {
+		t.Fatalf("ResumptionState: %v", err)
+	}
+	if stored != "harness-a" {
+		t.Errorf("logged harness id = %q, want canonical %q (not empty)", stored, "harness-a")
+	}
 }
