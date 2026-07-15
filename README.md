@@ -25,6 +25,7 @@ and execution resumption, even in distributed setups.
 - **Resumption**: Automatic recovery from failures or interruptions
 - **Built-in Harnesses**: Support for frontier harnesses and custom implementations
 - **Auditing & Policy**: All user and agentic calls are coordinated by a common controller, easy to control and audit the overall execution and skill/tool/agent calls
+- **Tool-Call Approvals**: Harnesses can pause for human approve/decline of tool calls, via the CLI and dashboard
 - **Portability**: Runs anywhere, scales to small and large deployments
 - **Customizability**: Agnostic of harness and model
 
@@ -300,7 +301,6 @@ Below is an overview of our upcoming features and planned changes:
 
 1. Support for more frontier harnesses besides Antigravity
 1. Support for BYOH (Bring Your Own Harness)
-1. Support for tool call approvals from harnesses
 1. Improvements to resumption protocols
 1. Forking from event log and snapshots
 1. Trajectory exposition
