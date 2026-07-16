@@ -244,7 +244,7 @@ ax exec --harness antigravity --input "Write me a cool Go program!"
 
 # Execute with per-request harness config
 ax exec \
-  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-2.5-pro"}' \
+  --harness-config-json '{"system_instructions":"Answer in one sentence.","model":"gemini-3.5-flash"}' \
   --input "Explain durable execution."
 
 # To keep the same JSON in a file, use `--harness-config` instead:
