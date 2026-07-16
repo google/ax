@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/config"
+	"github.com/google/ax/internal/harness/antigravity"
 	"github.com/google/ax/internal/harness/antigravityinteractions"
 	"github.com/google/ax/internal/pythonsidecar"
 	"github.com/spf13/cobra"
@@ -102,11 +103,17 @@ func runAntigravityHarness(cmd *cobra.Command) error {
 		return err
 	}
 
+	stateDir, err := antigravity.DefaultStateDir()
+	if err != nil {
+		return fmt.Errorf("failed to resolve antigravity state dir: %w", err)
+	}
+
 	cfg := pythonsidecar.Config{
 		Module: "python.antigravity.harness_server",
 		Args: []string{
 			"--host", harnessHost,
 			"--port", strconv.Itoa(harnessPort),
+			"--state-dir", stateDir,
 		},
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
