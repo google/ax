@@ -163,18 +163,19 @@ ax exec \
   --input "Show me the contents of README.md"
 ```
 
-If the client gets disconnected, pass the last sequence it saw to
-replay the events it missed. This catches the client up; it does not
-rewind the conversation.
-
-In this example, we catch up a client from sequence number 12:
+If an execution is interrupted (for example, the client disconnects while
+the harness is still running), re-run the incomplete execution with
+`--resume` and the same conversation ID:
 
 ```bash
 ax exec \
   --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
-  --last-seq 12 \
   --resume
 ```
+
+`--resume` only re-runs an execution that is still pending. If the previous
+execution already finished, it is a no-op; send a new `--input` to continue
+the conversation.
 
 Instead of running the default harness, you can start executing
 any registered harness:
@@ -224,8 +225,10 @@ Options:
 - `--harness-config-json`: Per-request harness configuration as an inline JSON string (optional, mutually exclusive with `--harness-config`)
 - `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
 - `--config`: Path to YAML configuration file (only used with a local built-in AX server, default: "ax.yaml")
-- `--resume`: Resume a conversation without inputs (optional, mutually exclusive with `--input`)
-- `--last-seq`: Last sequence number seen by the client to resume from (optional). The server replays any later events so the client can catch up after a disconnect.
+- `--resume`: Re-run an interrupted (still pending) execution without new inputs (optional, mutually exclusive with `--input`); a no-op if the previous execution already finished
+- `--last-seq`: Last sequence number seen by the client (optional). Reserved for
+  replaying events a disconnected client missed; the server does not currently
+  act on it. To re-run an interrupted (still pending) execution, use `--resume`.
 
 **Examples:**
 
