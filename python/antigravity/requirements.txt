@@ -1,4 +1,4 @@
 # Runtime dependencies for the antigravity HarnessService server
 # (python/antigravity/harness_server.py).
-google-antigravity==0.1.5
+google-antigravity==0.1.7
 grpcio-health-checking==1.81.0
