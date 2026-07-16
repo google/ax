@@ -98,6 +98,8 @@ spec:
           value: "${GOOGLE_CLOUD_PROJECT}"
         - name: AX_HARNESS_WORKDIR
           value: "/workspace"
+        - name: AX_DURABLE_DIR
+          value: "/workspace"
         # Content of manifests/ax.yaml
         - name: AX_CONFIG_CONTENT
           value: "${AX_CONFIG_CONTENT}"
@@ -105,8 +107,16 @@ spec:
         httpGet:
           path: /readyz
           port: 8081
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+  volumes:
+    - name: workspace
+      durableDir: {}
   snapshotsConfig:
     location: gs://${AX_SNAPSHOTS_BUCKET}/axinteractions/
+    onPause: Data
+    onCommit: Data
 ---
 
 # ---------------------------------------------------------------------------

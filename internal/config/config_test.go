@@ -15,6 +15,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -342,6 +344,35 @@ func TestValidate_SkillsSelectionOneof(t *testing.T) {
 		err := c.Validate()
 		if err == nil || !strings.Contains(err.Error(), "registries[1]") {
 			t.Fatalf("Validate() = %v, want error citing registries[1]", err)
+		}
+	})
+}
+
+func TestAXAssetsDir(t *testing.T) {
+	t.Run("durable-dir env roots the .ax tree on the volume", func(t *testing.T) {
+		t.Setenv("AX_DURABLE_DIR", "/mnt/durable")
+		got, err := AXAssetsDir()
+		if err != nil {
+			t.Fatalf("AXAssetsDir: %v", err)
+		}
+		want := filepath.Join("/mnt/durable", ".ax")
+		if got != want {
+			t.Errorf("AXAssetsDir() = %q, want %q", got, want)
+		}
+	})
+	t.Run("unset roots under the home directory", func(t *testing.T) {
+		t.Setenv("AX_DURABLE_DIR", "")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Skipf("no home directory: %v", err)
+		}
+		got, err := AXAssetsDir()
+		if err != nil {
+			t.Fatalf("AXAssetsDir: %v", err)
+		}
+		want := filepath.Join(home, ".ax")
+		if got != want {
+			t.Errorf("AXAssetsDir() = %q, want %q", got, want)
 		}
 	})
 }

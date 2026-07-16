@@ -324,6 +324,9 @@ func (c *Config) Validate() error {
 }
 
 func AXAssetsDir() (string, error) {
+	if dir := os.Getenv("AX_DURABLE_DIR"); dir != "" {
+		return filepath.Join(dir, ".ax"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving home directory: %w", err)
