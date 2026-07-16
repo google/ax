@@ -365,6 +365,15 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler harn
 		return fmt.Errorf("Run called with no queued input and no work pending")
 	}
 
+	// Set the working directory for this execution. Substrate resets the
+	// process cwd to the OCI spec's root directory, "/" after gVisor
+	// restore. We need to explicitly set it for each execution.
+	if workDir := os.Getenv("AX_HARNESS_WORKDIR"); workDir != "" {
+		if err := os.Chdir(workDir); err != nil {
+			return fmt.Errorf("set working directory %q: %w", workDir, err)
+		}
+	}
+
 	res, err := e.harness.postTurn(ctx, token, e.harness.newRequest(input, prevID))
 	if err != nil {
 		return fmt.Errorf("interaction turn failed: %w", err)
