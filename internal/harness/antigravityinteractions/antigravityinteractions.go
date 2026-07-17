@@ -159,12 +159,12 @@ func cloudLocation() string {
 	return defaultLocation
 }
 
-// DefaultStateDir returns the default resume-cursor directory, ~/.ax/antigravityinteractions/cursors,
-// used when a caller does not set StateDir explicitly. It lives outside the
-// agent's working directory on purpose: the working directory is the agent's
-// operating surface (it reads and edits files there), so AX's internal state is
-// kept separate to avoid the agent seeing or clobbering it. New still requires a
-// non-empty StateDir; callers apply this default.
+// DefaultStateDir returns the default resume-cursor directory, <AXAssetsDir>/
+// antigravityinteractions/cursors, used when a caller does not set StateDir
+// explicitly. Locally that is ~/.ax/...; on a substrate actor AXAssetsDir roots
+// under the workspace, so the cursor lives in a hidden ".ax" subtree on the same
+// durableDir as the agent's files. New still requires a non-empty StateDir;
+// callers apply this default.
 func DefaultStateDir() (string, error) {
 	axDir, err := config.AXAssetsDir()
 	if err != nil {

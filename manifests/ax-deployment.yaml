@@ -98,8 +98,6 @@ spec:
           value: "${GOOGLE_CLOUD_PROJECT}"
         - name: AX_HARNESS_WORKDIR
           value: "/workspace"
-        - name: AX_DURABLE_DIR
-          value: "/workspace"
         # Content of manifests/ax.yaml
         - name: AX_CONFIG_CONTENT
           value: "${AX_CONFIG_CONTENT}"
