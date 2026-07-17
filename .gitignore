@@ -1,17 +1,8 @@
 bin/*
 eventlog/*
 /ax
-local_agent
-remote_agent
 *.log
 ax-bin
-google-cloud-cli-darwin-arm.tar.gz
-google-cloud-sdk/
-test-sandbox-config.yaml
-sandbox-router
-examples/sandbox_agent/cloudbuild.yaml
-tasklog/*
 python/__pycache__
 python/proto/__pycache__
-/axepp
 __pycache__/
