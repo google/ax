@@ -60,12 +60,6 @@ make proto
 make test
 ```
 
-### Run remote agent
-
-```bash
-make run-remote
-```
-
 ### Install the ax CLI
 
 ```bash

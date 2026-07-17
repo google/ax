@@ -1,4 +1,4 @@
-.PHONY: all build proto test test-python clean install
+.PHONY: all build proto test test-python clean install deps clean-logs
 
 # Build all binaries
 all: proto build
