@@ -30,7 +30,7 @@ jobs:
       - name: Check for binary files in PR
         run: |
           git fetch origin ${{ github.base_ref }}
-          BINARIES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '$1 == "-" || $2 == "-" {print $3}')
+          BINARIES=$(git diff --numstat --diff-filter=ACM origin/${{ github.base_ref }}...HEAD | awk '$1 == "-" || $2 == "-" {print $3}')
 
           if [ -n "$BINARIES" ]; then
             echo "::error::Binary files are not allowed to be committed in PRs. Found:"
