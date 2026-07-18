@@ -103,7 +103,6 @@ def _has_credentials(config: AgentConfig | None) -> bool:
       3. Vertex requested (config.vertex or GOOGLE_GENAI_USE_VERTEXAI /
          GOOGLE_GENAI_USE_ENTERPRISE) + GOOGLE_CLOUD_{PROJECT,LOCATION}.
       4. Vertex requested + config.api_key set (Express Mode; covered by 2).
-
     """
     # Check env - AGY reads GEMINI_API_KEY directly from os.environ.
     if os.environ.get("GEMINI_API_KEY"):
