@@ -104,9 +104,6 @@ def _has_credentials(config: AgentConfig | None) -> bool:
          GOOGLE_GENAI_USE_ENTERPRISE) + GOOGLE_CLOUD_{PROJECT,LOCATION}.
       4. Vertex requested + config.api_key set (Express Mode; covered by 2).
 
-    As of google-antigravity 0.1.7 the SDK hydrates project/location onto
-    the VertexEndpoint, not the LocalAgentConfig, so we read them from env
-    here rather than config.{project,location}.
     """
     # Check env - AGY reads GEMINI_API_KEY directly from os.environ.
     if os.environ.get("GEMINI_API_KEY"):
