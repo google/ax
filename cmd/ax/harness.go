@@ -70,6 +70,9 @@ func setHarnessWorkDir() error {
 	if dir == "" {
 		return nil
 	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create harness working directory %q: %w", dir, err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		return fmt.Errorf("set harness working directory %q: %w", dir, err)
 	}

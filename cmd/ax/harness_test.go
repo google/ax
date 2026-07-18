@@ -65,10 +65,14 @@ func TestSetHarnessWorkDir(t *testing.T) {
 		}
 	})
 
-	t.Run("missing directory returns an error", func(t *testing.T) {
-		t.Setenv("AX_HARNESS_WORKDIR", filepath.Join(t.TempDir(), "does-not-exist"))
-		if err := setHarnessWorkDir(); err == nil {
-			t.Error("expected an error for a missing directory, got nil")
+	t.Run("missing directory is created", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "created", "workdir")
+		t.Setenv("AX_HARNESS_WORKDIR", dir)
+		if err := setHarnessWorkDir(); err != nil {
+			t.Fatalf("setHarnessWorkDir: %v", err)
+		}
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("working directory %q was not created: %v", dir, err)
 		}
 	})
 }
