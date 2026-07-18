@@ -349,8 +349,8 @@ func TestValidate_SkillsSelectionOneof(t *testing.T) {
 }
 
 func TestAXAssetsDir(t *testing.T) {
-	t.Run("workdir env roots the .ax tree alongside the workspace", func(t *testing.T) {
-		t.Setenv("AX_HARNESS_WORKDIR", "/mnt/durable")
+	t.Run("durable-dir env roots the .ax tree on the volume", func(t *testing.T) {
+		t.Setenv("AX_DURABLE_DIR", "/mnt/durable")
 		got, err := AXAssetsDir()
 		if err != nil {
 			t.Fatalf("AXAssetsDir: %v", err)
@@ -361,7 +361,7 @@ func TestAXAssetsDir(t *testing.T) {
 		}
 	})
 	t.Run("unset roots under the home directory", func(t *testing.T) {
-		t.Setenv("AX_HARNESS_WORKDIR", "")
+		t.Setenv("AX_DURABLE_DIR", "")
 		home, err := os.UserHomeDir()
 		if err != nil {
 			t.Skipf("no home directory: %v", err)
