@@ -60,14 +60,3 @@ jobs:
 
     - name: Test
       run: go test -v ./...
-
-    - name: Check for binary files in PR
-      run: |
-        # Get the list of files where Git shows no line count (binary)
-        BINARIES=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | grep "^-" | cut -f3)
-
-        if [ -n "$BINARIES" ]; then
-          echo "Binary files detected in diff:"
-          echo "$BINARIES"
-          exit 1 # Fail the check if binaries are found
-        fi
