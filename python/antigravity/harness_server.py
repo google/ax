@@ -25,7 +25,6 @@ import os
 import pathlib
 import re
 import sys
-from typing import TypedDict
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 from google.protobuf.struct_pb2 import Struct
@@ -74,18 +73,6 @@ def _validate_conversation_id(conversation_id: str) -> None:
         )
 
 
-class VertexKwargs(TypedDict, total=False):
-    """Typed subset of LocalAgentConfig kwargs needed to enable Vertex AI.
-
-    `total=False` so {} is a valid value (returned when env does not request
-    Vertex). When populated, all three keys are present.
-    """
-
-    vertex: bool
-    project: str
-    location: str
-
-
 def _env_use_vertex() -> bool:
     """True if env requests the Vertex AI backend (vs. AI Studio API key)."""
     return os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in (
@@ -94,56 +81,17 @@ def _env_use_vertex() -> bool:
     ) or os.environ.get("GOOGLE_GENAI_USE_ENTERPRISE", "").lower() in ("true", "1")
 
 
-def _vertex_kwargs_from_env() -> VertexKwargs:
-    """Returns LocalAgentConfig kwargs from GOOGLE_CLOUD_{PROJECT,LOCATION} env.
-
-    Temporary override until AGY supports reading these env vars natively.
-    Returns {} when env does not request Vertex (caller's programmatic config
-    stands as-is). When env requests Vertex, returns VertexKwargs populated
-    for passing to LocalAgentConfig.__init__ so AGY's @model_validator picks
-    them up.
-
-    Raises ValueError if env requests Vertex but project/location are missing.
-
-    TODO: remove once AGY reads these env vars natively.
-    """
-    if not _env_use_vertex():
-        return {}
-
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
-    location = os.environ.get("GOOGLE_CLOUD_LOCATION", "")
-
-    missing = [
-        name
-        for name, value in (
-            ("project (set GOOGLE_CLOUD_PROJECT)", project),
-            ("location (set GOOGLE_CLOUD_LOCATION)", location),
-        )
-        if not value
-    ]
-    if missing:
-        raise ValueError(
-            "Vertex AI backend requested but missing required config: "
-            + ", ".join(missing)
-        )
-
-    print(f"Vertex AI backend configured: project={project} location={location}")
-    return {"vertex": True, "project": project, "location": location}
-
-
 def _build_default_config() -> LocalAgentConfig:
     """Builds the default agent config the sidecar serves on startup.
 
-    Vertex configuration is read from env via `_vertex_kwargs_from_env`.
+    Credentials/backend come from the standard GenAI env vars, which the
+    AGY SDK reads natively as of google-antigravity 0.1.7.
 
     TODO(#194): per-request `harness_config` will override fields of this
     default on a per-conversation basis. Until then, every conversation uses
     this config.
     """
-    return LocalAgentConfig(
-        system_instructions="You are a helpful agent.",
-        **_vertex_kwargs_from_env(),
-    )
+    return LocalAgentConfig(system_instructions="You are a helpful agent.")
 
 
 def _has_credentials(config: AgentConfig | None) -> bool:
@@ -152,26 +100,25 @@ def _has_credentials(config: AgentConfig | None) -> bool:
     Mirrors AGY's own validation. AGY accepts exactly these sources:
       1. GEMINI_API_KEY environment variable (read directly by AGY).
       2. config.api_key set programmatically (AI Studio path).
-      3. config.vertex=True + config.{project,location} set (Vertex path).
-      4. config.vertex=True + config.api_key set (Vertex Express Mode;
-         covered by case 2).
+      3. Vertex requested (config.vertex or GOOGLE_GENAI_USE_VERTEXAI /
+         GOOGLE_GENAI_USE_ENTERPRISE) + GOOGLE_CLOUD_{PROJECT,LOCATION}.
+      4. Vertex requested + config.api_key set (Express Mode; covered by 2).
 
-    Anything else (e.g. vertex=True without project/location) is rejected
-    by AGY at request time, so we reject it here at startup too.
     """
     # Check env - AGY reads GEMINI_API_KEY directly from os.environ.
     if os.environ.get("GEMINI_API_KEY"):
         return True
 
-    # Check passed in config
-    if config:
-        if getattr(config, "api_key", None):
+    # AI Studio path via programmatic api_key.
+    if config and getattr(config, "api_key", None):
+        return True
+
+    # Vertex path: requested via config.vertex or env, project+location via env.
+    if _env_use_vertex() or bool(getattr(config, "vertex", False)):
+        if os.environ.get("GOOGLE_CLOUD_PROJECT") and os.environ.get(
+            "GOOGLE_CLOUD_LOCATION"
+        ):
             return True
-        if getattr(config, "vertex", False):
-            # Vertex requires project + location, unless an api_key (Express
-            # Mode) is set - but Express Mode would have returned True above.
-            if getattr(config, "project", None) and getattr(config, "location", None):
-                return True
 
     return False
 

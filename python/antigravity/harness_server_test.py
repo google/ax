@@ -204,22 +204,27 @@ def test_has_credentials_missing(monkeypatch):
 
 
 def test_has_credentials_vertex_requires_project_and_location(monkeypatch):
-    """vertex=True alone is not enough; AGY requires project+location too."""
+    """Vertex needs project+location; as of AGY 0.1.7 these come from env."""
     from python.antigravity.harness_server import _has_credentials
 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
 
-    cfg_vertex_only = LocalAgentConfig(system_instructions="test", vertex=True)
-    assert _has_credentials(cfg_vertex_only) is False
+    cfg = LocalAgentConfig(system_instructions="test")
+    assert _has_credentials(cfg) is False
 
-    cfg_vertex_proj_only = LocalAgentConfig(system_instructions="test", vertex=True, project="p")
-    assert _has_credentials(cfg_vertex_proj_only) is False
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    assert _has_credentials(cfg) is False
 
-    cfg_vertex_loc_only = LocalAgentConfig(system_instructions="test", vertex=True, location="us-central1")
-    assert _has_credentials(cfg_vertex_loc_only) is False
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    assert _has_credentials(cfg) is False
 
-    cfg_vertex_full = LocalAgentConfig(system_instructions="test", vertex=True, project="p", location="us-central1")
-    assert _has_credentials(cfg_vertex_full) is True
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    assert _has_credentials(cfg) is True
 
 
 def test_has_credentials_vertex_express_mode(monkeypatch):
@@ -400,73 +405,25 @@ def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
 
     asyncio.run(_run())
 
-def test_vertex_kwargs_from_env_returns_kwargs(monkeypatch):
-    """GOOGLE_GENAI_USE_VERTEXAI + GOOGLE_CLOUD_{PROJECT,LOCATION} -> kwargs dict."""
-    from python.antigravity.harness_server import _vertex_kwargs_from_env
-    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
-    assert _vertex_kwargs_from_env() == {
-        "vertex": True,
-        "project": "env-project",
-        "location": "us-east1",
-    }
+def test_build_default_config_routes_to_vertex_via_env(monkeypatch):
+    """Bare default config + Vertex env vars routes to Vertex (AGY 0.1.7).
 
-
-def test_vertex_kwargs_from_env_no_op_without_vertex(monkeypatch):
-    """Without GOOGLE_GENAI_USE_VERTEXAI, returns empty dict."""
-    from python.antigravity.harness_server import _vertex_kwargs_from_env
-    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
-    monkeypatch.delenv("GOOGLE_GENAI_USE_ENTERPRISE", raising=False)
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "should-be-ignored")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "should-be-ignored")
-    assert _vertex_kwargs_from_env() == {}
-
-
-def test_vertex_kwargs_from_env_raises_when_project_missing(monkeypatch):
-    """Vertex requested with no project -> ValueError naming the env var."""
-    from python.antigravity.harness_server import _vertex_kwargs_from_env
-    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
-    with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT"):
-        _vertex_kwargs_from_env()
-
-
-def test_vertex_kwargs_from_env_raises_when_location_missing(monkeypatch):
-    """Vertex requested with no location -> ValueError naming the env var."""
-    from python.antigravity.harness_server import _vertex_kwargs_from_env
-    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
-    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
-    with pytest.raises(ValueError, match="GOOGLE_CLOUD_LOCATION"):
-        _vertex_kwargs_from_env()
-
-
-def test_vertex_kwargs_from_env_enterprise_alias(monkeypatch):
-    """GOOGLE_GENAI_USE_ENTERPRISE is an alias for VERTEXAI."""
-    from python.antigravity.harness_server import _vertex_kwargs_from_env
-    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
-    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
-    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ent-project")
-    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-    assert _vertex_kwargs_from_env() == {
-        "vertex": True,
-        "project": "ent-project",
-        "location": "us-central1",
-    }
-
-
-def test_build_default_config_picks_up_vertex_env(monkeypatch):
-    """End-to-end: env vars flow through _build_default_config into LocalAgentConfig."""
+    The SDK hydrates vertex onto the config and project/location onto the
+    VertexEndpoint, so we assert the resolved endpoint rather than
+    config.{project,location}.
+    """
     from python.antigravity.harness_server import _build_default_config
+    from google.antigravity import types
+
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "True")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
     cfg = _build_default_config()
     assert cfg.vertex is True
-    assert cfg.project == "env-project"
-    assert cfg.location == "us-east1"
+    endpoint = cfg._build_shorthand_endpoint()
+    assert isinstance(endpoint, types.VertexEndpoint)
+    assert endpoint.project == "env-project"
+    assert endpoint.location == "us-east1"
 
 
 def test_servicer_requires_default_config():
