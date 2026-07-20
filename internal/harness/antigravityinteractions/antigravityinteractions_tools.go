@@ -44,7 +44,7 @@ func (h *AntigravityInteractionsHarness) executeTool(ctx context.Context, call c
 	case "view_file":
 		return execViewFile(call)
 	case "run_command":
-		return execRunCommand(ctx, call)
+		return execRunCommand(ctx, call, h.cfg.WorkDir)
 	case "list_dir", "list_directory":
 		return execListDir(call)
 	case "move":
@@ -229,7 +229,7 @@ func applyByteWindow(content string, offset int) string {
 // command (e.g. `find /`, or `ping` without a count) cannot wedge the harness.
 const runCommandTimeout = 60 * time.Second
 
-func execRunCommand(ctx context.Context, call capturedToolCall) any {
+func execRunCommand(ctx context.Context, call capturedToolCall, workDir string) any {
 	cmdLine := stringArg(call.arguments, "CommandLine")
 	if cmdLine == "" {
 		return map[string]any{"error": "run_command: missing required argument 'CommandLine'"}
@@ -240,9 +240,11 @@ func execRunCommand(ctx context.Context, call capturedToolCall) any {
 	defer cancel()
 
 	cmd := exec.CommandContext(runCtx, "/bin/sh", "-c", cmdLine)
-	if cwd := stringArg(call.arguments, "Cwd"); cwd != "" {
-		cmd.Dir = cwd
-	}
+	// Resolve the working directory. workDir is authoritative so execution does
+	// not depend on the process's ambient cwd. A model-supplied Cwd is honored
+	// relative to workDir if relative, or as-is if absolute; without one, the
+	// command runs in workDir.
+	cmd.Dir = resolveRunDir(workDir, stringArg(call.arguments, "Cwd"))
 
 	out, err := cmd.CombinedOutput()
 
@@ -264,6 +266,28 @@ func execRunCommand(ctx context.Context, call capturedToolCall) any {
 		}
 	}
 	return map[string]any{"Output": string(out), "ExitCode": exitCode}
+}
+
+// resolveRunDir picks the directory run_command executes in.
+//
+//   - No cwd arg: run in workDir (or the process cwd if workDir is empty).
+//   - Absolute cwd: honored as-is (the agent asked for a specific location).
+//   - Relative cwd: resolved against workDir, keeping the agent scoped to its
+//     workspace rather than the process's ambient cwd.
+//
+// Returning "" makes exec use the process's current directory, matching the
+// prior behavior when no working directory is configured.
+func resolveRunDir(workDir, cwd string) string {
+	switch {
+	case cwd == "":
+		return workDir
+	case filepath.IsAbs(cwd):
+		return cwd
+	case workDir == "":
+		return cwd
+	default:
+		return filepath.Join(workDir, cwd)
+	}
 }
 
 func execListDir(call capturedToolCall) any {
