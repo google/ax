@@ -116,6 +116,13 @@ type AntigravityInteractionsConfig struct {
 
 	// --- Optional ---
 
+	// WorkDir is the working directory the agent operates in. When set, it is the
+	// authoritative base for built-in env tools: run_command executes there (and
+	// resolves a relative Cwd against it). This makes tool execution independent
+	// of the process's ambient cwd. Empty means "use the process cwd" (the
+	// previous behavior). Defaults from AX_HARNESS_WORKDIR.
+	WorkDir string
+
 	// SystemInstruction, if set, is sent as the interaction's system_instruction
 	// (a free-form system prompt prepended to the agent's own instructions). It
 	// is sent on every turn of the interaction loop so it persists across them.
@@ -142,6 +149,9 @@ type AntigravityInteractionsConfig struct {
 func (c *AntigravityInteractionsConfig) withDefaults() {
 	if c.MaxTurns == 0 {
 		c.MaxTurns = 100
+	}
+	if c.WorkDir == "" {
+		c.WorkDir = os.Getenv("AX_HARNESS_WORKDIR")
 	}
 }
 
