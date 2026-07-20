@@ -15,6 +15,7 @@
 package antigravityinteractions
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -339,5 +340,86 @@ func TestIntArgOK(t *testing.T) {
 		if n != c.wantN || ok != c.wantOK {
 			t.Errorf("intArgOK(%q) = (%d,%v), want (%d,%v)", c.name, n, ok, c.wantN, c.wantOK)
 		}
+	}
+}
+
+func TestResolveRunDir(t *testing.T) {
+	cases := []struct {
+		name    string
+		workDir string
+		cwd     string
+		want    string
+	}{
+		{"no cwd -> workDir", "/workspace", "", "/workspace"},
+		{"relative cwd joined to workDir", "/workspace", "sub/dir", "/workspace/sub/dir"},
+		{"absolute cwd honored as-is", "/workspace", "/etc", "/etc"},
+		{"no workDir, no cwd -> empty (process cwd)", "", "", ""},
+		{"no workDir, relative cwd -> cwd", "", "sub", "sub"},
+		{"no workDir, absolute cwd -> cwd", "", "/etc", "/etc"},
+	}
+	for _, c := range cases {
+		if got := resolveRunDir(c.workDir, c.cwd); got != c.want {
+			t.Errorf("%s: resolveRunDir(%q,%q) = %q, want %q", c.name, c.workDir, c.cwd, got, c.want)
+		}
+	}
+}
+
+func TestExecRunCommand_RunsInWorkDir(t *testing.T) {
+	// Create a workspace with a marker file; `ls` from workDir (no Cwd arg) must
+	// list it, proving execution is scoped to workDir and not the process cwd.
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "marker.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("no cwd runs in workDir", func(t *testing.T) {
+		res := execRunCommand(context.Background(),
+			capturedToolCall{arguments: map[string]any{"CommandLine": "ls"}},
+			work).(map[string]any)
+		if code := res["ExitCode"]; code != 0 {
+			t.Fatalf("ExitCode = %v, want 0 (output: %v)", code, res["Output"])
+		}
+		if out, _ := res["Output"].(string); !strings.Contains(out, "marker.txt") {
+			t.Errorf("Output = %q, want it to list marker.txt (ran in wrong dir)", out)
+		}
+	})
+
+	t.Run("pwd reports workDir", func(t *testing.T) {
+		res := execRunCommand(context.Background(),
+			capturedToolCall{arguments: map[string]any{"CommandLine": "pwd"}},
+			work).(map[string]any)
+		out, _ := res["Output"].(string)
+		// macOS /tmp is a symlink to /private/tmp, so compare by suffix/resolved.
+		if got := strings.TrimSpace(out); got != work && !strings.HasSuffix(got, work) {
+			resolved, _ := filepath.EvalSymlinks(work)
+			if got != resolved {
+				t.Errorf("pwd = %q, want %q", got, work)
+			}
+		}
+	})
+
+	t.Run("relative cwd resolves under workDir", func(t *testing.T) {
+		if err := os.Mkdir(filepath.Join(work, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(work, "sub", "inner.txt"), []byte("y"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		res := execRunCommand(context.Background(),
+			capturedToolCall{arguments: map[string]any{"CommandLine": "ls", "Cwd": "sub"}},
+			work).(map[string]any)
+		if out, _ := res["Output"].(string); !strings.Contains(out, "inner.txt") {
+			t.Errorf("Output = %q, want it to list inner.txt (relative Cwd not resolved under workDir)", out)
+		}
+	})
+}
+
+func TestWorkspaceSystemInstruction(t *testing.T) {
+	if got := WorkspaceSystemInstruction(""); got != "" {
+		t.Errorf("empty workDir = %q, want empty", got)
+	}
+	got := WorkspaceSystemInstruction("/workspace")
+	if !strings.Contains(got, "/workspace") {
+		t.Errorf("instruction = %q, want it to mention the working directory", got)
 	}
 }
