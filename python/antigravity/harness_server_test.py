@@ -650,3 +650,45 @@ def test_run_turn_rejects_conversation_id_before_creating_save_dir(mock_config, 
         assert list(tmp_path.iterdir()) == []
 
     asyncio.run(_run())
+
+
+def test_run_turn_empty_messages_resumes_with_empty_prompt(mock_config, monkeypatch, tmp_path):
+    """Antigravity SDK to resume with empty input."""
+
+    captured = {}
+
+    class MockConversation:
+        async def chat(self, text):
+            captured["prompt"] = text
+            class MockResponse:
+                def __init__(self):
+                    self.chunks = self._chunk_generator()
+                async def _chunk_generator(self):
+                    from google.antigravity.types import Text
+                    yield Text(text="continued essay", step_index=0)
+            return MockResponse()
+
+    class MockAgent:
+        def __init__(self, config):
+            self.conversation = MockConversation()
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+    monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
+
+    async def _run():
+        servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+        req = ax_pb2.HarnessRequest(
+            conversation_id="conv-1",
+            harness_id="antigravity",
+            start=ax_pb2.HarnessStart(messages=[]),  # empty = resume
+        )
+        responses = [r async for r in servicer._run_turn(req)]
+
+        assert captured["prompt"] == ""
+        assert all(r.end.state != ax_pb2.STATE_FAILED for r in responses if r.HasField("end"))
+        assert any(r.HasField("end") and r.end.state == ax_pb2.STATE_COMPLETED for r in responses)
+
+    asyncio.run(_run())

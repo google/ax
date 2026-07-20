@@ -225,36 +225,26 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
 
-        # 1. Retrieve and check messages
+        # 1. Retrieve messages.
         ax_messages = request.start.messages
         if not ax_messages:
-            yield ax_pb2.HarnessResponse(
-                conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(
-                    state=ax_pb2.STATE_FAILED,
-                    error=ax_pb2.Error(
-                        code=3,  # INVALID_ARGUMENT
-                        description="No messages found in start payload",
-                    ),
-                ),
-            )
-            return
+            latest_query_text = ""
+        else:
+            latest_message = ax_messages[-1]
 
-        latest_message = ax_messages[-1]
-
-        if latest_message.content.WhichOneof("type") != "text":
-            yield ax_pb2.HarnessResponse(
-                conversation_id=request.conversation_id,
-                end=ax_pb2.HarnessEnd(
-                    state=ax_pb2.STATE_FAILED,
-                    error=ax_pb2.Error(
-                        code=3,  # INVALID_ARGUMENT
-                        description="Latest message must contain text content",
+            if latest_message.content.WhichOneof("type") != "text":
+                yield ax_pb2.HarnessResponse(
+                    conversation_id=request.conversation_id,
+                    end=ax_pb2.HarnessEnd(
+                        state=ax_pb2.STATE_FAILED,
+                        error=ax_pb2.Error(
+                            code=3,  # INVALID_ARGUMENT
+                            description="Latest message must contain text content",
+                        ),
                     ),
-                ),
-            )
-            return
-        latest_query_text = latest_message.content.text.text
+                )
+                return
+            latest_query_text = latest_message.content.text.text
 
         if not self._default_config:
             yield ax_pb2.HarnessResponse(

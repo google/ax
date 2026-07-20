@@ -159,14 +159,10 @@ func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler)
 		e.mu.Unlock()
 		return fmt.Errorf("execution session already closed")
 	}
-	// Retrieve queued inputs
+	// Retrieve queued inputs.
 	inputs := e.queued
 	e.queued = nil
 	e.mu.Unlock()
-
-	if len(inputs) == 0 {
-		return fmt.Errorf("no input messages queued for execution turn")
-	}
 
 	// 1. Connect to the gRPC server
 	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
