@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/google/ax/cmd/ax/internal/cliutil"
 	"github.com/google/ax/proto"
@@ -55,6 +56,9 @@ func runFiles(cmd *cobra.Command, args []string) error {
 		return errors.New("file path argument is required")
 	}
 	path := args[0]
+	if strings.HasPrefix(path, "file://") {
+		path = strings.TrimPrefix(path, "file://")
+	}
 	conversationID := filesConversationID
 
 	var content []byte

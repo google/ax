@@ -44,6 +44,9 @@ type Harness interface {
 	// carries optional per-request harness configuration; it is opaque to the
 	// controller and interpreted by the harness implementation.
 	Start(ctx context.Context, conversationID string, harnessConfig []byte) (Execution, error)
+
+	// ReadFile reads a file from the conversation / actor workspace.
+	ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error)
 }
 
 // Execution represents an active interactive session with an agent or planner.
@@ -60,9 +63,4 @@ type Execution interface {
 
 	// Close cleanly releases all resources associated with the execution session.
 	Close(ctx context.Context) error
-}
-
-// FileReader represents a service or harness capable of reading files from a conversation workspace.
-type FileReader interface {
-	ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error)
 }

@@ -36,6 +36,10 @@ func (d *dummyHarness) Start(ctx context.Context, conversationID string, harness
 	return nil, nil
 }
 
+func (d *dummyHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
 func TestFileService_ReadFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.txt")

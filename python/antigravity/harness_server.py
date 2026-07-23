@@ -417,9 +417,10 @@ class AntigravityFileServiceServicer(ax_pb2_grpc.FileServiceServicer):
     async def ReadFile(
         self, request: ax_pb2.ReadFileRequest, context: grpc.aio.ServicerContext
     ) -> ax_pb2.ReadFileResponse:
-        if not request.path:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "path is required")
-        path = pathlib.Path(request.path)
+        path_str = request.path
+        if path_str.startswith("file://"):
+            path_str = path_str[7:]
+        path = pathlib.Path(path_str)
         try:
             content = path.read_bytes()
             return ax_pb2.ReadFileResponse(content=content)

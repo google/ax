@@ -143,6 +143,31 @@ type antigravityExecution struct {
 	closed bool
 }
 
+// ReadFile implements Harness.ReadFile by dialing the Python sidecar's FileService.
+func (h *AntigravityHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	if conversationID == "" {
+		return nil, fmt.Errorf("antigravity: conversationID is required")
+	}
+	if path == "" {
+		return nil, fmt.Errorf("antigravity: path is required")
+	}
+	conn, err := grpc.NewClient(h.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: failed to dial sidecar at %s: %w", h.address, err)
+	}
+	defer conn.Close()
+
+	client := proto.NewFileServiceClient(conn)
+	resp, err := client.ReadFile(ctx, &proto.ReadFileRequest{
+		ConversationId: conversationID,
+		Path:           path,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("antigravity: failed to read file %q: %w", path, err)
+	}
+	return resp.GetContent(), nil
+}
+
 // ID implements Execution.ID.
 func (e *antigravityExecution) ID() string {
 	return e.id

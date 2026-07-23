@@ -239,6 +239,25 @@ func newWithHTTPClient(cfg AntigravityInteractionsConfig, hc *http.Client) (*Ant
 	return &AntigravityInteractionsHarness{cfg: cfg, httpClient: hc, cursors: cursors}, nil
 }
 
+// ReadFile implements Harness.ReadFile.
+func (h *AntigravityInteractionsHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	if conversationID == "" {
+		return nil, errors.New("conversationID cannot be empty")
+	}
+	if path == "" {
+		return nil, errors.New("path cannot be empty")
+	}
+	targetPath := path
+	if h.cfg.WorkDir != "" && !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(h.cfg.WorkDir, targetPath)
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %q: %w", path, err)
+	}
+	return data, nil
+}
+
 // Start implements Harness.Start. It loads any previously persisted resume
 // cursor for conversationID so the returned Execution resumes the existing
 // interaction chain instead of starting a new one.

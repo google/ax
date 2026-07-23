@@ -32,6 +32,10 @@ func (f *fakeHarness) Start(ctx context.Context, conversationID string, harnessC
 	return &fakeExecution{id: "fake-exec-id"}, nil
 }
 
+func (f *fakeHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	return []byte("fake content"), nil
+}
+
 type fakeExecution struct {
 	id     string
 	queued []*proto.Message

@@ -20,10 +20,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 
 	"github.com/google/ax/internal/controller/eventlog"
-	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -306,14 +304,5 @@ func (d *Controller) ReadFile(ctx context.Context, conversationID string, path s
 		return nil, fmt.Errorf("failed to get harness %q: %w", harnessID, err)
 	}
 
-	if reader, ok := h.(harness.FileReader); ok {
-		return reader.ReadFile(ctx, conversationID, path)
-	}
-
-	// Fallback to local filesystem read
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file %q: %w", path, err)
-	}
-	return data, nil
+	return h.ReadFile(ctx, conversationID, path)
 }

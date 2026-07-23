@@ -28,6 +28,7 @@ import (
 	"syscall"
 
 	"path/filepath"
+	"strings"
 
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
@@ -53,6 +54,9 @@ func (s *server) ReadFile(ctx context.Context, req *proto.ReadFileRequest) (*pro
 		return nil, status.Errorf(codes.InvalidArgument, "path is required")
 	}
 	targetPath := req.Path
+	if strings.HasPrefix(targetPath, "file://") {
+		targetPath = strings.TrimPrefix(targetPath, "file://")
+	}
 	if s.workDir != "" && !filepath.IsAbs(targetPath) {
 		targetPath = filepath.Join(s.workDir, targetPath)
 	}

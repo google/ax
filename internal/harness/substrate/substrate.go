@@ -41,7 +41,6 @@ import (
 
 // Compile-time interface assertions.
 var _ harness.Harness = (*SubstrateHarness)(nil)
-var _ harness.FileReader = (*SubstrateHarness)(nil)
 var _ harness.Execution = (*substrateExecution)(nil)
 
 // healthCheckTimeout defines the maximum time Start waits for a freshly
