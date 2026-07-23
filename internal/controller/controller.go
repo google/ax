@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/google/ax/internal/controller/eventlog"
+	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -277,4 +279,41 @@ func (l *logger) LogOutputs(ctx context.Context, outputs []*proto.Message, state
 		State:          state,
 	}
 	return l.el.Append(ctx, ev)
+}
+
+// ReadFile reads a file for the specified conversation / actor workspace.
+func (d *Controller) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	if conversationID == "" {
+		return nil, fmt.Errorf("conversation_id is required")
+	}
+	if path == "" {
+		return nil, fmt.Errorf("path is required")
+	}
+
+	l := newLogger(d.eventLog, conversationID, "")
+	_, storedHarnessID, err := l.ResumptionState(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check conversation state: %w", err)
+	}
+
+	harnessID := storedHarnessID
+	if harnessID == "" {
+		harnessID = d.registry.defaultHarness
+	}
+
+	h, err := d.registry.Harness(harnessID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get harness %q: %w", harnessID, err)
+	}
+
+	if reader, ok := h.(harness.FileReader); ok {
+		return reader.ReadFile(ctx, conversationID, path)
+	}
+
+	// Fallback to local filesystem read
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %q: %w", path, err)
+	}
+	return data, nil
 }

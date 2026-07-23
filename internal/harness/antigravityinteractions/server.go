@@ -27,11 +27,15 @@ import (
 	"sync"
 	"syscall"
 
+	"path/filepath"
+
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 // server adapts the Antigravity Interactions harness (a Go harness.Harness) onto
@@ -39,7 +43,24 @@ import (
 // one actor's lifetime; substrate creates the actor per request.
 type server struct {
 	proto.UnimplementedHarnessServiceServer
-	h harness.Harness
+	proto.UnimplementedFileServiceServer
+	h       harness.Harness
+	workDir string
+}
+
+func (s *server) ReadFile(ctx context.Context, req *proto.ReadFileRequest) (*proto.ReadFileResponse, error) {
+	if req.Path == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "path is required")
+	}
+	targetPath := req.Path
+	if s.workDir != "" && !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(s.workDir, targetPath)
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "failed to read file %q: %v", req.Path, err)
+	}
+	return &proto.ReadFileResponse{Content: data}, nil
 }
 
 // Serve builds the Antigravity Interactions harness from cfg and serves the
@@ -59,7 +80,9 @@ func Serve(ctx context.Context, cfg AntigravityInteractionsConfig, host string, 
 	}
 
 	grpcServer := grpc.NewServer()
-	proto.RegisterHarnessServiceServer(grpcServer, &server{h: h})
+	srv := &server{h: h, workDir: cfg.WorkDir}
+	proto.RegisterHarnessServiceServer(grpcServer, srv)
+	proto.RegisterFileServiceServer(grpcServer, srv)
 
 	// gRPC health: report SERVING for the default service so the controller's
 	// health checks pass.

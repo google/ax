@@ -173,6 +173,11 @@ you can resume an incomplete execution in a conversation:
 ax --conversation edf98ef5-4bb1-4a9e-a091-3a77e03727e6 --resume
 ```
 
+Read a file from an actor workspace:
+```bash
+ax files main.py --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40
+```
+
 
 ## Usage
 
@@ -220,6 +225,29 @@ ax --config '{"system_instructions":"Answer in one sentence.","model":"gemini-3.
 
 # To keep the same JSON in a file, use `--config-file` instead:
 ax --config-file antigravity.json --input "Explain durable execution."
+```
+
+### Files
+
+Read a file from a particular conversation or actor workspace.
+
+```bash
+ax files <path> --conversation <id>
+```
+
+Options:
+- `--conversation`: Conversation ID (required)
+- `--server`: gRPC controller server address (optional. If not provided, runs with a local built-in AX server)
+- `--ax-config`: Path to YAML configuration file (only used with a local built-in AX server, default "ax.yaml")
+
+**Examples:**
+
+```bash
+# Read a file from a conversation workspace
+ax files main.py --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40
+
+# Read a file from an actor via remote server
+ax files main.py --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 --server localhost:8494
 ```
 
 ### Serve

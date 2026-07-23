@@ -39,6 +39,7 @@ import (
 type Server struct {
 	proto.UnimplementedExecutionServiceServer
 	proto.UnimplementedConversationServiceServer
+	proto.UnimplementedFileServiceServer
 
 	controller *controller.Controller
 	grpcServer *grpc.Server
@@ -93,6 +94,26 @@ func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConver
 	return &proto.DeleteConversationResponse{}, nil
 }
 
+func (s *Server) ReadFile(ctx context.Context, req *proto.ReadFileRequest) (*proto.ReadFileResponse, error) {
+	slog.InfoContext(ctx, "Reading file...",
+		slog.String("conversation_id", req.ConversationId),
+		slog.String("path", req.Path),
+	)
+
+	if req.ConversationId == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "conversation_id is required")
+	}
+	if req.Path == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "path is required")
+	}
+
+	data, err := s.controller.ReadFile(ctx, req.ConversationId, req.Path)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read file: %v", err)
+	}
+	return &proto.ReadFileResponse{Content: data}, nil
+}
+
 // Serve starts the gRPC server on the specified address.
 func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	lis, err := net.Listen("tcp", address)
@@ -109,6 +130,7 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	s.grpcServer = grpc.NewServer(opts...)
 	proto.RegisterExecutionServiceServer(s.grpcServer, s)
 	proto.RegisterConversationServiceServer(s.grpcServer, s)
+	proto.RegisterFileServiceServer(s.grpcServer, s)
 
 	// Register standard gRPC Health Check server.
 	hs := health.NewServer()

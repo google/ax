@@ -147,3 +147,17 @@ service ConversationService {
   // for its children executions.
   rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
 }
+
+message ReadFileRequest {
+  string conversation_id = 1;
+  string path = 2;
+}
+
+message ReadFileResponse {
+  bytes content = 1;
+}
+
+service FileService {
+  // Reads a file from a specified conversation / actor workspace.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+}

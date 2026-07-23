@@ -40,7 +40,8 @@ var rootCmd = &cobra.Command{
 	Short: "Execute a conversation or resume an existing one",
 	Long: `Execute a new conversation or resume an existing one.
 If no conversation ID is provided, a new UUID will be generated.`,
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	RunE:         runExec,
 }
 
@@ -49,6 +50,7 @@ func init() {
 
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(filesCmd)
 }
 
 func connect(server string) (*grpc.ClientConn, error) {

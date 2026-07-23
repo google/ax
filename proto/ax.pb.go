@@ -941,6 +941,102 @@ func (*DeleteConversationResponse) Descriptor() ([]byte, []int) {
 	return file_proto_ax_proto_rawDescGZIP(), []int{12}
 }
 
+type ReadFileRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Path           string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ReadFileRequest) Reset() {
+	*x = ReadFileRequest{}
+	mi := &file_proto_ax_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileRequest) ProtoMessage() {}
+
+func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
+func (*ReadFileRequest) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReadFileRequest) GetConversationId() string {
+	if x != nil {
+		return x.ConversationId
+	}
+	return ""
+}
+
+func (x *ReadFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ReadFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Content       []byte                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadFileResponse) Reset() {
+	*x = ReadFileResponse{}
+	mi := &file_proto_ax_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileResponse) ProtoMessage() {}
+
+func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
+func (*ReadFileResponse) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ReadFileResponse) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
 var File_proto_ax_proto protoreflect.FileDescriptor
 
 const file_proto_ax_proto_rawDesc = "" +
@@ -996,7 +1092,12 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x04step\x18\x02 \x01(\x05R\x04step\"D\n" +
 	"\x19DeleteConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\x1c\n" +
-	"\x1aDeleteConversationResponse*l\n" +
+	"\x1aDeleteConversationResponse\"N\n" +
+	"\x0fReadFileRequest\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\",\n" +
+	"\x10ReadFileResponse\x12\x18\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent*l\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rSTATE_PENDING\x10\x01\x12\x10\n" +
@@ -1013,7 +1114,9 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x10ExecutionService\x12+\n" +
 	"\x04Exec\x12\x0f.ax.ExecRequest\x1a\x10.ax.ExecResponse0\x012j\n" +
 	"\x13ConversationService\x12S\n" +
-	"\x12DeleteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
+	"\x12DeleteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponse2D\n" +
+	"\vFileService\x125\n" +
+	"\bReadFile\x12\x13.ax.ReadFileRequest\x1a\x14.ax.ReadFileResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
 
 var (
 	file_proto_ax_proto_rawDescOnce sync.Once
@@ -1028,7 +1131,7 @@ func file_proto_ax_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_ax_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_ax_proto_goTypes = []any{
 	(State)(0),                         // 0: ax.State
 	(CancelReason)(0),                  // 1: ax.CancelReason
@@ -1045,12 +1148,14 @@ var file_proto_ax_proto_goTypes = []any{
 	(*ExecResponse)(nil),               // 12: ax.ExecResponse
 	(*DeleteConversationRequest)(nil),  // 13: ax.DeleteConversationRequest
 	(*DeleteConversationResponse)(nil), // 14: ax.DeleteConversationResponse
-	(*Content)(nil),                    // 15: ax.Content
-	(*structpb.Struct)(nil),            // 16: google.protobuf.Struct
+	(*ReadFileRequest)(nil),            // 15: ax.ReadFileRequest
+	(*ReadFileResponse)(nil),           // 16: ax.ReadFileResponse
+	(*Content)(nil),                    // 17: ax.Content
+	(*structpb.Struct)(nil),            // 18: google.protobuf.Struct
 }
 var file_proto_ax_proto_depIdxs = []int32{
-	15, // 0: ax.Message.content:type_name -> ax.Content
-	16, // 1: ax.ConversationEvent.harness_config:type_name -> google.protobuf.Struct
+	17, // 0: ax.Message.content:type_name -> ax.Content
+	18, // 1: ax.ConversationEvent.harness_config:type_name -> google.protobuf.Struct
 	2,  // 2: ax.ConversationEvent.messages:type_name -> ax.Message
 	0,  // 3: ax.ConversationEvent.state:type_name -> ax.State
 	2,  // 4: ax.HarnessStart.messages:type_name -> ax.Message
@@ -1067,11 +1172,13 @@ var file_proto_ax_proto_depIdxs = []int32{
 	6,  // 15: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
 	11, // 16: ax.ExecutionService.Exec:input_type -> ax.ExecRequest
 	13, // 17: ax.ConversationService.DeleteConversation:input_type -> ax.DeleteConversationRequest
-	10, // 18: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
-	12, // 19: ax.ExecutionService.Exec:output_type -> ax.ExecResponse
-	14, // 20: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
-	18, // [18:21] is the sub-list for method output_type
-	15, // [15:18] is the sub-list for method input_type
+	15, // 18: ax.FileService.ReadFile:input_type -> ax.ReadFileRequest
+	10, // 19: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
+	12, // 20: ax.ExecutionService.Exec:output_type -> ax.ExecResponse
+	14, // 21: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
+	16, // 22: ax.FileService.ReadFile:output_type -> ax.ReadFileResponse
+	19, // [19:23] is the sub-list for method output_type
+	15, // [15:19] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -1097,9 +1204,9 @@ func file_proto_ax_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ax_proto_rawDesc), len(file_proto_ax_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_proto_ax_proto_goTypes,
 		DependencyIndexes: file_proto_ax_proto_depIdxs,

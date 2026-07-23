@@ -41,6 +41,7 @@ import (
 
 // Compile-time interface assertions.
 var _ harness.Harness = (*SubstrateHarness)(nil)
+var _ harness.FileReader = (*SubstrateHarness)(nil)
 var _ harness.Execution = (*substrateExecution)(nil)
 
 // healthCheckTimeout defines the maximum time Start waits for a freshly
@@ -253,4 +254,42 @@ func (e *substrateExecution) Close(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// ReadFile implements harness.FileReader for reading files from a Substrate actor.
+func (h *SubstrateHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	if conversationID == "" {
+		return nil, errors.New("conversationID cannot be empty")
+	}
+	if path == "" {
+		return nil, errors.New("path cannot be empty")
+	}
+	resumeResp, err := h.ateClient.ResumeActor(ctx, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resume substrate actor %s: %w", conversationID, err)
+	}
+	actor := resumeResp.Actor
+	if actor == nil || actor.AteomPodIp == "" {
+		return nil, fmt.Errorf("actor %s has no active worker IP address", conversationID)
+	}
+	workerAddr := fmt.Sprintf("%s:%d", actor.AteomPodIp, h.port)
+	conn, err := grpc.NewClient(workerAddr, h.dialOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial remote file service at %s: %w", workerAddr, err)
+	}
+	defer conn.Close()
+
+	if err := waitForHealthy(ctx, conn, healthCheckTimeout); err != nil {
+		return nil, fmt.Errorf("harness for %s not ready at %s: %w", conversationID, workerAddr, err)
+	}
+
+	client := proto.NewFileServiceClient(conn)
+	resp, err := client.ReadFile(ctx, &proto.ReadFileRequest{
+		ConversationId: conversationID,
+		Path:           path,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %q from actor %s: %w", path, conversationID, err)
+	}
+	return resp.GetContent(), nil
 }

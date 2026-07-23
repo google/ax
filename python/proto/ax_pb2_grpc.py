@@ -208,3 +208,65 @@ class ConversationService(object):
             proto_dot_ax__pb2.DeleteConversationResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+
+class FileServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.ReadFile = channel.unary_unary(
+                '/ax.FileService/ReadFile',
+                request_serializer=proto_dot_ax__pb2.ReadFileRequest.SerializeToString,
+                response_deserializer=proto_dot_ax__pb2.ReadFileResponse.FromString,
+                )
+
+
+class FileServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def ReadFile(self, request, context):
+        """Reads a file from a specified conversation / actor workspace.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_FileServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'ReadFile': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadFile,
+                    request_deserializer=proto_dot_ax__pb2.ReadFileRequest.FromString,
+                    response_serializer=proto_dot_ax__pb2.ReadFileResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'ax.FileService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+
+
+ # This class is part of an EXPERIMENTAL API.
+class FileService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def ReadFile(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/ax.FileService/ReadFile',
+            proto_dot_ax__pb2.ReadFileRequest.SerializeToString,
+            proto_dot_ax__pb2.ReadFileResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

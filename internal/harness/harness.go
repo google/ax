@@ -61,3 +61,8 @@ type Execution interface {
 	// Close cleanly releases all resources associated with the execution session.
 	Close(ctx context.Context) error
 }
+
+// FileReader represents a service or harness capable of reading files from a conversation workspace.
+type FileReader interface {
+	ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error)
+}

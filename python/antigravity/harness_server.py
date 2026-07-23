@@ -91,7 +91,9 @@ def _build_default_config() -> LocalAgentConfig:
     default on a per-conversation basis. Until then, every conversation uses
     this config.
     """
-    return LocalAgentConfig(system_instructions="You are a helpful agent.")
+    config = LocalAgentConfig(system_instructions="You are a helpful agent.")
+    _enhance_config_from_env(config)
+    return config
 
 
 def _has_credentials(config: AgentConfig | None) -> bool:
@@ -409,12 +411,40 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             return
 
 
+class AntigravityFileServiceServicer(ax_pb2_grpc.FileServiceServicer):
+    """gRPC servicer for reading files from the harness workspace."""
+
+    async def ReadFile(
+        self, request: ax_pb2.ReadFileRequest, context: grpc.aio.ServicerContext
+    ) -> ax_pb2.ReadFileResponse:
+        if not request.path:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "path is required")
+        path = pathlib.Path(request.path)
+        try:
+            content = path.read_bytes()
+            return ax_pb2.ReadFileResponse(content=content)
+        except Exception as e:
+            await context.abort(
+                grpc.StatusCode.NOT_FOUND, f"failed to read file {request.path}: {e}"
+            )
+
+
 async def _serve(
-    host: str, port: int, default_config: AgentConfig, state_dir: pathlib.Path
-):
+    host: str,
+    port: int,
+    default_config: AgentConfig,
+    state_dir: pathlib.Path,
+) -> None:
     server = grpc.aio.server()
-    servicer = AntigravityHarnessServiceServicer(default_config, state_dir)
-    ax_pb2_grpc.add_HarnessServiceServicer_to_server(servicer, server)
+    ax_pb2_grpc.add_HarnessServiceServicer_to_server(
+        AntigravityHarnessServiceServicer(
+            default_config=default_config, state_dir=state_dir
+        ),
+        server,
+    )
+    ax_pb2_grpc.add_FileServiceServicer_to_server(
+        AntigravityFileServiceServicer(), server
+    )
 
     # Serve the standard gRPC health protocol.
     health_servicer = health.aio.HealthServicer()
@@ -429,6 +459,14 @@ async def _serve(
 
 
 def _enhance_config_from_env(config) -> None:
+    if _env_use_vertex():
+        config.vertex = True
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT")
+    if project:
+        config.project = project
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION")
+    if location:
+        config.location = location
     skills_dir = os.environ.get("SKILLS_DIR")
     if skills_dir and os.path.isdir(skills_dir):
         print(f"Adding preinstalled skills directory to agent config: {skills_dir}")
