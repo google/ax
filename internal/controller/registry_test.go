@@ -27,6 +27,10 @@ func (d *dummyHarness) Start(ctx context.Context, conversationID string, harness
 	return nil, nil
 }
 
+func (d *dummyHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	return nil, nil
+}
+
 func TestRegistry_RegisterHarness(t *testing.T) {
 	r := NewRegistry()
 	h := &dummyHarness{}

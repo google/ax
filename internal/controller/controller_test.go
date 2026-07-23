@@ -285,6 +285,10 @@ func (c *testHarness) Start(ctx context.Context, conversationID string, harnessC
 	return c.startFunc(ctx, conversationID)
 }
 
+func (c *testHarness) ReadFile(ctx context.Context, conversationID string, path string) ([]byte, error) {
+	return []byte("test content"), nil
+}
+
 type testExecution struct {
 	id         string
 	queueCalls int
