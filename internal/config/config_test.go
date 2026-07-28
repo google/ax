@@ -371,3 +371,51 @@ func TestAXAssetsDir(t *testing.T) {
 		}
 	})
 }
+
+func TestValidate_LocalSkills(t *testing.T) {
+	withLocal := func(lcs ...LocalSkillsConfig) *Config {
+		c := validConfig()
+		c.Skills.Local = lcs
+		return c
+	}
+
+	t.Run("disabled skips validation", func(t *testing.T) {
+		if err := withLocal(LocalSkillsConfig{Enabled: false}).Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("enabled without path is an error", func(t *testing.T) {
+		err := withLocal(LocalSkillsConfig{Enabled: true}).Validate()
+		if err == nil || !strings.Contains(err.Error(), "path") {
+			t.Fatalf("Validate() = %v, want path error", err)
+		}
+	})
+
+	t.Run("enabled with path is valid", func(t *testing.T) {
+		if err := withLocal(LocalSkillsConfig{Enabled: true, Path: "./examples/skills"}).Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("second local invalid is caught", func(t *testing.T) {
+		err := withLocal(
+			LocalSkillsConfig{Enabled: true, Path: "/tmp/a"},
+			LocalSkillsConfig{Enabled: true}, // no path
+		).Validate()
+		if err == nil || !strings.Contains(err.Error(), "local[1]") {
+			t.Fatalf("Validate() = %v, want error citing local[1]", err)
+		}
+	})
+
+	t.Run("registries and local can coexist", func(t *testing.T) {
+		c := validConfig()
+		c.Skills.Registries = []SkillsRegistryConfig{
+			{Enabled: true, Project: "p", TargetDir: "/tmp/a", All: true},
+		}
+		c.Skills.Local = []LocalSkillsConfig{{Enabled: true, Path: "/tmp/local"}}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
+	})
+}

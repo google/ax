@@ -18,33 +18,33 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/skills/geminienterprise"
+	"github.com/google/ax/internal/skills"
 )
 
 func TestSkillsSystemInstruction(t *testing.T) {
 	t.Run("empty result yields empty pointer", func(t *testing.T) {
-		if got := SkillsSystemInstruction(geminienterprise.Result{}); got != "" {
+		if got := SkillsSystemInstruction(skills.Available{}); got != "" {
 			t.Errorf("empty result pointer = %q, want empty", got)
 		}
 	})
 
 	t.Run("mentions dir and skill ids", func(t *testing.T) {
-		res := geminienterprise.Result{Written: []geminienterprise.Written{{
+		avail := skills.Available{Groups: []skills.Group{{
 			Dir:    "/workspace",
-			Skills: []geminienterprise.MaterializedSkill{{SkillID: "emoji"}, {SkillID: "lowercase"}},
+			Skills: []skills.Skill{{ID: "emoji"}, {ID: "lowercase"}},
 		}}}
-		got := SkillsSystemInstruction(res)
+		got := SkillsSystemInstruction(avail)
 		if !strings.Contains(got, "/workspace") || !strings.Contains(got, "emoji") || !strings.Contains(got, "lowercase") {
 			t.Errorf("pointer = %q, want it to mention dir and skill ids", got)
 		}
 	})
 
-	t.Run("multiple registries produce multiple lines", func(t *testing.T) {
-		res := geminienterprise.Result{Written: []geminienterprise.Written{
-			{Dir: "/a", Skills: []geminienterprise.MaterializedSkill{{SkillID: "s1"}}},
-			{Dir: "/b", Skills: []geminienterprise.MaterializedSkill{{SkillID: "s2"}}},
+	t.Run("multiple groups produce multiple lines", func(t *testing.T) {
+		avail := skills.Available{Groups: []skills.Group{
+			{Dir: "/a", Skills: []skills.Skill{{ID: "s1"}}},
+			{Dir: "/b", Skills: []skills.Skill{{ID: "s2"}}},
 		}}
-		got := SkillsSystemInstruction(res)
+		got := SkillsSystemInstruction(avail)
 		if !strings.Contains(got, "/a") || !strings.Contains(got, "/b") || !strings.Contains(got, "\n") {
 			t.Errorf("pointer = %q, want both dirs on separate lines", got)
 		}

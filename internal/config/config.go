@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/ax/internal/harness"
 	"github.com/google/ax/internal/harness/substrate"
@@ -49,10 +50,10 @@ type Config struct {
 	EventLog    EventLogConfig           `yaml:"eventlog"`
 	Antigravity AntigravityHarnessConfig `yaml:"antigravity,omitempty"`
 	Registry    RegistryConfig           `yaml:"registry,omitempty"`
-	// Skills sources skills from the Gemini Enterprise Skill Registry into on-disk folders
-	// before the harness starts. It is harness-agnostic: each actor runs exactly
-	// one harness, which consumes the materialized folder(s). Optional; disabled
-	// when no registry is enabled.
+	// Skills makes agent skills available on disk before the harness starts. It
+	// is harness-agnostic: each actor runs exactly one harness, which consumes
+	// the resulting folder(s). Optional; disabled when no source is enabled. See
+	// SkillsConfig for the available sources.
 	Skills    SkillsConfig    `yaml:"skills,omitempty"`
 	Telemetry TelemetryConfig `yaml:"telemetry,omitempty"`
 }
@@ -116,11 +117,19 @@ type AntigravityInteractionsHarnessConfig struct {
 }
 
 // SkillsConfig configures optional skill sources (top-level, harness-agnostic).
-// Today the only source type is the Gemini Enterprise Skill Registry; it may source from more
-// than one registry (e.g. a shared org-wide registry plus a team-specific one),
-// each with its own project/location, selection, and target directory.
+// There are two parallel source types:
+//   - Registries source skills from the Gemini Enterprise Skill Registry,
+//     materializing them into a target directory.
+//   - Local points at directories that already contain skills on disk (each a
+//     parent dir holding <skill-id>/SKILL.md subfolders, matching the layout of
+//     examples/skills and a registry's target_dir). Nothing is fetched; the
+//     directory is used as-is.
+//
+// Both may be configured together, and both feed the same downstream consumers
+// (e.g. a harness system-instruction pointer).
 type SkillsConfig struct {
 	Registries []SkillsRegistryConfig `yaml:"registries,omitempty"`
+	Local      []LocalSkillsConfig    `yaml:"local,omitempty"`
 }
 
 // Validate checks the (top-level) skills config.
@@ -129,6 +138,36 @@ func (s SkillsConfig) Validate() error {
 		if err := s.Registries[i].validate(i); err != nil {
 			return err
 		}
+	}
+	for i := range s.Local {
+		if err := s.Local[i].validate(i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// LocalSkillsConfig sources skills from a directory already present on disk. The
+// path is a parent directory containing one subfolder per skill (each with a
+// SKILL.md); the subfolder name is the skill id. This mirrors the layout of
+// examples/skills and a registry's target_dir, so nothing is downloaded.
+type LocalSkillsConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+	// Path is the parent directory holding <skill-id>/SKILL.md subfolders.
+	// Required when Enabled.
+	Path string `yaml:"path,omitempty"`
+}
+
+// validate checks one local skills source. idx is its index within the local
+// list, for error context. Existence/readability of the path is intentionally
+// not checked here: discovery is fail-safe (a bad path degrades capability
+// rather than blocking harness creation), so it is validated at discovery time.
+func (lc LocalSkillsConfig) validate(idx int) error {
+	if !lc.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(lc.Path) == "" {
+		return fmt.Errorf("skills.local[%d] requires path (a directory containing <skill-id>/SKILL.md subfolders)", idx)
 	}
 	return nil
 }

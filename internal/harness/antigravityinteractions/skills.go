@@ -18,29 +18,31 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/ax/internal/skills/geminienterprise"
+	"github.com/google/ax/internal/skills"
 )
 
 // SkillsSystemInstruction builds a system-instruction pointer telling the agent
-// where its materialized skills live and lists them.
+// where its skills live and lists them. It is source-agnostic: the skills may
+// come from the Gemini Enterprise Skill Registry or from a local directory --
+// both produce the same skills.Available shape.
 //
 // This is discovery logic specific to the Antigravity Interactions harness: it
 // has no SKILLS_DIR concept, so it must be told where to find skills via its
 // system instruction (its built-in file tools then read that directory).
 // Harnesses that auto-discover a skills directory (e.g. the Antigravity SDK
 // harness via SKILLS_DIR) do not use this.
-func SkillsSystemInstruction(res geminienterprise.Result) string {
-	if res.Empty() {
+func SkillsSystemInstruction(avail skills.Available) string {
+	if avail.Empty() {
 		return ""
 	}
 	var b strings.Builder
-	for _, w := range res.Written {
+	for _, g := range avail.Groups {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "Agent skills are available under %s. Available skills:", w.Dir)
-		for _, s := range w.Skills {
-			fmt.Fprintf(&b, " %s", s.SkillID)
+		fmt.Fprintf(&b, "Agent skills are available under %s. Available skills:", g.Dir)
+		for _, s := range g.Skills {
+			fmt.Fprintf(&b, " %s", s.ID)
 		}
 		b.WriteString(". Read a skill's SKILL.md before using it.")
 	}

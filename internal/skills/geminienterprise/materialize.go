@@ -17,9 +17,10 @@
 // Skill Registry (a managed, versioned catalog exposed over the Vertex AI
 // v1beta1 REST API) and writes each skill to <target_dir>/<skill-id>/.
 //
-// It is harness-agnostic: it only writes files and reports what it wrote (see
-// Result). It knows nothing about specific harnesses, SKILLS_DIR, or discovery
-// pointers — callers decide how a given harness is told where its skills are.
+// It is harness-agnostic: it only writes files and reports what it wrote (as a
+// mode-agnostic skills.Available). It knows nothing about specific harnesses,
+// SKILLS_DIR, or discovery pointers — callers decide how a given harness is told
+// where its skills are.
 //
 // Scope: read-only. This package never creates, updates, or deletes registry
 // skills (authoring is out of scope).
@@ -32,6 +33,7 @@ import (
 	"strings"
 
 	"github.com/google/ax/internal/config"
+	"github.com/google/ax/internal/skills"
 )
 
 // Environment fallbacks for project/location (the registry target_dir is a
@@ -43,24 +45,10 @@ const (
 	defaultRegistryLocation = "us-central1"
 )
 
-// Result reports what Materialize wrote: one Written entry per registry that
-// produced skills, grouping the skills with the directory they landed in.
-type Result struct {
-	Written []Written
-}
-
-// Written groups the skills materialized from one registry with the directory
-// they were written into (each skill at <Dir>/<skill-id>/).
-type Written struct {
-	Dir    string
-	Skills []MaterializedSkill
-}
-
-// Empty reports whether nothing was materialized.
-func (r Result) Empty() bool { return len(r.Written) == 0 }
-
-// MaterializedSkill records one skill written to disk.
-type MaterializedSkill struct {
+// materializedSkill records one skill written to disk. It carries the resolved
+// revision (registry-specific detail) internally; Materialize converts these to
+// the mode-agnostic skills.Available shape at its boundary.
+type materializedSkill struct {
 	SkillID  string
 	Revision string
 	Dir      string // path of the written skill folder (<target_dir>/<skill-id>/)
@@ -77,8 +65,8 @@ type MaterializedSkill struct {
 // registry's selection, or across registries sharing a dir), the FIRST writer
 // wins and later duplicates are skipped with a warning. Substrate/pod
 // materialization is a separate, later path; this wires the local flow only.
-func Materialize(ctx context.Context, sc config.SkillsConfig) Result {
-	var res Result
+func Materialize(ctx context.Context, sc config.SkillsConfig) skills.Available {
+	var avail skills.Available
 	// claimed tracks (target_dir, skill-id) pairs already written across all
 	// registries so the FIRST writer of an id into a dir wins; later duplicates
 	// (within one registry's selection, or across registries sharing a dir) are
@@ -118,9 +106,13 @@ func Materialize(ctx context.Context, sc config.SkillsConfig) Result {
 		}
 		log.Printf("skills: registries[%d] materialized %d skill(s) into %s (skipped %d)",
 			i, len(out.materialized), rc.TargetDir, len(out.skipped))
-		res.Written = append(res.Written, Written{Dir: rc.TargetDir, Skills: out.materialized})
+		group := skills.Group{Dir: rc.TargetDir}
+		for _, m := range out.materialized {
+			group.Skills = append(group.Skills, skills.Skill{ID: m.SkillID, Dir: m.Dir})
+		}
+		avail.Groups = append(avail.Groups, group)
 	}
-	return res
+	return avail
 }
 
 // claimSet tracks which (dir, skill-id) pairs have already been materialized, so
