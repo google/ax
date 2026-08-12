@@ -15,15 +15,19 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/google/ax/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -57,8 +61,13 @@ type Display struct {
 	checkpointStyle lipgloss.Style
 	idStyle         lipgloss.Style
 	resumeStyle     lipgloss.Style
+	toolStyle       lipgloss.Style
 
 	state displayState // Tracks the last printed chunk type to correctly format transition newlines
+
+	loadingMu   sync.Mutex
+	loadingStop chan struct{}
+	loadingDone chan struct{}
 }
 
 func NewDisplay(id string, w io.Writer) *Display {
@@ -72,12 +81,87 @@ func NewDisplay(id string, w io.Writer) *Display {
 		checkpointStyle: lipgloss.NewStyle().Foreground(comment),
 		idStyle:         lipgloss.NewStyle().Foreground(comment),
 		resumeStyle:     lipgloss.NewStyle().Foreground(comment),
+		toolStyle:       lipgloss.NewStyle().Bold(true),
 		state:           stateNone,
+	}
+}
+
+func isTerminal(w io.Writer) bool {
+	if f, ok := w.(*os.File); ok {
+		fi, err := f.Stat()
+		if err != nil {
+			return false
+		}
+		return (fi.Mode() & os.ModeCharDevice) != 0
+	}
+	return false
+}
+
+// StartLoading displays an animated loading bar on the current terminal line
+// until StopLoading is called.
+func (d *Display) StartLoading(msg string) {
+	d.loadingMu.Lock()
+	defer d.loadingMu.Unlock()
+
+	if d.loadingStop != nil {
+		close(d.loadingStop)
+		<-d.loadingDone
+		d.loadingStop = nil
+		d.loadingDone = nil
+	}
+
+	if !isTerminal(d.w) {
+		return
+	}
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	d.loadingStop = stop
+	d.loadingDone = done
+
+	go func() {
+		defer close(done)
+		start := time.Now()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		frames := []string{"|", "/", "-", "\\"}
+		spinnerStyle := lipgloss.NewStyle().Foreground(purple)
+		msgStyle := lipgloss.NewStyle().Foreground(comment)
+
+		idx := 0
+		for {
+			select {
+			case <-stop:
+				fmt.Fprint(d.w, "\r\033[K")
+				return
+			case <-ticker.C:
+				elapsed := time.Since(start).Seconds()
+				frame := spinnerStyle.Render(frames[idx%len(frames)])
+				txt := msgStyle.Render(fmt.Sprintf("%s (%.1fs)", msg, elapsed))
+				fmt.Fprintf(d.w, "\r\033[K%s  %s", frame, txt)
+				idx++
+			}
+		}
+	}()
+}
+
+// StopLoading clears the active loading bar if one is running.
+func (d *Display) StopLoading() {
+	d.loadingMu.Lock()
+	defer d.loadingMu.Unlock()
+
+	if d.loadingStop != nil {
+		close(d.loadingStop)
+		<-d.loadingDone
+		d.loadingStop = nil
+		d.loadingDone = nil
 	}
 }
 
 // DisplayInput displays the user input.
 func (d *Display) DisplayInput(text string) {
+	d.StopLoading()
 	if d.state != stateNone {
 		fmt.Fprintln(d.w)
 	}
@@ -91,6 +175,7 @@ func (d *Display) DisplayInput(text string) {
 
 // Display prints a step according to its type.
 func (d *Display) Display(step *proto.Step) {
+	d.StopLoading()
 	if step == nil {
 		return
 	}
@@ -121,21 +206,66 @@ func (d *Display) Display(step *proto.Step) {
 		}
 
 	case *proto.Step_ToolCall:
-		// Tool calls aren't rendered, but they mark a boundary between
-		// contiguous text/thought blocks. Terminate the current line so the
-		// next response starts fresh instead of running into the previous one
-		// (e.g. "...configured.I will list...").
 		if d.state != stateNone {
 			fmt.Fprintln(d.w)
-			d.state = stateNone
+		}
+		d.state = stateNone
+		if o.ToolCall != nil && o.ToolCall.GetFunctionCall() != nil {
+			fn := o.ToolCall.GetFunctionCall()
+			argsStr := formatStruct(fn.Arguments)
+			if argsStr != "" {
+				fmt.Fprintf(d.w, "🛠  %s(%s)\n\n", d.toolStyle.Render(fn.Name), argsStr)
+			} else {
+				fmt.Fprintf(d.w, "🛠  %s()\n\n", d.toolStyle.Render(fn.Name))
+			}
 		}
 
 	case *proto.Step_ToolResult:
-		// Tool results aren't rendered.
+		if d.state != stateNone {
+			fmt.Fprintln(d.w)
+		}
+		d.state = stateNone
+		if o.ToolResult != nil && o.ToolResult.GetFunctionResult() != nil {
+			res := o.ToolResult.GetFunctionResult()
+			if res.IsError {
+				fmt.Fprintf(d.w, "❌ Tool Error (%s): %s\n\n", d.toolStyle.Render(res.Name), formatValue(res.Result))
+			}
+		}
 
 	default:
 		d.displaySystem(fmt.Sprintf("unknown step type: %v", o))
 	}
+}
+
+func formatStruct(s *structpb.Struct) string {
+	if s == nil || len(s.Fields) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(s.AsMap())
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func formatValue(v *proto.Value) string {
+	if v == nil {
+		return ""
+	}
+	switch k := v.Kind.(type) {
+	case *proto.Value_StringValue:
+		return k.StringValue
+	case *proto.Value_NumberValue:
+		return fmt.Sprintf("%v", k.NumberValue)
+	case *proto.Value_BoolValue:
+		return fmt.Sprintf("%v", k.BoolValue)
+	case *proto.Value_StructValue:
+		if k.StructValue != nil {
+			b, _ := json.Marshal(k.StructValue.AsMap())
+			return string(b)
+		}
+	}
+	return ""
 }
 
 func (d *Display) displayContent(content *proto.Content) {
@@ -178,6 +308,7 @@ func (d *Display) ShowNotice(text string) {
 
 // FinishOutput completes the streaming output and shows info if provided
 func (d *Display) FinishOutput(info string) {
+	d.StopLoading()
 	if d.state != stateNone {
 		fmt.Fprintln(d.w)
 	}
@@ -196,6 +327,7 @@ func (d *Display) DisplayHeader() {
 // PromptForApproval shows an accept/reject dialog
 // Returns true if accepted, false if rejected, and an error if cancelled (Ctrl+C)
 func (d *Display) PromptForApproval(question string) (bool, error) {
+	d.StopLoading()
 	var accepted bool
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -216,6 +348,7 @@ func (d *Display) PromptForApproval(question string) (bool, error) {
 // PromptForInput shows the input box and returns the user input
 // Returns the input string and an error if the user cancelled (Ctrl+C)
 func (d *Display) PromptForInput() (string, error) {
+	d.StopLoading()
 	var userInput string
 
 	// Rebind tab to complete the suggestion and enter to submit.

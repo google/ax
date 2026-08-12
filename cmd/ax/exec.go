@@ -178,12 +178,14 @@ func execLoop(ctx context.Context, id string, harnessID string, agentConfig []by
 		reqCtx, cancel := context.WithCancel(ctx)
 		interruptHandler.SetActiveCancel(cancel)
 
+		d.StartLoading("Waiting for response...")
 		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 			ConversationId: id,
 			AgentId:         harnessID,
 			AgentConfig:     agentConfig,
 			Inputs:          inputs,
 		})
+		d.StopLoading()
 
 		interruptHandler.ClearActiveCancel()
 		cancel()
@@ -255,12 +257,14 @@ func execLoop(ctx context.Context, id string, harnessID string, agentConfig []by
 				reqCtx, cancel := context.WithCancel(ctx)
 				interruptHandler.SetActiveCancel(cancel)
 
+				d.StartLoading("Waiting for response...")
 				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 					ConversationId: id,
 					AgentId:         harnessID,
 					AgentConfig:     agentConfig,
 					Inputs:          decision,
 				})
+				d.StopLoading()
 
 				interruptHandler.ClearActiveCancel()
 				cancel()
@@ -338,6 +342,7 @@ func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.Create
 		return nil
 	})
 	if err := execController.Exec(ctx, req, outputHandler); err != nil {
+		d.StopLoading()
 		return nil, fmt.Errorf("error executing with local server: %w", err)
 	}
 
@@ -354,6 +359,7 @@ func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.Create
 func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateInteractionEvent) (*proto.ConfirmationContent, error) {
 	conn, err := connect(execServerAddr)
 	if err != nil {
+		d.StopLoading()
 		return nil, err
 	}
 	defer conn.Close()
@@ -361,6 +367,7 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateIn
 	client := proto.NewInteractionsServiceClient(conn)
 	stream, err := client.CreateInteraction(ctx, req)
 	if err != nil {
+		d.StopLoading()
 		return nil, fmt.Errorf("error executing: %w", err)
 	}
 
@@ -369,9 +376,11 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateIn
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
+			d.StopLoading()
 			break
 		}
 		if err != nil {
+			d.StopLoading()
 			return nil, fmt.Errorf("error receiving response: %w", err)
 		}
 		if resp.Outputs != nil {

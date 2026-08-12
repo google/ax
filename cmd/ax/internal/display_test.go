@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/ax/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestDisplay_Streaming(t *testing.T) {
@@ -151,6 +152,35 @@ func TestDisplay_Streaming(t *testing.T) {
 		}
 		if !bytes.Contains([]byte(got), []byte("prompt")) {
 			t.Errorf("expected output to contain prompt, got %q", got)
+		}
+	})
+
+	t.Run("ToolCall displays formatted tool name and parameters", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		d := NewDisplay("test-id", &buf)
+
+		args, err := structpb.NewStruct(map[string]any{"query": "golang"})
+		if err != nil {
+			t.Fatalf("failed to create struct: %v", err)
+		}
+
+		d.Display(&proto.Step{
+			Type: &proto.Step_ToolCall{
+				ToolCall: &proto.ToolCallStep{
+					Type: &proto.ToolCallStep_FunctionCall{
+						FunctionCall: &proto.FunctionCallStep{
+							Name:      "search_web",
+							Arguments: args,
+						},
+					},
+				},
+			},
+		})
+
+		got := buf.String()
+		if !bytes.Contains([]byte(got), []byte("🛠")) || !bytes.Contains([]byte(got), []byte("search_web")) || !bytes.Contains([]byte(got), []byte("golang")) {
+			t.Errorf("expected output to display formatted tool call, got %q", got)
 		}
 	})
 }
