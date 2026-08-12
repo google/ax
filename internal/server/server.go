@@ -55,7 +55,7 @@ func New(c *controller.Controller) *Server {
 }
 
 // CreateInteraction executes a new agentic task with streaming responses.
-func (s *Server) CreateInteraction(req *proto.CreateInteractionRequest, stream grpc.ServerStreamingServer[proto.CreateInteractionResponse]) error {
+func (s *Server) CreateInteraction(req *proto.CreateInteractionEvent, stream grpc.ServerStreamingServer[proto.CreateInteractionResponse]) error {
 	ctx := stream.Context()
 	slog.InfoContext(ctx, "Executing request",
 		slog.String("request", req.String()),

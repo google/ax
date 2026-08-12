@@ -81,7 +81,7 @@ class InteractionsServiceStub(object):
         """
         self.CreateInteraction = channel.unary_stream(
                 '/ax.InteractionsService/CreateInteraction',
-                request_serializer=proto_dot_ax__pb2.CreateInteractionRequest.SerializeToString,
+                request_serializer=proto_dot_ax__pb2.CreateInteractionEvent.SerializeToString,
                 response_deserializer=proto_dot_ax__pb2.CreateInteractionResponse.FromString,
                 )
 
@@ -102,7 +102,7 @@ def add_InteractionsServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'CreateInteraction': grpc.unary_stream_rpc_method_handler(
                     servicer.CreateInteraction,
-                    request_deserializer=proto_dot_ax__pb2.CreateInteractionRequest.FromString,
+                    request_deserializer=proto_dot_ax__pb2.CreateInteractionEvent.FromString,
                     response_serializer=proto_dot_ax__pb2.CreateInteractionResponse.SerializeToString,
             ),
     }
@@ -127,7 +127,7 @@ class InteractionsService(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_stream(request, target, '/ax.InteractionsService/CreateInteraction',
-            proto_dot_ax__pb2.CreateInteractionRequest.SerializeToString,
+            proto_dot_ax__pb2.CreateInteractionEvent.SerializeToString,
             proto_dot_ax__pb2.CreateInteractionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

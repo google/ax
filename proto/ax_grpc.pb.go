@@ -146,7 +146,7 @@ const (
 type InteractionsServiceClient interface {
 	// CreateInteraction executes an agentic task or resumes an existing one with streaming responses
 	// If the conversation_id already exists, it will be resumed.
-	CreateInteraction(ctx context.Context, in *CreateInteractionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error)
+	CreateInteraction(ctx context.Context, in *CreateInteractionEvent, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error)
 }
 
 type interactionsServiceClient struct {
@@ -157,13 +157,13 @@ func NewInteractionsServiceClient(cc grpc.ClientConnInterface) InteractionsServi
 	return &interactionsServiceClient{cc}
 }
 
-func (c *interactionsServiceClient) CreateInteraction(ctx context.Context, in *CreateInteractionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error) {
+func (c *interactionsServiceClient) CreateInteraction(ctx context.Context, in *CreateInteractionEvent, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &InteractionsService_ServiceDesc.Streams[0], InteractionsService_CreateInteraction_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[CreateInteractionRequest, CreateInteractionResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[CreateInteractionEvent, CreateInteractionResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ type InteractionsService_CreateInteractionClient = grpc.ServerStreamingClient[Cr
 type InteractionsServiceServer interface {
 	// CreateInteraction executes an agentic task or resumes an existing one with streaming responses
 	// If the conversation_id already exists, it will be resumed.
-	CreateInteraction(*CreateInteractionRequest, grpc.ServerStreamingServer[CreateInteractionResponse]) error
+	CreateInteraction(*CreateInteractionEvent, grpc.ServerStreamingServer[CreateInteractionResponse]) error
 	mustEmbedUnimplementedInteractionsServiceServer()
 }
 
@@ -193,7 +193,7 @@ type InteractionsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedInteractionsServiceServer struct{}
 
-func (UnimplementedInteractionsServiceServer) CreateInteraction(*CreateInteractionRequest, grpc.ServerStreamingServer[CreateInteractionResponse]) error {
+func (UnimplementedInteractionsServiceServer) CreateInteraction(*CreateInteractionEvent, grpc.ServerStreamingServer[CreateInteractionResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method CreateInteraction not implemented")
 }
 func (UnimplementedInteractionsServiceServer) mustEmbedUnimplementedInteractionsServiceServer() {}
@@ -218,11 +218,11 @@ func RegisterInteractionsServiceServer(s grpc.ServiceRegistrar, srv Interactions
 }
 
 func _InteractionsService_CreateInteraction_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(CreateInteractionRequest)
+	m := new(CreateInteractionEvent)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(InteractionsServiceServer).CreateInteraction(m, &grpc.GenericServerStream[CreateInteractionRequest, CreateInteractionResponse]{ServerStream: stream})
+	return srv.(InteractionsServiceServer).CreateInteraction(m, &grpc.GenericServerStream[CreateInteractionEvent, CreateInteractionResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.

@@ -166,7 +166,7 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserStep("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	handler := &harnesstest.MockHandler{}
@@ -227,7 +227,7 @@ func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = exec.Close(ctx) })
 
-	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserStep("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	handler := &harnesstest.MockHandler{}
@@ -279,7 +279,7 @@ func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { _ = exec.Close(ctx) })
-	if err := exec.Queue(ctx, harnesstest.UserText("hi")); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserStep("hi")); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	if err := exec.Run(ctx, &harnesstest.MockHandler{}); err == nil {

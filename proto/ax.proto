@@ -24,29 +24,22 @@ option go_package = "github.com/google/ax/proto";
 // WARNING: This file is in active development and
 // significant changes can be made with breaking changes.
 
-// Message is a message in the history.
-message Message {
-  string role = 1;     // user, assistant, or model
-  Content content = 2; // content of the message
-}
-
 // A conversation is the historical session that consist of
 // a number of execution. A conversation cannot be continued
 // before the last execution is completed or failed.
-message ConversationEvent {
+message StepEvent {
   string conversation_id = 1;
-  int32 step = 2;
-  string exec_id = 3;
-  string harness_id = 4;
-  google.protobuf.Struct harness_config = 5;
-  repeated Message messages = 6;
-  State state = 7;
+  string interaction_id = 2;
+  string harness_id = 3;
+  google.protobuf.Struct harness_config = 4;
+  repeated Step steps = 5;
+  State state = 6;
 }
 
 message HarnessStart {
   // Per-execution harness configuration.
   bytes harness_config = 1;
-  repeated Message messages = 2;
+  repeated Step steps = 2;
 }
 
 // HarnessCancel aborts the in-flight harness execution.
@@ -64,7 +57,7 @@ message HarnessRequest {
 }
 
 message HarnessOutputs {
-  repeated Message messages = 1;
+  repeated Step steps = 1;
 }
 
 message Error {
@@ -114,11 +107,11 @@ enum CancelReason {
   CANCEL_REASON_INTERNAL_ERROR = 3;
 }
 
-// CreateInteractionRequest for creating an interaction.
-message CreateInteractionRequest {
+// CreateInteractionEvent for creating an interaction.
+message CreateInteractionEvent {
   string conversation_id = 1;            // Unique conversation identifier
-  repeated Message inputs = 2;           // New inputs
-  int32 last_step = 3;                   // Last step number seen by the client
+  repeated Step inputs = 2;              // New inputs
+  reserved 3;
 
   string harness_id = 4;                 // Harness ID, empty selects the default harness
   bytes harness_config = 5;              // Per-request harness configuration (opaque JSON), if any
@@ -126,15 +119,17 @@ message CreateInteractionRequest {
 
 // CreateInteractionResponse contains the result of an interaction.
 message CreateInteractionResponse {
-  repeated Message outputs = 1; // Output content
-  int32 step = 2;               // Step of the outputs
+  repeated Step outputs = 1;    // Output content
 }
 
 service InteractionsService {
   // CreateInteraction executes an agentic task or resumes an existing one with streaming responses
   // If the conversation_id already exists, it will be resumed.
-  rpc CreateInteraction(CreateInteractionRequest) returns (stream CreateInteractionResponse);
+  rpc CreateInteraction(CreateInteractionEvent) returns (stream CreateInteractionResponse);
 }
+
+// TODO(jbd): CreateInteraction should return an Interaction message
+// and the outputs should be polled from the Interaction.
 
 message DeleteConversationRequest {
   string conversation_id = 1;

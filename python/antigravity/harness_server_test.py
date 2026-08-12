@@ -68,8 +68,13 @@ def test_grpc_connect_success(mock_config, monkeypatch, tmp_path):
             
             # 3. Construct and fire a HarnessRequest{start} over the bidi stream
             start_payload = ax_pb2.HarnessStart(
-                messages=[
-                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                steps=[
+                    ax_pb2.Step(
+                        content=ax_pb2.ContentStep(
+                            role="user",
+                            content=[content_pb2.Content(text=content_pb2.TextContent(text="Hi"))],
+                        )
+                    )
                 ]
             )
             req = ax_pb2.HarnessRequest(
@@ -87,8 +92,8 @@ def test_grpc_connect_success(mock_config, monkeypatch, tmp_path):
                 
             # 4. Assert outputs are correctly mapped and completed
             assert len(responses) == 3 # Thought + Text + End
-            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Thinking details\n"
-            assert responses[1].outputs.messages[0].content.text.text == "Hello human"
+            assert responses[0].outputs.steps[0].thought.summary[0].text.text == "Thinking details\n"
+            assert responses[1].outputs.steps[0].content.content[0].text.text == "Hello human"
             assert responses[2].WhichOneof('type') == 'end'
             assert responses[2].end.state == ax_pb2.STATE_COMPLETED
             
@@ -141,8 +146,14 @@ def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp
                     conversation_id=conv_id,
                     harness_id="antigravity",
                     start=ax_pb2.HarnessStart(
-                        messages=[ax_pb2.Message(role="user",
-                            content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))]
+                        steps=[
+                            ax_pb2.Step(
+                                content=ax_pb2.ContentStep(
+                                    role="user",
+                                    content=[content_pb2.Content(text=content_pb2.TextContent(text="Hi"))],
+                                )
+                            )
+                        ]
                     ),
                 )
                 async def req_iter():
@@ -280,8 +291,13 @@ def test_grpc_connect_programmatic_credentials(monkeypatch, tmp_path):
             monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
 
             start_payload = ax_pb2.HarnessStart(
-                messages=[
-                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                steps=[
+                    ax_pb2.Step(
+                        content=ax_pb2.ContentStep(
+                            role="user",
+                            content=[content_pb2.Content(text=content_pb2.TextContent(text="Hi"))],
+                        )
+                    )
                 ]
             )
             req = ax_pb2.HarnessRequest(
@@ -298,7 +314,8 @@ def test_grpc_connect_programmatic_credentials(monkeypatch, tmp_path):
                 responses.append(resp)
                 
             assert len(responses) == 2 # Text + End
-            assert responses[0].outputs.messages[0].content.text.text == "Passed check"
+            assert responses[0].outputs.steps[0].content.content[0].text.text == "Passed check"
+            assert responses[1].WhichOneof('type') == 'end'
             assert responses[1].end.state == ax_pb2.STATE_COMPLETED
             
         await server.stop(0)
@@ -323,7 +340,10 @@ def test_enhance_config_from_env(monkeypatch, tmp_path):
     assert str(skills_dir) in cfg.skills_paths
 
 
-def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
+def test_grpc_connect_tool_call_flushes_buffers(mock_config, monkeypatch, tmp_path):
+    """ToolCall chunks immediately flush any pending text and thought buffers
+    before sending the tool_call output message."""
+
     async def _run():
         server = grpc.aio.server()
         servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
@@ -346,7 +366,7 @@ def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
                             from google.antigravity.types import Text, Thought, ToolCall
                             yield Thought(text="Think1", step_index=0)
                             yield Thought(text=" Think2", step_index=0)
-                            yield ToolCall(name="tool1", args={}, id="call1")
+                            yield ToolCall(id="tc-123", name="tool1", args={"a": 1}, step_index=0)
                             yield Text(text="Hello", step_index=0)
                             yield Text(text=" human", step_index=0)
                     return MockResponse()
@@ -361,8 +381,13 @@ def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
             monkeypatch.setattr("python.antigravity.harness_server.Agent", MockAgent)
 
             start_payload = ax_pb2.HarnessStart(
-                messages=[
-                    ax_pb2.Message(role="user", content=content_pb2.Content(text=content_pb2.TextContent(text="Hi")))
+                steps=[
+                    ax_pb2.Step(
+                        content=ax_pb2.ContentStep(
+                            role="user",
+                            content=[content_pb2.Content(text=content_pb2.TextContent(text="Hi"))],
+                        )
+                    )
                 ]
             )
             req = ax_pb2.HarnessRequest(
@@ -386,16 +411,16 @@ def test_grpc_connect_buffering(mock_config, monkeypatch, tmp_path):
             assert len(responses) == 4
             
             # Assert 1st response: Thought summary text is "Think1 Think2"
-            assert responses[0].outputs.messages[0].content.WhichOneof('type') == 'thought'
-            assert responses[0].outputs.messages[0].content.thought.summary[0].text.text == "Think1 Think2\n"
+            assert responses[0].outputs.steps[0].WhichOneof('type') == 'thought'
+            assert responses[0].outputs.steps[0].thought.summary[0].text.text == "Think1 Think2\n"
             
             # Assert 2nd response: ToolCall name is "tool1"
-            assert responses[1].outputs.messages[0].content.WhichOneof('type') == 'tool_call'
-            assert responses[1].outputs.messages[0].content.tool_call.function_call.name == "tool1"
+            assert responses[1].outputs.steps[0].WhichOneof('type') == 'tool_call'
+            assert responses[1].outputs.steps[0].tool_call.function_call.name == "tool1"
             
             # Assert 3rd response: Text content is "Hello human"
-            assert responses[2].outputs.messages[0].content.WhichOneof('type') == 'text'
-            assert responses[2].outputs.messages[0].content.text.text == "Hello human"
+            assert responses[2].outputs.steps[0].WhichOneof('type') == 'content'
+            assert responses[2].outputs.steps[0].content.content[0].text.text == "Hello human"
             
             # Assert 4th response: Completion end frame
             assert responses[3].WhichOneof('type') == 'end'
@@ -451,9 +476,11 @@ def test_run_turn_guards_against_missing_default_config(monkeypatch, tmp_path):
                 req = ax_pb2.HarnessRequest(
                     conversation_id="conv-guard",
                     harness_id="antigravity",
-                    start=ax_pb2.HarnessStart(messages=[
-                        ax_pb2.Message(role="user",
-                            content=content_pb2.Content(text=content_pb2.TextContent(text="Hi"))),
+                    start=ax_pb2.HarnessStart(steps=[
+                        ax_pb2.Step(content=ax_pb2.ContentStep(
+                            role="user",
+                            content=[content_pb2.Content(text=content_pb2.TextContent(text="Hi"))],
+                        )),
                     ]),
                 )
                 async def request_iter():
@@ -550,10 +577,10 @@ def test_run_turn_invalid_harness_config_maps_to_invalid_argument(mock_config, t
             harness_id="antigravity",
             start=ax_pb2.HarnessStart(
                 harness_config=b"{",
-                messages=[ax_pb2.Message(
+                steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
-                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
-                )],
+                    content=[content_pb2.Content(text=content_pb2.TextContent(text="hi"))],
+                ))],
             ),
         )
         responses = [r async for r in servicer._run_turn(req)]
@@ -613,10 +640,10 @@ def test_run_turn_unsafe_conversation_id_maps_to_invalid_argument(mock_config, t
             conversation_id="../escape",
             harness_id="antigravity",
             start=ax_pb2.HarnessStart(
-                messages=[ax_pb2.Message(
+                steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
-                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
-                )],
+                    content=[content_pb2.Content(text=content_pb2.TextContent(text="hi"))],
+                ))],
             ),
         )
         responses = [r async for r in servicer._run_turn(req)]
@@ -638,10 +665,10 @@ def test_run_turn_rejects_conversation_id_before_creating_save_dir(mock_config, 
             conversation_id="../escape",
             harness_id="antigravity",
             start=ax_pb2.HarnessStart(
-                messages=[ax_pb2.Message(
+                steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
-                    content=content_pb2.Content(text=content_pb2.TextContent(text="hi")),
-                )],
+                    content=[content_pb2.Content(text=content_pb2.TextContent(text="hi"))],
+                ))],
             ),
         )
         responses = [r async for r in servicer._run_turn(req)]

@@ -40,8 +40,8 @@ func DrainStream(ctx context.Context, stream proto.HarnessService_ConnectClient,
 
 		switch payload := resp.Type.(type) {
 		case *proto.HarnessResponse_Outputs:
-			for _, outMsg := range payload.Outputs.Messages {
-				if err := handler.OnMessage(ctx, execID, outMsg); err != nil {
+			for _, step := range payload.Outputs.Steps {
+				if err := handler.OnMessage(ctx, execID, step); err != nil {
 					return fmt.Errorf("failed to dispatch streamed output: %w", err)
 				}
 			}

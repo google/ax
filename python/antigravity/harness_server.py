@@ -225,36 +225,50 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             )
             return
 
-        # 1. Retrieve and check messages
-        ax_messages = request.start.messages
-        if not ax_messages:
+        # 1. Retrieve and check steps
+        ax_steps = request.start.steps
+        if not ax_steps:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
                     state=ax_pb2.STATE_FAILED,
                     error=ax_pb2.Error(
                         code=3,  # INVALID_ARGUMENT
-                        description="No messages found in start payload",
+                        description="No steps found in start payload",
                     ),
                 ),
             )
             return
 
-        latest_message = ax_messages[-1]
+        latest_step = ax_steps[-1]
 
-        if latest_message.content.WhichOneof("type") != "text":
+        if latest_step.WhichOneof("type") != "content":
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
                     state=ax_pb2.STATE_FAILED,
                     error=ax_pb2.Error(
                         code=3,  # INVALID_ARGUMENT
-                        description="Latest message must contain text content",
+                        description="Latest step must be a content step",
                     ),
                 ),
             )
             return
-        latest_query_text = latest_message.content.text.text
+
+        content_step = latest_step.content
+        if not content_step.content or content_step.content[0].WhichOneof("type") != "text":
+            yield ax_pb2.HarnessResponse(
+                conversation_id=request.conversation_id,
+                end=ax_pb2.HarnessEnd(
+                    state=ax_pb2.STATE_FAILED,
+                    error=ax_pb2.Error(
+                        code=3,  # INVALID_ARGUMENT
+                        description="Latest step must contain text content",
+                    ),
+                ),
+            )
+            return
+        latest_query_text = content_step.content[0].text.text
 
         if not self._default_config:
             yield ax_pb2.HarnessResponse(
@@ -291,16 +305,20 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 def flush_text():
                     if not text_chunks:
                         return None
-                    msg = ax_pb2.Message(
-                        role="assistant",
-                        content=content_pb2.Content(
-                            text=content_pb2.TextContent(text="".join(text_chunks))
-                        ),
+                    step = ax_pb2.Step(
+                        content=ax_pb2.ContentStep(
+                            role="assistant",
+                            content=[
+                                content_pb2.Content(
+                                    text=content_pb2.TextContent(text="".join(text_chunks))
+                                )
+                            ],
+                        )
                     )
                     text_chunks.clear()
                     return ax_pb2.HarnessResponse(
                         conversation_id=request.conversation_id,
-                        outputs=ax_pb2.HarnessOutputs(messages=[msg]),
+                        outputs=ax_pb2.HarnessOutputs(steps=[step]),
                     )
 
                 def flush_thought():
@@ -318,20 +336,17 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                     clean_text = re.sub(r"\n{3,}", "\n\n", raw_text).rstrip() + "\n"
 
                     summary = [
-                        content_pb2.ThoughtSummaryContent(
+                        content_pb2.Content(
                             text=content_pb2.TextContent(text=clean_text)
                         )
                     ]
                     thought_chunks.clear()
-                    msg = ax_pb2.Message(
-                        role="model",
-                        content=content_pb2.Content(
-                            thought=content_pb2.ThoughtContent(summary=summary)
-                        ),
+                    step = ax_pb2.Step(
+                        thought=ax_pb2.ThoughtStep(summary=summary)
                     )
                     return ax_pb2.HarnessResponse(
                         conversation_id=request.conversation_id,
-                        outputs=ax_pb2.HarnessOutputs(messages=[msg]),
+                        outputs=ax_pb2.HarnessOutputs(steps=[step]),
                     )
 
                 async for chunk in response.chunks:
@@ -353,20 +368,17 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                         struct_args = Struct()
                         struct_args.update(chunk.args)
 
-                        func_call = content_pb2.FunctionCallContent(
+                        func_call = ax_pb2.FunctionCallStep(
                             name=str(chunk.name), arguments=struct_args
                         )
-                        msg = ax_pb2.Message(
-                            role="model",
-                            content=content_pb2.Content(
-                                tool_call=content_pb2.ToolCallContent(
-                                    id=chunk.id or "", function_call=func_call
-                                )
-                            ),
+                        step = ax_pb2.Step(
+                            tool_call=ax_pb2.ToolCallStep(
+                                id=chunk.id or "", function_call=func_call
+                            )
                         )
                         yield ax_pb2.HarnessResponse(
                             conversation_id=request.conversation_id,
-                            outputs=ax_pb2.HarnessOutputs(messages=[msg]),
+                            outputs=ax_pb2.HarnessOutputs(steps=[step]),
                         )
 
                 # Flush any remaining text/thought buffers after the generator loop ends

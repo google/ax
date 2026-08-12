@@ -111,7 +111,7 @@ func runOneTurn(t *testing.T, h *AntigravityInteractionsHarness, conversationID,
 	if err != nil {
 		t.Fatalf("Start(%q): %v", conversationID, err)
 	}
-	if err := exec.Queue(ctx, harnesstest.UserText(prompt)); err != nil {
+	if err := exec.Queue(ctx, harnesstest.UserStep(prompt)); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	if err := exec.Run(ctx, &harnesstest.MockHandler{}); err != nil {

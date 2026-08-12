@@ -12,10 +12,9 @@ from google.protobuf.internal import builder as _builder
 _sym_db = _symbol_database.Default()
 
 
-from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13proto/content.proto\x12\x02\x61x\x1a\x1cgoogle/protobuf/struct.proto\"-\n\x0bTextContent\x12\x0c\n\x04text\x18\x03 \x01(\tJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x04type\"$\n\x10\x41pprovalDecision\x12\x10\n\x08\x61pproved\x18\x01 \x01(\x08\"1\n\x0f\x44\x65\x63lineDecision\x12\x10\n\x08\x64\x65\x63lined\x18\x01 \x01(\x08J\x04\x08\x02\x10\x03R\x06reason\"\xa3\x01\n\x13\x43onfirmationContent\x12\n\n\x02id\x18\x03 \x01(\t\x12\x10\n\x08question\x18\x04 \x01(\t\x12(\n\x08\x61pproval\x18\x05 \x01(\x0b\x32\x14.ax.ApprovalDecisionH\x00\x12&\n\x07\x64\x65\x63line\x18\x06 \x01(\x0b\x32\x13.ax.DeclineDecisionH\x00\x42\n\n\x08\x64\x65\x63isionJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x04type\"F\n\x15ThoughtSummaryContent\x12\x1f\n\x04text\x18\x01 \x01(\x0b\x32\x0f.ax.TextContentH\x00\x42\x06\n\x04typeJ\x04\x08\x02\x10\x03\"y\n\x0eThoughtContent\x12\x11\n\tsignature\x18\x07 \x01(\x0c\x12*\n\x07summary\x18\t \x03(\x0b\x32\x19.ax.ThoughtSummaryContentJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03J\x04\x08\x03\x10\x04J\x04\x08\x04\x10\x05J\x04\x08\x05\x10\x06J\x04\x08\x08\x10\tR\x04type\"j\n\x0fToolCallContent\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tsignature\x18\t \x01(\x0c\x12\x30\n\rfunction_call\x18\x02 \x01(\x0b\x32\x17.ax.FunctionCallContentH\x00\x42\x06\n\x04type\"{\n\x11ToolResultContent\x12\x0f\n\x07\x63\x61ll_id\x18\x08 \x01(\t\x12\x11\n\tsignature\x18\t \x01(\x0c\x12\x34\n\x0f\x66unction_result\x18\x02 \x01(\x0b\x32\x19.ax.FunctionResultContentH\x00\x42\x06\n\x04typeJ\x04\x08\x01\x10\x02\"[\n\x13\x46unctionCallContent\x12\x0c\n\x04name\x18\x03 \x01(\t\x12*\n\targuments\x18\x04 \x01(\x0b\x32\x17.google.protobuf.StructJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03\"n\n\x15\x46unctionResultContent\x12\x0c\n\x04name\x18\x08 \x01(\t\x12+\n\x08response\x18\x03 \x01(\x0b\x32\x17.google.protobuf.StructH\x00\x42\x08\n\x06resultJ\x04\x08\x01\x10\x02J\x04\x08\x04\x10\x05R\x04type\"\xbd\x02\n\x0cImageContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.ImageContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x06 \x01(\tH\x00\x12\'\n\nresolution\x18\x05 \x01(\x0e\x32\x13.ax.MediaResolution\"\x9b\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_PNG\x10\x01\x12\r\n\tTYPE_JPEG\x10\x02\x12\r\n\tTYPE_WEBP\x10\x03\x12\r\n\tTYPE_HEIC\x10\x04\x12\r\n\tTYPE_HEIF\x10\x05\x12\x0c\n\x08TYPE_GIF\x10\x07\x12\x0c\n\x08TYPE_BMP\x10\x08\x12\r\n\tTYPE_TIFF\x10\t\"\x04\x08\x06\x10\x06\x42\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\x8b\x03\n\x0c\x41udioContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.AudioContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x05 \x01(\tH\x00\x12\x10\n\x08\x63hannels\x18\x07 \x01(\x05\x12\x13\n\x0bsample_rate\x18\x08 \x01(\x05\"\xdf\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_WAV\x10\x01\x12\x0c\n\x08TYPE_MP3\x10\x02\x12\r\n\tTYPE_AIFF\x10\x03\x12\x0c\n\x08TYPE_AAC\x10\x04\x12\x0c\n\x08TYPE_OGG\x10\x05\x12\r\n\tTYPE_FLAC\x10\x06\x12\r\n\tTYPE_MPEG\x10\x07\x12\x0c\n\x08TYPE_M4A\x10\x08\x12\x0c\n\x08TYPE_L16\x10\t\x12\x0e\n\nTYPE_S16LE\x10\n\x12\r\n\tTYPE_OPUS\x10\x0b\x12\r\n\tTYPE_ALAW\x10\x0c\x12\x0e\n\nTYPE_MULAW\x10\rB\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04J\x04\x08\x06\x10\x07R\x04typeR\x04rate\"\xcc\x01\n\x0f\x44ocumentContent\x12/\n\tmime_type\x18\x01 \x01(\x0e\x32\x1c.ax.DocumentContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x05 \x01(\tH\x00\"N\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_PDF\x10\x01\x12\r\n\tTYPE_JSON\x10\x02\x12\x0f\n\x0bTYPE_PYTHON\x10\x03\x42\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\xc5\x02\n\x0cVideoContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.VideoContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x06 \x01(\tH\x00\x12\'\n\nresolution\x18\x05 \x01(\x0e\x32\x13.ax.MediaResolution\"\xa3\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_MP4\x10\x01\x12\r\n\tTYPE_MPEG\x10\x02\x12\x0c\n\x08TYPE_MPG\x10\x03\x12\x0c\n\x08TYPE_MOV\x10\x04\x12\x0c\n\x08TYPE_AVI\x10\x05\x12\x0e\n\nTYPE_X_FLV\x10\x06\x12\r\n\tTYPE_WEBM\x10\x07\x12\x0c\n\x08TYPE_WMV\x10\x08\x12\r\n\tTYPE_3GPP\x10\tB\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\x86\x03\n\x07\x43ontent\x12%\n\x07thought\x18\x05 \x01(\x0b\x32\x12.ax.ThoughtContentH\x00\x12\x1f\n\x04text\x18\n \x01(\x0b\x32\x0f.ax.TextContentH\x00\x12!\n\x05image\x18\x0b \x01(\x0b\x32\x10.ax.ImageContentH\x00\x12!\n\x05\x61udio\x18\x0c \x01(\x0b\x32\x10.ax.AudioContentH\x00\x12\'\n\x08\x64ocument\x18\r \x01(\x0b\x32\x13.ax.DocumentContentH\x00\x12!\n\x05video\x18\x0e \x01(\x0b\x32\x10.ax.VideoContentH\x00\x12/\n\x0c\x63onfirmation\x18\x1a \x01(\x0b\x32\x17.ax.ConfirmationContentH\x00\x12(\n\ttool_call\x18\x18 \x01(\x0b\x32\x13.ax.ToolCallContentH\x00\x12,\n\x0btool_result\x18\x19 \x01(\x0b\x32\x15.ax.ToolResultContentH\x00\x42\x06\n\x04typeJ\x04\x08\x01\x10\x05J\x04\x08\x06\x10\nJ\x04\x08\x0f\x10\x18*b\n\x0fMediaResolution\x12 \n\x1cMEDIA_RESOLUTION_UNSPECIFIED\x10\x00\x12\x07\n\x03LOW\x10\x01\x12\n\n\x06MEDIUM\x10\x02\x12\x08\n\x04HIGH\x10\x03\x12\x0e\n\nULTRA_HIGH\x10\x04\x42\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13proto/content.proto\x12\x02\x61x\"-\n\x0bTextContent\x12\x0c\n\x04text\x18\x03 \x01(\tJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x04type\"$\n\x10\x41pprovalDecision\x12\x10\n\x08\x61pproved\x18\x01 \x01(\x08\"1\n\x0f\x44\x65\x63lineDecision\x12\x10\n\x08\x64\x65\x63lined\x18\x01 \x01(\x08J\x04\x08\x02\x10\x03R\x06reason\"\xa3\x01\n\x13\x43onfirmationContent\x12\n\n\x02id\x18\x03 \x01(\t\x12\x10\n\x08question\x18\x04 \x01(\t\x12(\n\x08\x61pproval\x18\x05 \x01(\x0b\x32\x14.ax.ApprovalDecisionH\x00\x12&\n\x07\x64\x65\x63line\x18\x06 \x01(\x0b\x32\x13.ax.DeclineDecisionH\x00\x42\n\n\x08\x64\x65\x63isionJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03R\x04type\"\xbd\x02\n\x0cImageContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.ImageContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x06 \x01(\tH\x00\x12\'\n\nresolution\x18\x05 \x01(\x0e\x32\x13.ax.MediaResolution\"\x9b\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_PNG\x10\x01\x12\r\n\tTYPE_JPEG\x10\x02\x12\r\n\tTYPE_WEBP\x10\x03\x12\r\n\tTYPE_HEIC\x10\x04\x12\r\n\tTYPE_HEIF\x10\x05\x12\x0c\n\x08TYPE_GIF\x10\x07\x12\x0c\n\x08TYPE_BMP\x10\x08\x12\r\n\tTYPE_TIFF\x10\t\"\x04\x08\x06\x10\x06\x42\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\x8b\x03\n\x0c\x41udioContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.AudioContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x05 \x01(\tH\x00\x12\x10\n\x08\x63hannels\x18\x07 \x01(\x05\x12\x13\n\x0bsample_rate\x18\x08 \x01(\x05\"\xdf\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_WAV\x10\x01\x12\x0c\n\x08TYPE_MP3\x10\x02\x12\r\n\tTYPE_AIFF\x10\x03\x12\x0c\n\x08TYPE_AAC\x10\x04\x12\x0c\n\x08TYPE_OGG\x10\x05\x12\r\n\tTYPE_FLAC\x10\x06\x12\r\n\tTYPE_MPEG\x10\x07\x12\x0c\n\x08TYPE_M4A\x10\x08\x12\x0c\n\x08TYPE_L16\x10\t\x12\x0e\n\nTYPE_S16LE\x10\n\x12\r\n\tTYPE_OPUS\x10\x0b\x12\r\n\tTYPE_ALAW\x10\x0c\x12\x0e\n\nTYPE_MULAW\x10\rB\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04J\x04\x08\x06\x10\x07R\x04typeR\x04rate\"\xcc\x01\n\x0f\x44ocumentContent\x12/\n\tmime_type\x18\x01 \x01(\x0e\x32\x1c.ax.DocumentContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x05 \x01(\tH\x00\"N\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_PDF\x10\x01\x12\r\n\tTYPE_JSON\x10\x02\x12\x0f\n\x0bTYPE_PYTHON\x10\x03\x42\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\xc5\x02\n\x0cVideoContent\x12,\n\tmime_type\x18\x01 \x01(\x0e\x32\x19.ax.VideoContent.MimeType\x12\x0e\n\x04\x64\x61ta\x18\x02 \x01(\x0cH\x00\x12\r\n\x03uri\x18\x06 \x01(\tH\x00\x12\'\n\nresolution\x18\x05 \x01(\x0e\x32\x13.ax.MediaResolution\"\xa3\x01\n\x08MimeType\x12\x14\n\x10TYPE_UNSPECIFIED\x10\x00\x12\x0c\n\x08TYPE_MP4\x10\x01\x12\r\n\tTYPE_MPEG\x10\x02\x12\x0c\n\x08TYPE_MPG\x10\x03\x12\x0c\n\x08TYPE_MOV\x10\x04\x12\x0c\n\x08TYPE_AVI\x10\x05\x12\x0e\n\nTYPE_X_FLV\x10\x06\x12\r\n\tTYPE_WEBM\x10\x07\x12\x0c\n\x08TYPE_WMV\x10\x08\x12\r\n\tTYPE_3GPP\x10\tB\r\n\x0b\x64\x61ta_or_uriJ\x04\x08\x03\x10\x04R\x04type\"\x81\x02\n\x07\x43ontent\x12\x1f\n\x04text\x18\n \x01(\x0b\x32\x0f.ax.TextContentH\x00\x12!\n\x05image\x18\x0b \x01(\x0b\x32\x10.ax.ImageContentH\x00\x12!\n\x05\x61udio\x18\x0c \x01(\x0b\x32\x10.ax.AudioContentH\x00\x12\'\n\x08\x64ocument\x18\r \x01(\x0b\x32\x13.ax.DocumentContentH\x00\x12!\n\x05video\x18\x0e \x01(\x0b\x32\x10.ax.VideoContentH\x00\x12/\n\x0c\x63onfirmation\x18\x1a \x01(\x0b\x32\x17.ax.ConfirmationContentH\x00\x42\x06\n\x04typeJ\x04\x08\x01\x10\nJ\x04\x08\x0f\x10\x1a*b\n\x0fMediaResolution\x12 \n\x1cMEDIA_RESOLUTION_UNSPECIFIED\x10\x00\x12\x07\n\x03LOW\x10\x01\x12\n\n\x06MEDIUM\x10\x02\x12\x08\n\x04HIGH\x10\x03\x12\x0e\n\nULTRA_HIGH\x10\x04\x42\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -23,44 +22,32 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'proto.content_pb2', _global
 if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['DESCRIPTOR']._options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\032github.com/google/ax/proto'
-  _globals['_MEDIARESOLUTION']._serialized_start=2638
-  _globals['_MEDIARESOLUTION']._serialized_end=2736
-  _globals['_TEXTCONTENT']._serialized_start=57
-  _globals['_TEXTCONTENT']._serialized_end=102
-  _globals['_APPROVALDECISION']._serialized_start=104
-  _globals['_APPROVALDECISION']._serialized_end=140
-  _globals['_DECLINEDECISION']._serialized_start=142
-  _globals['_DECLINEDECISION']._serialized_end=191
-  _globals['_CONFIRMATIONCONTENT']._serialized_start=194
-  _globals['_CONFIRMATIONCONTENT']._serialized_end=357
-  _globals['_THOUGHTSUMMARYCONTENT']._serialized_start=359
-  _globals['_THOUGHTSUMMARYCONTENT']._serialized_end=429
-  _globals['_THOUGHTCONTENT']._serialized_start=431
-  _globals['_THOUGHTCONTENT']._serialized_end=552
-  _globals['_TOOLCALLCONTENT']._serialized_start=554
-  _globals['_TOOLCALLCONTENT']._serialized_end=660
-  _globals['_TOOLRESULTCONTENT']._serialized_start=662
-  _globals['_TOOLRESULTCONTENT']._serialized_end=785
-  _globals['_FUNCTIONCALLCONTENT']._serialized_start=787
-  _globals['_FUNCTIONCALLCONTENT']._serialized_end=878
-  _globals['_FUNCTIONRESULTCONTENT']._serialized_start=880
-  _globals['_FUNCTIONRESULTCONTENT']._serialized_end=990
-  _globals['_IMAGECONTENT']._serialized_start=993
-  _globals['_IMAGECONTENT']._serialized_end=1310
-  _globals['_IMAGECONTENT_MIMETYPE']._serialized_start=1128
-  _globals['_IMAGECONTENT_MIMETYPE']._serialized_end=1283
-  _globals['_AUDIOCONTENT']._serialized_start=1313
-  _globals['_AUDIOCONTENT']._serialized_end=1708
-  _globals['_AUDIOCONTENT_MIMETYPE']._serialized_start=1446
-  _globals['_AUDIOCONTENT_MIMETYPE']._serialized_end=1669
-  _globals['_DOCUMENTCONTENT']._serialized_start=1711
-  _globals['_DOCUMENTCONTENT']._serialized_end=1915
-  _globals['_DOCUMENTCONTENT_MIMETYPE']._serialized_start=1810
-  _globals['_DOCUMENTCONTENT_MIMETYPE']._serialized_end=1888
-  _globals['_VIDEOCONTENT']._serialized_start=1918
-  _globals['_VIDEOCONTENT']._serialized_end=2243
-  _globals['_VIDEOCONTENT_MIMETYPE']._serialized_start=2053
-  _globals['_VIDEOCONTENT_MIMETYPE']._serialized_end=2216
-  _globals['_CONTENT']._serialized_start=2246
-  _globals['_CONTENT']._serialized_end=2636
+  _globals['_MEDIARESOLUTION']._serialized_start=1842
+  _globals['_MEDIARESOLUTION']._serialized_end=1940
+  _globals['_TEXTCONTENT']._serialized_start=27
+  _globals['_TEXTCONTENT']._serialized_end=72
+  _globals['_APPROVALDECISION']._serialized_start=74
+  _globals['_APPROVALDECISION']._serialized_end=110
+  _globals['_DECLINEDECISION']._serialized_start=112
+  _globals['_DECLINEDECISION']._serialized_end=161
+  _globals['_CONFIRMATIONCONTENT']._serialized_start=164
+  _globals['_CONFIRMATIONCONTENT']._serialized_end=327
+  _globals['_IMAGECONTENT']._serialized_start=330
+  _globals['_IMAGECONTENT']._serialized_end=647
+  _globals['_IMAGECONTENT_MIMETYPE']._serialized_start=465
+  _globals['_IMAGECONTENT_MIMETYPE']._serialized_end=620
+  _globals['_AUDIOCONTENT']._serialized_start=650
+  _globals['_AUDIOCONTENT']._serialized_end=1045
+  _globals['_AUDIOCONTENT_MIMETYPE']._serialized_start=783
+  _globals['_AUDIOCONTENT_MIMETYPE']._serialized_end=1006
+  _globals['_DOCUMENTCONTENT']._serialized_start=1048
+  _globals['_DOCUMENTCONTENT']._serialized_end=1252
+  _globals['_DOCUMENTCONTENT_MIMETYPE']._serialized_start=1147
+  _globals['_DOCUMENTCONTENT_MIMETYPE']._serialized_end=1225
+  _globals['_VIDEOCONTENT']._serialized_start=1255
+  _globals['_VIDEOCONTENT']._serialized_end=1580
+  _globals['_VIDEOCONTENT_MIMETYPE']._serialized_start=1390
+  _globals['_VIDEOCONTENT_MIMETYPE']._serialized_end=1553
+  _globals['_CONTENT']._serialized_start=1583
+  _globals['_CONTENT']._serialized_end=1840
 # @@protoc_insertion_point(module_scope)

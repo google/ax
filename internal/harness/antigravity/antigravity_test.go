@@ -29,7 +29,7 @@ var antigravityHarnessConfig = []byte(`{"system_instructions":"be terse"}`)
 
 func TestRun_AutoStartFalse_ServerOK_Succeeds(t *testing.T) {
 	srv := &harnesstest.MockHarnessServer{
-		Outputs: []*proto.Message{harnesstest.ThoughtText("Analyzing"), harnesstest.AssistantText("Hello world")},
+		Outputs: []*proto.Step{harnesstest.ThoughtStep("Analyzing"), harnesstest.AssistantStep("Hello world")},
 	}
 	harnessClient, err := New(context.Background(), harnesstest.StartHarnessServer(t, srv), "", false)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestRun_AutoStartFalse_ServerOK_Succeeds(t *testing.T) {
 	}
 	defer exec.Close(context.Background())
 
-	if err := exec.Queue(context.Background(), harnesstest.UserText("Hi")); err != nil {
+	if err := exec.Queue(context.Background(), userStep("Hi")); err != nil {
 		t.Fatalf("failed to queue message: %v", err)
 	}
 
@@ -54,14 +54,14 @@ func TestRun_AutoStartFalse_ServerOK_Succeeds(t *testing.T) {
 	if !handler.IsDone() {
 		t.Error("expected OnComplete to be called")
 	}
-	msgs := handler.Collected()
-	if len(msgs) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	steps := handler.Collected()
+	if len(steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(steps))
 	}
-	if got := msgs[0].GetContent().GetThought().GetSummary()[0].GetText().GetText(); got != "Analyzing" {
+	if got := steps[0].GetThought().GetSummary()[0].GetText().GetText(); got != "Analyzing" {
 		t.Errorf("expected 'Analyzing', got %q", got)
 	}
-	if got := msgs[1].GetContent().GetText().GetText(); got != "Hello world" {
+	if got := steps[1].GetContent().Content[0].GetText().GetText(); got != "Hello world" {
 		t.Errorf("expected 'Hello world', got %q", got)
 	}
 	// The harness propagated the conversation id and config to the server.
@@ -84,7 +84,7 @@ func TestRun_AutoStartFalse_ServerErrorFrame_Fails(t *testing.T) {
 	exec, _ := harnessClient.Start(context.Background(), "conv-test", antigravityHarnessConfig)
 	defer exec.Close(context.Background())
 
-	if err := exec.Queue(context.Background(), harnesstest.UserText("Hi")); err != nil {
+	if err := exec.Queue(context.Background(), userStep("Hi")); err != nil {
 		t.Fatalf("failed to queue message: %v", err)
 	}
 
@@ -120,5 +120,16 @@ func TestDefaultStateDir(t *testing.T) {
 	}
 	if want := filepath.Join(home, ".ax", "antigravity", "conversations"); got != want {
 		t.Errorf("DefaultStateDir() = %q, want %q", got, want)
+	}
+}
+
+func userStep(text string) *proto.Step {
+	return &proto.Step{
+		Type: &proto.Step_Content{
+			Content: &proto.ContentStep{
+				Role:    "user",
+				Content: []*proto.Content{{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}}},
+			},
+		},
 	}
 }

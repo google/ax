@@ -43,12 +43,14 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		t.Cleanup(func() { _ = log.DeleteAll(ctx, conv) })
 
 		// 1. Conversation log.
-		cev1 := &proto.ConversationEvent{ConversationId: conv, Step: 1, ExecId: task1}
-		cev2 := &proto.ConversationEvent{ConversationId: conv, Step: 2, ExecId: task2}
-		if _, err := log.Append(ctx, cev1); err != nil {
+		cev1 := &proto.StepEvent{ConversationId: conv, InteractionId: task1}
+		cev2 := &proto.StepEvent{ConversationId: conv, InteractionId: task2}
+		s1, err := log.Append(ctx, cev1)
+		if err != nil {
 			t.Fatalf("failed to append cev1: %v", err)
 		}
-		if _, err := log.Append(ctx, cev2); err != nil {
+		s2, err := log.Append(ctx, cev2)
+		if err != nil {
 			t.Fatalf("failed to append cev2: %v", err)
 		}
 
@@ -59,11 +61,11 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		if len(cEvents) != 2 {
 			t.Fatalf("expected 2 conversation events, got %d", len(cEvents))
 		}
-		if cEvents[0].Step != 1 || cEvents[1].Step != 2 {
-			t.Errorf("conversation events out of order: %d, %d", cEvents[0].Step, cEvents[1].Step)
+		if s1 != 1 || s2 != 2 {
+			t.Errorf("conversation events out of order: %d, %d", s1, s2)
 		}
-		if cEvents[0].ExecId != task1 || cEvents[1].ExecId != task2 {
-			t.Errorf("conversation events mismatch: %q, %q", cEvents[0].ExecId, cEvents[1].ExecId)
+		if cEvents[0].InteractionId != task1 || cEvents[1].InteractionId != task2 {
+			t.Errorf("conversation events mismatch: %q, %q", cEvents[0].InteractionId, cEvents[1].InteractionId)
 		}
 
 
@@ -97,10 +99,10 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 			_ = log.DeleteAll(ctx, conv2)
 		})
 
-		if _, err := log.Append(ctx, &proto.ConversationEvent{ConversationId: conv1, Step: 1, ExecId: task1}); err != nil {
+		if _, err := log.Append(ctx, &proto.StepEvent{ConversationId: conv1, InteractionId: task1}); err != nil {
 			t.Fatalf("append: %v", err)
 		}
-		if _, err := log.Append(ctx, &proto.ConversationEvent{ConversationId: conv2, Step: 1, ExecId: task3}); err != nil {
+		if _, err := log.Append(ctx, &proto.StepEvent{ConversationId: conv2, InteractionId: task3}); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 
@@ -129,8 +131,8 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		t.Cleanup(func() { _ = log.DeleteAll(ctx, conv) })
 
 		const n = 3
-		for i := int32(1); i <= n; i++ {
-			step, err := log.Append(ctx, &proto.ConversationEvent{ConversationId: conv, ExecId: "t"})
+		for i := int64(1); i <= n; i++ {
+			step, err := log.Append(ctx, &proto.StepEvent{ConversationId: conv, InteractionId: "t"})
 			if err != nil {
 				t.Fatalf("auto-step append failed: %v", err)
 			}
@@ -145,11 +147,6 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		}
 		if len(events) != n {
 			t.Fatalf("expected %d events, got %d", n, len(events))
-		}
-		for i, e := range events {
-			if e.Step != int32(i+1) {
-				t.Errorf("event %d: expected step %d, got %d", i, i+1, e.Step)
-			}
 		}
 	})
 }

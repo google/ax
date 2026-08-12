@@ -42,7 +42,6 @@ var (
 	execServerAddr     string
 	execAXConfigFile   string
 	execResume         bool // allow resuming an execution without inputs
-	execLastStep       int32
 )
 
 var execCmd = &cobra.Command{
@@ -63,7 +62,6 @@ func registerExecFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&execServerAddr, "server", "", "gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)")
 	cmd.Flags().StringVar(&execAXConfigFile, "ax-config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
 	cmd.Flags().BoolVar(&execResume, "resume", false, "Resume a conversation without inputs")
-	cmd.Flags().Int32Var(&execLastStep, "last-step", 0, "Last step number seen by the client")
 	cmd.MarkFlagsMutuallyExclusive("input", "resume")
 	cmd.MarkFlagsMutuallyExclusive("config", "config-file")
 }
@@ -138,14 +136,14 @@ func runExec(cmd *cobra.Command, args []string) error {
 		harnessConfig = []byte(execConfig)
 	}
 
-	return execLoop(ctx, execConversationID, execHarnessID, harnessConfig, execInput, execLastStep)
+	return execLoop(ctx, execConversationID, execHarnessID, harnessConfig, execInput)
 }
 
-func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []byte, input string, lastStep int32) error {
+func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []byte, input string) error {
 	d := internal.NewDisplay(id, os.Stdout)
 	d.DisplayHeader()
 
-	var inputs []*proto.Message
+	var inputs []*proto.Step
 	if !execResume {
 		var quit bool
 		var err error
@@ -156,13 +154,19 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		if quit {
 			return nil
 		}
-		inputs = []*proto.Message{
+		inputs = []*proto.Step{
 			{
-				Role: "user",
-				Content: &proto.Content{
-					Type: &proto.Content_Text{
-						Text: &proto.TextContent{
-							Text: input,
+				Type: &proto.Step_Content{
+					Content: &proto.ContentStep{
+						Role: "user",
+						Content: []*proto.Content{
+							{
+								Type: &proto.Content_Text{
+									Text: &proto.TextContent{
+										Text: input,
+									},
+								},
+							},
 						},
 					},
 				},
@@ -174,14 +178,12 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		reqCtx, cancel := context.WithCancel(ctx)
 		interruptHandler.SetActiveCancel(cancel)
 
-		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionRequest{
+		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 			ConversationId: id,
 			HarnessId:      harnessID,
 			HarnessConfig:  harnessConfig,
 			Inputs:         inputs,
-			LastStep:       lastStep,
 		})
-		lastStep = 0 // disable resuming from step, user sees the step on the screen
 
 		interruptHandler.ClearActiveCancel()
 		cancel()
@@ -207,30 +209,42 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 					}
 					return err
 				}
-				var decision []*proto.Message
+				var decision []*proto.Step
 				if approved {
-					decision = []*proto.Message{{
-						Role: "user",
-						Content: &proto.Content{
-							Type: &proto.Content_Confirmation{
-								Confirmation: &proto.ConfirmationContent{
-									Id: conf.Id,
-									Decision: &proto.ConfirmationContent_Approval{
-										Approval: &proto.ApprovalDecision{Approved: true},
+					decision = []*proto.Step{{
+						Type: &proto.Step_Content{
+							Content: &proto.ContentStep{
+								Role: "user",
+								Content: []*proto.Content{
+									{
+										Type: &proto.Content_Confirmation{
+											Confirmation: &proto.ConfirmationContent{
+												Id: conf.Id,
+												Decision: &proto.ConfirmationContent_Approval{
+													Approval: &proto.ApprovalDecision{Approved: true},
+												},
+											},
+										},
 									},
 								},
 							},
 						},
 					}}
 				} else {
-					decision = []*proto.Message{{
-						Role: "user",
-						Content: &proto.Content{
-							Type: &proto.Content_Confirmation{
-								Confirmation: &proto.ConfirmationContent{
-									Id: conf.Id,
-									Decision: &proto.ConfirmationContent_Decline{
-										Decline: &proto.DeclineDecision{Declined: true},
+					decision = []*proto.Step{{
+						Type: &proto.Step_Content{
+							Content: &proto.ContentStep{
+								Role: "user",
+								Content: []*proto.Content{
+									{
+										Type: &proto.Content_Confirmation{
+											Confirmation: &proto.ConfirmationContent{
+												Id: conf.Id,
+												Decision: &proto.ConfirmationContent_Decline{
+													Decline: &proto.DeclineDecision{Declined: true},
+												},
+											},
+										},
 									},
 								},
 							},
@@ -241,7 +255,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 				reqCtx, cancel := context.WithCancel(ctx)
 				interruptHandler.SetActiveCancel(cancel)
 
-				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionRequest{
+				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 					ConversationId: id,
 					HarnessId:      harnessID,
 					HarnessConfig:  harnessConfig,
@@ -254,6 +268,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						fmt.Println("Request canceled.")
+						inputs = nil
 						break
 					}
 					return err
@@ -265,8 +280,6 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		}
 
 		// Per-request config: clear the config after each turn.
-		harnessConfig = nil
-
 		var quit bool
 		input, harnessConfig, quit, err = promptUser(d, "", harnessConfig)
 		if err != nil {
@@ -276,13 +289,19 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 			return nil
 		}
 
-		inputs = []*proto.Message{
+		inputs = []*proto.Step{
 			{
-				Role: "user",
-				Content: &proto.Content{
-					Type: &proto.Content_Text{
-						Text: &proto.TextContent{
-							Text: input,
+				Type: &proto.Step_Content{
+					Content: &proto.ContentStep{
+						Role: "user",
+						Content: []*proto.Content{
+							{
+								Type: &proto.Content_Text{
+									Text: &proto.TextContent{
+										Text: input,
+									},
+								},
+							},
 						},
 					},
 				},
@@ -291,7 +310,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 	}
 }
 
-func runAutoExec(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
+func runAutoExec(ctx context.Context, d *internal.Display, req *proto.CreateInteractionEvent) (*proto.ConfirmationContent, error) {
 	fn := runExecHeadless
 	if execServerAddr != "" {
 		fn = runExecServer
@@ -299,16 +318,22 @@ func runAutoExec(ctx context.Context, d *internal.Display, req *proto.CreateInte
 	return fn(ctx, d, req)
 }
 
-func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
+func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.CreateInteractionEvent) (*proto.ConfirmationContent, error) {
 	var confirmation *proto.ConfirmationContent
-	var lastStep int32
+	var lastStep int64
 	outputHandler := cliutil.ExecHandler(func(resp *proto.CreateInteractionResponse) error {
-		for _, m := range resp.Outputs {
-			if conf := m.GetContent().GetConfirmation(); conf != nil {
-				confirmation = conf
+		for _, step := range resp.Outputs {
+			if step.Index != 0 {
+				lastStep = step.Index
+			}
+			if contentStep := step.GetContent(); contentStep != nil {
+				for _, c := range contentStep.Content {
+					if conf := c.GetConfirmation(); conf != nil {
+						confirmation = conf
+					}
+				}
 			}
 		}
-		lastStep = resp.Step
 		displayContents(d, resp.Outputs)
 		return nil
 	})
@@ -317,12 +342,16 @@ func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.Create
 	}
 
 	if confirmation == nil {
-		d.FinishOutput(fmt.Sprintf("step=%d", lastStep))
+		if lastStep != 0 {
+			d.FinishOutput(fmt.Sprintf("step=%d", lastStep))
+		} else {
+			d.FinishOutput("")
+		}
 	}
 	return confirmation, nil
 }
 
-func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
+func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateInteractionEvent) (*proto.ConfirmationContent, error) {
 	conn, err := connect(execServerAddr)
 	if err != nil {
 		return nil, err
@@ -336,7 +365,7 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateIn
 	}
 
 	var confirmation *proto.ConfirmationContent
-	var lastStep int32
+	var lastStep int64
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -345,27 +374,35 @@ func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateIn
 		if err != nil {
 			return nil, fmt.Errorf("error receiving response: %w", err)
 		}
-		lastStep = resp.Step
 		if resp.Outputs != nil {
-			for _, m := range resp.Outputs {
-				if conf := m.GetContent().GetConfirmation(); conf != nil {
-					confirmation = conf
+			for _, step := range resp.Outputs {
+				if step.Index != 0 {
+					lastStep = step.Index
+				}
+				if contentStep := step.GetContent(); contentStep != nil {
+					for _, c := range contentStep.Content {
+						if conf := c.GetConfirmation(); conf != nil {
+							confirmation = conf
+						}
+					}
 				}
 			}
 			displayContents(d, resp.Outputs)
 		}
 	}
 	if confirmation == nil {
-		d.FinishOutput(fmt.Sprintf("step=%d", lastStep))
+		if lastStep != 0 {
+			d.FinishOutput(fmt.Sprintf("step=%d", lastStep))
+		} else {
+			d.FinishOutput("")
+		}
 	}
 	return confirmation, nil
 }
 
-func displayContents(d *internal.Display, contents []*proto.Message) {
-	for _, output := range contents {
-		if content := output.GetContent(); content != nil {
-			d.Display(content)
-		}
+func displayContents(d *internal.Display, steps []*proto.Step) {
+	for _, step := range steps {
+		d.Display(step)
 	}
 }
 

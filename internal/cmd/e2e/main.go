@@ -99,27 +99,37 @@ func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *cont
 
 	handler := controller.ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		for _, out := range resp.Outputs {
-			if textContent := out.GetContent().GetText().GetText(); textContent != "" {
-				fmt.Printf("Agent Output: %s\n", textContent)
-			} else if toolCall := out.GetContent().GetToolCall(); toolCall != nil {
+			if contentStep := out.GetContent(); contentStep != nil {
+				for _, c := range contentStep.Content {
+					if textContent := c.GetText().GetText(); textContent != "" {
+						fmt.Printf("Agent Output: %s\n", textContent)
+					}
+				}
+			} else if toolCall := out.GetToolCall(); toolCall != nil {
 				fmt.Printf("Agent Triggered Tool Call: %s (ID: %s)\n", toolCall.GetFunctionCall().Name, toolCall.Id)
 			}
 		}
 		return nil
 	})
 
-	inputs := []*proto.Message{
+	inputs := []*proto.Step{
 		{
-			Role: "user",
-			Content: &proto.Content{
-				Type: &proto.Content_Text{
-					Text: &proto.TextContent{Text: "What is the weather in New York?"},
+			Type: &proto.Step_Content{
+				Content: &proto.ContentStep{
+					Role: "user",
+					Content: []*proto.Content{
+						{
+							Type: &proto.Content_Text{
+								Text: &proto.TextContent{Text: "What is the weather in New York?"},
+							},
+						},
+					},
 				},
 			},
 		},
 	}
 
-	err = c.Exec(ctx, &proto.CreateInteractionRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: "e2e-conv",
 		Inputs:         inputs,
 		HarnessId:      harnessID,

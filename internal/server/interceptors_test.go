@@ -48,7 +48,7 @@ type mockExecutionServer struct {
 	proto.UnimplementedInteractionsServiceServer
 }
 
-func (m *mockExecutionServer) CreateInteraction(req *proto.CreateInteractionRequest, stream proto.InteractionsService_CreateInteractionServer) error {
+func (m *mockExecutionServer) CreateInteraction(req *proto.CreateInteractionEvent, stream proto.InteractionsService_CreateInteractionServer) error {
 	if req.ConversationId == "fail" {
 		return status.Error(codes.InvalidArgument, "mock error")
 	}
@@ -177,7 +177,7 @@ func TestLoggingInterceptors(t *testing.T) {
 	t.Run("Stream Success", func(t *testing.T) {
 		logBuf.Reset()
 		ctx := context.Background()
-		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionRequest{ConversationId: "conv-456"})
+		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionEvent{ConversationId: "conv-456"})
 		if err != nil {
 			t.Fatalf("CreateInteraction stream init failed: %v", err)
 		}
@@ -218,7 +218,7 @@ func TestLoggingInterceptors(t *testing.T) {
 	t.Run("Stream Failure", func(t *testing.T) {
 		logBuf.Reset()
 		ctx := context.Background()
-		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionRequest{ConversationId: "fail"})
+		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionEvent{ConversationId: "fail"})
 		if err != nil {
 			t.Fatalf("Exec stream init failed: %v", err)
 		}

@@ -79,11 +79,15 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 		HarnessId:      harnessClientID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				Messages: []*proto.Message{
+				Steps: []*proto.Step{
 					{
-						Role: "user",
-						Content: &proto.Content{
-							Type: &proto.Content_Text{Text: &proto.TextContent{Text: input}},
+						Type: &proto.Step_Content{
+							Content: &proto.ContentStep{
+								Role: "user",
+								Content: []*proto.Content{
+									{Type: &proto.Content_Text{Text: &proto.TextContent{Text: input}}},
+								},
+							},
 						},
 					},
 				},
@@ -108,12 +112,16 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 		}
 		switch payload := resp.Type.(type) {
 		case *proto.HarnessResponse_Outputs:
-			for i, m := range payload.Outputs.Messages {
-				var text string
-				if tb, ok := m.Content.Type.(*proto.Content_Text); ok {
-					text = tb.Text.Text
+			for i, step := range payload.Outputs.Steps {
+				if contentStep := step.GetContent(); contentStep != nil {
+					for _, c := range contentStep.Content {
+						var text string
+						if tb, ok := c.Type.(*proto.Content_Text); ok {
+							text = tb.Text.Text
+						}
+						fmt.Printf("Server > step[%d] (%s): %s\n", i, contentStep.Role, text)
+					}
 				}
-				fmt.Printf("Server > message[%d] (%s): %s\n", i, m.Role, text)
 			}
 		case *proto.HarnessResponse_End:
 			if errDetail := payload.End.GetError(); errDetail != nil {

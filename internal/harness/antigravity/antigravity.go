@@ -139,7 +139,7 @@ type antigravityExecution struct {
 	harnessConfig  []byte
 
 	mu     sync.Mutex
-	queued []*proto.Message
+	queued []*proto.Step
 	closed bool
 }
 
@@ -149,13 +149,13 @@ func (e *antigravityExecution) ID() string {
 }
 
 // Queue implements Execution.Queue.
-func (e *antigravityExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (e *antigravityExecution) Queue(ctx context.Context, steps ...*proto.Step) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
 		return fmt.Errorf("execution session already closed")
 	}
-	e.queued = append(e.queued, msg...)
+	e.queued = append(e.queued, steps...)
 	return nil
 }
 
@@ -197,7 +197,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler)
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
 				HarnessConfig: e.harnessConfig,
-				Messages:      inputs,
+				Steps:         inputs,
 			},
 		},
 	}

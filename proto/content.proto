@@ -16,8 +16,6 @@ syntax = "proto3";
 
 package ax;
 
-import "google/protobuf/struct.proto";
-
 option go_package = "github.com/google/ax/proto";
 
 // TextContent represents a text content.
@@ -45,58 +43,6 @@ message ConfirmationContent {
   oneof decision {
     ApprovalDecision approval = 5;
     DeclineDecision decline = 6;
-  }
-}
-
-message ThoughtSummaryContent {
-  reserved 2;
-
-  oneof type {
-    TextContent text = 1;
-  }
-}
-
-message ThoughtContent {
-  reserved 1, 2, 3, 4, 5, 8;
-  reserved "type";
-
-  bytes signature = 7;
-  repeated ThoughtSummaryContent summary = 9;
-}
-
-message ToolCallContent {
-  string id = 1;       // A unique ID for this specific tool call.
-  bytes signature = 9; // A signature hash for backend validation.
-  oneof type {
-    FunctionCallContent function_call = 2;
-  }
-}
-
-message ToolResultContent {
-  reserved 1;
-
-  string call_id = 8;  // ID to match the ID from the function call block.
-  bytes signature = 9; // A signature hash for backend validation.
-
-  oneof type {
-    FunctionResultContent function_result = 2;
-  }
-}
-
-message FunctionCallContent {
-  reserved 1, 2;
-
-  string name = 3;
-  google.protobuf.Struct arguments = 4;
-}
-
-message FunctionResultContent {
-  reserved 1, 4;
-  reserved "type";
-
-  string name = 8;
-  oneof result {
-    google.protobuf.Struct response = 3;
   }
 }
 
@@ -207,19 +153,15 @@ message VideoContent {
   MediaResolution resolution = 5;
 }
 
-// Content represents a content input or output.
 message Content {
-  reserved 1 to 4, 6 to 9, 15 to 23;
+  reserved 1 to 9, 15 to 25;
 
   oneof type {
-    ThoughtContent thought = 5;
     TextContent text = 10;
     ImageContent image = 11;
     AudioContent audio = 12;
     DocumentContent document = 13;
     VideoContent video = 14;
-    ConfirmationContent confirmation = 26; // TODO(jbd): Remove out of the Content.
-    ToolCallContent tool_call = 24;
-    ToolResultContent tool_result = 25;
+    ConfirmationContent confirmation = 26; // TODO(jbd): Remove out of the Content and replace it with EliciationStep.
   }
 }

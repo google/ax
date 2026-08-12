@@ -64,7 +64,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 // Exec executes a new agentic loop execution or resumes an existing one.
 // If id is empty, a UUID will be generated.
 // If the execution already exists, it will be resumed with optional new inputs.
-func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionRequest, handler ExecHandler) error {
+func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent, handler ExecHandler) error {
 	if req.ConversationId == "" {
 		return fmt.Errorf("conversation_id is required")
 	}
@@ -149,10 +149,10 @@ type harnessHandler struct {
 	execHandler ExecHandler
 }
 
-func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *proto.Message) error {
+func (a *harnessHandler) OnMessage(ctx context.Context, execID string, step *proto.Step) error {
 	// Log every response received from the harness
 	// TODO(anj): The harness should send the full input sent to get this particular response.
-	step, err := a.logger.LogOutputs(ctx, []*proto.Message{msg}, proto.State_STATE_PENDING)
+	logStep, err := a.logger.LogOutputs(ctx, []*proto.Step{step}, proto.State_STATE_PENDING)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to log streamed message to event log",
 			slog.String("conversation_id", a.logger.conversationID),
@@ -160,22 +160,28 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 		)
 	}
 
+	if step != nil {
+		step.Index = logStep
+	}
+
 	if a.execHandler == nil {
 		return nil
 	}
 	return a.execHandler(&proto.CreateInteractionResponse{
-		Outputs: []*proto.Message{msg},
-		Step:    step,
+		Outputs: []*proto.Step{step},
 	})
 }
 
 func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
 	// Mark the execution turn as completed in the conversation log
 	if _, err := a.logger.LogOutputs(ctx, nil, proto.State_STATE_COMPLETED); err != nil {
-		slog.WarnContext(ctx, "Failed to log completion event to event log",
+		slog.WarnContext(ctx, "Failed to mark completion state in event log",
 			slog.String("conversation_id", a.logger.conversationID),
 			slog.Any("error", err),
 		)
+	}
+	if a.execHandler == nil {
+		return nil
 	}
 	return nil
 }
@@ -205,6 +211,13 @@ func (d *Controller) Close() error {
 	return nil
 }
 
+type logger struct {
+	conversationID string
+	interactionID  string
+	el             eventlog.EventLog
+	harnessID      string
+}
+
 func newLogger(
 	el eventlog.EventLog,
 	conversationID string,
@@ -214,13 +227,6 @@ func newLogger(
 		conversationID: conversationID,
 		harnessID:      harnessID,
 	}
-}
-
-type logger struct {
-	conversationID string
-	execID         string
-	el             eventlog.EventLog
-	harnessID      string
 }
 
 // ResumptionState returns the conversation's current state and the harness it used.
@@ -236,16 +242,14 @@ func (l *logger) ResumptionState(ctx context.Context) (proto.State, string, erro
 		if harnessID == "" && ev.HarnessId != "" {
 			harnessID = ev.HarnessId
 		}
-		if l.execID == "" || ev.ExecId == l.execID {
-			if ev.State != proto.State_STATE_UNSPECIFIED {
-				state = ev.State
-			}
+		if ev.State != proto.State_STATE_UNSPECIFIED {
+			state = ev.State
 		}
 	}
 	return state, harnessID, nil
 }
 
-func (l *logger) LogInputs(ctx context.Context, inputs []*proto.Message, harnessConfig []byte) (int32, error) {
+func (l *logger) LogInputs(ctx context.Context, steps []*proto.Step, harnessConfig []byte) (int64, error) {
 	// Parse the harness config into a human-readable struct for logging.
 	var cfg *structpb.Struct
 	if len(harnessConfig) > 0 {
@@ -258,22 +262,22 @@ func (l *logger) LogInputs(ctx context.Context, inputs []*proto.Message, harness
 			cfg = nil
 		}
 	}
-	ev := &proto.ConversationEvent{
+	ev := &proto.StepEvent{
 		ConversationId: l.conversationID,
-		ExecId:         l.execID,
+		InteractionId:  l.interactionID,
 		HarnessId:      l.harnessID,
 		HarnessConfig:  cfg,
-		Messages:       inputs,
+		Steps:          steps,
 		State:          proto.State_STATE_PENDING,
 	}
 	return l.el.Append(ctx, ev)
 }
 
-func (l *logger) LogOutputs(ctx context.Context, outputs []*proto.Message, state proto.State) (int32, error) {
-	ev := &proto.ConversationEvent{
+func (l *logger) LogOutputs(ctx context.Context, steps []*proto.Step, state proto.State) (int64, error) {
+	ev := &proto.StepEvent{
 		ConversationId: l.conversationID,
-		ExecId:         l.execID,
-		Messages:       outputs,
+		InteractionId:  l.interactionID,
+		Steps:          steps,
 		State:          state,
 	}
 	return l.el.Append(ctx, ev)
