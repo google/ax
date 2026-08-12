@@ -278,6 +278,7 @@ Below is an overview of our upcoming features and planned changes:
 1. Trajectory exposition
 1. Better telemetry exposition
 1. Integrations with Google registries, networking policies, and more
+1. Introduction of a `FilesystemService` for file system operations
 
 ## Contributing
 
