@@ -71,21 +71,6 @@ func (m *MemoryEventLog) Drop(drop func(*proto.StepEvent) bool) {
 	m.AllEvents = kept
 }
 
-func (m *MemoryEventLog) DeleteAll(_ context.Context, conversationID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var keptEvents []*proto.StepEvent
-	for _, ev := range m.AllEvents {
-		if ev.ConversationId != conversationID {
-			keptEvents = append(keptEvents, ev)
-		}
-	}
-	m.AllEvents = keptEvents
-
-	return nil
-}
-
 func (m *MemoryEventLog) Close() error {
 	return nil
 }

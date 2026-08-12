@@ -33,17 +33,6 @@ import (
 )
 
 // Mock servers for testing interceptors
-type mockConversationServer struct {
-	proto.UnimplementedConversationServiceServer
-}
-
-func (m *mockConversationServer) DeleteConversation(ctx context.Context, req *proto.DeleteConversationRequest) (*proto.DeleteConversationResponse, error) {
-	if req.ConversationId == "fail" {
-		return nil, status.Error(codes.InvalidArgument, "mock error")
-	}
-	return &proto.DeleteConversationResponse{}, nil
-}
-
 type mockExecutionServer struct {
 	proto.UnimplementedInteractionsServiceServer
 }
@@ -64,7 +53,6 @@ func setupTestServer(t *testing.T) (*grpc.ClientConn, func()) {
 		grpc.ChainStreamInterceptor(StreamLoggingInterceptor),
 	)
 
-	proto.RegisterConversationServiceServer(s, &mockConversationServer{})
 	proto.RegisterInteractionsServiceServer(s, &mockExecutionServer{})
 
 	go func() {
@@ -113,66 +101,7 @@ func TestLoggingInterceptors(t *testing.T) {
 	slog.SetDefault(testLogger)
 	defer slog.SetDefault(oldLogger)
 
-	convClient := proto.NewConversationServiceClient(conn)
 	executionClient := proto.NewInteractionsServiceClient(conn)
-
-	t.Run("Unary Success", func(t *testing.T) {
-		logBuf.Reset()
-		ctx := context.Background()
-		_, err := convClient.DeleteConversation(ctx, &proto.DeleteConversationRequest{ConversationId: "conv-123"})
-		if err != nil {
-			t.Fatalf("DeleteConversation failed: %v", err)
-		}
-
-		entries := parseLogs(t, &logBuf)
-		if len(entries) != 2 {
-			t.Fatalf("Expected 2 log entries, got %d", len(entries))
-		}
-
-		// Verify Start Log
-		if entries[0].Msg != "Handling unary request" {
-			t.Errorf("Expected start log msg 'Handling unary request', got %q", entries[0].Msg)
-		}
-		if entries[0].Method != "/ax.ConversationService/DeleteConversation" {
-			t.Errorf("Expected method '/ax.ConversationService/DeleteConversation', got %q", entries[0].Method)
-		}
-		if entries[0].ConversationID != "conv-123" {
-			t.Errorf("Expected conversation_id 'conv-123', got %q", entries[0].ConversationID)
-		}
-
-		// Verify End Log
-		if entries[1].Msg != "Request completed" {
-			t.Errorf("Expected end log msg 'Request completed', got %q", entries[1].Msg)
-		}
-		if entries[1].Level != "INFO" {
-			t.Errorf("Expected Level INFO, got %s", entries[1].Level)
-		}
-	})
-
-	t.Run("Unary Failure", func(t *testing.T) {
-		logBuf.Reset()
-		ctx := context.Background()
-		_, err := convClient.DeleteConversation(ctx, &proto.DeleteConversationRequest{ConversationId: "fail"})
-		if err == nil {
-			t.Fatal("Expected DeleteConversation to fail")
-		}
-
-		entries := parseLogs(t, &logBuf)
-		if len(entries) != 2 {
-			t.Fatalf("Expected 2 log entries, got %d", len(entries))
-		}
-
-		// Verify End Log
-		if entries[1].Msg != "Request failed" {
-			t.Errorf("Expected end log msg 'Request failed', got %q", entries[1].Msg)
-		}
-		if entries[1].Level != "ERROR" {
-			t.Errorf("Expected Level ERROR, got %s", entries[1].Level)
-		}
-		if !strings.Contains(entries[1].Error, "mock error") {
-			t.Errorf("Expected error details to contain 'mock error', got %q", entries[1].Error)
-		}
-	})
 
 	t.Run("Stream Success", func(t *testing.T) {
 		logBuf.Reset()

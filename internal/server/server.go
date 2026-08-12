@@ -18,7 +18,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -38,7 +37,6 @@ import (
 // Server implements the AXService gRPC service.
 type Server struct {
 	proto.UnimplementedInteractionsServiceServer
-	proto.UnimplementedConversationServiceServer
 
 	controller *controller.Controller
 	grpcServer *grpc.Server
@@ -73,26 +71,6 @@ func (s *Server) CreateInteraction(req *proto.CreateInteractionEvent, stream grp
 	return s.controller.Exec(ctx, req, outputHandler)
 }
 
-
-func (s *Server) DeleteConversation(ctx context.Context, req *proto.DeleteConversationRequest) (*proto.DeleteConversationResponse, error) {
-	slog.InfoContext(ctx, "Deleting conversation...",
-		slog.String("conversation_id", req.ConversationId))
-
-	if req.ConversationId == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "conversation_id is required")
-	}
-	inFlight, cleanup := s.markInFlight(req.ConversationId)
-	if inFlight {
-		return nil, status.Errorf(codes.FailedPrecondition, "conversation %q is already in flight", req.ConversationId)
-	}
-	defer cleanup()
-
-	if err := s.controller.Delete(ctx, req.ConversationId); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete conversation: %v", err)
-	}
-	return &proto.DeleteConversationResponse{}, nil
-}
-
 // Serve starts the gRPC server on the specified address.
 func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	lis, err := net.Listen("tcp", address)
@@ -108,7 +86,6 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 
 	s.grpcServer = grpc.NewServer(opts...)
 	proto.RegisterInteractionsServiceServer(s.grpcServer, s)
-	proto.RegisterConversationServiceServer(s.grpcServer, s)
 
 	// Register standard gRPC Health Check server.
 	hs := health.NewServer()

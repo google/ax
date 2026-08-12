@@ -35,9 +35,6 @@ type EventLog interface {
 	// Events returns all events for the conversation.
 	Events(ctx context.Context, conversationID string) ([]*proto.StepEvent, error)
 
-	// DeleteAll deletes all events for a specific conversation ID.
-	DeleteAll(ctx context.Context, conversationID string) error
-
 	// Close releases the underlying resources and closes the log.
 	Close() error
 }

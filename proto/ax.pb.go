@@ -784,86 +784,6 @@ func (x *CreateInteractionResponse) GetOutputs() []*Step {
 	return nil
 }
 
-type DeleteConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *DeleteConversationRequest) Reset() {
-	*x = DeleteConversationRequest{}
-	mi := &file_proto_ax_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteConversationRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteConversationRequest) ProtoMessage() {}
-
-func (x *DeleteConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteConversationRequest.ProtoReflect.Descriptor instead.
-func (*DeleteConversationRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *DeleteConversationRequest) GetConversationId() string {
-	if x != nil {
-		return x.ConversationId
-	}
-	return ""
-}
-
-type DeleteConversationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteConversationResponse) Reset() {
-	*x = DeleteConversationResponse{}
-	mi := &file_proto_ax_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteConversationResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteConversationResponse) ProtoMessage() {}
-
-func (x *DeleteConversationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteConversationResponse.ProtoReflect.Descriptor instead.
-func (*DeleteConversationResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{11}
-}
-
 type Step struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Description string                 `protobuf:"bytes,16,opt,name=description,proto3" json:"description,omitempty"`
@@ -881,7 +801,7 @@ type Step struct {
 
 func (x *Step) Reset() {
 	*x = Step{}
-	mi := &file_proto_ax_proto_msgTypes[12]
+	mi := &file_proto_ax_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +813,7 @@ func (x *Step) String() string {
 func (*Step) ProtoMessage() {}
 
 func (x *Step) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[12]
+	mi := &file_proto_ax_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +826,7 @@ func (x *Step) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Step.ProtoReflect.Descriptor instead.
 func (*Step) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{12}
+	return file_proto_ax_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Step) GetDescription() string {
@@ -1004,7 +924,7 @@ type ContentStep struct {
 
 func (x *ContentStep) Reset() {
 	*x = ContentStep{}
-	mi := &file_proto_ax_proto_msgTypes[13]
+	mi := &file_proto_ax_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1016,7 +936,7 @@ func (x *ContentStep) String() string {
 func (*ContentStep) ProtoMessage() {}
 
 func (x *ContentStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[13]
+	mi := &file_proto_ax_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1029,7 +949,7 @@ func (x *ContentStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContentStep.ProtoReflect.Descriptor instead.
 func (*ContentStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{13}
+	return file_proto_ax_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ContentStep) GetRole() string {
@@ -1058,7 +978,7 @@ type ThoughtStep struct {
 
 func (x *ThoughtStep) Reset() {
 	*x = ThoughtStep{}
-	mi := &file_proto_ax_proto_msgTypes[14]
+	mi := &file_proto_ax_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +990,7 @@ func (x *ThoughtStep) String() string {
 func (*ThoughtStep) ProtoMessage() {}
 
 func (x *ThoughtStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[14]
+	mi := &file_proto_ax_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1003,7 @@ func (x *ThoughtStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ThoughtStep.ProtoReflect.Descriptor instead.
 func (*ThoughtStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{14}
+	return file_proto_ax_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ThoughtStep) GetSignature() []byte {
@@ -1114,7 +1034,7 @@ type ToolCallStep struct {
 
 func (x *ToolCallStep) Reset() {
 	*x = ToolCallStep{}
-	mi := &file_proto_ax_proto_msgTypes[15]
+	mi := &file_proto_ax_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1126,7 +1046,7 @@ func (x *ToolCallStep) String() string {
 func (*ToolCallStep) ProtoMessage() {}
 
 func (x *ToolCallStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[15]
+	mi := &file_proto_ax_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1139,7 +1059,7 @@ func (x *ToolCallStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolCallStep.ProtoReflect.Descriptor instead.
 func (*ToolCallStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{15}
+	return file_proto_ax_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ToolCallStep) GetId() string {
@@ -1192,7 +1112,7 @@ type FunctionCallStep struct {
 
 func (x *FunctionCallStep) Reset() {
 	*x = FunctionCallStep{}
-	mi := &file_proto_ax_proto_msgTypes[16]
+	mi := &file_proto_ax_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1124,7 @@ func (x *FunctionCallStep) String() string {
 func (*FunctionCallStep) ProtoMessage() {}
 
 func (x *FunctionCallStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[16]
+	mi := &file_proto_ax_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1137,7 @@ func (x *FunctionCallStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunctionCallStep.ProtoReflect.Descriptor instead.
 func (*FunctionCallStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{16}
+	return file_proto_ax_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *FunctionCallStep) GetName() string {
@@ -1248,7 +1168,7 @@ type ToolResultStep struct {
 
 func (x *ToolResultStep) Reset() {
 	*x = ToolResultStep{}
-	mi := &file_proto_ax_proto_msgTypes[17]
+	mi := &file_proto_ax_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1260,7 +1180,7 @@ func (x *ToolResultStep) String() string {
 func (*ToolResultStep) ProtoMessage() {}
 
 func (x *ToolResultStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[17]
+	mi := &file_proto_ax_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1273,7 +1193,7 @@ func (x *ToolResultStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolResultStep.ProtoReflect.Descriptor instead.
 func (*ToolResultStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{17}
+	return file_proto_ax_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ToolResultStep) GetCallId() string {
@@ -1330,7 +1250,7 @@ type FunctionResultStep struct {
 
 func (x *FunctionResultStep) Reset() {
 	*x = FunctionResultStep{}
-	mi := &file_proto_ax_proto_msgTypes[18]
+	mi := &file_proto_ax_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1342,7 +1262,7 @@ func (x *FunctionResultStep) String() string {
 func (*FunctionResultStep) ProtoMessage() {}
 
 func (x *FunctionResultStep) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[18]
+	mi := &file_proto_ax_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1355,7 +1275,7 @@ func (x *FunctionResultStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunctionResultStep.ProtoReflect.Descriptor instead.
 func (*FunctionResultStep) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{18}
+	return file_proto_ax_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FunctionResultStep) GetName() string {
@@ -1399,7 +1319,7 @@ type Value struct {
 
 func (x *Value) Reset() {
 	*x = Value{}
-	mi := &file_proto_ax_proto_msgTypes[19]
+	mi := &file_proto_ax_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1411,7 +1331,7 @@ func (x *Value) String() string {
 func (*Value) ProtoMessage() {}
 
 func (x *Value) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[19]
+	mi := &file_proto_ax_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1424,7 +1344,7 @@ func (x *Value) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Value.ProtoReflect.Descriptor instead.
 func (*Value) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{19}
+	return file_proto_ax_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Value) GetKind() isValue_Kind {
@@ -1561,7 +1481,7 @@ type ListValue struct {
 
 func (x *ListValue) Reset() {
 	*x = ListValue{}
-	mi := &file_proto_ax_proto_msgTypes[20]
+	mi := &file_proto_ax_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1573,7 +1493,7 @@ func (x *ListValue) String() string {
 func (*ListValue) ProtoMessage() {}
 
 func (x *ListValue) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[20]
+	mi := &file_proto_ax_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1586,7 +1506,7 @@ func (x *ListValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListValue.ProtoReflect.Descriptor instead.
 func (*ListValue) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{20}
+	return file_proto_ax_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListValue) GetValues() []*Value {
@@ -1642,10 +1562,7 @@ const file_proto_ax_proto_rawDesc = "" +
 	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
 	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfigJ\x04\b\x03\x10\x04\"?\n" +
 	"\x19CreateInteractionResponse\x12\"\n" +
-	"\aoutputs\x18\x01 \x03(\v2\b.ax.StepR\aoutputs\"D\n" +
-	"\x19DeleteConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\x1c\n" +
-	"\x1aDeleteConversationResponse\"\x88\x02\n" +
+	"\aoutputs\x18\x01 \x03(\v2\b.ax.StepR\aoutputs\"\x88\x02\n" +
 	"\x04Step\x12 \n" +
 	"\vdescription\x18\x10 \x01(\tR\vdescription\x12+\n" +
 	"\acontent\x18\f \x01(\v2\x0f.ax.ContentStepH\x00R\acontent\x12+\n" +
@@ -1711,9 +1628,7 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x0eHarnessService\x126\n" +
 	"\aConnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x010\x012g\n" +
 	"\x13InteractionsService\x12P\n" +
-	"\x11CreateInteraction\x12\x1a.ax.CreateInteractionEvent\x1a\x1d.ax.CreateInteractionResponse0\x012j\n" +
-	"\x13ConversationService\x12S\n" +
-	"\x12DeleteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
+	"\x11CreateInteraction\x12\x1a.ax.CreateInteractionEvent\x1a\x1d.ax.CreateInteractionResponse0\x01B\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
 
 var (
 	file_proto_ax_proto_rawDescOnce sync.Once
@@ -1728,73 +1643,69 @@ func file_proto_ax_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_ax_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_ax_proto_goTypes = []any{
-	(State)(0),                         // 0: ax.State
-	(CancelReason)(0),                  // 1: ax.CancelReason
-	(*StepEvent)(nil),                  // 2: ax.StepEvent
-	(*HarnessStart)(nil),               // 3: ax.HarnessStart
-	(*HarnessCancel)(nil),              // 4: ax.HarnessCancel
-	(*HarnessRequest)(nil),             // 5: ax.HarnessRequest
-	(*HarnessOutputs)(nil),             // 6: ax.HarnessOutputs
-	(*Error)(nil),                      // 7: ax.Error
-	(*HarnessEnd)(nil),                 // 8: ax.HarnessEnd
-	(*HarnessResponse)(nil),            // 9: ax.HarnessResponse
-	(*CreateInteractionEvent)(nil),     // 10: ax.CreateInteractionEvent
-	(*CreateInteractionResponse)(nil),  // 11: ax.CreateInteractionResponse
-	(*DeleteConversationRequest)(nil),  // 12: ax.DeleteConversationRequest
-	(*DeleteConversationResponse)(nil), // 13: ax.DeleteConversationResponse
-	(*Step)(nil),                       // 14: ax.Step
-	(*ContentStep)(nil),                // 15: ax.ContentStep
-	(*ThoughtStep)(nil),                // 16: ax.ThoughtStep
-	(*ToolCallStep)(nil),               // 17: ax.ToolCallStep
-	(*FunctionCallStep)(nil),           // 18: ax.FunctionCallStep
-	(*ToolResultStep)(nil),             // 19: ax.ToolResultStep
-	(*FunctionResultStep)(nil),         // 20: ax.FunctionResultStep
-	(*Value)(nil),                      // 21: ax.Value
-	(*ListValue)(nil),                  // 22: ax.ListValue
-	(*structpb.Struct)(nil),            // 23: google.protobuf.Struct
-	(*Content)(nil),                    // 24: ax.Content
-	(structpb.NullValue)(0),            // 25: google.protobuf.NullValue
+	(State)(0),                        // 0: ax.State
+	(CancelReason)(0),                 // 1: ax.CancelReason
+	(*StepEvent)(nil),                 // 2: ax.StepEvent
+	(*HarnessStart)(nil),              // 3: ax.HarnessStart
+	(*HarnessCancel)(nil),             // 4: ax.HarnessCancel
+	(*HarnessRequest)(nil),            // 5: ax.HarnessRequest
+	(*HarnessOutputs)(nil),            // 6: ax.HarnessOutputs
+	(*Error)(nil),                     // 7: ax.Error
+	(*HarnessEnd)(nil),                // 8: ax.HarnessEnd
+	(*HarnessResponse)(nil),           // 9: ax.HarnessResponse
+	(*CreateInteractionEvent)(nil),    // 10: ax.CreateInteractionEvent
+	(*CreateInteractionResponse)(nil), // 11: ax.CreateInteractionResponse
+	(*Step)(nil),                      // 12: ax.Step
+	(*ContentStep)(nil),               // 13: ax.ContentStep
+	(*ThoughtStep)(nil),               // 14: ax.ThoughtStep
+	(*ToolCallStep)(nil),              // 15: ax.ToolCallStep
+	(*FunctionCallStep)(nil),          // 16: ax.FunctionCallStep
+	(*ToolResultStep)(nil),            // 17: ax.ToolResultStep
+	(*FunctionResultStep)(nil),        // 18: ax.FunctionResultStep
+	(*Value)(nil),                     // 19: ax.Value
+	(*ListValue)(nil),                 // 20: ax.ListValue
+	(*structpb.Struct)(nil),           // 21: google.protobuf.Struct
+	(*Content)(nil),                   // 22: ax.Content
+	(structpb.NullValue)(0),           // 23: google.protobuf.NullValue
 }
 var file_proto_ax_proto_depIdxs = []int32{
-	23, // 0: ax.StepEvent.harness_config:type_name -> google.protobuf.Struct
-	14, // 1: ax.StepEvent.steps:type_name -> ax.Step
+	21, // 0: ax.StepEvent.harness_config:type_name -> google.protobuf.Struct
+	12, // 1: ax.StepEvent.steps:type_name -> ax.Step
 	0,  // 2: ax.StepEvent.state:type_name -> ax.State
-	14, // 3: ax.HarnessStart.steps:type_name -> ax.Step
+	12, // 3: ax.HarnessStart.steps:type_name -> ax.Step
 	1,  // 4: ax.HarnessCancel.reason:type_name -> ax.CancelReason
 	3,  // 5: ax.HarnessRequest.start:type_name -> ax.HarnessStart
 	4,  // 6: ax.HarnessRequest.cancel:type_name -> ax.HarnessCancel
-	14, // 7: ax.HarnessOutputs.steps:type_name -> ax.Step
+	12, // 7: ax.HarnessOutputs.steps:type_name -> ax.Step
 	0,  // 8: ax.HarnessEnd.state:type_name -> ax.State
 	7,  // 9: ax.HarnessEnd.error:type_name -> ax.Error
 	6,  // 10: ax.HarnessResponse.outputs:type_name -> ax.HarnessOutputs
 	8,  // 11: ax.HarnessResponse.end:type_name -> ax.HarnessEnd
-	14, // 12: ax.CreateInteractionEvent.inputs:type_name -> ax.Step
-	14, // 13: ax.CreateInteractionResponse.outputs:type_name -> ax.Step
-	15, // 14: ax.Step.content:type_name -> ax.ContentStep
-	16, // 15: ax.Step.thought:type_name -> ax.ThoughtStep
-	17, // 16: ax.Step.tool_call:type_name -> ax.ToolCallStep
-	19, // 17: ax.Step.tool_result:type_name -> ax.ToolResultStep
-	24, // 18: ax.ContentStep.content:type_name -> ax.Content
-	24, // 19: ax.ThoughtStep.summary:type_name -> ax.Content
-	18, // 20: ax.ToolCallStep.function_call:type_name -> ax.FunctionCallStep
-	23, // 21: ax.FunctionCallStep.arguments:type_name -> google.protobuf.Struct
-	20, // 22: ax.ToolResultStep.function_result:type_name -> ax.FunctionResultStep
-	21, // 23: ax.FunctionResultStep.result:type_name -> ax.Value
-	25, // 24: ax.Value.null_value:type_name -> google.protobuf.NullValue
-	23, // 25: ax.Value.struct_value:type_name -> google.protobuf.Struct
-	22, // 26: ax.Value.list_value:type_name -> ax.ListValue
-	24, // 27: ax.Value.content_value:type_name -> ax.Content
-	21, // 28: ax.ListValue.values:type_name -> ax.Value
+	12, // 12: ax.CreateInteractionEvent.inputs:type_name -> ax.Step
+	12, // 13: ax.CreateInteractionResponse.outputs:type_name -> ax.Step
+	13, // 14: ax.Step.content:type_name -> ax.ContentStep
+	14, // 15: ax.Step.thought:type_name -> ax.ThoughtStep
+	15, // 16: ax.Step.tool_call:type_name -> ax.ToolCallStep
+	17, // 17: ax.Step.tool_result:type_name -> ax.ToolResultStep
+	22, // 18: ax.ContentStep.content:type_name -> ax.Content
+	22, // 19: ax.ThoughtStep.summary:type_name -> ax.Content
+	16, // 20: ax.ToolCallStep.function_call:type_name -> ax.FunctionCallStep
+	21, // 21: ax.FunctionCallStep.arguments:type_name -> google.protobuf.Struct
+	18, // 22: ax.ToolResultStep.function_result:type_name -> ax.FunctionResultStep
+	19, // 23: ax.FunctionResultStep.result:type_name -> ax.Value
+	23, // 24: ax.Value.null_value:type_name -> google.protobuf.NullValue
+	21, // 25: ax.Value.struct_value:type_name -> google.protobuf.Struct
+	20, // 26: ax.Value.list_value:type_name -> ax.ListValue
+	22, // 27: ax.Value.content_value:type_name -> ax.Content
+	19, // 28: ax.ListValue.values:type_name -> ax.Value
 	5,  // 29: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
 	10, // 30: ax.InteractionsService.CreateInteraction:input_type -> ax.CreateInteractionEvent
-	12, // 31: ax.ConversationService.DeleteConversation:input_type -> ax.DeleteConversationRequest
-	9,  // 32: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
-	11, // 33: ax.InteractionsService.CreateInteraction:output_type -> ax.CreateInteractionResponse
-	13, // 34: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
-	32, // [32:35] is the sub-list for method output_type
-	29, // [29:32] is the sub-list for method input_type
+	9,  // 31: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
+	11, // 32: ax.InteractionsService.CreateInteraction:output_type -> ax.CreateInteractionResponse
+	31, // [31:33] is the sub-list for method output_type
+	29, // [29:31] is the sub-list for method input_type
 	29, // [29:29] is the sub-list for extension type_name
 	29, // [29:29] is the sub-list for extension extendee
 	0,  // [0:29] is the sub-list for field type_name
@@ -1814,19 +1725,19 @@ func file_proto_ax_proto_init() {
 		(*HarnessResponse_Outputs)(nil),
 		(*HarnessResponse_End)(nil),
 	}
-	file_proto_ax_proto_msgTypes[12].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[10].OneofWrappers = []any{
 		(*Step_Content)(nil),
 		(*Step_Thought)(nil),
 		(*Step_ToolCall)(nil),
 		(*Step_ToolResult)(nil),
 	}
-	file_proto_ax_proto_msgTypes[15].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[13].OneofWrappers = []any{
 		(*ToolCallStep_FunctionCall)(nil),
 	}
-	file_proto_ax_proto_msgTypes[17].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[15].OneofWrappers = []any{
 		(*ToolResultStep_FunctionResult)(nil),
 	}
-	file_proto_ax_proto_msgTypes[19].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[17].OneofWrappers = []any{
 		(*Value_NullValue)(nil),
 		(*Value_NumberValue)(nil),
 		(*Value_StringValue)(nil),
@@ -1841,9 +1752,9 @@ func file_proto_ax_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ax_proto_rawDesc), len(file_proto_ax_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   19,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_ax_proto_goTypes,
 		DependencyIndexes: file_proto_ax_proto_depIdxs,

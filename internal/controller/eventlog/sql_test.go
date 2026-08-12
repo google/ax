@@ -39,8 +39,6 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		conv := t.Name() + "-conv-1"
 		task1 := t.Name() + "-task-1"
 		task2 := t.Name() + "-task-2"
-		_ = log.DeleteAll(ctx, conv)
-		t.Cleanup(func() { _ = log.DeleteAll(ctx, conv) })
 
 		// 1. Conversation log.
 		cev1 := &proto.StepEvent{ConversationId: conv, InteractionId: task1}
@@ -68,7 +66,6 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 			t.Errorf("conversation events mismatch: %q, %q", cEvents[0].InteractionId, cEvents[1].InteractionId)
 		}
 
-
 	})
 
 	t.Run("Empty", func(t *testing.T) {
@@ -84,42 +81,6 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		}
 	})
 
-	t.Run("DeleteAll", func(t *testing.T) {
-		ctx := context.Background()
-		log := newLog(t)
-
-		conv1 := t.Name() + "-conv-1"
-		conv2 := t.Name() + "-conv-2"
-		task1 := t.Name() + "-task-1"
-		task3 := t.Name() + "-task-3"
-		_ = log.DeleteAll(ctx, conv1)
-		_ = log.DeleteAll(ctx, conv2)
-		t.Cleanup(func() {
-			_ = log.DeleteAll(ctx, conv1)
-			_ = log.DeleteAll(ctx, conv2)
-		})
-
-		if _, err := log.Append(ctx, &proto.StepEvent{ConversationId: conv1, InteractionId: task1}); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-		if _, err := log.Append(ctx, &proto.StepEvent{ConversationId: conv2, InteractionId: task3}); err != nil {
-			t.Fatalf("append: %v", err)
-		}
-
-
-		if err := log.DeleteAll(ctx, conv1); err != nil {
-			t.Fatalf("failed to delete events: %v", err)
-		}
-
-		if ev, _ := log.Events(ctx, conv1); len(ev) != 0 {
-			t.Errorf("expected 0 events for conv1, got %d", len(ev))
-		}
-		if ev, _ := log.Events(ctx, conv2); len(ev) != 1 {
-			t.Errorf("expected 1 event for conv2, got %d", len(ev))
-		}
-
-	})
-
 	// AutoStep exercises the step==0 auto-assignment path: appends with Step unset
 	// receive sequential numbers starting at 1.
 	t.Run("AutoStep", func(t *testing.T) {
@@ -127,8 +88,6 @@ func testEventLog(t *testing.T, newLog func(t *testing.T) EventLog) {
 		log := newLog(t)
 
 		conv := t.Name() + "-conv"
-		_ = log.DeleteAll(ctx, conv)
-		t.Cleanup(func() { _ = log.DeleteAll(ctx, conv) })
 
 		const n = 3
 		for i := int64(1); i <= n; i++ {

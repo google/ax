@@ -131,18 +131,6 @@ service InteractionsService {
 // TODO(jbd): CreateInteraction should return an Interaction message
 // and the outputs should be polled from the Interaction.
 
-message DeleteConversationRequest {
-  string conversation_id = 1;
-}
-
-message DeleteConversationResponse {}
-
-service ConversationService {
-  // Deletes conversational events and all event log resources
-  // for its children executions.
-  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
-}
-
 message Step {
   string description = 16;
 

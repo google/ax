@@ -186,15 +186,6 @@ func (a *harnessHandler) OnComplete(ctx context.Context, execID string) error {
 	return nil
 }
 
-// Delete deletes all events for a specific conversation ID.
-func (d *Controller) Delete(ctx context.Context, conversationID string) error {
-	if conversationID == "" {
-		return fmt.Errorf("conversation_id is required")
-	}
-
-	return d.eventLog.DeleteAll(ctx, conversationID)
-}
-
 // Registry returns the agent registry.
 func (d *Controller) Registry() *Registry {
 	return d.registry

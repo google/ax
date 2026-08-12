@@ -96,17 +96,6 @@ func (l *sqlEventLog) Events(ctx context.Context, conversationID string) (events
 	return events, nil
 }
 
-// DeleteAll deletes all events for a specific conversation ID.
-func (l *sqlEventLog) DeleteAll(ctx context.Context, conversationID string) (err error) {
-	ctx, endSpan := l.startSpan(ctx, "DeleteAll", conversationID)
-	defer func() { endSpan(err) }()
-
-	if _, err := l.db.ExecContext(ctx, "DELETE FROM conversation_log WHERE conversation_id = $1", conversationID); err != nil {
-		return fmt.Errorf("eventlog: delete conversation: %w", err)
-	}
-	return nil
-}
-
 // Close releases the database connection.
 func (l *sqlEventLog) Close() error {
 	return l.db.Close()
