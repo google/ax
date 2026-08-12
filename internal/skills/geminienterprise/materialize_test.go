@@ -82,7 +82,7 @@ func TestClaimSet_FirstWins(t *testing.T) {
 
 func TestMaterialize_DisabledIsEmpty(t *testing.T) {
 	// Disabled config => no-op, empty result, no error/panic.
-	if res := Materialize(context.Background(), config.SkillsConfig{}); !res.Empty() {
+	if res := Materialize(context.Background(), config.SkillsConfig{}); len(res) != 0 {
 		t.Errorf("disabled Materialize = %+v, want empty", res)
 	}
 }
@@ -94,7 +94,7 @@ func TestMaterialize_EnabledNoProjectIsEmpty(t *testing.T) {
 	sc := config.SkillsConfig{Registries: []config.SkillsRegistryConfig{
 		{Enabled: true, TargetDir: t.TempDir()},
 	}}
-	if res := Materialize(context.Background(), sc); !res.Empty() {
+	if res := Materialize(context.Background(), sc); len(res) != 0 {
 		t.Errorf("no-project Materialize = %+v, want empty", res)
 	}
 }

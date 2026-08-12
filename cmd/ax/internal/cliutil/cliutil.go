@@ -87,10 +87,10 @@ func NewControllerFromConfig(ctx context.Context, cfg *Config) (*controller.Cont
 	// the interactions harness is fully wired.
 	var skillsPointer string
 	if !substrateMode {
-		var avail skills.Available
-		avail.Groups = append(avail.Groups, geminienterprise.Materialize(ctx, cfg.Skills).Groups...)
-		avail.Groups = append(avail.Groups, local.Discover(cfg.Skills).Groups...)
-		skillsPointer = antigravityinteractions.SkillsSystemInstruction(avail)
+		var groups []skills.Group
+		groups = append(groups, geminienterprise.Materialize(ctx, cfg.Skills)...)
+		groups = append(groups, local.Discover(cfg.Skills)...)
+		skillsPointer = antigravityinteractions.SkillsSystemInstruction(groups)
 	}
 
 	// Built-in Antigravity harness.

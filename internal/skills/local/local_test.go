@@ -48,16 +48,16 @@ func TestDiscover_FindsSkillSubdirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: true, Path: root},
 	}})
-	if avail.Empty() {
+	if len(groups) == 0 {
 		t.Fatal("expected skills, got none")
 	}
-	if len(avail.Groups) != 1 {
-		t.Fatalf("groups = %d, want 1", len(avail.Groups))
+	if len(groups) != 1 {
+		t.Fatalf("groups = %d, want 1", len(groups))
 	}
-	g := avail.Groups[0]
+	g := groups[0]
 	// Dir is reported as an absolute path.
 	if !filepath.IsAbs(g.Dir) {
 		t.Errorf("group Dir = %q, want absolute", g.Dir)
@@ -79,31 +79,31 @@ func TestDiscover_FindsSkillSubdirs(t *testing.T) {
 func TestDiscover_DisabledIsSkipped(t *testing.T) {
 	root := t.TempDir()
 	writeSkillDir(t, root, "emoji")
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: false, Path: root},
 	}})
-	if !avail.Empty() {
-		t.Errorf("disabled entry produced skills: %+v", avail)
+	if len(groups) != 0 {
+		t.Errorf("disabled entry produced skills: %+v", groups)
 	}
 }
 
 func TestDiscover_MissingPathDegrades(t *testing.T) {
 	// A non-existent path must not panic or error; it degrades to no skills.
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: true, Path: filepath.Join(t.TempDir(), "does-not-exist")},
 	}})
-	if !avail.Empty() {
-		t.Errorf("missing path produced skills: %+v", avail)
+	if len(groups) != 0 {
+		t.Errorf("missing path produced skills: %+v", groups)
 	}
 }
 
 func TestDiscover_EmptyDirDegrades(t *testing.T) {
 	// A directory with no <skill-id>/SKILL.md subfolders yields no skills.
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: true, Path: t.TempDir()},
 	}})
-	if !avail.Empty() {
-		t.Errorf("empty dir produced skills: %+v", avail)
+	if len(groups) != 0 {
+		t.Errorf("empty dir produced skills: %+v", groups)
 	}
 }
 
@@ -112,15 +112,15 @@ func TestDiscover_MultiplePaths(t *testing.T) {
 	b := t.TempDir()
 	writeSkillDir(t, a, "s1")
 	writeSkillDir(t, b, "s2")
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: true, Path: a},
 		{Enabled: true, Path: b},
 	}})
-	if len(avail.Groups) != 2 {
-		t.Fatalf("groups = %d, want 2", len(avail.Groups))
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2", len(groups))
 	}
 	var got []string
-	for _, g := range avail.Groups {
+	for _, g := range groups {
 		for _, s := range g.Skills {
 			got = append(got, s.ID)
 		}
@@ -141,14 +141,14 @@ func TestDiscover_ExamplesSkillsFixture(t *testing.T) {
 	if _, err := os.Stat(examples); err != nil {
 		t.Skipf("examples/skills not found (%v); skipping", err)
 	}
-	avail := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
+	groups := Discover(config.SkillsConfig{Local: []config.LocalSkillsConfig{
 		{Enabled: true, Path: examples},
 	}})
-	if avail.Empty() {
+	if len(groups) == 0 {
 		t.Fatal("expected skills from examples/skills, got none")
 	}
 	var got []string
-	for _, g := range avail.Groups {
+	for _, g := range groups {
 		for _, s := range g.Skills {
 			got = append(got, s.ID)
 		}

@@ -24,19 +24,19 @@ import (
 // SkillsSystemInstruction builds a system-instruction pointer telling the agent
 // where its skills live and lists them. It is source-agnostic: the skills may
 // come from the Gemini Enterprise Skill Registry or from a local directory --
-// both produce the same skills.Available shape.
+// both produce []skills.Group.
 //
 // This is discovery logic specific to the Antigravity Interactions harness: it
 // has no SKILLS_DIR concept, so it must be told where to find skills via its
 // system instruction (its built-in file tools then read that directory).
 // Harnesses that auto-discover a skills directory (e.g. the Antigravity SDK
 // harness via SKILLS_DIR) do not use this.
-func SkillsSystemInstruction(avail skills.Available) string {
-	if avail.Empty() {
+func SkillsSystemInstruction(groups []skills.Group) string {
+	if len(groups) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	for _, g := range avail.Groups {
+	for _, g := range groups {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}

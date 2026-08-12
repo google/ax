@@ -23,28 +23,28 @@ import (
 
 func TestSkillsSystemInstruction(t *testing.T) {
 	t.Run("empty result yields empty pointer", func(t *testing.T) {
-		if got := SkillsSystemInstruction(skills.Available{}); got != "" {
+		if got := SkillsSystemInstruction(nil); got != "" {
 			t.Errorf("empty result pointer = %q, want empty", got)
 		}
 	})
 
 	t.Run("mentions dir and skill ids", func(t *testing.T) {
-		avail := skills.Available{Groups: []skills.Group{{
+		groups := []skills.Group{{
 			Dir:    "/workspace",
 			Skills: []skills.Skill{{ID: "emoji"}, {ID: "lowercase"}},
-		}}}
-		got := SkillsSystemInstruction(avail)
+		}}
+		got := SkillsSystemInstruction(groups)
 		if !strings.Contains(got, "/workspace") || !strings.Contains(got, "emoji") || !strings.Contains(got, "lowercase") {
 			t.Errorf("pointer = %q, want it to mention dir and skill ids", got)
 		}
 	})
 
 	t.Run("multiple groups produce multiple lines", func(t *testing.T) {
-		avail := skills.Available{Groups: []skills.Group{
+		groups := []skills.Group{
 			{Dir: "/a", Skills: []skills.Skill{{ID: "s1"}}},
 			{Dir: "/b", Skills: []skills.Skill{{ID: "s2"}}},
-		}}
-		got := SkillsSystemInstruction(avail)
+		}
+		got := SkillsSystemInstruction(groups)
 		if !strings.Contains(got, "/a") || !strings.Contains(got, "/b") || !strings.Contains(got, "\n") {
 			t.Errorf("pointer = %q, want both dirs on separate lines", got)
 		}

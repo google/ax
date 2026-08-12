@@ -17,10 +17,10 @@
 // Skill Registry (a managed, versioned catalog exposed over the Vertex AI
 // v1beta1 REST API) and writes each skill to <target_dir>/<skill-id>/.
 //
-// It is harness-agnostic: it only writes files and reports what it wrote (as a
-// mode-agnostic skills.Available). It knows nothing about specific harnesses,
-// SKILLS_DIR, or discovery pointers — callers decide how a given harness is told
-// where its skills are.
+// // It is harness-agnostic: it only writes files and reports what it wrote (as
+// []skills.Group). It knows nothing about specific harnesses, SKILLS_DIR, or
+// discovery pointers — callers decide how a given harness is told where its
+// skills are.
 //
 // Scope: read-only. This package never creates, updates, or deletes registry
 // skills (authoring is out of scope).
@@ -47,7 +47,7 @@ const (
 
 // materializedSkill records one skill written to disk. It carries the resolved
 // revision (registry-specific detail) internally; Materialize converts these to
-// the mode-agnostic skills.Available shape at its boundary.
+// []skills.Group at its boundary.
 type materializedSkill struct {
 	SkillID  string
 	Revision string
@@ -65,8 +65,8 @@ type materializedSkill struct {
 // registry's selection, or across registries sharing a dir), the FIRST writer
 // wins and later duplicates are skipped with a warning. Substrate/pod
 // materialization is a separate, later path; this wires the local flow only.
-func Materialize(ctx context.Context, sc config.SkillsConfig) skills.Available {
-	var avail skills.Available
+func Materialize(ctx context.Context, sc config.SkillsConfig) []skills.Group {
+	var groups []skills.Group
 	// claimed tracks (target_dir, skill-id) pairs already written across all
 	// registries so the FIRST writer of an id into a dir wins; later duplicates
 	// (within one registry's selection, or across registries sharing a dir) are
@@ -110,9 +110,9 @@ func Materialize(ctx context.Context, sc config.SkillsConfig) skills.Available {
 		for _, m := range out.materialized {
 			group.Skills = append(group.Skills, skills.Skill{ID: m.SkillID, Dir: m.Dir})
 		}
-		avail.Groups = append(avail.Groups, group)
+		groups = append(groups, group)
 	}
-	return avail
+	return groups
 }
 
 // claimSet tracks which (dir, skill-id) pairs have already been materialized, so

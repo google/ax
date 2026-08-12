@@ -21,8 +21,8 @@
 // each with a SKILL.md (the same layout as examples/skills and a registry's
 // target_dir). Nothing is written; the directory is used as-is.
 //
-// It is harness-agnostic and produces the mode-agnostic skills.Available shape,
-// so the same consumers that handle registry skills handle local ones.
+// It is harness-agnostic and produces []skills.Group, so the same consumers that
+// handle registry skills handle local ones.
 package local
 
 import (
@@ -47,8 +47,8 @@ const skillManifest = "SKILL.md"
 // contains no skills is logged and skipped so a local-skills problem never
 // blocks harness creation. Paths are resolved to absolute form so the reported
 // directories are stable regardless of the process working directory.
-func Discover(sc config.SkillsConfig) skills.Available {
-	var avail skills.Available
+func Discover(sc config.SkillsConfig) []skills.Group {
+	var groups []skills.Group
 	for i := range sc.Local {
 		lc := sc.Local[i]
 		if !lc.Enabled {
@@ -58,9 +58,9 @@ func Discover(sc config.SkillsConfig) skills.Available {
 		if !ok {
 			continue
 		}
-		avail.Groups = append(avail.Groups, group)
+		groups = append(groups, group)
 	}
-	return avail
+	return groups
 }
 
 // discoverOne scans a single local skills path. idx is the entry's index within

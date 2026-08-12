@@ -15,19 +15,10 @@
 // Package skills defines the mode-agnostic result shape that describes which
 // agent skills are available on disk and where. Both skill sources -- the
 // Gemini Enterprise Skill Registry (internal/skills/geminienterprise) and the
-// local directory mode (internal/skills/local) -- produce this same shape so a
+// local directory mode (internal/skills/local) -- produce slices of Group so a
 // single consumer (e.g. a harness system-instruction builder) can serve both
 // without depending on either source package.
 package skills
-
-// Available reports the skills discovered/materialized on disk, grouped by the
-// directory they live in. It is the common currency between skill sources and
-// consumers.
-type Available struct {
-	// Groups is one entry per source that produced skills (a registry's
-	// target_dir, or a local skills directory).
-	Groups []Group
-}
 
 // Group associates a set of skills with the directory that contains them. Each
 // skill lives at <Dir>/<skill-id>/ (with a SKILL.md inside).
@@ -44,6 +35,3 @@ type Skill struct {
 	// Dir is the absolute path of the skill's own folder (<group Dir>/<ID>/).
 	Dir string
 }
-
-// Empty reports whether nothing is available.
-func (a Available) Empty() bool { return len(a.Groups) == 0 }
