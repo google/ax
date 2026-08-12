@@ -43,13 +43,13 @@ graph LR
 
     subgraph Cluster[" "]
         Server["AX Server<br/>(multi-tenant)"]
-        DB[("Event Log"<br/>Storage)]
-        ControlService["Actor Controller"]
-        Actor["AX Harness Server<br/>(stateful session-tenant)"]
+        DB["Event Log <br/>Storage"]
+        ControlService["Agent Substrate"]
+        Actor["AX Agent or Harness<br/>(session-tenant)"]
     end
 
     SnapshotService["Snapshots"]
-    HarnessService["Models"]
+    Models
     MCPServer["MCP server"]
 
     Client <-->|resumable stream| Server
@@ -58,9 +58,8 @@ graph LR
     ControlService -->|resume/suspend| Actor
     Server <-->|resumable stream| Actor
     ControlService <-->|read/write| SnapshotService
-    Actor -.-> HarnessService
+    Actor -.-> Models
     Actor --> MCPServer
-    Actor -.-> Environment
 ```
 
 As agents evolve from simple assistants to autonomous long running workers,
