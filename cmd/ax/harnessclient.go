@@ -19,12 +19,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"strings"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -35,7 +34,7 @@ import (
 
 var (
 	harnessServerAddr string
-	harnessClientID   string
+	agentClientID     string
 )
 
 var harnessClientCmd = &cobra.Command{
@@ -47,7 +46,7 @@ var harnessClientCmd = &cobra.Command{
 
 func init() {
 	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "localhost:50053", "The server address for the gRPC HarnessService.")
-	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "testharness", "The harness id to send on the request envelope.")
+	harnessClientCmd.Flags().StringVar(&agentClientID, "agent", "testharness", "The agent id to send on the request envelope.")
 	rootCmd.AddCommand(harnessClientCmd)
 }
 
@@ -62,21 +61,23 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 	defer conn.Close()
 
 	client := proto.NewHarnessServiceClient(conn)
-
-	fmt.Print("Client > ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	input := scanner.Text()
-
 	stream, err := client.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to open connection stream: %v", err)
+		return fmt.Errorf("failed to call Connect: %v", err)
+	}
+
+	// Wait for user input from stdin if not specified, but for simple execution, send a single frame.
+	var input string
+	if len(args) > 0 {
+		input = strings.Join(args, " ")
+	} else {
+		input = "Hello from harness client!"
 	}
 
 	// A single HarnessRequest{start} initiates the turn.
 	start := &proto.HarnessRequest{
 		ConversationId: uuid.NewString(),
-		HarnessId:      harnessClientID,
+		AgentId:        agentClientID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
 				Steps: []*proto.Step{

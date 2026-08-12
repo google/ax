@@ -36,17 +36,17 @@ from python.proto import content_pb2
 from google.antigravity import Agent, AgentConfig, LocalAgentConfig
 from google.antigravity.types import Text, Thought, ToolCall
 
-# Fields that come from outside harness_config and must not be set through it:
+# Fields that come from outside agent_config and must not be set through it:
 #   - conversation_id: taken from the runtime request (request.conversation_id).
 #   - save_dir: derived at the server level from the configured state_dir.
 # TODO: add validation for fields that are unsafe to set per execution
 # (e.g. credentials, deployment routing) or that may only be set at
 # conversation creation.
-_NON_HARNESS_CONFIG_FIELDS = frozenset({"conversation_id", "save_dir"})
+_NON_AGENT_CONFIG_FIELDS = frozenset({"conversation_id", "save_dir"})
 
 
-class HarnessConfigError(ValueError):
-    """Raised when request harness_config is not a valid overlay."""
+class AgentConfigError(ValueError):
+    """Raised when request agent_config is not a valid overlay."""
 
 
 class ConversationIdError(ValueError):
@@ -87,11 +87,19 @@ def _build_default_config() -> LocalAgentConfig:
     Credentials/backend come from the standard GenAI env vars, which the
     AGY SDK reads natively as of google-antigravity 0.1.7.
 
-    TODO(#194): per-request `harness_config` will override fields of this
+    TODO(#194): per-request `agent_config` will override fields of this
     default on a per-conversation basis. Until then, every conversation uses
     this config.
     """
-    return LocalAgentConfig(system_instructions="You are a helpful agent.")
+    vertex = _env_use_vertex() or None
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT") if vertex else None
+    location = os.environ.get("GOOGLE_CLOUD_LOCATION") if vertex else None
+    return LocalAgentConfig(
+        system_instructions="You are a helpful agent.",
+        vertex=vertex,
+        project=project,
+        location=location,
+    )
 
 
 def _has_credentials(config: AgentConfig | None) -> bool:
@@ -132,22 +140,22 @@ def _existing_sdk_conv_id(save_dir: str) -> str | None:
 
 
 def _reject_disallowed_fields(overrides: dict[str, object]) -> None:
-    """Best-effort validation of a request harness_config overlay's keys.
+    """Best-effort validation of a request agent_config overlay's keys.
 
-    Rejects fields managed outside harness_config and unknown top-level
+    Rejects fields managed outside agent_config and unknown top-level
     fields (typos that LocalAgentConfig's extra="ignore" would otherwise
     silently drop).
     Top-level only: nested-key and value/type validation is delegated to the
     SDK's own LocalAgentConfig validation when the config is constructed.
     """
-    managed = sorted(set(overrides) & _NON_HARNESS_CONFIG_FIELDS)
+    managed = sorted(set(overrides) & _NON_AGENT_CONFIG_FIELDS)
     if managed:
-        raise HarnessConfigError(
-            f"field(s) managed outside harness_config cannot be set: {', '.join(managed)}"
+        raise AgentConfigError(
+            f"field(s) managed outside agent_config cannot be set: {', '.join(managed)}"
         )
     unknown = sorted(set(overrides) - set(LocalAgentConfig.model_fields))
     if unknown:
-        raise HarnessConfigError(f"unknown config field(s): {', '.join(unknown)}")
+        raise AgentConfigError(f"unknown config field(s): {', '.join(unknown)}")
 
 
 class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
@@ -158,23 +166,23 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         self._state_dir = state_dir
 
     def _build_config_for(
-        self, conversation_id: str, harness_config: bytes = b""
+        self, conversation_id: str, agent_config: bytes = b""
     ) -> LocalAgentConfig:
-        # Overlay the request's harness_config (JSON-in-bytes) onto the server
+        # Overlay the request's agent_config (JSON-in-bytes) onto the server
         # default. The parsed dict is a local intermediate only; this method's
         # boundary type is the validated LocalAgentConfig.
-        if harness_config:
+        if agent_config:
             try:
-                overrides = json.loads(harness_config.decode("utf-8"))
+                overrides = json.loads(agent_config.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise HarnessConfigError(f"expected UTF-8 JSON: {exc}") from exc
+                raise AgentConfigError(f"expected UTF-8 JSON: {exc}") from exc
             if not isinstance(overrides, dict):
-                raise HarnessConfigError("top-level JSON value must be an object")
+                raise AgentConfigError("top-level JSON value must be an object")
             _reject_disallowed_fields(overrides)
         else:
             overrides = {}
 
-        # Persistence values managed outside harness_config go on last so a
+        # Persistence values managed outside agent_config go on last so a
         # request can never redirect trajectory storage. Per-AX-conv save_dir
         # under the configured state_dir base; resume by the SDK's own conv_id
         # if a trajectory already exists there. SDK auto-creates the directory.
@@ -192,7 +200,7 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
         try:
             return LocalAgentConfig(**values)
         except (TypeError, ValueError) as exc:
-            raise HarnessConfigError(str(exc)) from exc
+            raise AgentConfigError(str(exc)) from exc
 
     async def Connect(self, request_iterator, context):
         # Each HarnessRequest{start} drives one stateless turn; the stream stays
@@ -284,7 +292,7 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
             return
         try:
             per_conv_config = self._build_config_for(
-                request.conversation_id, request.start.harness_config
+                request.conversation_id, request.start.agent_config
             )
             print(
                 f"[gRPC] Starting Agent for conv_id={request.conversation_id}, save_dir={per_conv_config.save_dir}"
@@ -394,14 +402,14 @@ class AntigravityHarnessServiceServicer(ax_pb2_grpc.HarnessServiceServicer):
                 )
                 print("[gRPC] Turn completed successfully.")
 
-        except HarnessConfigError as exc:
+        except AgentConfigError as exc:
             yield ax_pb2.HarnessResponse(
                 conversation_id=request.conversation_id,
                 end=ax_pb2.HarnessEnd(
                     state=ax_pb2.STATE_FAILED,
                     error=ax_pb2.Error(
                         code=3,  # INVALID_ARGUMENT
-                        description=f"Invalid harness_config: {exc}",
+                        description=f"Invalid agent_config: {exc}",
                     ),
                 ),
             )

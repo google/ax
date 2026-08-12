@@ -35,7 +35,7 @@ import (
 
 var (
 	execConversationID string
-	execHarnessID      string
+	execAgentID        string
 	execConfigFile     string
 	execConfig         string
 	execInput          string
@@ -55,9 +55,9 @@ If no conversation ID is provided, a new UUID will be generated.`,
 
 func registerExecFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&execConversationID, "conversation", "", "Conversation ID (optional, generates UUID if not provided)")
-	cmd.Flags().StringVar(&execHarnessID, "harness", "", "Harness ID (optional, default harness is used if not specified)")
-	cmd.Flags().StringVar(&execConfigFile, "config-file", "", "Path to a JSON file with per-request harness configuration")
-	cmd.Flags().StringVar(&execConfig, "config", "", "Per-request harness configuration as an inline JSON string (mutually exclusive with --config-file)")
+	cmd.Flags().StringVar(&execAgentID, "agent", "", "Agent ID (optional, default agent is used if not specified)")
+	cmd.Flags().StringVar(&execConfigFile, "config-file", "", "Path to a JSON file with per-request agent configuration")
+	cmd.Flags().StringVar(&execConfig, "config", "", "Per-request agent configuration as an inline JSON string (mutually exclusive with --config-file)")
 	cmd.Flags().StringVar(&execInput, "input", "", "Input message to send (optional)")
 	cmd.Flags().StringVar(&execServerAddr, "server", "", "gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)")
 	cmd.Flags().StringVar(&execAXConfigFile, "ax-config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
@@ -136,7 +136,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 		harnessConfig = []byte(execConfig)
 	}
 
-	return execLoop(ctx, execConversationID, execHarnessID, harnessConfig, execInput)
+	return execLoop(ctx, execConversationID, execAgentID, harnessConfig, execInput)
 }
 
 func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []byte, input string) error {
@@ -180,9 +180,9 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 
 		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 			ConversationId: id,
-			HarnessId:      harnessID,
-			HarnessConfig:  harnessConfig,
-			Inputs:         inputs,
+			AgentId:         harnessID,
+			AgentConfig:     harnessConfig,
+			Inputs:          inputs,
 		})
 
 		interruptHandler.ClearActiveCancel()
@@ -257,9 +257,9 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 
 				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 					ConversationId: id,
-					HarnessId:      harnessID,
-					HarnessConfig:  harnessConfig,
-					Inputs:         decision,
+					AgentId:         harnessID,
+					AgentConfig:     harnessConfig,
+					Inputs:          decision,
 				})
 
 				interruptHandler.ClearActiveCancel()

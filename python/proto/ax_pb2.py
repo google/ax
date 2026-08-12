@@ -16,7 +16,7 @@ from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
 from proto import content_pb2 as proto_dot_content__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eproto/ax.proto\x12\x02\x61x\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"\xb4\x01\n\tStepEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x16\n\x0einteraction_id\x18\x02 \x01(\t\x12\x12\n\nharness_id\x18\x03 \x01(\t\x12/\n\x0eharness_config\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x17\n\x05steps\x18\x05 \x03(\x0b\x32\x08.ax.Step\x12\x18\n\x05state\x18\x06 \x01(\x0e\x32\t.ax.State\"?\n\x0cHarnessStart\x12\x16\n\x0eharness_config\x18\x01 \x01(\x0c\x12\x17\n\x05steps\x18\x02 \x03(\x0b\x32\x08.ax.Step\"1\n\rHarnessCancel\x12 \n\x06reason\x18\x01 \x01(\x0e\x32\x10.ax.CancelReason\"\x8d\x01\n\x0eHarnessRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x12\n\nharness_id\x18\x02 \x01(\t\x12!\n\x05start\x18\x03 \x01(\x0b\x32\x10.ax.HarnessStartH\x00\x12#\n\x06\x63\x61ncel\x18\x04 \x01(\x0b\x32\x11.ax.HarnessCancelH\x00\x42\x06\n\x04type\")\n\x0eHarnessOutputs\x12\x17\n\x05steps\x18\x01 \x03(\x0b\x32\x08.ax.Step\"*\n\x05\x45rror\x12\x0c\n\x04\x63ode\x18\x01 \x01(\x05\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\"@\n\nHarnessEnd\x12\x18\n\x05state\x18\x01 \x01(\x0e\x32\t.ax.State\x12\x18\n\x05\x65rror\x18\x02 \x01(\x0b\x32\t.ax.Error\"x\n\x0fHarnessResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12%\n\x07outputs\x18\x02 \x01(\x0b\x32\x12.ax.HarnessOutputsH\x00\x12\x1d\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x0e.ax.HarnessEndH\x00\x42\x06\n\x04type\"}\n\x16\x43reateInteractionEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x18\n\x06inputs\x18\x02 \x03(\x0b\x32\x08.ax.Step\x12\x12\n\nharness_id\x18\x04 \x01(\t\x12\x16\n\x0eharness_config\x18\x05 \x01(\x0cJ\x04\x08\x03\x10\x04\"6\n\x19\x43reateInteractionResponse\x12\x19\n\x07outputs\x18\x01 \x03(\x0b\x32\x08.ax.Step\"\xcc\x01\n\x04Step\x12\x13\n\x0b\x64\x65scription\x18\x10 \x01(\t\x12\"\n\x07\x63ontent\x18\x0c \x01(\x0b\x32\x0f.ax.ContentStepH\x00\x12\"\n\x07thought\x18\x03 \x01(\x0b\x32\x0f.ax.ThoughtStepH\x00\x12%\n\ttool_call\x18\x04 \x01(\x0b\x32\x10.ax.ToolCallStepH\x00\x12)\n\x0btool_result\x18\x05 \x01(\x0b\x32\x12.ax.ToolResultStepH\x00\x12\r\n\x05index\x18\x16 \x01(\x03\x42\x06\n\x04type\"K\n\x0b\x43ontentStep\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x1c\n\x07\x63ontent\x18\x02 \x03(\x0b\x32\x0b.ax.ContentR\x04typeR\nevent_type\"P\n\x0bThoughtStep\x12\x11\n\tsignature\x18\x01 \x01(\x0c\x12\x1c\n\x07summary\x18\x02 \x03(\x0b\x32\x0b.ax.ContentR\x04typeR\nevent_type\"p\n\x0cToolCallStep\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tsignature\x18\x02 \x01(\x0c\x12-\n\rfunction_call\x18\x03 \x01(\x0b\x32\x14.ax.FunctionCallStepH\x00\x42\x06\n\x04typeR\nevent_type\"R\n\x10\x46unctionCallStep\x12\x0c\n\x04name\x18\x01 \x01(\t\x12*\n\targuments\x18\x02 \x01(\x0b\x32\x17.google.protobuf.StructR\x04type\"{\n\x0eToolResultStep\x12\x0f\n\x07\x63\x61ll_id\x18\x01 \x01(\t\x12\x11\n\tsignature\x18\x02 \x01(\x0c\x12\x31\n\x0f\x66unction_result\x18\x03 \x01(\x0b\x32\x16.ax.FunctionResultStepH\x00\x42\x06\n\x04typeR\nevent_type\"s\n\x12\x46unctionResultStep\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08is_error\x18\x03 \x01(\x08\x12\x19\n\x06result\x18\x07 \x01(\x0b\x32\t.ax.ValueJ\x04\x08\x01\x10\x02J\x04\x08\x04\x10\x05J\x04\x08\n\x10\x0bJ\x04\x08\x0b\x10\x0cJ\x04\x08\x0c\x10\rR\x04type\"\x83\x02\n\x05Value\x12\x30\n\nnull_value\x18\x01 \x01(\x0e\x32\x1a.google.protobuf.NullValueH\x00\x12\x16\n\x0cnumber_value\x18\x02 \x01(\x01H\x00\x12\x16\n\x0cstring_value\x18\x03 \x01(\tH\x00\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12/\n\x0cstruct_value\x18\x05 \x01(\x0b\x32\x17.google.protobuf.StructH\x00\x12#\n\nlist_value\x18\x06 \x01(\x0b\x32\r.ax.ListValueH\x00\x12$\n\rcontent_value\x18\x07 \x01(\x0b\x32\x0b.ax.ContentH\x00\x42\x06\n\x04kind\"&\n\tListValue\x12\x19\n\x06values\x18\x01 \x03(\x0b\x32\t.ax.Value*l\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n\rSTATE_PENDING\x10\x01\x12\x10\n\x0cSTATE_FAILED\x10\x02\x12\x13\n\x0fSTATE_COMPLETED\x10\x03\x12\x12\n\x0eSTATE_CANCELED\x10\x04*\x8c\x01\n\x0c\x43\x61ncelReason\x12\x1d\n\x19\x43\x41NCEL_REASON_UNSPECIFIED\x10\x00\x12 \n\x1c\x43\x41NCEL_REASON_USER_REQUESTED\x10\x01\x12\x19\n\x15\x43\x41NCEL_REASON_TIMEOUT\x10\x02\x12 \n\x1c\x43\x41NCEL_REASON_INTERNAL_ERROR\x10\x03\x32H\n\x0eHarnessService\x12\x36\n\x07\x43onnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x01\x30\x01\x32g\n\x13InteractionsService\x12P\n\x11\x43reateInteraction\x12\x1a.ax.CreateInteractionEvent\x1a\x1d.ax.CreateInteractionResponse0\x01\x42\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0eproto/ax.proto\x12\x02\x61x\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"\xb0\x01\n\tStepEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x16\n\x0einteraction_id\x18\x02 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x03 \x01(\t\x12-\n\x0c\x61gent_config\x18\x04 \x01(\x0b\x32\x17.google.protobuf.Struct\x12\x17\n\x05steps\x18\x05 \x03(\x0b\x32\x08.ax.Step\x12\x18\n\x05state\x18\x06 \x01(\x0e\x32\t.ax.State\"=\n\x0cHarnessStart\x12\x14\n\x0c\x61gent_config\x18\x01 \x01(\x0c\x12\x17\n\x05steps\x18\x02 \x03(\x0b\x32\x08.ax.Step\"1\n\rHarnessCancel\x12 \n\x06reason\x18\x01 \x01(\x0e\x32\x10.ax.CancelReason\"\x8b\x01\n\x0eHarnessRequest\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12!\n\x05start\x18\x03 \x01(\x0b\x32\x10.ax.HarnessStartH\x00\x12#\n\x06\x63\x61ncel\x18\x04 \x01(\x0b\x32\x11.ax.HarnessCancelH\x00\x42\x06\n\x04type\")\n\x0eHarnessOutputs\x12\x17\n\x05steps\x18\x01 \x03(\x0b\x32\x08.ax.Step\"*\n\x05\x45rror\x12\x0c\n\x04\x63ode\x18\x01 \x01(\x05\x12\x13\n\x0b\x64\x65scription\x18\x02 \x01(\t\"@\n\nHarnessEnd\x12\x18\n\x05state\x18\x01 \x01(\x0e\x32\t.ax.State\x12\x18\n\x05\x65rror\x18\x02 \x01(\x0b\x32\t.ax.Error\"x\n\x0fHarnessResponse\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12%\n\x07outputs\x18\x02 \x01(\x0b\x32\x12.ax.HarnessOutputsH\x00\x12\x1d\n\x03\x65nd\x18\x03 \x01(\x0b\x32\x0e.ax.HarnessEndH\x00\x42\x06\n\x04type\"y\n\x16\x43reateInteractionEvent\x12\x17\n\x0f\x63onversation_id\x18\x01 \x01(\t\x12\x18\n\x06inputs\x18\x02 \x03(\x0b\x32\x08.ax.Step\x12\x10\n\x08\x61gent_id\x18\x04 \x01(\t\x12\x14\n\x0c\x61gent_config\x18\x05 \x01(\x0cJ\x04\x08\x03\x10\x04\"6\n\x19\x43reateInteractionResponse\x12\x19\n\x07outputs\x18\x01 \x03(\x0b\x32\x08.ax.Step\"\xcc\x01\n\x04Step\x12\x13\n\x0b\x64\x65scription\x18\x10 \x01(\t\x12\"\n\x07\x63ontent\x18\x0c \x01(\x0b\x32\x0f.ax.ContentStepH\x00\x12\"\n\x07thought\x18\x03 \x01(\x0b\x32\x0f.ax.ThoughtStepH\x00\x12%\n\ttool_call\x18\x04 \x01(\x0b\x32\x10.ax.ToolCallStepH\x00\x12)\n\x0btool_result\x18\x05 \x01(\x0b\x32\x12.ax.ToolResultStepH\x00\x12\r\n\x05index\x18\x16 \x01(\x03\x42\x06\n\x04type\"K\n\x0b\x43ontentStep\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x1c\n\x07\x63ontent\x18\x02 \x03(\x0b\x32\x0b.ax.ContentR\x04typeR\nevent_type\"P\n\x0bThoughtStep\x12\x11\n\tsignature\x18\x01 \x01(\x0c\x12\x1c\n\x07summary\x18\x02 \x03(\x0b\x32\x0b.ax.ContentR\x04typeR\nevent_type\"p\n\x0cToolCallStep\x12\n\n\x02id\x18\x01 \x01(\t\x12\x11\n\tsignature\x18\x02 \x01(\x0c\x12-\n\rfunction_call\x18\x03 \x01(\x0b\x32\x14.ax.FunctionCallStepH\x00\x42\x06\n\x04typeR\nevent_type\"R\n\x10\x46unctionCallStep\x12\x0c\n\x04name\x18\x01 \x01(\t\x12*\n\targuments\x18\x02 \x01(\x0b\x32\x17.google.protobuf.StructR\x04type\"{\n\x0eToolResultStep\x12\x0f\n\x07\x63\x61ll_id\x18\x01 \x01(\t\x12\x11\n\tsignature\x18\x02 \x01(\x0c\x12\x31\n\x0f\x66unction_result\x18\x03 \x01(\x0b\x32\x16.ax.FunctionResultStepH\x00\x42\x06\n\x04typeR\nevent_type\"s\n\x12\x46unctionResultStep\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x10\n\x08is_error\x18\x03 \x01(\x08\x12\x19\n\x06result\x18\x07 \x01(\x0b\x32\t.ax.ValueJ\x04\x08\x01\x10\x02J\x04\x08\x04\x10\x05J\x04\x08\n\x10\x0bJ\x04\x08\x0b\x10\x0cJ\x04\x08\x0c\x10\rR\x04type\"\x83\x02\n\x05Value\x12\x30\n\nnull_value\x18\x01 \x01(\x0e\x32\x1a.google.protobuf.NullValueH\x00\x12\x16\n\x0cnumber_value\x18\x02 \x01(\x01H\x00\x12\x16\n\x0cstring_value\x18\x03 \x01(\tH\x00\x12\x14\n\nbool_value\x18\x04 \x01(\x08H\x00\x12/\n\x0cstruct_value\x18\x05 \x01(\x0b\x32\x17.google.protobuf.StructH\x00\x12#\n\nlist_value\x18\x06 \x01(\x0b\x32\r.ax.ListValueH\x00\x12$\n\rcontent_value\x18\x07 \x01(\x0b\x32\x0b.ax.ContentH\x00\x42\x06\n\x04kind\"&\n\tListValue\x12\x19\n\x06values\x18\x01 \x03(\x0b\x32\t.ax.Value*l\n\x05State\x12\x15\n\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n\rSTATE_PENDING\x10\x01\x12\x10\n\x0cSTATE_FAILED\x10\x02\x12\x13\n\x0fSTATE_COMPLETED\x10\x03\x12\x12\n\x0eSTATE_CANCELED\x10\x04*\x8c\x01\n\x0c\x43\x61ncelReason\x12\x1d\n\x19\x43\x41NCEL_REASON_UNSPECIFIED\x10\x00\x12 \n\x1c\x43\x41NCEL_REASON_USER_REQUESTED\x10\x01\x12\x19\n\x15\x43\x41NCEL_REASON_TIMEOUT\x10\x02\x12 \n\x1c\x43\x41NCEL_REASON_INTERNAL_ERROR\x10\x03\x32H\n\x0eHarnessService\x12\x36\n\x07\x43onnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x01\x30\x01\x32g\n\x13InteractionsService\x12P\n\x11\x43reateInteraction\x12\x1a.ax.CreateInteractionEvent\x1a\x1d.ax.CreateInteractionResponse0\x01\x42\x1cZ\x1agithub.com/google/ax/protob\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -24,50 +24,50 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'proto.ax_pb2', _globals)
 if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['DESCRIPTOR']._options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\032github.com/google/ax/proto'
-  _globals['_STATE']._serialized_start=2082
-  _globals['_STATE']._serialized_end=2190
-  _globals['_CANCELREASON']._serialized_start=2193
-  _globals['_CANCELREASON']._serialized_end=2333
+  _globals['_STATE']._serialized_start=2070
+  _globals['_STATE']._serialized_end=2178
+  _globals['_CANCELREASON']._serialized_start=2181
+  _globals['_CANCELREASON']._serialized_end=2321
   _globals['_STEPEVENT']._serialized_start=74
-  _globals['_STEPEVENT']._serialized_end=254
-  _globals['_HARNESSSTART']._serialized_start=256
-  _globals['_HARNESSSTART']._serialized_end=319
-  _globals['_HARNESSCANCEL']._serialized_start=321
-  _globals['_HARNESSCANCEL']._serialized_end=370
-  _globals['_HARNESSREQUEST']._serialized_start=373
-  _globals['_HARNESSREQUEST']._serialized_end=514
-  _globals['_HARNESSOUTPUTS']._serialized_start=516
-  _globals['_HARNESSOUTPUTS']._serialized_end=557
-  _globals['_ERROR']._serialized_start=559
-  _globals['_ERROR']._serialized_end=601
-  _globals['_HARNESSEND']._serialized_start=603
-  _globals['_HARNESSEND']._serialized_end=667
-  _globals['_HARNESSRESPONSE']._serialized_start=669
-  _globals['_HARNESSRESPONSE']._serialized_end=789
-  _globals['_CREATEINTERACTIONEVENT']._serialized_start=791
-  _globals['_CREATEINTERACTIONEVENT']._serialized_end=916
-  _globals['_CREATEINTERACTIONRESPONSE']._serialized_start=918
-  _globals['_CREATEINTERACTIONRESPONSE']._serialized_end=972
-  _globals['_STEP']._serialized_start=975
-  _globals['_STEP']._serialized_end=1179
-  _globals['_CONTENTSTEP']._serialized_start=1181
-  _globals['_CONTENTSTEP']._serialized_end=1256
-  _globals['_THOUGHTSTEP']._serialized_start=1258
-  _globals['_THOUGHTSTEP']._serialized_end=1338
-  _globals['_TOOLCALLSTEP']._serialized_start=1340
-  _globals['_TOOLCALLSTEP']._serialized_end=1452
-  _globals['_FUNCTIONCALLSTEP']._serialized_start=1454
-  _globals['_FUNCTIONCALLSTEP']._serialized_end=1536
-  _globals['_TOOLRESULTSTEP']._serialized_start=1538
-  _globals['_TOOLRESULTSTEP']._serialized_end=1661
-  _globals['_FUNCTIONRESULTSTEP']._serialized_start=1663
-  _globals['_FUNCTIONRESULTSTEP']._serialized_end=1778
-  _globals['_VALUE']._serialized_start=1781
-  _globals['_VALUE']._serialized_end=2040
-  _globals['_LISTVALUE']._serialized_start=2042
-  _globals['_LISTVALUE']._serialized_end=2080
-  _globals['_HARNESSSERVICE']._serialized_start=2335
-  _globals['_HARNESSSERVICE']._serialized_end=2407
-  _globals['_INTERACTIONSSERVICE']._serialized_start=2409
-  _globals['_INTERACTIONSSERVICE']._serialized_end=2512
+  _globals['_STEPEVENT']._serialized_end=250
+  _globals['_HARNESSSTART']._serialized_start=252
+  _globals['_HARNESSSTART']._serialized_end=313
+  _globals['_HARNESSCANCEL']._serialized_start=315
+  _globals['_HARNESSCANCEL']._serialized_end=364
+  _globals['_HARNESSREQUEST']._serialized_start=367
+  _globals['_HARNESSREQUEST']._serialized_end=506
+  _globals['_HARNESSOUTPUTS']._serialized_start=508
+  _globals['_HARNESSOUTPUTS']._serialized_end=549
+  _globals['_ERROR']._serialized_start=551
+  _globals['_ERROR']._serialized_end=593
+  _globals['_HARNESSEND']._serialized_start=595
+  _globals['_HARNESSEND']._serialized_end=659
+  _globals['_HARNESSRESPONSE']._serialized_start=661
+  _globals['_HARNESSRESPONSE']._serialized_end=781
+  _globals['_CREATEINTERACTIONEVENT']._serialized_start=783
+  _globals['_CREATEINTERACTIONEVENT']._serialized_end=904
+  _globals['_CREATEINTERACTIONRESPONSE']._serialized_start=906
+  _globals['_CREATEINTERACTIONRESPONSE']._serialized_end=960
+  _globals['_STEP']._serialized_start=963
+  _globals['_STEP']._serialized_end=1167
+  _globals['_CONTENTSTEP']._serialized_start=1169
+  _globals['_CONTENTSTEP']._serialized_end=1244
+  _globals['_THOUGHTSTEP']._serialized_start=1246
+  _globals['_THOUGHTSTEP']._serialized_end=1326
+  _globals['_TOOLCALLSTEP']._serialized_start=1328
+  _globals['_TOOLCALLSTEP']._serialized_end=1440
+  _globals['_FUNCTIONCALLSTEP']._serialized_start=1442
+  _globals['_FUNCTIONCALLSTEP']._serialized_end=1524
+  _globals['_TOOLRESULTSTEP']._serialized_start=1526
+  _globals['_TOOLRESULTSTEP']._serialized_end=1649
+  _globals['_FUNCTIONRESULTSTEP']._serialized_start=1651
+  _globals['_FUNCTIONRESULTSTEP']._serialized_end=1766
+  _globals['_VALUE']._serialized_start=1769
+  _globals['_VALUE']._serialized_end=2028
+  _globals['_LISTVALUE']._serialized_start=2030
+  _globals['_LISTVALUE']._serialized_end=2068
+  _globals['_HARNESSSERVICE']._serialized_start=2323
+  _globals['_HARNESSSERVICE']._serialized_end=2395
+  _globals['_INTERACTIONSSERVICE']._serialized_start=2397
+  _globals['_INTERACTIONSSERVICE']._serialized_end=2500
 # @@protoc_insertion_point(module_scope)

@@ -196,7 +196,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 
 	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "my-agent",
+		AgentId:        "my-agent",
 		Inputs:         []*proto.Step{harnesstest.UserStep("Trigger prompt")},
 	}, handler)
 	if err != nil {
@@ -237,7 +237,7 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 
 	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "antigravity",
+		AgentId:        "antigravity",
 		Inputs:         []*proto.Step{harnesstest.UserStep("Trigger prompt")},
 	}, handler)
 	if err == nil {
@@ -323,7 +323,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			Inputs:         []*proto.Step{harnesstest.UserStep("Hello")},
 		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
@@ -350,7 +350,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		// Seed the event log with a pending event
 		_, err := log.Append(ctx, &proto.StepEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			State:          proto.State_STATE_PENDING,
 			Steps:          []*proto.Step{harnesstest.UserStep("Initial")},
 		})
@@ -387,7 +387,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			Inputs:         nil, // NO new inputs
 		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
@@ -414,7 +414,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		// Seed the event log with a pending event
 		_, err := log.Append(ctx, &proto.StepEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			State:          proto.State_STATE_PENDING,
 			Steps:          []*proto.Step{harnesstest.UserStep("Initial")},
 		})
@@ -452,7 +452,7 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			Inputs:         []*proto.Step{harnesstest.UserStep("New input")},
 		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
@@ -523,7 +523,7 @@ func TestExec_ResumeEmptyHarnessUsesStored(t *testing.T) {
 	// Turn 1: explicitly run the NON-default harness.
 	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-b",
+		AgentId:        "harness-b",
 		Inputs:         []*proto.Step{harnesstest.UserStep("hi")},
 	}, noop); err != nil {
 		t.Fatalf("turn 1: %v", err)
@@ -575,14 +575,14 @@ func TestExec_ResumeExplicitDifferentHarnessRejected(t *testing.T) {
 
 	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-a",
+		AgentId:        "harness-a",
 		Inputs:         []*proto.Step{harnesstest.UserStep("hi")},
 	}, noop); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
 	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-b",
+		AgentId:        "harness-b",
 		Inputs:         []*proto.Step{harnesstest.UserStep("more")},
 	}, noop)
 	if err == nil || !strings.Contains(err.Error(), "harness ID changed from harness-a to harness-b") {

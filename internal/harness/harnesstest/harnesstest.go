@@ -139,8 +139,8 @@ func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 	}
 	s.mu.Lock()
 	s.gotConvID = req.GetConversationId()
-	s.gotHarnessID = req.GetHarnessId()
-	s.gotHarnessConfig = req.GetStart().GetHarnessConfig()
+	s.gotHarnessID = req.GetAgentId()
+	s.gotHarnessConfig = req.GetStart().GetAgentConfig()
 	s.gotInputs = inputs
 	s.mu.Unlock()
 

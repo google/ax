@@ -128,7 +128,7 @@ func (s *server) Connect(stream proto.HarnessService_ConnectServer) error {
 	}
 	convID := req.GetConversationId()
 
-	exec, err := s.h.Start(ctx, convID, start.GetHarnessConfig())
+	exec, err := s.h.Start(ctx, convID, start.GetAgentConfig())
 	if err != nil {
 		return sendEnd(stream, convID, proto.State_STATE_FAILED, err)
 	}

@@ -314,7 +314,7 @@ deploy_ax_server() {
   echo "Forward the AX server by running the following command (optional)"
   echo "kubectl port-forward -n ax rs/ax-server 8494:8494"
   echo ""
-  echo "Then, run: ax --server localhost:8494 [--harness antigravity|antigravity-interactions]"
+  echo "Then, run: ax --server localhost:8494 [--agent antigravity|antigravity-interactions]"
 }
 
 # delete_ax_server removes the AX server and harness resources but preserves the

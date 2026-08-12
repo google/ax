@@ -193,11 +193,11 @@ func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler)
 	// 3. Build standard HarnessRequest.
 	start := &proto.HarnessRequest{
 		ConversationId: e.conversationID,
-		HarnessId:      "antigravity",
+		AgentId:        "antigravity",
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				HarnessConfig: e.harnessConfig,
-				Steps:         inputs,
+				AgentConfig: e.harnessConfig,
+				Steps:       inputs,
 			},
 		},
 	}

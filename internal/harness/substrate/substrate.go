@@ -208,11 +208,11 @@ func (e *substrateExecution) Run(ctx context.Context, handler harness.Handler) e
 	// Send a HarnessRequest to initiate the turn.
 	start := &proto.HarnessRequest{
 		ConversationId: e.conversationID,
-		HarnessId:      e.harness.harnessID,
+		AgentId:        e.harness.harnessID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				HarnessConfig: e.harnessConfig,
-				Steps:         inputs,
+				AgentConfig: e.harnessConfig,
+				Steps:       inputs,
 			},
 		},
 	}

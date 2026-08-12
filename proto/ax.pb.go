@@ -152,8 +152,8 @@ type StepEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	InteractionId  string                 `protobuf:"bytes,2,opt,name=interaction_id,json=interactionId,proto3" json:"interaction_id,omitempty"`
-	HarnessId      string                 `protobuf:"bytes,3,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
-	HarnessConfig  *structpb.Struct       `protobuf:"bytes,4,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
+	AgentId        string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	AgentConfig    *structpb.Struct       `protobuf:"bytes,4,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
 	Steps          []*Step                `protobuf:"bytes,5,rep,name=steps,proto3" json:"steps,omitempty"`
 	State          State                  `protobuf:"varint,6,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -204,16 +204,16 @@ func (x *StepEvent) GetInteractionId() string {
 	return ""
 }
 
-func (x *StepEvent) GetHarnessId() string {
+func (x *StepEvent) GetAgentId() string {
 	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
 
-func (x *StepEvent) GetHarnessConfig() *structpb.Struct {
+func (x *StepEvent) GetAgentConfig() *structpb.Struct {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
@@ -234,8 +234,8 @@ func (x *StepEvent) GetState() State {
 
 type HarnessStart struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Per-execution harness configuration.
-	HarnessConfig []byte  `protobuf:"bytes,1,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
+	// Per-execution agent configuration.
+	AgentConfig   []byte  `protobuf:"bytes,1,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
 	Steps         []*Step `protobuf:"bytes,2,rep,name=steps,proto3" json:"steps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -271,9 +271,9 @@ func (*HarnessStart) Descriptor() ([]byte, []int) {
 	return file_proto_ax_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *HarnessStart) GetHarnessConfig() []byte {
+func (x *HarnessStart) GetAgentConfig() []byte {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
@@ -333,7 +333,7 @@ func (x *HarnessCancel) GetReason() CancelReason {
 type HarnessRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	HarnessId      string                 `protobuf:"bytes,2,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Types that are valid to be assigned to Type:
 	//
 	//	*HarnessRequest_Start
@@ -380,9 +380,9 @@ func (x *HarnessRequest) GetConversationId() string {
 	return ""
 }
 
-func (x *HarnessRequest) GetHarnessId() string {
+func (x *HarnessRequest) GetAgentId() string {
 	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
@@ -675,8 +675,8 @@ type CreateInteractionEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"` // Unique conversation identifier
 	Inputs         []*Step                `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`                                       // New inputs
-	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`                // Harness ID, empty selects the default harness
-	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`    // Per-request harness configuration (opaque JSON), if any
+	AgentId        string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                      // Agent ID, empty selects the default agent
+	AgentConfig    []byte                 `protobuf:"bytes,5,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`          // Per-request agent configuration (opaque JSON), if any
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -725,16 +725,16 @@ func (x *CreateInteractionEvent) GetInputs() []*Step {
 	return nil
 }
 
-func (x *CreateInteractionEvent) GetHarnessId() string {
+func (x *CreateInteractionEvent) GetAgentId() string {
 	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
 
-func (x *CreateInteractionEvent) GetHarnessConfig() []byte {
+func (x *CreateInteractionEvent) GetAgentConfig() []byte {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
@@ -1520,24 +1520,22 @@ var File_proto_ax_proto protoreflect.FileDescriptor
 
 const file_proto_ax_proto_rawDesc = "" +
 	"\n" +
-	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"\xfb\x01\n" +
+	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"\xf3\x01\n" +
 	"\tStepEvent\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12%\n" +
-	"\x0einteraction_id\x18\x02 \x01(\tR\rinteractionId\x12\x1d\n" +
-	"\n" +
-	"harness_id\x18\x03 \x01(\tR\tharnessId\x12>\n" +
-	"\x0eharness_config\x18\x04 \x01(\v2\x17.google.protobuf.StructR\rharnessConfig\x12\x1e\n" +
+	"\x0einteraction_id\x18\x02 \x01(\tR\rinteractionId\x12\x19\n" +
+	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12:\n" +
+	"\fagent_config\x18\x04 \x01(\v2\x17.google.protobuf.StructR\vagentConfig\x12\x1e\n" +
 	"\x05steps\x18\x05 \x03(\v2\b.ax.StepR\x05steps\x12\x1f\n" +
-	"\x05state\x18\x06 \x01(\x0e2\t.ax.StateR\x05state\"U\n" +
-	"\fHarnessStart\x12%\n" +
-	"\x0eharness_config\x18\x01 \x01(\fR\rharnessConfig\x12\x1e\n" +
+	"\x05state\x18\x06 \x01(\x0e2\t.ax.StateR\x05state\"Q\n" +
+	"\fHarnessStart\x12!\n" +
+	"\fagent_config\x18\x01 \x01(\fR\vagentConfig\x12\x1e\n" +
 	"\x05steps\x18\x02 \x03(\v2\b.ax.StepR\x05steps\"9\n" +
 	"\rHarnessCancel\x12(\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x10.ax.CancelReasonR\x06reason\"\xb7\x01\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x10.ax.CancelReasonR\x06reason\"\xb3\x01\n" +
 	"\x0eHarnessRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1d\n" +
-	"\n" +
-	"harness_id\x18\x02 \x01(\tR\tharnessId\x12(\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12(\n" +
 	"\x05start\x18\x03 \x01(\v2\x10.ax.HarnessStartH\x00R\x05start\x12+\n" +
 	"\x06cancel\x18\x04 \x01(\v2\x11.ax.HarnessCancelH\x00R\x06cancelB\x06\n" +
 	"\x04type\"0\n" +
@@ -1554,13 +1552,12 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12.\n" +
 	"\aoutputs\x18\x02 \x01(\v2\x12.ax.HarnessOutputsH\x00R\aoutputs\x12\"\n" +
 	"\x03end\x18\x03 \x01(\v2\x0e.ax.HarnessEndH\x00R\x03endB\x06\n" +
-	"\x04type\"\xaf\x01\n" +
+	"\x04type\"\xa7\x01\n" +
 	"\x16CreateInteractionEvent\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12 \n" +
-	"\x06inputs\x18\x02 \x03(\v2\b.ax.StepR\x06inputs\x12\x1d\n" +
-	"\n" +
-	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
-	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfigJ\x04\b\x03\x10\x04\"?\n" +
+	"\x06inputs\x18\x02 \x03(\v2\b.ax.StepR\x06inputs\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12!\n" +
+	"\fagent_config\x18\x05 \x01(\fR\vagentConfigJ\x04\b\x03\x10\x04\"?\n" +
 	"\x19CreateInteractionResponse\x12\"\n" +
 	"\aoutputs\x18\x01 \x03(\v2\b.ax.StepR\aoutputs\"\x88\x02\n" +
 	"\x04Step\x12 \n" +
@@ -1671,7 +1668,7 @@ var file_proto_ax_proto_goTypes = []any{
 	(structpb.NullValue)(0),           // 23: google.protobuf.NullValue
 }
 var file_proto_ax_proto_depIdxs = []int32{
-	21, // 0: ax.StepEvent.harness_config:type_name -> google.protobuf.Struct
+	21, // 0: ax.StepEvent.agent_config:type_name -> google.protobuf.Struct
 	12, // 1: ax.StepEvent.steps:type_name -> ax.Step
 	0,  // 2: ax.StepEvent.state:type_name -> ax.State
 	12, // 3: ax.HarnessStart.steps:type_name -> ax.Step

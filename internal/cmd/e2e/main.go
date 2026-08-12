@@ -132,7 +132,7 @@ func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *cont
 	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: "e2e-conv",
 		Inputs:         inputs,
-		HarnessId:      harnessID,
+		AgentId:        harnessID,
 	}, handler)
 
 	if err != nil {

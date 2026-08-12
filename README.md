@@ -170,7 +170,7 @@ Execute a new conversation or resume an existing one. If no conversation ID is p
 ax \
     [--input <text>] \
     [--conversation <id>] \
-    [--harness <id>] \
+    [--agent <id>] \
     [--config <json>] \
     [--config-file <file.json>] \
     [--server <address>] \
@@ -179,11 +179,11 @@ ax \
 ```
 
 Options:
+- `--agent`: Agent ID (optional, default agent is used if not specified)
 - `--ax-config`: Path to YAML configuration file (only used with a local built-in AX server) (default "ax.yaml")
-- `--config`: Per-request harness configuration as an inline JSON string (mutually exclusive with `--config-file`)
-- `--config-file`: Path to a JSON file with per-request harness configuration
+- `--config`: Per-request agent configuration as an inline JSON string (mutually exclusive with `--config-file`)
+- `--config-file`: Path to a JSON file with per-request agent configuration
 - `--conversation`: Conversation ID (optional, generates UUID if not provided)
-- `--harness`: Harness ID (optional, default harness is used if not specified)
 - `--input`: Input message to send (optional)
 - `--resume`: Resume a conversation without inputs
 - `--server`: gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)

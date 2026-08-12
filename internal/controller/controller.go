@@ -73,7 +73,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent
 	// TODO(jbd): Enable bringing a remote harness that implements HarnessService.
 	// TODO(anj): We need to consolidate agents and harness registration.
 	// Adding harness registration support temporarily.
-	l := newLogger(d.eventLog, req.ConversationId, req.HarnessId)
+	l := newLogger(d.eventLog, req.ConversationId, req.AgentId)
 	state, storedHarnessID, err := l.ResumptionState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to check resumption state: %w", err)
@@ -81,10 +81,10 @@ func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent
 
 	// On resume, use the conversation's recorded harness. Using a different harness
 	// for the same conversation is not allowed.
-	if req.HarnessId != "" && storedHarnessID != "" && req.HarnessId != storedHarnessID {
-		return fmt.Errorf("resumption not allowed: harness ID changed from %s to %s", storedHarnessID, req.HarnessId)
+	if req.AgentId != "" && storedHarnessID != "" && req.AgentId != storedHarnessID {
+		return fmt.Errorf("resumption not allowed: harness ID changed from %s to %s", storedHarnessID, req.AgentId)
 	}
-	harnessID := req.HarnessId
+	harnessID := req.AgentId
 	// Use the conversations's stored harness if no harness is specified.
 	if harnessID == "" {
 		harnessID = storedHarnessID
@@ -109,7 +109,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent
 		// If the state is pending, first try to resume the
 		// pending execution. If the state is COMPLETED or FAILED, start
 		// a new execution.
-		exec, err := h.Start(ctx, req.ConversationId, req.HarnessConfig)
+		exec, err := h.Start(ctx, req.ConversationId, req.AgentConfig)
 		if err != nil {
 			return fmt.Errorf("failed to start harness session: %w", err)
 		}
@@ -125,7 +125,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent
 		return nil
 	}
 
-	exec, err := h.Start(ctx, req.ConversationId, req.HarnessConfig)
+	exec, err := h.Start(ctx, req.ConversationId, req.AgentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to start harness session: %w", err)
 	}
@@ -135,7 +135,7 @@ func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionEvent
 		return fmt.Errorf("failed to queue inputs: %w", err)
 	}
 	// Log inputs before running harness
-	if _, err := l.LogInputs(ctx, req.Inputs, req.HarnessConfig); err != nil {
+	if _, err := l.LogInputs(ctx, req.Inputs, req.AgentConfig); err != nil {
 		return fmt.Errorf("failed to log inputs: %w", err)
 	}
 	if err := exec.Run(ctx, hhandler); err != nil {
@@ -230,8 +230,8 @@ func (l *logger) ResumptionState(ctx context.Context) (proto.State, string, erro
 	var state proto.State
 	var harnessID string
 	for _, ev := range events {
-		if harnessID == "" && ev.HarnessId != "" {
-			harnessID = ev.HarnessId
+		if harnessID == "" && ev.AgentId != "" {
+			harnessID = ev.AgentId
 		}
 		if ev.State != proto.State_STATE_UNSPECIFIED {
 			state = ev.State
@@ -256,8 +256,8 @@ func (l *logger) LogInputs(ctx context.Context, steps []*proto.Step, harnessConf
 	ev := &proto.StepEvent{
 		ConversationId: l.conversationID,
 		InteractionId:  l.interactionID,
-		HarnessId:      l.harnessID,
-		HarnessConfig:  cfg,
+		AgentId:        l.harnessID,
+		AgentConfig:    cfg,
 		Steps:          steps,
 		State:          proto.State_STATE_PENDING,
 	}

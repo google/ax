@@ -30,15 +30,15 @@ option go_package = "github.com/google/ax/proto";
 message StepEvent {
   string conversation_id = 1;
   string interaction_id = 2;
-  string harness_id = 3;
-  google.protobuf.Struct harness_config = 4;
+  string agent_id = 3;
+  google.protobuf.Struct agent_config = 4;
   repeated Step steps = 5;
   State state = 6;
 }
 
 message HarnessStart {
-  // Per-execution harness configuration.
-  bytes harness_config = 1;
+  // Per-execution agent configuration.
+  bytes agent_config = 1;
   repeated Step steps = 2;
 }
 
@@ -49,7 +49,7 @@ message HarnessCancel {
 
 message HarnessRequest {
   string conversation_id = 1;
-  string harness_id = 2;
+  string agent_id = 2;
   oneof type {
     HarnessStart start = 3;
     HarnessCancel cancel = 4;
@@ -113,8 +113,8 @@ message CreateInteractionEvent {
   repeated Step inputs = 2;              // New inputs
   reserved 3;
 
-  string harness_id = 4;                 // Harness ID, empty selects the default harness
-  bytes harness_config = 5;              // Per-request harness configuration (opaque JSON), if any
+  string agent_id = 4;                   // Agent ID, empty selects the default agent
+  bytes agent_config = 5;                // Per-request agent configuration (opaque JSON), if any
 }
 
 // CreateInteractionResponse contains the result of an interaction.

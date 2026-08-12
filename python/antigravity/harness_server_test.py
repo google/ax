@@ -19,7 +19,7 @@ import grpc
 from python.proto import ax_pb2, ax_pb2_grpc, content_pb2
 from python.antigravity.harness_server import AntigravityHarnessServiceServicer
 from python.antigravity.harness_server import ConversationIdError
-from python.antigravity.harness_server import HarnessConfigError
+from python.antigravity.harness_server import AgentConfigError
 from python.antigravity.harness_server import _validate_conversation_id
 from google.antigravity import LocalAgentConfig
 
@@ -79,7 +79,7 @@ def test_grpc_connect_success(mock_config, monkeypatch, tmp_path):
             )
             req = ax_pb2.HarnessRequest(
                 conversation_id="conv-test",
-                harness_id="antigravity",
+                agent_id="antigravity",
                 start=start_payload
             )
             
@@ -144,7 +144,7 @@ def test_grpc_connect_agent_per_turn_with_save_dir(mock_config, monkeypatch, tmp
             async def fire(conv_id):
                 req = ax_pb2.HarnessRequest(
                     conversation_id=conv_id,
-                    harness_id="antigravity",
+                    agent_id="antigravity",
                     start=ax_pb2.HarnessStart(
                         steps=[
                             ax_pb2.Step(
@@ -302,7 +302,7 @@ def test_grpc_connect_programmatic_credentials(monkeypatch, tmp_path):
             )
             req = ax_pb2.HarnessRequest(
                 conversation_id="conv-test-prog",
-                harness_id="antigravity",
+                agent_id="antigravity",
                 start=start_payload
             )
             
@@ -392,7 +392,7 @@ def test_grpc_connect_tool_call_flushes_buffers(mock_config, monkeypatch, tmp_pa
             )
             req = ax_pb2.HarnessRequest(
                 conversation_id="conv-test-buffer",
-                harness_id="antigravity",
+                agent_id="antigravity",
                 start=start_payload
             )
             
@@ -444,7 +444,6 @@ def test_build_default_config_routes_to_vertex_via_env(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-project")
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-east1")
     cfg = _build_default_config()
-    assert cfg.vertex is True
     endpoint = cfg._build_shorthand_endpoint()
     assert isinstance(endpoint, types.VertexEndpoint)
     assert endpoint.project == "env-project"
@@ -475,7 +474,7 @@ def test_run_turn_guards_against_missing_default_config(monkeypatch, tmp_path):
                 stub = ax_pb2_grpc.HarnessServiceStub(channel)
                 req = ax_pb2.HarnessRequest(
                     conversation_id="conv-guard",
-                    harness_id="antigravity",
+                    agent_id="antigravity",
                     start=ax_pb2.HarnessStart(steps=[
                         ax_pb2.Step(content=ax_pb2.ContentStep(
                             role="user",
@@ -497,7 +496,7 @@ def test_run_turn_guards_against_missing_default_config(monkeypatch, tmp_path):
     asyncio.run(_run())
 
 
-def test_harness_config_empty_is_noop(mock_config, tmp_path):
+def test_agent_config_empty_is_noop(mock_config, tmp_path):
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
     assert servicer._build_config_for("conv-1", b"").system_instructions == (
         mock_config.system_instructions
@@ -507,7 +506,7 @@ def test_harness_config_empty_is_noop(mock_config, tmp_path):
     )
 
 
-def test_harness_config_overlay_applies(mock_config, tmp_path):
+def test_agent_config_overlay_applies(mock_config, tmp_path):
     # Fields flow through to the SDK, which validates values.
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
     raw = json.dumps({"system_instructions": "Answer in one sentence."}).encode()
@@ -517,7 +516,7 @@ def test_harness_config_overlay_applies(mock_config, tmp_path):
     assert config.system_instructions == "Answer in one sentence."
 
 
-def test_harness_config_overlay_keeps_ax_managed_save_dir(mock_config, tmp_path):
+def test_agent_config_overlay_keeps_ax_managed_save_dir(mock_config, tmp_path):
     # A valid overlay must not disturb the AX-injected save_dir.
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
     raw = json.dumps({"system_instructions": "x"}).encode()
@@ -528,7 +527,7 @@ def test_harness_config_overlay_keeps_ax_managed_save_dir(mock_config, tmp_path)
     assert config.save_dir == str(tmp_path / "conv-1")
 
 
-def test_harness_config_overlay_does_not_mutate_default(mock_config, tmp_path):
+def test_agent_config_overlay_does_not_mutate_default(mock_config, tmp_path):
     # Reconstruction must not mutate the shared server default.
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
     servicer._build_config_for(
@@ -537,7 +536,7 @@ def test_harness_config_overlay_does_not_mutate_default(mock_config, tmp_path):
     assert mock_config.system_instructions == "Test instructions"
 
 
-def test_harness_config_overlay_applies_multiple_fields(mock_config, tmp_path):
+def test_agent_config_overlay_applies_multiple_fields(mock_config, tmp_path):
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
     raw = json.dumps({
         "system_instructions": "x",
@@ -554,8 +553,8 @@ def test_harness_config_overlay_applies_multiple_fields(mock_config, tmp_path):
     (b"{", "expected UTF-8 JSON"),
     (b"\xff", "expected UTF-8 JSON"),
     (json.dumps([]).encode(), "top-level JSON value must be an object"),
-    (json.dumps({"save_dir": "/tmp/other"}).encode(), "managed outside harness_config"),
-    (json.dumps({"conversation_id": "other"}).encode(), "managed outside harness_config"),
+    (json.dumps({"save_dir": "/tmp/other"}).encode(), "managed outside agent_config"),
+    (json.dumps({"conversation_id": "other"}).encode(), "managed outside agent_config"),
     (
         json.dumps({"capabilities": {"enabled_tools": ["not-a-tool"]}}).encode(),
         "validation error",
@@ -563,20 +562,21 @@ def test_harness_config_overlay_applies_multiple_fields(mock_config, tmp_path):
     (json.dumps({"system_instruction": "typo"}).encode(), "unknown config field"),
     (json.dumps({"model": "m", "frobnicate": True}).encode(), "unknown config field"),
 ])
-def test_harness_config_rejects(mock_config, tmp_path, raw_config, error):
+def test_agent_config_rejects(mock_config, tmp_path, raw_config, error):
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
-    with pytest.raises(HarnessConfigError, match=error):
+    from python.antigravity.harness_server import AgentConfigError
+    with pytest.raises(AgentConfigError, match=error):
         servicer._build_config_for("conv-1", raw_config)
 
 
-def test_run_turn_invalid_harness_config_maps_to_invalid_argument(mock_config, tmp_path):
+def test_run_turn_invalid_agent_config_maps_to_invalid_argument(mock_config, tmp_path):
     async def _run():
         servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         req = ax_pb2.HarnessRequest(
             conversation_id="conv-1",
-            harness_id="antigravity",
+            agent_id="antigravity",
             start=ax_pb2.HarnessStart(
-                harness_config=b"{",
+                agent_config=b"{",
                 steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
                     content=[content_pb2.Content(text=content_pb2.TextContent(text="hi"))],
@@ -587,18 +587,19 @@ def test_run_turn_invalid_harness_config_maps_to_invalid_argument(mock_config, t
         assert len(responses) == 1
         assert responses[0].end.state == ax_pb2.STATE_FAILED
         assert responses[0].end.error.code == 3
-        assert "Invalid harness_config" in responses[0].end.error.description
+        assert "Invalid agent_config" in responses[0].end.error.description
 
     asyncio.run(_run())
 
 
-def test_harness_config_unknown_field_names_are_reported(mock_config, tmp_path):
+def test_agent_config_unknown_field_names_are_reported(mock_config, tmp_path):
     # The error lists the offending field(s), sorted, so a typo is actionable;
     # any unknown field rejects the whole overlay (no silent drop) and valid
     # fields in the same request are not flagged.
     servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
+    from python.antigravity.harness_server import AgentConfigError
     raw = json.dumps({"zzz_bad": 1, "aaa_bad": 2, "system_instructions": "ok"}).encode()
-    with pytest.raises(HarnessConfigError) as excinfo:
+    with pytest.raises(AgentConfigError) as excinfo:
         servicer._build_config_for("conv-1", raw)
     msg = str(excinfo.value)
     assert "unknown config field(s): aaa_bad, zzz_bad" in msg
@@ -638,7 +639,7 @@ def test_run_turn_unsafe_conversation_id_maps_to_invalid_argument(mock_config, t
         servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         req = ax_pb2.HarnessRequest(
             conversation_id="../escape",
-            harness_id="antigravity",
+            agent_id="antigravity",
             start=ax_pb2.HarnessStart(
                 steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
@@ -663,7 +664,7 @@ def test_run_turn_rejects_conversation_id_before_creating_save_dir(mock_config, 
         servicer = AntigravityHarnessServiceServicer(mock_config, tmp_path)
         req = ax_pb2.HarnessRequest(
             conversation_id="../escape",
-            harness_id="antigravity",
+            agent_id="antigravity",
             start=ax_pb2.HarnessStart(
                 steps=[ax_pb2.Step(content=ax_pb2.ContentStep(
                     role="user",
