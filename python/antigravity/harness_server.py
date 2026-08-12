@@ -95,7 +95,6 @@ def _build_default_config() -> LocalAgentConfig:
     project = os.environ.get("GOOGLE_CLOUD_PROJECT") if vertex else None
     location = os.environ.get("GOOGLE_CLOUD_LOCATION") if vertex else None
     return LocalAgentConfig(
-        system_instructions="You are a helpful agent.",
         vertex=vertex,
         project=project,
         location=location,
