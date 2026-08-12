@@ -34,14 +34,14 @@ import (
 )
 
 var (
-	execConversationID string
-	execAgentID        string
-	execConfigFile     string
-	execConfig         string
-	execInput          string
-	execServerAddr     string
-	execAXConfigFile   string
-	execResume         bool // allow resuming an execution without inputs
+	execConversationID  string
+	execAgentID         string
+	execAgentConfigFile string
+	execAgentConfig     string
+	execInput           string
+	execServerAddr      string
+	execConfigFile      string
+	execResume          bool // allow resuming an execution without inputs
 )
 
 var execCmd = &cobra.Command{
@@ -56,14 +56,14 @@ If no conversation ID is provided, a new UUID will be generated.`,
 func registerExecFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&execConversationID, "conversation", "", "Conversation ID (optional, generates UUID if not provided)")
 	cmd.Flags().StringVar(&execAgentID, "agent", "", "Agent ID (optional, default agent is used if not specified)")
-	cmd.Flags().StringVar(&execConfigFile, "config-file", "", "Path to a JSON file with per-request agent configuration")
-	cmd.Flags().StringVar(&execConfig, "config", "", "Per-request agent configuration as an inline JSON string (mutually exclusive with --config-file)")
+	cmd.Flags().StringVar(&execAgentConfigFile, "agent-config-file", "", "Path to a JSON file with per-request agent configuration")
+	cmd.Flags().StringVar(&execAgentConfig, "agent-config", "", "Per-request agent configuration as an inline JSON string (mutually exclusive with --agent-config-file)")
 	cmd.Flags().StringVar(&execInput, "input", "", "Input message to send (optional)")
 	cmd.Flags().StringVar(&execServerAddr, "server", "", "gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)")
-	cmd.Flags().StringVar(&execAXConfigFile, "ax-config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
+	cmd.Flags().StringVar(&execConfigFile, "config", "ax.yaml", "Path to YAML configuration file (only used with a local built-in AX server)")
 	cmd.Flags().BoolVar(&execResume, "resume", false, "Resume a conversation without inputs")
 	cmd.MarkFlagsMutuallyExclusive("input", "resume")
-	cmd.MarkFlagsMutuallyExclusive("config", "config-file")
+	cmd.MarkFlagsMutuallyExclusive("agent-config", "agent-config-file")
 }
 
 func init() {
@@ -110,7 +110,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}()
 
 	if execServerAddr == "" {
-		cfg, err := newConfig(cmd, execAXConfigFile)
+		cfg, err := newConfig(cmd, execConfigFile)
 		if err != nil {
 			return err
 		}
@@ -126,14 +126,14 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 
 	var agentConfig []byte
-	if execConfigFile != "" {
-		b, err := os.ReadFile(execConfigFile)
+	if execAgentConfigFile != "" {
+		b, err := os.ReadFile(execAgentConfigFile)
 		if err != nil {
-			return fmt.Errorf("failed to read agent config %q: %w", execConfigFile, err)
+			return fmt.Errorf("failed to read agent config %q: %w", execAgentConfigFile, err)
 		}
 		agentConfig = b
-	} else if execConfig != "" {
-		agentConfig = []byte(execConfig)
+	} else if execAgentConfig != "" {
+		agentConfig = []byte(execAgentConfig)
 	}
 
 	return execLoop(ctx, execConversationID, execAgentID, agentConfig, execInput)

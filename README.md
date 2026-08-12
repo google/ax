@@ -171,18 +171,18 @@ ax \
     [--input <text>] \
     [--conversation <id>] \
     [--agent <id>] \
-    [--config <json>] \
-    [--config-file <file.json>] \
+    [--agent-config <json>] \
+    [--agent-config-file <file.json>] \
     [--server <address>] \
-    [--ax-config <file>] \
+    [--config <file>] \
     [--resume]
 ```
 
 Options:
 - `--agent`: Agent ID (optional, default agent is used if not specified)
-- `--ax-config`: Path to YAML configuration file (only used with a local built-in AX server) (default "ax.yaml")
-- `--config`: Per-request agent configuration as an inline JSON string (mutually exclusive with `--config-file`)
-- `--config-file`: Path to a JSON file with per-request agent configuration
+- `--agent-config`: Per-request agent configuration as an inline JSON string (mutually exclusive with `--agent-config-file`)
+- `--agent-config-file`: Path to a JSON file with per-request agent configuration
+- `--config`: Path to YAML configuration file (only used with a local built-in AX server) (default "ax.yaml")
 - `--conversation`: Conversation ID (optional, generates UUID if not provided)
 - `--input`: Input message to send (optional)
 - `--resume`: Resume a conversation without inputs
@@ -200,12 +200,12 @@ ax --conversation a53d4db3-1165-4925-87da-be6c72bbdeb1 --input "Ok, now let's do
 # Execute using server mode
 ax --server localhost:8494 --input "Hello agents!"
 
-# Execute with per-request harness config
-ax --config '{"system_instructions":"Answer in one sentence.","model":"gemini-3.5-flash"}' \
+# Execute with per-request agent config
+ax --agent-config '{"system_instructions":"Answer in one sentence.","model":"gemini-3.5-flash"}' \
    --input "Explain durable execution."
 
-# To keep the same JSON in a file, use `--config-file` instead:
-ax --config-file antigravity.json --input "Explain durable execution."
+# To keep the same JSON in a file, use `--agent-config-file` instead:
+ax --agent-config-file antigravity.json --input "Explain durable execution."
 ```
 
 ### Serve

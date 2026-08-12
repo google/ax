@@ -65,8 +65,8 @@ const currentVersion = "v1alpha"
 
 func newConfig(cmd *cobra.Command, configFile string) (*cliutil.Config, error) {
 	cfg, err := cliutil.LoadFromFile(configFile)
-	configFlagChanged := (cmd.Flags().Lookup("ax-config") != nil && cmd.Flags().Changed("ax-config")) ||
-		(cmd.Flags().Lookup("config-file") != nil && cmd.Flags().Changed("config-file"))
+	configFlagChanged := (cmd.Flags().Lookup("config") != nil && cmd.Flags().Changed("config")) ||
+		(cmd.Flags().Lookup("agent-config-file") != nil && cmd.Flags().Changed("agent-config-file"))
 	if errors.Is(err, os.ErrNotExist) && !configFlagChanged {
 		cfg := cliutil.DefaultConfig()
 		cfg.Version = currentVersion

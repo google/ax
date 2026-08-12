@@ -13,8 +13,8 @@
 # limitations under the License.
 
 # Sample LOCAL configuration for the AX *harness* build (compiled with -tags=harness).
-# Usage:  ax serve --ax-config ax.yaml
-#         ax --ax-config ax.yaml --input "hello"   # uses default harness (antigravity)
+# Usage:  ax serve --config ax.yaml
+#         ax --config ax.yaml --input "hello"   # uses default harness (antigravity)
 version: v1alpha
 
 server:
