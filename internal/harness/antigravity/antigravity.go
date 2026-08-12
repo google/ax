@@ -122,12 +122,12 @@ func (h *AntigravityHarness) Stop() error {
 }
 
 // Start implements Harness.Start.
-func (h *AntigravityHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
+func (h *AntigravityHarness) Start(ctx context.Context, conversationID string, config []byte) (harness.Execution, error) {
 	return &antigravityExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
-		harnessConfig:  harnessConfig,
+		config:         config,
 	}, nil
 }
 
@@ -136,7 +136,7 @@ type antigravityExecution struct {
 	harness        *AntigravityHarness
 	conversationID string
 	id             string
-	harnessConfig  []byte
+	config         []byte
 
 	mu     sync.Mutex
 	queued []*proto.Step
@@ -196,7 +196,7 @@ func (e *antigravityExecution) Run(ctx context.Context, handler harness.Handler)
 		AgentId:        "antigravity",
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				AgentConfig: e.harnessConfig,
+				AgentConfig: e.config,
 				Steps:       inputs,
 			},
 		},

@@ -110,11 +110,11 @@ type MockHarnessServer struct {
 	// ErrMessage is the error text used by FailConnect/FailFrame.
 	ErrMessage string
 
-	mu               sync.Mutex
-	gotConvID        string
-	gotHarnessID     string
-	gotHarnessConfig []byte
-	gotInputs        []string
+	mu             sync.Mutex
+	gotConvID      string
+	gotHarnessID   string
+	gotAgentConfig []byte
+	gotInputs      []string
 }
 
 func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) error {
@@ -140,7 +140,7 @@ func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 	s.mu.Lock()
 	s.gotConvID = req.GetConversationId()
 	s.gotHarnessID = req.GetAgentId()
-	s.gotHarnessConfig = req.GetStart().GetAgentConfig()
+	s.gotAgentConfig = req.GetStart().GetAgentConfig()
 	s.gotInputs = inputs
 	s.mu.Unlock()
 
@@ -183,10 +183,10 @@ func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 }
 
 // Received returns a copy of the start frame the server received.
-func (s *MockHarnessServer) Received() (convID, harnessID string, harnessConfig []byte, inputs []string) {
+func (s *MockHarnessServer) Received() (convID, harnessID string, agentConfig []byte, inputs []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.gotConvID, s.gotHarnessID, append([]byte(nil), s.gotHarnessConfig...), append([]string(nil), s.gotInputs...)
+	return s.gotConvID, s.gotHarnessID, append([]byte(nil), s.gotAgentConfig...), append([]string(nil), s.gotInputs...)
 }
 
 // MockHandler records the steps and completion streamed during a turn.

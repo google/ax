@@ -240,13 +240,13 @@ func (l *logger) ResumptionState(ctx context.Context) (proto.State, string, erro
 	return state, harnessID, nil
 }
 
-func (l *logger) LogInputs(ctx context.Context, steps []*proto.Step, harnessConfig []byte) (int64, error) {
-	// Parse the harness config into a human-readable struct for logging.
+func (l *logger) LogInputs(ctx context.Context, steps []*proto.Step, agentConfig []byte) (int64, error) {
+	// Parse the agent config into a human-readable struct for logging.
 	var cfg *structpb.Struct
-	if len(harnessConfig) > 0 {
+	if len(agentConfig) > 0 {
 		cfg = &structpb.Struct{}
-		if err := protojson.Unmarshal(harnessConfig, cfg); err != nil {
-			slog.WarnContext(ctx, "Failed to parse harness config for logging",
+		if err := protojson.Unmarshal(agentConfig, cfg); err != nil {
+			slog.WarnContext(ctx, "Failed to parse agent config for logging",
 				slog.String("conversation_id", l.conversationID),
 				slog.Any("error", err),
 			)

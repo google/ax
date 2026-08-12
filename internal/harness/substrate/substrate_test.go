@@ -34,7 +34,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var substrateHarnessConfig = []byte(`{"model":"gemini-2.5-pro"}`)
+var substrateAgentConfig = []byte(`{"model":"gemini-2.5-pro"}`)
 
 // startHealthTestServer starts a gRPC server on a random local port. If hs is
 // non-nil the standard health service is registered. Returns the listen address.
@@ -156,13 +156,13 @@ func newTestSubstrateHarness(t *testing.T, ctrlAddr, harnessAddr string) *Substr
 // They lock in the wiring that a substrate bump or an ax-side change could silently
 // break: create/resume idempotency, worker-IP extraction, the health gate, the
 // Connect streaming protocol, and suspend-on-close.
-func TestSubstrateHarness_EndToEnd(t *testing.T) {
+func TestSubstrateHarness_StartAndRun(t *testing.T) {
 	ctrl := &harnesstest.MockControlServer{ResumeIP: "127.0.0.1"}
 	srv := &harnesstest.MockHarnessServer{}
 	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, srv))
 
 	ctx := context.Background()
-	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
+	exec, err := h.Start(ctx, "conv-1", substrateAgentConfig)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -175,12 +175,12 @@ func TestSubstrateHarness_EndToEnd(t *testing.T) {
 	}
 
 	// The harness server received the start frame with the right identifiers.
-	convID, harnessID, harnessConfig, inputs := srv.Received()
+	convID, harnessID, agentConfig, inputs := srv.Received()
 	if convID != "conv-1" || harnessID != "antigravity" {
 		t.Errorf("server got convID=%q harnessID=%q, want conv-1/antigravity", convID, harnessID)
 	}
-	if !bytes.Equal(harnessConfig, substrateHarnessConfig) {
-		t.Errorf("server got harnessConfig=%q, want %q", harnessConfig, substrateHarnessConfig)
+	if !bytes.Equal(agentConfig, substrateAgentConfig) {
+		t.Errorf("server got agentConfig=%q, want %q", agentConfig, substrateAgentConfig)
 	}
 	if !slices.Equal(inputs, []string{"hi"}) {
 		t.Errorf("server got inputs=%v, want [hi]", inputs)
@@ -221,7 +221,7 @@ func TestSubstrateHarness_CreateAlreadyExistsTolerated(t *testing.T) {
 	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
 	ctx := context.Background()
-	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
+	exec, err := h.Start(ctx, "conv-1", substrateAgentConfig)
 	if err != nil {
 		t.Fatalf("Start should tolerate AlreadyExists: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestSubstrateHarness_ResumeNoWorkerIP(t *testing.T) {
 	ctrl := &harnesstest.MockControlServer{ResumeIP: ""} // empty AteomPodIp
 	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
-	_, err := h.Start(context.Background(), "conv-1", substrateHarnessConfig)
+	_, err := h.Start(context.Background(), "conv-1", substrateAgentConfig)
 	if err == nil {
 		t.Fatal("expected error for empty worker IP, got nil")
 	}
@@ -259,7 +259,7 @@ func TestSubstrateHarness_ResumeNilActor(t *testing.T) {
 	ctrl := &harnesstest.MockControlServer{ResumeNilActor: true}
 	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, &harnesstest.MockHarnessServer{}))
 
-	_, err := h.Start(context.Background(), "conv-1", substrateHarnessConfig)
+	_, err := h.Start(context.Background(), "conv-1", substrateAgentConfig)
 	if err == nil {
 		t.Fatal("expected error for nil actor, got nil")
 	}
@@ -274,7 +274,7 @@ func TestSubstrateHarness_HarnessFailedFrame(t *testing.T) {
 	h := newTestSubstrateHarness(t, harnesstest.StartControlServer(t, ctrl), harnesstest.StartHarnessServer(t, srv))
 
 	ctx := context.Background()
-	exec, err := h.Start(ctx, "conv-1", substrateHarnessConfig)
+	exec, err := h.Start(ctx, "conv-1", substrateAgentConfig)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

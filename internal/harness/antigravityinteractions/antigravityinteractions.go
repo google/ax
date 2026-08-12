@@ -242,12 +242,12 @@ func newWithHTTPClient(cfg AntigravityInteractionsConfig, hc *http.Client) (*Ant
 // Start implements Harness.Start. It loads any previously persisted resume
 // cursor for conversationID so the returned Execution resumes the existing
 // interaction chain instead of starting a new one.
-func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
+func (h *AntigravityInteractionsHarness) Start(ctx context.Context, conversationID string, config []byte) (harness.Execution, error) {
 	e := &antigravityInteractionsExecution{
 		harness:        h,
 		conversationID: conversationID,
 		id:             uuid.NewString(),
-		harnessConfig:  harnessConfig,
+		config:         config,
 	}
 
 	cur, found, err := h.cursors.load(conversationID)
@@ -273,7 +273,7 @@ type antigravityInteractionsExecution struct {
 	harness        *AntigravityInteractionsHarness
 	conversationID string
 	id             string
-	harnessConfig  []byte
+	config         []byte
 
 	mu     sync.Mutex
 	queued []*proto.Step

@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-func TestNormalizeHarnessConfigJSON(t *testing.T) {
+func TestNormalizeAgentConfigJSON(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      string
@@ -37,7 +37,7 @@ func TestNormalizeHarnessConfigJSON(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeHarnessConfigJSON(tt.in)
+			got, err := normalizeAgentConfigJSON(tt.in)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil (result %q)", got)
@@ -57,21 +57,21 @@ func TestNormalizeHarnessConfigJSON(t *testing.T) {
 	}
 }
 
-func TestPrettyHarnessConfig(t *testing.T) {
-	if got := prettyHarnessConfig(nil); got != "" {
+func TestPrettyAgentConfig(t *testing.T) {
+	if got := prettyAgentConfig(nil); got != "" {
 		t.Errorf("nil: got %q, want empty string", got)
 	}
-	if got := prettyHarnessConfig([]byte{}); got != "" {
+	if got := prettyAgentConfig([]byte{}); got != "" {
 		t.Errorf("empty: got %q, want empty string", got)
 	}
 
 	// Invalid JSON falls back to the raw bytes.
-	if got := prettyHarnessConfig([]byte("not json")); got != "not json" {
+	if got := prettyAgentConfig([]byte("not json")); got != "not json" {
 		t.Errorf("invalid: got %q, want raw passthrough", got)
 	}
 
 	// Valid JSON is rendered multi-line and indented.
-	got := prettyHarnessConfig([]byte(`{"model":"gemini"}`))
+	got := prettyAgentConfig([]byte(`{"model":"gemini"}`))
 	if !strings.Contains(got, "model") || !strings.Contains(got, "gemini") {
 		t.Errorf("valid: got %q, want it to contain the key and value", got)
 	}

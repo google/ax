@@ -27,46 +27,46 @@ import (
 
 // runConfigMenu shows the /config menu and returns the (possibly updated) config.
 // An updated config is sent on subsequent requests.
-func runConfigMenu(d *internal.Display, harnessConfig []byte) ([]byte, error) {
+func runConfigMenu(d *internal.Display, agentConfig []byte) ([]byte, error) {
 	for {
 		action, err := d.PromptForConfigAction()
 		if err != nil {
 			if errors.Is(err, internal.ErrUserAborted) {
-				return harnessConfig, nil // Esc/Ctrl+C on the menu cancels /config.
+				return agentConfig, nil // Esc/Ctrl+C on the menu cancels /config.
 			}
-			return harnessConfig, err
+			return agentConfig, err
 		}
 
 		switch action {
 		case "edit":
-			cfg, done, err := editHarnessConfig(d, harnessConfig)
+			cfg, done, err := editAgentConfig(d, agentConfig)
 			if err != nil {
-				return harnessConfig, err
+				return agentConfig, err
 			}
 			if done {
 				return cfg, nil
 			}
 		case "load":
-			cfg, done, err := loadHarnessConfig(d)
+			cfg, done, err := loadAgentConfig(d)
 			if err != nil {
-				return harnessConfig, err
+				return agentConfig, err
 			}
 			if done {
 				return cfg, nil
 			}
 		default: // "cancel" or anything else
-			return harnessConfig, nil
+			return agentConfig, nil
 		}
 	}
 }
 
-// editHarnessConfig opens the JSON editor pre-filled with the current config. It
+// editAgentConfig opens the JSON editor pre-filled with the current config. It
 // returns the updated config with done=true if the config was updated, or
 // done=false (config ignored) if the user cancelled back to the menu. Invalid
 // JSON is reported and the editor re-opens with the user's draft so they can fix
 // it.
-func editHarnessConfig(d *internal.Display, harnessConfig []byte) ([]byte, bool, error) {
-	draft := prettyHarnessConfig(harnessConfig)
+func editAgentConfig(d *internal.Display, agentConfig []byte) ([]byte, bool, error) {
+	draft := prettyAgentConfig(agentConfig)
 	for {
 		edited, err := d.PromptForConfigEdit(draft)
 		if err != nil {
@@ -75,7 +75,7 @@ func editHarnessConfig(d *internal.Display, harnessConfig []byte) ([]byte, bool,
 			}
 			return nil, false, err
 		}
-		normalized, err := normalizeHarnessConfigJSON(edited)
+		normalized, err := normalizeAgentConfigJSON(edited)
 		if err != nil {
 			d.ShowNotice(fmt.Sprintf("Invalid config: %v", err))
 			draft = edited // Preserve the user's input so they can fix it.
@@ -85,10 +85,10 @@ func editHarnessConfig(d *internal.Display, harnessConfig []byte) ([]byte, bool,
 	}
 }
 
-// loadHarnessConfig lets the user pick a JSON file and loads it. It returns the
+// loadAgentConfig lets the user pick a JSON file and loads it. It returns the
 // loaded config with done=true, or done=false (config ignored) if the user
 // cancelled back to the menu or the file could not be used.
-func loadHarnessConfig(d *internal.Display) ([]byte, bool, error) {
+func loadAgentConfig(d *internal.Display) ([]byte, bool, error) {
 	path, err := d.PromptForConfigFile()
 	if err != nil {
 		if errors.Is(err, internal.ErrUserAborted) {
@@ -101,7 +101,7 @@ func loadHarnessConfig(d *internal.Display) ([]byte, bool, error) {
 		d.ShowNotice(fmt.Sprintf("Failed to read file: %v", err))
 		return nil, false, nil
 	}
-	normalized, err := normalizeHarnessConfigJSON(string(b))
+	normalized, err := normalizeAgentConfigJSON(string(b))
 	if err != nil {
 		d.ShowNotice(fmt.Sprintf("Invalid config: %v", err))
 		return nil, false, nil
@@ -109,10 +109,10 @@ func loadHarnessConfig(d *internal.Display) ([]byte, bool, error) {
 	return normalized, true, nil
 }
 
-// normalizeHarnessConfigJSON trims and validates the given JSON config, returning
+// normalizeAgentConfigJSON trims and validates the given JSON config, returning
 // the bytes to send on the wire. Empty input clears the config (returns nil). The
 // config must be a JSON object.
-func normalizeHarnessConfigJSON(s string) ([]byte, error) {
+func normalizeAgentConfigJSON(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil
@@ -124,9 +124,9 @@ func normalizeHarnessConfigJSON(s string) ([]byte, error) {
 	return []byte(s), nil
 }
 
-// prettyHarnessConfig returns an indented JSON rendering of the config bytes for
+// prettyAgentConfig returns an indented JSON rendering of the config bytes for
 // display, falling back to the raw bytes if they cannot be parsed.
-func prettyHarnessConfig(b []byte) string {
+func prettyAgentConfig(b []byte) string {
 	if len(b) == 0 {
 		return ""
 	}

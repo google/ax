@@ -29,7 +29,7 @@ import (
 
 type fakeHarness struct{}
 
-func (f *fakeHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
+func (f *fakeHarness) Start(ctx context.Context, conversationID string, config []byte) (harness.Execution, error) {
 	return &fakeExecution{id: "fake-exec-id"}, nil
 }
 
@@ -250,7 +250,7 @@ type testHarness struct {
 	startFunc  func(ctx context.Context, conversationID string) (harness.Execution, error)
 }
 
-func (c *testHarness) Start(ctx context.Context, conversationID string, harnessConfig []byte) (harness.Execution, error) {
+func (c *testHarness) Start(ctx context.Context, conversationID string, config []byte) (harness.Execution, error) {
 	c.startCalls++
 	return c.startFunc(ctx, conversationID)
 }

@@ -125,21 +125,21 @@ func runExec(cmd *cobra.Command, args []string) error {
 		execController = c
 	}
 
-	var harnessConfig []byte
+	var agentConfig []byte
 	if execConfigFile != "" {
 		b, err := os.ReadFile(execConfigFile)
 		if err != nil {
-			return fmt.Errorf("failed to read harness config %q: %w", execConfigFile, err)
+			return fmt.Errorf("failed to read agent config %q: %w", execConfigFile, err)
 		}
-		harnessConfig = b
+		agentConfig = b
 	} else if execConfig != "" {
-		harnessConfig = []byte(execConfig)
+		agentConfig = []byte(execConfig)
 	}
 
-	return execLoop(ctx, execConversationID, execAgentID, harnessConfig, execInput)
+	return execLoop(ctx, execConversationID, execAgentID, agentConfig, execInput)
 }
 
-func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []byte, input string) error {
+func execLoop(ctx context.Context, id string, harnessID string, agentConfig []byte, input string) error {
 	d := internal.NewDisplay(id, os.Stdout)
 	d.DisplayHeader()
 
@@ -147,7 +147,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 	if !execResume {
 		var quit bool
 		var err error
-		input, harnessConfig, quit, err = promptUser(d, input, harnessConfig)
+		input, agentConfig, quit, err = promptUser(d, input, agentConfig)
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 			ConversationId: id,
 			AgentId:         harnessID,
-			AgentConfig:     harnessConfig,
+			AgentConfig:     agentConfig,
 			Inputs:          inputs,
 		})
 
@@ -258,7 +258,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionEvent{
 					ConversationId: id,
 					AgentId:         harnessID,
-					AgentConfig:     harnessConfig,
+					AgentConfig:     agentConfig,
 					Inputs:          decision,
 				})
 
@@ -281,7 +281,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 
 		// Per-request config: clear the config after each turn.
 		var quit bool
-		input, harnessConfig, quit, err = promptUser(d, "", harnessConfig)
+		input, agentConfig, quit, err = promptUser(d, "", agentConfig)
 		if err != nil {
 			return err
 		}
@@ -407,13 +407,13 @@ func displayContents(d *internal.Display, steps []*proto.Step) {
 }
 
 // promptUser loops until the user provides a non-empty input string.
-// The "/config" command opens the harness config menu.
+// The "/config" command opens the agent config menu.
 // It returns:
 //   - string: the valid user input
-//   - []byte: the (possibly updated) harness config
+//   - []byte: the (possibly updated) agent config
 //   - bool: true if the user entered a quit command
 //   - error: any error that occurred during prompting
-func promptUser(d *internal.Display, input string, harnessConfig []byte) (string, []byte, bool, error) {
+func promptUser(d *internal.Display, input string, agentConfig []byte) (string, []byte, bool, error) {
 	for {
 		for strings.TrimSpace(input) == "" {
 			var err error
@@ -421,22 +421,22 @@ func promptUser(d *internal.Display, input string, harnessConfig []byte) (string
 			if err != nil {
 				if errors.Is(err, internal.ErrUserAborted) {
 					if interruptHandler.HandleInterrupt() {
-						return "", harnessConfig, true, nil
+						return "", agentConfig, true, nil
 					}
 					input = "" // Continue loop to prompt again
 					continue
 				}
-				return "", harnessConfig, false, err
+				return "", agentConfig, false, err
 			}
 		}
 
 		trimmed := strings.TrimSpace(input)
 		if trimmed == "/config" {
-			cfg, err := runConfigMenu(d, harnessConfig)
+			cfg, err := runConfigMenu(d, agentConfig)
 			if err != nil {
-				return "", harnessConfig, false, err
+				return "", agentConfig, false, err
 			}
-			harnessConfig = cfg
+			agentConfig = cfg
 			input = "" // Re-prompt after handling the config.
 			continue
 		}
@@ -444,9 +444,9 @@ func promptUser(d *internal.Display, input string, harnessConfig []byte) (string
 		d.DisplayInput(input)
 		if strings.ToLower(trimmed) == "q" {
 			d.ShowResumption(execConversationID, execServerAddr)
-			return "", harnessConfig, true, nil
+			return "", agentConfig, true, nil
 		}
-		return input, harnessConfig, false, nil
+		return input, agentConfig, false, nil
 	}
 }
 
