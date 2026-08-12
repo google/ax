@@ -92,7 +92,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	defer c.Close()
 
 	var outputs []*proto.Message
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		outputs = append(outputs, resp.Outputs...)
 		return nil
 	})
@@ -108,7 +108,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		},
 	}
 
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		Inputs:         inputs,
 	}, handler)
@@ -193,7 +193,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 	defer c.Close()
 
 	var outputs []*proto.Message
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		outputs = append(outputs, resp.Outputs...)
 		return nil
 	})
@@ -209,7 +209,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 		},
 	}
 
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		HarnessId:      "my-agent",
 		Inputs:         inputs,
@@ -246,7 +246,7 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	}
 	defer c.Close()
 
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		return nil
 	})
 
@@ -261,7 +261,7 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 		},
 	}
 
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		Inputs:         inputs,
 		HarnessId:      "antigravity",
@@ -347,13 +347,13 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionRequest{
 			ConversationId: cid,
 			HarnessId:      "test-agent",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Hello"}}}},
 			},
-		}, func(resp *proto.ExecResponse) error { return nil })
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -415,11 +415,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionRequest{
 			ConversationId: cid,
 			HarnessId:      "test-agent",
 			Inputs:         nil, // NO new inputs
-		}, func(resp *proto.ExecResponse) error { return nil })
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -482,13 +482,13 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionRequest{
 			ConversationId: cid,
 			HarnessId:      "test-agent",
 			Inputs: []*proto.Message{
 				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "New input"}}}},
 			},
-		}, func(resp *proto.ExecResponse) error { return nil })
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -552,10 +552,10 @@ func TestExec_ResumeEmptyHarnessUsesStored(t *testing.T) {
 	}
 	defer c.Close()
 
-	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+	noop := ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })
 
 	// Turn 1: explicitly run the NON-default harness.
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		HarnessId:      "harness-b",
 		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
@@ -565,7 +565,7 @@ func TestExec_ResumeEmptyHarnessUsesStored(t *testing.T) {
 
 	// Turn 2: resume WITHOUT a harness id. Must reuse harness-b, not the default.
 	before := stored.startCalls
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
 	}, noop); err != nil {
@@ -605,16 +605,16 @@ func TestExec_ResumeExplicitDifferentHarnessRejected(t *testing.T) {
 	}
 	defer c.Close()
 
-	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+	noop := ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })
 
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		HarnessId:      "harness-a",
 		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
 	}, noop); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		HarnessId:      "harness-b",
 		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
@@ -649,10 +649,10 @@ func TestExec_NewConversationLogsCanonicalDefault(t *testing.T) {
 	}
 	defer c.Close()
 
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: cid,
 		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
-	}, ExecHandler(func(*proto.ExecResponse) error { return nil })); err != nil {
+	}, ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })); err != nil {
 		t.Fatalf("exec: %v", err)
 	}
 	_, stored, err := newLogger(log, cid, "").ResumptionState(ctx)

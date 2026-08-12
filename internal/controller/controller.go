@@ -27,7 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type ExecHandler func(resp *proto.ExecResponse) error
+type ExecHandler func(resp *proto.CreateInteractionResponse) error
 
 // Controller is the main controller that coordinates all components.
 // It acts as a single-writer system for managing agentic loops.
@@ -64,7 +64,7 @@ func New(ctx context.Context, cfg Config) (*Controller, error) {
 // Exec executes a new agentic loop execution or resumes an existing one.
 // If id is empty, a UUID will be generated.
 // If the execution already exists, it will be resumed with optional new inputs.
-func (d *Controller) Exec(ctx context.Context, req *proto.ExecRequest, handler ExecHandler) error {
+func (d *Controller) Exec(ctx context.Context, req *proto.CreateInteractionRequest, handler ExecHandler) error {
 	if req.ConversationId == "" {
 		return fmt.Errorf("conversation_id is required")
 	}
@@ -163,7 +163,7 @@ func (a *harnessHandler) OnMessage(ctx context.Context, execID string, msg *prot
 	if a.execHandler == nil {
 		return nil
 	}
-	return a.execHandler(&proto.ExecResponse{
+	return a.execHandler(&proto.CreateInteractionResponse{
 		Outputs: []*proto.Message{msg},
 		Step:    step,
 	})

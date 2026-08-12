@@ -137,33 +137,33 @@ var HarnessService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	ExecutionService_Exec_FullMethodName = "/ax.ExecutionService/Exec"
+	InteractionsService_CreateInteraction_FullMethodName = "/ax.InteractionsService/CreateInteraction"
 )
 
-// ExecutionServiceClient is the client API for ExecutionService service.
+// InteractionsServiceClient is the client API for InteractionsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ExecutionServiceClient interface {
-	// Exec executes an agentic task or resumes an existing one with streaming responses
+type InteractionsServiceClient interface {
+	// CreateInteraction executes an agentic task or resumes an existing one with streaming responses
 	// If the conversation_id already exists, it will be resumed.
-	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecResponse], error)
+	CreateInteraction(ctx context.Context, in *CreateInteractionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error)
 }
 
-type executionServiceClient struct {
+type interactionsServiceClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewExecutionServiceClient(cc grpc.ClientConnInterface) ExecutionServiceClient {
-	return &executionServiceClient{cc}
+func NewInteractionsServiceClient(cc grpc.ClientConnInterface) InteractionsServiceClient {
+	return &interactionsServiceClient{cc}
 }
 
-func (c *executionServiceClient) Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecResponse], error) {
+func (c *interactionsServiceClient) CreateInteraction(ctx context.Context, in *CreateInteractionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[CreateInteractionResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &ExecutionService_ServiceDesc.Streams[0], ExecutionService_Exec_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &InteractionsService_ServiceDesc.Streams[0], InteractionsService_CreateInteraction_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[ExecRequest, ExecResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[CreateInteractionRequest, CreateInteractionResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -174,71 +174,71 @@ func (c *executionServiceClient) Exec(ctx context.Context, in *ExecRequest, opts
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExecutionService_ExecClient = grpc.ServerStreamingClient[ExecResponse]
+type InteractionsService_CreateInteractionClient = grpc.ServerStreamingClient[CreateInteractionResponse]
 
-// ExecutionServiceServer is the server API for ExecutionService service.
-// All implementations must embed UnimplementedExecutionServiceServer
+// InteractionsServiceServer is the server API for InteractionsService service.
+// All implementations must embed UnimplementedInteractionsServiceServer
 // for forward compatibility.
-type ExecutionServiceServer interface {
-	// Exec executes an agentic task or resumes an existing one with streaming responses
+type InteractionsServiceServer interface {
+	// CreateInteraction executes an agentic task or resumes an existing one with streaming responses
 	// If the conversation_id already exists, it will be resumed.
-	Exec(*ExecRequest, grpc.ServerStreamingServer[ExecResponse]) error
-	mustEmbedUnimplementedExecutionServiceServer()
+	CreateInteraction(*CreateInteractionRequest, grpc.ServerStreamingServer[CreateInteractionResponse]) error
+	mustEmbedUnimplementedInteractionsServiceServer()
 }
 
-// UnimplementedExecutionServiceServer must be embedded to have
+// UnimplementedInteractionsServiceServer must be embedded to have
 // forward compatible implementations.
 //
 // NOTE: this should be embedded by value instead of pointer to avoid a nil
 // pointer dereference when methods are called.
-type UnimplementedExecutionServiceServer struct{}
+type UnimplementedInteractionsServiceServer struct{}
 
-func (UnimplementedExecutionServiceServer) Exec(*ExecRequest, grpc.ServerStreamingServer[ExecResponse]) error {
-	return status.Errorf(codes.Unimplemented, "method Exec not implemented")
+func (UnimplementedInteractionsServiceServer) CreateInteraction(*CreateInteractionRequest, grpc.ServerStreamingServer[CreateInteractionResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method CreateInteraction not implemented")
 }
-func (UnimplementedExecutionServiceServer) mustEmbedUnimplementedExecutionServiceServer() {}
-func (UnimplementedExecutionServiceServer) testEmbeddedByValue()                          {}
+func (UnimplementedInteractionsServiceServer) mustEmbedUnimplementedInteractionsServiceServer() {}
+func (UnimplementedInteractionsServiceServer) testEmbeddedByValue()                             {}
 
-// UnsafeExecutionServiceServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ExecutionServiceServer will
+// UnsafeInteractionsServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to InteractionsServiceServer will
 // result in compilation errors.
-type UnsafeExecutionServiceServer interface {
-	mustEmbedUnimplementedExecutionServiceServer()
+type UnsafeInteractionsServiceServer interface {
+	mustEmbedUnimplementedInteractionsServiceServer()
 }
 
-func RegisterExecutionServiceServer(s grpc.ServiceRegistrar, srv ExecutionServiceServer) {
-	// If the following call pancis, it indicates UnimplementedExecutionServiceServer was
+func RegisterInteractionsServiceServer(s grpc.ServiceRegistrar, srv InteractionsServiceServer) {
+	// If the following call pancis, it indicates UnimplementedInteractionsServiceServer was
 	// embedded by pointer and is nil.  This will cause panics if an
 	// unimplemented method is ever invoked, so we test this at initialization
 	// time to prevent it from happening at runtime later due to I/O.
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&ExecutionService_ServiceDesc, srv)
+	s.RegisterService(&InteractionsService_ServiceDesc, srv)
 }
 
-func _ExecutionService_Exec_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(ExecRequest)
+func _InteractionsService_CreateInteraction_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(CreateInteractionRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ExecutionServiceServer).Exec(m, &grpc.GenericServerStream[ExecRequest, ExecResponse]{ServerStream: stream})
+	return srv.(InteractionsServiceServer).CreateInteraction(m, &grpc.GenericServerStream[CreateInteractionRequest, CreateInteractionResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ExecutionService_ExecServer = grpc.ServerStreamingServer[ExecResponse]
+type InteractionsService_CreateInteractionServer = grpc.ServerStreamingServer[CreateInteractionResponse]
 
-// ExecutionService_ServiceDesc is the grpc.ServiceDesc for ExecutionService service.
+// InteractionsService_ServiceDesc is the grpc.ServiceDesc for InteractionsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var ExecutionService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ax.ExecutionService",
-	HandlerType: (*ExecutionServiceServer)(nil),
+var InteractionsService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "ax.InteractionsService",
+	HandlerType: (*InteractionsServiceServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "Exec",
-			Handler:       _ExecutionService_Exec_Handler,
+			StreamName:    "CreateInteraction",
+			Handler:       _InteractionsService_CreateInteraction_Handler,
 			ServerStreams: true,
 		},
 	},

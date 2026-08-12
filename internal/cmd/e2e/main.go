@@ -97,7 +97,7 @@ func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *cont
 	}
 	defer c.Close()
 
-	handler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := controller.ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		for _, out := range resp.Outputs {
 			if textContent := out.GetContent().GetText().GetText(); textContent != "" {
 				fmt.Printf("Agent Output: %s\n", textContent)
@@ -119,7 +119,7 @@ func runDemo(ctx context.Context, harnessID string, setupRegistry func(reg *cont
 		},
 	}
 
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionRequest{
 		ConversationId: "e2e-conv",
 		Inputs:         inputs,
 		HarnessId:      harnessID,

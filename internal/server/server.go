@@ -37,7 +37,7 @@ import (
 
 // Server implements the AXService gRPC service.
 type Server struct {
-	proto.UnimplementedExecutionServiceServer
+	proto.UnimplementedInteractionsServiceServer
 	proto.UnimplementedConversationServiceServer
 
 	controller *controller.Controller
@@ -54,8 +54,8 @@ func New(c *controller.Controller) *Server {
 	}
 }
 
-// Exec executes a new agentic task with streaming responses.
-func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[proto.ExecResponse]) error {
+// CreateInteraction executes a new agentic task with streaming responses.
+func (s *Server) CreateInteraction(req *proto.CreateInteractionRequest, stream grpc.ServerStreamingServer[proto.CreateInteractionResponse]) error {
 	ctx := stream.Context()
 	slog.InfoContext(ctx, "Executing request",
 		slog.String("request", req.String()),
@@ -67,7 +67,7 @@ func (s *Server) Exec(req *proto.ExecRequest, stream grpc.ServerStreamingServer[
 	}
 	defer cleanup()
 
-	outputHandler := controller.ExecHandler(func(resp *proto.ExecResponse) error {
+	outputHandler := controller.ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		return stream.Send(resp)
 	})
 	return s.controller.Exec(ctx, req, outputHandler)
@@ -107,7 +107,7 @@ func (s *Server) Serve(address string, opts ...grpc.ServerOption) error {
 	)
 
 	s.grpcServer = grpc.NewServer(opts...)
-	proto.RegisterExecutionServiceServer(s.grpcServer, s)
+	proto.RegisterInteractionsServiceServer(s.grpcServer, s)
 	proto.RegisterConversationServiceServer(s.grpcServer, s)
 
 	// Register standard gRPC Health Check server.

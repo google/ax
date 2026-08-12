@@ -174,7 +174,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 		reqCtx, cancel := context.WithCancel(ctx)
 		interruptHandler.SetActiveCancel(cancel)
 
-		conf, err := runAutoExec(reqCtx, d, &proto.ExecRequest{
+		conf, err := runAutoExec(reqCtx, d, &proto.CreateInteractionRequest{
 			ConversationId: id,
 			HarnessId:      harnessID,
 			HarnessConfig:  harnessConfig,
@@ -241,7 +241,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 				reqCtx, cancel := context.WithCancel(ctx)
 				interruptHandler.SetActiveCancel(cancel)
 
-				conf, err = runAutoExec(reqCtx, d, &proto.ExecRequest{
+				conf, err = runAutoExec(reqCtx, d, &proto.CreateInteractionRequest{
 					ConversationId: id,
 					HarnessId:      harnessID,
 					HarnessConfig:  harnessConfig,
@@ -291,7 +291,7 @@ func execLoop(ctx context.Context, id string, harnessID string, harnessConfig []
 	}
 }
 
-func runAutoExec(ctx context.Context, d *internal.Display, req *proto.ExecRequest) (*proto.ConfirmationContent, error) {
+func runAutoExec(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
 	fn := runExecHeadless
 	if execServerAddr != "" {
 		fn = runExecServer
@@ -299,10 +299,10 @@ func runAutoExec(ctx context.Context, d *internal.Display, req *proto.ExecReques
 	return fn(ctx, d, req)
 }
 
-func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.ExecRequest) (*proto.ConfirmationContent, error) {
+func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
 	var confirmation *proto.ConfirmationContent
 	var lastStep int32
-	outputHandler := cliutil.ExecHandler(func(resp *proto.ExecResponse) error {
+	outputHandler := cliutil.ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		for _, m := range resp.Outputs {
 			if conf := m.GetContent().GetConfirmation(); conf != nil {
 				confirmation = conf
@@ -322,15 +322,15 @@ func runExecHeadless(ctx context.Context, d *internal.Display, req *proto.ExecRe
 	return confirmation, nil
 }
 
-func runExecServer(ctx context.Context, d *internal.Display, req *proto.ExecRequest) (*proto.ConfirmationContent, error) {
+func runExecServer(ctx context.Context, d *internal.Display, req *proto.CreateInteractionRequest) (*proto.ConfirmationContent, error) {
 	conn, err := connect(execServerAddr)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	client := proto.NewExecutionServiceClient(conn)
-	stream, err := client.Exec(ctx, req)
+	client := proto.NewInteractionsServiceClient(conn)
+	stream, err := client.CreateInteraction(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("error executing: %w", err)
 	}

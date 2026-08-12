@@ -45,14 +45,14 @@ func (m *mockConversationServer) DeleteConversation(ctx context.Context, req *pr
 }
 
 type mockExecutionServer struct {
-	proto.UnimplementedExecutionServiceServer
+	proto.UnimplementedInteractionsServiceServer
 }
 
-func (m *mockExecutionServer) Exec(req *proto.ExecRequest, stream proto.ExecutionService_ExecServer) error {
+func (m *mockExecutionServer) CreateInteraction(req *proto.CreateInteractionRequest, stream proto.InteractionsService_CreateInteractionServer) error {
 	if req.ConversationId == "fail" {
 		return status.Error(codes.InvalidArgument, "mock error")
 	}
-	return stream.Send(&proto.ExecResponse{})
+	return stream.Send(&proto.CreateInteractionResponse{})
 }
 
 const bufSize = 1024 * 1024
@@ -65,7 +65,7 @@ func setupTestServer(t *testing.T) (*grpc.ClientConn, func()) {
 	)
 
 	proto.RegisterConversationServiceServer(s, &mockConversationServer{})
-	proto.RegisterExecutionServiceServer(s, &mockExecutionServer{})
+	proto.RegisterInteractionsServiceServer(s, &mockExecutionServer{})
 
 	go func() {
 		if err := s.Serve(lis); err != nil && err != grpc.ErrServerStopped {
@@ -114,7 +114,7 @@ func TestLoggingInterceptors(t *testing.T) {
 	defer slog.SetDefault(oldLogger)
 
 	convClient := proto.NewConversationServiceClient(conn)
-	executionClient := proto.NewExecutionServiceClient(conn)
+	executionClient := proto.NewInteractionsServiceClient(conn)
 
 	t.Run("Unary Success", func(t *testing.T) {
 		logBuf.Reset()
@@ -177,9 +177,9 @@ func TestLoggingInterceptors(t *testing.T) {
 	t.Run("Stream Success", func(t *testing.T) {
 		logBuf.Reset()
 		ctx := context.Background()
-		stream, err := executionClient.Exec(ctx, &proto.ExecRequest{ConversationId: "conv-456"})
+		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionRequest{ConversationId: "conv-456"})
 		if err != nil {
-			t.Fatalf("Exec stream init failed: %v", err)
+			t.Fatalf("CreateInteraction stream init failed: %v", err)
 		}
 
 		// Consume stream
@@ -202,8 +202,8 @@ func TestLoggingInterceptors(t *testing.T) {
 		if entries[0].Msg != "Handling stream request" {
 			t.Errorf("Expected start log msg 'Handling stream request', got %q", entries[0].Msg)
 		}
-		if entries[0].Method != "/ax.ExecutionService/Exec" {
-			t.Errorf("Expected method '/ax.ExecutionService/Exec', got %q", entries[0].Method)
+		if entries[0].Method != "/ax.InteractionsService/CreateInteraction" {
+			t.Errorf("Expected method '/ax.InteractionsService/CreateInteraction', got %q", entries[0].Method)
 		}
 
 		// Verify End Log
@@ -218,7 +218,7 @@ func TestLoggingInterceptors(t *testing.T) {
 	t.Run("Stream Failure", func(t *testing.T) {
 		logBuf.Reset()
 		ctx := context.Background()
-		stream, err := executionClient.Exec(ctx, &proto.ExecRequest{ConversationId: "fail"})
+		stream, err := executionClient.CreateInteraction(ctx, &proto.CreateInteractionRequest{ConversationId: "fail"})
 		if err != nil {
 			t.Fatalf("Exec stream init failed: %v", err)
 		}
