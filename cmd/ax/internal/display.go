@@ -89,8 +89,56 @@ func (d *Display) DisplayInput(text string) {
 	fmt.Fprintln(d.w)
 }
 
-// Display prints a content block according to its type.
-func (d *Display) Display(content *proto.Content) {
+// Display prints a step according to its type.
+func (d *Display) Display(step *proto.Step) {
+	if step == nil {
+		return
+	}
+	switch o := step.Type.(type) {
+	case *proto.Step_Content:
+		if o.Content == nil {
+			return
+		}
+		for _, content := range o.Content.Content {
+			d.displayContent(content)
+		}
+
+	case *proto.Step_Thought:
+		if o.Thought == nil {
+			return
+		}
+		for _, summary := range o.Thought.GetSummary() {
+			if textContent := summary.GetText(); textContent != nil {
+				if d.state != stateThought {
+					if d.state == stateText {
+						fmt.Fprintln(d.w)
+					}
+					fmt.Fprint(d.w, "Thinking: ")
+				}
+				d.state = stateThought
+				fmt.Fprint(d.w, textContent.Text)
+			}
+		}
+
+	case *proto.Step_ToolCall:
+		// Tool calls aren't rendered, but they mark a boundary between
+		// contiguous text/thought blocks. Terminate the current line so the
+		// next response starts fresh instead of running into the previous one
+		// (e.g. "...configured.I will list...").
+		if d.state != stateNone {
+			fmt.Fprintln(d.w)
+			d.state = stateNone
+		}
+
+	case *proto.Step_ToolResult:
+		// Tool results aren't rendered.
+
+	default:
+		d.displaySystem(fmt.Sprintf("unknown step type: %v", o))
+	}
+}
+
+func (d *Display) displayContent(content *proto.Content) {
 	if content == nil {
 		return
 	}
@@ -104,42 +152,6 @@ func (d *Display) Display(content *proto.Content) {
 
 	case *proto.Content_Confirmation:
 		// Let the confirmation prompt handle displaying the question.
-
-	case *proto.Content_ToolCall:
-		// Tool calls aren't rendered, but they mark a boundary between
-		// contiguous text/thought blocks. Terminate the current line so the
-		// next response starts fresh instead of running into the previous one
-		// (e.g. "...configured.I will list...").
-		if d.state != stateNone {
-			fmt.Fprintln(d.w)
-			d.state = stateNone
-		}
-
-	case *proto.Content_ToolResult:
-		// Only print if the tool returned an error, otherwise skip
-		tr := o.ToolResult
-		if fr := tr.GetFunctionResult(); fr != nil {
-			if fr.GetResponse() != nil {
-				respMap := fr.GetResponse().AsMap()
-				if errStr, ok := respMap["error"]; ok {
-					d.displaySystem(fmt.Sprintf("[TOOL ERROR for %s]\n%v", fr.Name, errStr))
-				}
-			}
-		}
-
-	case *proto.Content_Thought:
-		for _, summary := range o.Thought.GetSummary() {
-			if textContent := summary.GetText(); textContent != nil {
-				if d.state != stateThought {
-					if d.state == stateText {
-						fmt.Fprintln(d.w)
-					}
-					fmt.Fprint(d.w, "Thinking: ")
-				}
-				d.state = stateThought
-				fmt.Fprint(d.w, textContent.Text)
-			}
-		}
 
 	case *proto.Content_Image, *proto.Content_Audio, *proto.Content_Video, *proto.Content_Document:
 		d.displaySystem(fmt.Sprintf("unsupported output type for display: %T", o))

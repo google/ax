@@ -128,14 +128,14 @@ func (s *server) Connect(stream proto.HarnessService_ConnectServer) error {
 	}
 	convID := req.GetConversationId()
 
-	exec, err := s.h.Start(ctx, convID, start.GetHarnessConfig())
+	exec, err := s.h.Start(ctx, convID, start.GetAgentConfig())
 	if err != nil {
 		return sendEnd(stream, convID, proto.State_STATE_FAILED, err)
 	}
 	defer func() { _ = exec.Close(context.WithoutCancel(ctx)) }()
 
-	if len(start.GetMessages()) > 0 {
-		if err := exec.Queue(ctx, start.GetMessages()...); err != nil {
+	if len(start.GetSteps()) > 0 {
+		if err := exec.Queue(ctx, start.GetSteps()...); err != nil {
 			return sendEnd(stream, convID, proto.State_STATE_FAILED, err)
 		}
 	}
@@ -188,11 +188,11 @@ type streamHandler struct {
 
 var _ harness.Handler = (*streamHandler)(nil)
 
-func (h *streamHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
+func (h *streamHandler) OnMessage(_ context.Context, _ string, step *proto.Step) error {
 	err := h.stream.Send(&proto.HarnessResponse{
 		ConversationId: h.convID,
 		Type: &proto.HarnessResponse_Outputs{
-			Outputs: &proto.HarnessOutputs{Messages: []*proto.Message{msg}},
+			Outputs: &proto.HarnessOutputs{Steps: []*proto.Step{step}},
 		},
 	})
 	if err != nil {

@@ -276,7 +276,7 @@ type antigravityInteractionsExecution struct {
 	harnessConfig  []byte
 
 	mu     sync.Mutex
-	queued []*proto.Message
+	queued []*proto.Step
 	closed bool
 
 	// prevInteractionID chains the turns of the interaction loop (the interaction
@@ -293,13 +293,13 @@ func (e *antigravityInteractionsExecution) ID() string { return e.id }
 // prompt, or steering messages injected mid-run. Tool results are NOT queued by
 // the caller -- the harness executes all tools itself. Queued messages are
 // drained at the next interaction gap within Run.
-func (e *antigravityInteractionsExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (e *antigravityInteractionsExecution) Queue(ctx context.Context, steps ...*proto.Step) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
 		return fmt.Errorf("execution session already closed")
 	}
-	e.queued = append(e.queued, msg...)
+	e.queued = append(e.queued, steps...)
 	return nil
 }
 
@@ -316,10 +316,10 @@ func (e *antigravityInteractionsExecution) Close(ctx context.Context) error {
 // messages are folded into the next interaction.
 func (e *antigravityInteractionsExecution) drainQueue() []any {
 	e.mu.Lock()
-	msgs := e.queued
+	steps := e.queued
 	e.queued = nil
 	e.mu.Unlock()
-	return messagesToInputSteps(msgs)
+	return stepsToInputSteps(steps)
 }
 
 // setPrevID records the latest interaction id (in memory) and durably persists
@@ -438,32 +438,40 @@ func (e *antigravityInteractionsExecution) Run(ctx context.Context, handler harn
 	return handler.OnComplete(ctx, e.id)
 }
 
-// emitText forwards non-empty model text to the handler as a Message.
+// emitText forwards non-empty model text to the handler as a Step.
 func emitText(ctx context.Context, handler harness.Handler, execID, text string) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	return handler.OnMessage(ctx, execID, &proto.Message{
-		Role: "assistant",
-		Content: &proto.Content{
-			Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}},
+	return handler.OnMessage(ctx, execID, &proto.Step{
+		Type: &proto.Step_Content{
+			Content: &proto.ContentStep{
+				Role: "assistant",
+				Content: []*proto.Content{
+					{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}},
+				},
+			},
 		},
 	})
 }
 
-// messagesToInputSteps converts queued ax Messages (human input) into user_input
+// stepsToInputSteps converts queued ax Steps (human input) into user_input
 // steps. Only text content is supported as input today.
-func messagesToInputSteps(msgs []*proto.Message) []any {
-	var steps []any
-	for _, m := range msgs {
-		if t, ok := m.GetContent().GetType().(*proto.Content_Text); ok && t.Text.GetText() != "" {
-			steps = append(steps, userInputStep{
-				Type:    "user_input",
-				Content: []textPart{{Type: "text", Text: t.Text.GetText()}},
-			})
+func stepsToInputSteps(steps []*proto.Step) []any {
+	var out []any
+	for _, s := range steps {
+		if contentStep := s.GetContent(); contentStep != nil {
+			for _, part := range contentStep.Content {
+				if t, ok := part.GetType().(*proto.Content_Text); ok && t.Text.GetText() != "" {
+					out = append(out, userInputStep{
+						Type:    "user_input",
+						Content: []textPart{{Type: "text", Text: t.Text.GetText()}},
+					})
+				}
+			}
 		}
 	}
-	return steps
+	return out
 }
 
 // ---------------------------------------------------------------------------

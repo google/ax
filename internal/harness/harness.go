@@ -25,7 +25,7 @@ import (
 // Handler defines the streaming event hook callbacks for an execution turn.
 type Handler interface {
 	// OnMessage is invoked when the agent generates output content during its turn.
-	OnMessage(ctx context.Context, execID string, msg *proto.Message) error
+	OnMessage(ctx context.Context, execID string, step *proto.Step) error
 
 	// OnComplete is invoked when the agent finishes its current execution turn.
 	OnComplete(ctx context.Context, execID string) error
@@ -52,8 +52,8 @@ type Execution interface {
 	// It blocks until the current turn completes or fails.
 	Run(ctx context.Context, handler Handler) error
 
-	// Queue enqueues new input messages to be processed in the next turn.
-	Queue(ctx context.Context, msg ...*proto.Message) error
+	// Queue enqueues new input steps to be processed in the next turn.
+	Queue(ctx context.Context, steps ...*proto.Step) error
 
 	// ID returns the unique execution session ID.
 	ID() string

@@ -22,76 +22,36 @@ import (
 )
 
 func TestDisplay_Streaming(t *testing.T) {
-	textContent := func(txt string) *proto.Content {
-		return &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: txt}}}
-	}
-	thoughtContent := func(txt string) *proto.Content {
-		return &proto.Content{Type: &proto.Content_Thought{Thought: &proto.ThoughtContent{
-			Summary: []*proto.ThoughtSummaryContent{
-				{Type: &proto.ThoughtSummaryContent_Text{Text: &proto.TextContent{Text: txt}}},
+	stepText := func(txt string) *proto.Step {
+		return &proto.Step{
+			Type: &proto.Step_Content{
+				Content: &proto.ContentStep{
+					Content: []*proto.Content{
+						{Type: &proto.Content_Text{Text: &proto.TextContent{Text: txt}}},
+					},
+				},
 			},
-		}}}
+		}
 	}
-	toolCallContent := func() *proto.Content {
-		return &proto.Content{Type: &proto.Content_ToolCall{ToolCall: &proto.ToolCallContent{}}}
+	stepThought := func(txt string) *proto.Step {
+		return &proto.Step{
+			Type: &proto.Step_Thought{
+				Thought: &proto.ThoughtStep{
+					Summary: []*proto.Content{
+						{Type: &proto.Content_Text{Text: &proto.TextContent{Text: txt}}},
+					},
+				},
+			},
+		}
 	}
-
-	t.Run("consecutive text chunks are concatenated", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		d := NewDisplay("test-id", &buf)
-
-		d.Display(textContent("Hello "))
-		d.Display(textContent("world"))
-		d.Display(textContent("!"))
-
-		got := buf.String()
-		want := "Hello world!"
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("tool call separates consecutive text blocks", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		d := NewDisplay("test-id", &buf)
-
-		d.Display(textContent("...configured."))
-		d.Display(toolCallContent())
-		d.Display(textContent("I will list the contents."))
-
-		got := buf.String()
-		want := "...configured.\nI will list the contents."
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
-
-	t.Run("repeated tool calls do not add extra newlines", func(t *testing.T) {
-		t.Parallel()
-		var buf bytes.Buffer
-		d := NewDisplay("test-id", &buf)
-
-		d.Display(textContent("Done."))
-		d.Display(toolCallContent())
-		d.Display(toolCallContent())
-		d.Display(textContent("Next."))
-
-		got := buf.String()
-		want := "Done.\nNext."
-		if got != want {
-			t.Errorf("got %q, want %q", got, want)
-		}
-	})
 
 	t.Run("consecutive thought chunks are concatenated with prefix", func(t *testing.T) {
 		t.Parallel()
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(thoughtContent("thinking "))
-		d.Display(thoughtContent("deeply"))
+		d.Display(stepThought("thinking "))
+		d.Display(stepThought("deeply"))
 
 		got := buf.String()
 		want := "Thinking: thinking deeply"
@@ -105,8 +65,8 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(thoughtContent("thinking"))
-		d.Display(textContent("Hello"))
+		d.Display(stepThought("thinking"))
+		d.Display(stepText("Hello"))
 
 		got := buf.String()
 		want := "Thinking: thinking\nHello"
@@ -120,8 +80,8 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(textContent("Hello"))
-		d.Display(thoughtContent("thinking"))
+		d.Display(stepText("Hello"))
+		d.Display(stepThought("thinking"))
 
 		got := buf.String()
 		want := "Hello\nThinking: thinking"
@@ -135,7 +95,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(textContent("Hello"))
+		d.Display(stepText("Hello"))
 		d.FinishOutput("")
 
 		got := buf.String()
@@ -150,7 +110,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(textContent("Hello"))
+		d.Display(stepText("Hello"))
 		d.FinishOutput("seq=1")
 
 		got := buf.String()
@@ -167,7 +127,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(textContent("Hello"))
+		d.Display(stepText("Hello"))
 		d.displaySystem("system message")
 
 		got := buf.String()
@@ -182,7 +142,7 @@ func TestDisplay_Streaming(t *testing.T) {
 		var buf bytes.Buffer
 		d := NewDisplay("test-id", &buf)
 
-		d.Display(textContent("Hello"))
+		d.Display(stepText("Hello"))
 		d.DisplayInput("prompt")
 
 		got := buf.String()

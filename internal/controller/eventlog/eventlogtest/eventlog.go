@@ -25,33 +25,29 @@ import (
 // executions. It does not survive process restarts.
 type MemoryEventLog struct {
 	mu            sync.Mutex
-	AllEvents     []*proto.ConversationEvent
+	AllEvents     []*proto.StepEvent
 }
 
-func (m *MemoryEventLog) Append(_ context.Context, event *proto.ConversationEvent) (int32, error) {
+func (m *MemoryEventLog) Append(_ context.Context, event *proto.StepEvent) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	step := event.Step
-	if step == 0 {
-		maxStep := int32(0)
-		for _, ev := range m.AllEvents {
-			if ev.ConversationId == event.ConversationId && ev.Step > maxStep {
-				maxStep = ev.Step
-			}
+	maxStep := int64(0)
+	for _, ev := range m.AllEvents {
+		if ev.ConversationId == event.ConversationId {
+			maxStep++
 		}
-		step = maxStep + 1
-		event.Step = step
 	}
+	step := maxStep + 1
 	m.AllEvents = append(m.AllEvents, event)
 	return step, nil
 }
 
-func (m *MemoryEventLog) Events(_ context.Context, conversationID string) ([]*proto.ConversationEvent, error) {
+func (m *MemoryEventLog) Events(_ context.Context, conversationID string) ([]*proto.StepEvent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	out := make([]*proto.ConversationEvent, 0)
+	out := make([]*proto.StepEvent, 0)
 	for _, ev := range m.AllEvents {
 		if ev.ConversationId == conversationID {
 			out = append(out, ev)
@@ -62,7 +58,7 @@ func (m *MemoryEventLog) Events(_ context.Context, conversationID string) ([]*pr
 
 // Drop removes every event for which drop returns true.
 // It is provided for testing and crash-simulation purposes.
-func (m *MemoryEventLog) Drop(drop func(*proto.ConversationEvent) bool) {
+func (m *MemoryEventLog) Drop(drop func(*proto.StepEvent) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -73,21 +69,6 @@ func (m *MemoryEventLog) Drop(drop func(*proto.ConversationEvent) bool) {
 		}
 	}
 	m.AllEvents = kept
-}
-
-func (m *MemoryEventLog) DeleteAll(_ context.Context, conversationID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var keptEvents []*proto.ConversationEvent
-	for _, ev := range m.AllEvents {
-		if ev.ConversationId != conversationID {
-			keptEvents = append(keptEvents, ev)
-		}
-	}
-	m.AllEvents = keptEvents
-
-	return nil
 }
 
 func (m *MemoryEventLog) Close() error {

@@ -19,12 +19,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log"
-	"os"
+	"strings"
 
 	"github.com/google/ax/proto"
 	"github.com/google/uuid"
@@ -35,7 +34,7 @@ import (
 
 var (
 	harnessServerAddr string
-	harnessClientID   string
+	agentClientID     string
 )
 
 var harnessClientCmd = &cobra.Command{
@@ -47,7 +46,7 @@ var harnessClientCmd = &cobra.Command{
 
 func init() {
 	harnessClientCmd.Flags().StringVar(&harnessServerAddr, "server", "localhost:50053", "The server address for the gRPC HarnessService.")
-	harnessClientCmd.Flags().StringVar(&harnessClientID, "harness", "testharness", "The harness id to send on the request envelope.")
+	harnessClientCmd.Flags().StringVar(&agentClientID, "agent", "testharness", "The agent id to send on the request envelope.")
 	rootCmd.AddCommand(harnessClientCmd)
 }
 
@@ -62,28 +61,34 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 	defer conn.Close()
 
 	client := proto.NewHarnessServiceClient(conn)
-
-	fmt.Print("Client > ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	input := scanner.Text()
-
 	stream, err := client.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to open connection stream: %v", err)
+		return fmt.Errorf("failed to call Connect: %v", err)
+	}
+
+	// Wait for user input from stdin if not specified, but for simple execution, send a single frame.
+	var input string
+	if len(args) > 0 {
+		input = strings.Join(args, " ")
+	} else {
+		input = "Hello from harness client!"
 	}
 
 	// A single HarnessRequest{start} initiates the turn.
 	start := &proto.HarnessRequest{
 		ConversationId: uuid.NewString(),
-		HarnessId:      harnessClientID,
+		AgentId:        agentClientID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				Messages: []*proto.Message{
+				Steps: []*proto.Step{
 					{
-						Role: "user",
-						Content: &proto.Content{
-							Type: &proto.Content_Text{Text: &proto.TextContent{Text: input}},
+						Type: &proto.Step_Content{
+							Content: &proto.ContentStep{
+								Role: "user",
+								Content: []*proto.Content{
+									{Type: &proto.Content_Text{Text: &proto.TextContent{Text: input}}},
+								},
+							},
 						},
 					},
 				},
@@ -108,12 +113,16 @@ func runHarnessClient(cmd *cobra.Command, args []string) error {
 		}
 		switch payload := resp.Type.(type) {
 		case *proto.HarnessResponse_Outputs:
-			for i, m := range payload.Outputs.Messages {
-				var text string
-				if tb, ok := m.Content.Type.(*proto.Content_Text); ok {
-					text = tb.Text.Text
+			for i, step := range payload.Outputs.Steps {
+				if contentStep := step.GetContent(); contentStep != nil {
+					for _, c := range contentStep.Content {
+						var text string
+						if tb, ok := c.Type.(*proto.Content_Text); ok {
+							text = tb.Text.Text
+						}
+						fmt.Printf("Server > step[%d] (%s): %s\n", i, contentStep.Role, text)
+					}
 				}
-				fmt.Printf("Server > message[%d] (%s): %s\n", i, m.Role, text)
 			}
 		case *proto.HarnessResponse_End:
 			if errDetail := payload.End.GetError(); errDetail != nil {

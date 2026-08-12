@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -84,7 +84,7 @@ class HarnessService(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
 
-class ExecutionServiceStub(object):
+class InteractionsServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
@@ -93,18 +93,18 @@ class ExecutionServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.Exec = channel.unary_stream(
-                '/ax.ExecutionService/Exec',
-                request_serializer=proto_dot_ax__pb2.ExecRequest.SerializeToString,
-                response_deserializer=proto_dot_ax__pb2.ExecResponse.FromString,
+        self.CreateInteraction = channel.unary_stream(
+                '/ax.InteractionsService/CreateInteraction',
+                request_serializer=proto_dot_ax__pb2.CreateInteractionEvent.SerializeToString,
+                response_deserializer=proto_dot_ax__pb2.CreateInteractionResponse.FromString,
                 )
 
 
-class ExecutionServiceServicer(object):
+class InteractionsServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def Exec(self, request, context):
-        """Exec executes an agentic task or resumes an existing one with streaming responses
+    def CreateInteraction(self, request, context):
+        """CreateInteraction executes an agentic task or resumes an existing one with streaming responses
         If the conversation_id already exists, it will be resumed.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -112,25 +112,25 @@ class ExecutionServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
 
-def add_ExecutionServiceServicer_to_server(servicer, server):
+def add_InteractionsServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Exec': grpc.unary_stream_rpc_method_handler(
-                    servicer.Exec,
-                    request_deserializer=proto_dot_ax__pb2.ExecRequest.FromString,
-                    response_serializer=proto_dot_ax__pb2.ExecResponse.SerializeToString,
+            'CreateInteraction': grpc.unary_stream_rpc_method_handler(
+                    servicer.CreateInteraction,
+                    request_deserializer=proto_dot_ax__pb2.CreateInteractionEvent.FromString,
+                    response_serializer=proto_dot_ax__pb2.CreateInteractionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'ax.ExecutionService', rpc_method_handlers)
+            'ax.InteractionsService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
  # This class is part of an EXPERIMENTAL API.
-class ExecutionService(object):
+class InteractionsService(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def Exec(request,
+    def CreateInteraction(request,
             target,
             options=(),
             channel_credentials=None,
@@ -140,71 +140,8 @@ class ExecutionService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(request, target, '/ax.ExecutionService/Exec',
-            proto_dot_ax__pb2.ExecRequest.SerializeToString,
-            proto_dot_ax__pb2.ExecResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
-
-
-class ConversationServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.DeleteConversation = channel.unary_unary(
-                '/ax.ConversationService/DeleteConversation',
-                request_serializer=proto_dot_ax__pb2.DeleteConversationRequest.SerializeToString,
-                response_deserializer=proto_dot_ax__pb2.DeleteConversationResponse.FromString,
-                )
-
-
-class ConversationServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
-
-    def DeleteConversation(self, request, context):
-        """Deletes conversational events and all event log resources
-        for its children executions.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_ConversationServiceServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'DeleteConversation': grpc.unary_unary_rpc_method_handler(
-                    servicer.DeleteConversation,
-                    request_deserializer=proto_dot_ax__pb2.DeleteConversationRequest.FromString,
-                    response_serializer=proto_dot_ax__pb2.DeleteConversationResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'ax.ConversationService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-
-
- # This class is part of an EXPERIMENTAL API.
-class ConversationService(object):
-    """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def DeleteConversation(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/ax.ConversationService/DeleteConversation',
-            proto_dot_ax__pb2.DeleteConversationRequest.SerializeToString,
-            proto_dot_ax__pb2.DeleteConversationResponse.FromString,
+        return grpc.experimental.unary_stream(request, target, '/ax.InteractionsService/CreateInteraction',
+            proto_dot_ax__pb2.CreateInteractionEvent.SerializeToString,
+            proto_dot_ax__pb2.CreateInteractionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

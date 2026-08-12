@@ -66,9 +66,9 @@ func TestConnect_StartToEnd(t *testing.T) {
 	}
 	if err := stream.Send(&proto.HarnessRequest{
 		ConversationId: "conv-1",
-		HarnessId:      "antigravity-interactions",
+		AgentId:        "antigravity-interactions",
 		Type: &proto.HarnessRequest_Start{
-			Start: &proto.HarnessStart{Messages: []*proto.Message{harnesstest.UserText("hello")}},
+			Start: &proto.HarnessStart{Steps: []*proto.Step{harnesstest.UserStep("hello")}},
 		},
 	}); err != nil {
 		t.Fatalf("send start: %v", err)

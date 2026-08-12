@@ -23,6 +23,7 @@ import (
 	"github.com/google/ax/internal/controller/eventlog"
 	"github.com/google/ax/internal/controller/eventlog/eventlogtest"
 	"github.com/google/ax/internal/harness"
+	"github.com/google/ax/internal/harness/harnesstest"
 	"github.com/google/ax/proto"
 )
 
@@ -34,30 +35,36 @@ func (f *fakeHarness) Start(ctx context.Context, conversationID string, harnessC
 
 type fakeExecution struct {
 	id     string
-	queued []*proto.Message
+	queued []*proto.Step
 }
 
 func (f *fakeExecution) ID() string {
 	return f.id
 }
 
-func (f *fakeExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
-	f.queued = append(f.queued, msg...)
+func (f *fakeExecution) Queue(ctx context.Context, steps ...*proto.Step) error {
+	f.queued = append(f.queued, steps...)
 	return nil
 }
 
 func (f *fakeExecution) Run(ctx context.Context, handler harness.Handler) error {
-	msg := &proto.Message{
-		Role: "assistant",
-		Content: &proto.Content{
-			Type: &proto.Content_Text{
-				Text: &proto.TextContent{
-					Text: "Hello world",
+	step := &proto.Step{
+		Type: &proto.Step_Content{
+			Content: &proto.ContentStep{
+				Role: "assistant",
+				Content: []*proto.Content{
+					{
+						Type: &proto.Content_Text{
+							Text: &proto.TextContent{
+								Text: "Hello world",
+							},
+						},
+					},
 				},
 			},
 		},
 	}
-	if err := handler.OnMessage(ctx, f.id, msg); err != nil {
+	if err := handler.OnMessage(ctx, f.id, step); err != nil {
 		return err
 	}
 	return handler.OnComplete(ctx, f.id)
@@ -91,26 +98,15 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	}
 	defer c.Close()
 
-	var outputs []*proto.Message
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	var outputs []*proto.Step
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		outputs = append(outputs, resp.Outputs...)
 		return nil
 	})
 
-	inputs := []*proto.Message{
-		{
-			Role: "user",
-			Content: &proto.Content{
-				Type: &proto.Content_Text{
-					Text: &proto.TextContent{Text: "Trigger prompt"},
-				},
-			},
-		},
-	}
-
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		Inputs:         inputs,
+		Inputs:         []*proto.Step{harnesstest.UserStep("Trigger prompt")},
 	}, handler)
 	if err != nil {
 		t.Fatalf("Controller2.Exec failed: %v", err)
@@ -120,7 +116,7 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 		t.Fatalf("expected exactly 1 output message, got %d", len(outputs))
 	}
 
-	gotText := outputs[0].GetContent().GetText().GetText()
+	gotText := outputs[0].GetContent().Content[0].GetText().GetText()
 	if gotText != "Hello world" {
 		t.Errorf("expected 'Hello world' output text response, got %q", gotText)
 	}
@@ -136,10 +132,10 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	}
 
 	// 1. First event should be inputs
-	if len(events[0].Messages) != 1 {
-		t.Errorf("expected 1 message in first event, got %d", len(events[0].Messages))
+	if len(events[0].Steps) != 1 {
+		t.Errorf("expected 1 step in first event, got %d", len(events[0].Steps))
 	} else {
-		gotInputText := events[0].Messages[0].GetContent().GetText().GetText()
+		gotInputText := events[0].Steps[0].GetContent().Content[0].GetText().GetText()
 		if gotInputText != "Trigger prompt" {
 			t.Errorf("expected 'Trigger prompt' in logged input, got %q", gotInputText)
 		}
@@ -149,10 +145,10 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	}
 
 	// 2. Second event should be output
-	if len(events[1].Messages) != 1 {
-		t.Errorf("expected 1 message in second event, got %d", len(events[1].Messages))
+	if len(events[1].Steps) != 1 {
+		t.Errorf("expected 1 step in second event, got %d", len(events[1].Steps))
 	} else {
-		gotOutputText := events[1].Messages[0].GetContent().GetText().GetText()
+		gotOutputText := events[1].Steps[0].GetContent().Content[0].GetText().GetText()
 		if gotOutputText != "Hello world" {
 			t.Errorf("expected 'Hello world' in logged output, got %q", gotOutputText)
 		}
@@ -162,8 +158,8 @@ func TestController2_ExecHelloWorld(t *testing.T) {
 	}
 
 	// 3. Third event should be completion
-	if len(events[2].Messages) != 0 {
-		t.Errorf("expected 0 messages in third event, got %d", len(events[2].Messages))
+	if len(events[2].Steps) != 0 {
+		t.Errorf("expected 0 steps in third event, got %d", len(events[2].Steps))
 	}
 	if events[2].State != proto.State_STATE_COMPLETED {
 		t.Errorf("expected third event state to be COMPLETED, got %v", events[2].State)
@@ -192,27 +188,16 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 	}
 	defer c.Close()
 
-	var outputs []*proto.Message
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	var outputs []*proto.Step
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		outputs = append(outputs, resp.Outputs...)
 		return nil
 	})
 
-	inputs := []*proto.Message{
-		{
-			Role: "user",
-			Content: &proto.Content{
-				Type: &proto.Content_Text{
-					Text: &proto.TextContent{Text: "Trigger prompt"},
-				},
-			},
-		},
-	}
-
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "my-agent",
-		Inputs:         inputs,
+		AgentId:        "my-agent",
+		Inputs:         []*proto.Step{harnesstest.UserStep("Trigger prompt")},
 	}, handler)
 	if err != nil {
 		t.Fatalf("Controller2.Exec failed: %v", err)
@@ -222,7 +207,7 @@ func TestController2_ExecWithAgentID(t *testing.T) {
 		t.Fatalf("expected exactly 1 output message, got %d", len(outputs))
 	}
 
-	gotText := outputs[0].GetContent().GetText().GetText()
+	gotText := outputs[0].GetContent().Content[0].GetText().GetText()
 	if gotText != "Hello world" {
 		t.Errorf("expected 'Hello world' output text response, got %q", gotText)
 	}
@@ -246,25 +231,14 @@ func TestController2_ExecHarnessNotFound(t *testing.T) {
 	}
 	defer c.Close()
 
-	handler := ExecHandler(func(resp *proto.ExecResponse) error {
+	handler := ExecHandler(func(resp *proto.CreateInteractionResponse) error {
 		return nil
 	})
 
-	inputs := []*proto.Message{
-		{
-			Role: "user",
-			Content: &proto.Content{
-				Type: &proto.Content_Text{
-					Text: &proto.TextContent{Text: "Trigger prompt"},
-				},
-			},
-		},
-	}
-
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		Inputs:         inputs,
-		HarnessId:      "antigravity",
+		AgentId:        "antigravity",
+		Inputs:         []*proto.Step{harnesstest.UserStep("Trigger prompt")},
 	}, handler)
 	if err == nil {
 		t.Fatal("expected error requesting unregistered agent, got nil")
@@ -286,7 +260,7 @@ type testExecution struct {
 	queueCalls int
 	runCalls   int
 	closeCalls int
-	queued     []*proto.Message
+	queued     []*proto.Step
 	runFunc    func(ctx context.Context, execID string, handler harness.Handler) error
 }
 
@@ -294,9 +268,9 @@ func (c *testExecution) ID() string {
 	return c.id
 }
 
-func (c *testExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (c *testExecution) Queue(ctx context.Context, steps ...*proto.Step) error {
 	c.queueCalls++
-	c.queued = append(c.queued, msg...)
+	c.queued = append(c.queued, steps...)
 	return nil
 }
 
@@ -347,13 +321,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
-			Inputs: []*proto.Message{
-				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Hello"}}}},
-			},
-		}, func(resp *proto.ExecResponse) error { return nil })
+			AgentId:        "test-agent",
+			Inputs:         []*proto.Step{harnesstest.UserStep("Hello")},
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -376,13 +348,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		log := &eventlogtest.MemoryEventLog{}
 		// Seed the event log with a pending event
-		_, err := log.Append(ctx, &proto.ConversationEvent{
+		_, err := log.Append(ctx, &proto.StepEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			State:          proto.State_STATE_PENDING,
-			Messages: []*proto.Message{
-				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
-			},
+			Steps:          []*proto.Step{harnesstest.UserStep("Initial")},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -415,11 +385,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			Inputs:         nil, // NO new inputs
-		}, func(resp *proto.ExecResponse) error { return nil })
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -442,13 +412,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 
 		log := &eventlogtest.MemoryEventLog{}
 		// Seed the event log with a pending event
-		_, err := log.Append(ctx, &proto.ConversationEvent{
+		_, err := log.Append(ctx, &proto.StepEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
+			AgentId:        "test-agent",
 			State:          proto.State_STATE_PENDING,
-			Messages: []*proto.Message{
-				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "Initial"}}}},
-			},
+			Steps:          []*proto.Step{harnesstest.UserStep("Initial")},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -482,13 +450,11 @@ func TestController2_ExecResumptionFlow(t *testing.T) {
 		}
 		defer c.Close()
 
-		err = c.Exec(ctx, &proto.ExecRequest{
+		err = c.Exec(ctx, &proto.CreateInteractionEvent{
 			ConversationId: cid,
-			HarnessId:      "test-agent",
-			Inputs: []*proto.Message{
-				{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "New input"}}}},
-			},
-		}, func(resp *proto.ExecResponse) error { return nil })
+			AgentId:        "test-agent",
+			Inputs:         []*proto.Step{harnesstest.UserStep("New input")},
+		}, func(resp *proto.CreateInteractionResponse) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -552,22 +518,22 @@ func TestExec_ResumeEmptyHarnessUsesStored(t *testing.T) {
 	}
 	defer c.Close()
 
-	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+	noop := ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })
 
 	// Turn 1: explicitly run the NON-default harness.
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-b",
-		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
+		AgentId:        "harness-b",
+		Inputs:         []*proto.Step{harnesstest.UserStep("hi")},
 	}, noop); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
 
 	// Turn 2: resume WITHOUT a harness id. Must reuse harness-b, not the default.
 	before := stored.startCalls
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
+		Inputs:         []*proto.Step{harnesstest.UserStep("more")},
 	}, noop); err != nil {
 		t.Fatalf("turn 2 (resume, empty harness): %v", err)
 	}
@@ -605,19 +571,19 @@ func TestExec_ResumeExplicitDifferentHarnessRejected(t *testing.T) {
 	}
 	defer c.Close()
 
-	noop := ExecHandler(func(*proto.ExecResponse) error { return nil })
+	noop := ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })
 
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-a",
-		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
+		AgentId:        "harness-a",
+		Inputs:         []*proto.Step{harnesstest.UserStep("hi")},
 	}, noop); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	err = c.Exec(ctx, &proto.ExecRequest{
+	err = c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		HarnessId:      "harness-b",
-		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "more"}}}}},
+		AgentId:        "harness-b",
+		Inputs:         []*proto.Step{harnesstest.UserStep("more")},
 	}, noop)
 	if err == nil || !strings.Contains(err.Error(), "harness ID changed from harness-a to harness-b") {
 		t.Fatalf("resume with a different harness: got %v, want error 'harness ID changed from harness-a to harness-b'", err)
@@ -649,10 +615,10 @@ func TestExec_NewConversationLogsCanonicalDefault(t *testing.T) {
 	}
 	defer c.Close()
 
-	if err := c.Exec(ctx, &proto.ExecRequest{
+	if err := c.Exec(ctx, &proto.CreateInteractionEvent{
 		ConversationId: cid,
-		Inputs:         []*proto.Message{{Role: "user", Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: "hi"}}}}},
-	}, ExecHandler(func(*proto.ExecResponse) error { return nil })); err != nil {
+		Inputs:         []*proto.Step{harnesstest.UserStep("hi")},
+	}, ExecHandler(func(*proto.CreateInteractionResponse) error { return nil })); err != nil {
 		t.Fatalf("exec: %v", err)
 	}
 	_, stored, err := newLogger(log, cid, "").ResumptionState(ctx)

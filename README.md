@@ -148,18 +148,6 @@ ax --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
    --input "Show me the contents of README.md"
 ```
 
-If the client gets disconnected, pass the last step it saw to
-replay the events it missed. This catches the client up; it does not
-rewind the conversation.
-
-In this example, we catch up a client from step number 12:
-
-```bash
-ax --conversation d85a4b4e-c53b-4c84-b879-f10d905bce40 \
-   --last-step 12 \
-   --resume
-```
-
 Instead of running the default harness, you can start executing
 any registered harness:
 
@@ -182,23 +170,21 @@ Execute a new conversation or resume an existing one. If no conversation ID is p
 ax \
     [--input <text>] \
     [--conversation <id>] \
-    [--harness <id>] \
+    [--agent <id>] \
     [--config <json>] \
     [--config-file <file.json>] \
     [--server <address>] \
     [--ax-config <file>] \
-    [--resume] \
-    [--last-step <number>]
+    [--resume]
 ```
 
 Options:
+- `--agent`: Agent ID (optional, default agent is used if not specified)
 - `--ax-config`: Path to YAML configuration file (only used with a local built-in AX server) (default "ax.yaml")
-- `--config`: Per-request harness configuration as an inline JSON string (mutually exclusive with `--config-file`)
-- `--config-file`: Path to a JSON file with per-request harness configuration
+- `--config`: Per-request agent configuration as an inline JSON string (mutually exclusive with `--config-file`)
+- `--config-file`: Path to a JSON file with per-request agent configuration
 - `--conversation`: Conversation ID (optional, generates UUID if not provided)
-- `--harness`: Harness ID (optional, default harness is used if not specified)
 - `--input`: Input message to send (optional)
-- `--last-step`: Last step number seen by the client
 - `--resume`: Resume a conversation without inputs
 - `--server`: gRPC controller server address (if specified, connects to remote server; otherwise runs with a local built-in AX server)
 

@@ -24,29 +24,22 @@ option go_package = "github.com/google/ax/proto";
 // WARNING: This file is in active development and
 // significant changes can be made with breaking changes.
 
-// Message is a message in the history.
-message Message {
-  string role = 1;     // user, assistant, or model
-  Content content = 2; // content of the message
-}
-
 // A conversation is the historical session that consist of
 // a number of execution. A conversation cannot be continued
 // before the last execution is completed or failed.
-message ConversationEvent {
+message StepEvent {
   string conversation_id = 1;
-  int32 step = 2;
-  string exec_id = 3;
-  string harness_id = 4;
-  google.protobuf.Struct harness_config = 5;
-  repeated Message messages = 6;
-  State state = 7;
+  string interaction_id = 2;
+  string agent_id = 3;
+  google.protobuf.Struct agent_config = 4;
+  repeated Step steps = 5;
+  State state = 6;
 }
 
 message HarnessStart {
-  // Per-execution harness configuration.
-  bytes harness_config = 1;
-  repeated Message messages = 2;
+  // Per-execution agent configuration.
+  bytes agent_config = 1;
+  repeated Step steps = 2;
 }
 
 // HarnessCancel aborts the in-flight harness execution.
@@ -56,7 +49,7 @@ message HarnessCancel {
 
 message HarnessRequest {
   string conversation_id = 1;
-  string harness_id = 2;
+  string agent_id = 2;
   oneof type {
     HarnessStart start = 3;
     HarnessCancel cancel = 4;
@@ -64,7 +57,7 @@ message HarnessRequest {
 }
 
 message HarnessOutputs {
-  repeated Message messages = 1;
+  repeated Step steps = 1;
 }
 
 message Error {
@@ -114,36 +107,130 @@ enum CancelReason {
   CANCEL_REASON_INTERNAL_ERROR = 3;
 }
 
-// ExecRequest for executing.
-message ExecRequest {
+// CreateInteractionEvent for creating an interaction.
+message CreateInteractionEvent {
   string conversation_id = 1;            // Unique conversation identifier
-  repeated Message inputs = 2;           // New inputs
-  int32 last_step = 3;                   // Last step number seen by the client
+  repeated Step inputs = 2;              // New inputs
+  reserved 3;
 
-  string harness_id = 4;                 // Harness ID, empty selects the default harness
-  bytes harness_config = 5;              // Per-request harness configuration (opaque JSON), if any
+  string agent_id = 4;                   // Agent ID, empty selects the default agent
+  bytes agent_config = 5;                // Per-request agent configuration (opaque JSON), if any
 }
 
-// ExecResponse contains the result of an execution.
-message ExecResponse {
-  repeated Message outputs = 1; // Output content
-  int32 step = 2;               // Step of the outputs
+// CreateInteractionResponse contains the result of an interaction.
+message CreateInteractionResponse {
+  repeated Step outputs = 1;    // Output content
 }
 
-service ExecutionService {
-  // Exec executes an agentic task or resumes an existing one with streaming responses
+service InteractionsService {
+  // CreateInteraction executes an agentic task or resumes an existing one with streaming responses
   // If the conversation_id already exists, it will be resumed.
-  rpc Exec(ExecRequest) returns (stream ExecResponse);
+  rpc CreateInteraction(CreateInteractionEvent) returns (stream CreateInteractionResponse);
 }
 
-message DeleteConversationRequest {
-  string conversation_id = 1;
+// TODO(jbd): CreateInteraction should return an Interaction message
+// and the outputs should be polled from the Interaction.
+
+message Step {
+  string description = 16;
+
+  oneof type {
+    ContentStep content = 12;
+    ThoughtStep thought = 3;
+    ToolCallStep tool_call = 4;
+    ToolResultStep tool_result = 5;
+  }
+
+  int64 index = 22;
 }
 
-message DeleteConversationResponse {}
+message ContentStep {
+  reserved "type";
+  reserved "event_type";
 
-service ConversationService {
-  // Deletes conversational events and all event log resources
-  // for its children executions.
-  rpc DeleteConversation(DeleteConversationRequest) returns (DeleteConversationResponse);
+  string role = 1;
+  repeated Content content = 2;
+}
+
+message ThoughtStep {
+  reserved "type";
+  reserved "event_type";
+
+  // A signature hash for backend validation.
+  bytes signature = 1;
+  // A summary of the thought.
+  repeated Content summary = 2;
+}
+
+message ToolCallStep {
+  reserved "event_type";
+
+  string id = 1;
+
+  bytes signature = 2;
+
+  oneof type {
+    FunctionCallStep function_call = 3;
+  }
+}
+
+message FunctionCallStep {
+  reserved "type";
+
+  string name = 1;
+
+  google.protobuf.Struct arguments = 2;
+}
+
+message ToolResultStep {
+  reserved "event_type";
+
+  string call_id = 1;
+
+  bytes signature = 2;
+
+  oneof type {
+    FunctionResultStep function_result = 3;
+  }
+}
+
+message FunctionResultStep {
+  reserved "type";
+  reserved 1, 4;
+
+  // The name of the tool that was called.
+  string name = 2;
+
+  // Whether the tool call resulted in an error.
+  bool is_error = 3;
+
+  // The result of the tool call.
+  Value result = 7;
+  reserved 10, 11, 12;
+}
+
+message Value {
+  // The kind of value.
+  oneof kind {
+    // Represents a null value.
+    google.protobuf.NullValue null_value = 1;
+    // Represents a double value.
+    double number_value = 2;
+    // Represents a string value.
+    string string_value = 3;
+    // Represents a boolean value.
+    bool bool_value = 4;
+    // Represents a structured value.
+    google.protobuf.Struct struct_value = 5;
+    // Represents a repeated `Value`.
+    ListValue list_value = 6;
+    // Represents rich content (text, image, etc.).
+    Content content_value = 7;
+  }
+}
+
+// `ListValue` is a wrapper around a repeated field of values.
+message ListValue {
+  // Repeated field of dynamically typed values.
+  repeated Value values = 1;
 }

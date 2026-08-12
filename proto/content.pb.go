@@ -23,7 +23,6 @@ package proto
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -156,7 +155,7 @@ func (x ImageContent_MimeType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ImageContent_MimeType.Descriptor instead.
 func (ImageContent_MimeType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{10, 0}
+	return file_proto_content_proto_rawDescGZIP(), []int{4, 0}
 }
 
 type AudioContent_MimeType int32
@@ -238,7 +237,7 @@ func (x AudioContent_MimeType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AudioContent_MimeType.Descriptor instead.
 func (AudioContent_MimeType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{11, 0}
+	return file_proto_content_proto_rawDescGZIP(), []int{5, 0}
 }
 
 type DocumentContent_MimeType int32
@@ -290,7 +289,7 @@ func (x DocumentContent_MimeType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DocumentContent_MimeType.Descriptor instead.
 func (DocumentContent_MimeType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{12, 0}
+	return file_proto_content_proto_rawDescGZIP(), []int{6, 0}
 }
 
 type VideoContent_MimeType int32
@@ -360,7 +359,7 @@ func (x VideoContent_MimeType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VideoContent_MimeType.Descriptor instead.
 func (VideoContent_MimeType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{13, 0}
+	return file_proto_content_proto_rawDescGZIP(), []int{7, 0}
 }
 
 // TextContent represents a text content.
@@ -594,414 +593,6 @@ func (*ConfirmationContent_Approval) isConfirmationContent_Decision() {}
 
 func (*ConfirmationContent_Decline) isConfirmationContent_Decision() {}
 
-type ThoughtSummaryContent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Type:
-	//
-	//	*ThoughtSummaryContent_Text
-	Type          isThoughtSummaryContent_Type `protobuf_oneof:"type"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ThoughtSummaryContent) Reset() {
-	*x = ThoughtSummaryContent{}
-	mi := &file_proto_content_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ThoughtSummaryContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ThoughtSummaryContent) ProtoMessage() {}
-
-func (x *ThoughtSummaryContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ThoughtSummaryContent.ProtoReflect.Descriptor instead.
-func (*ThoughtSummaryContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ThoughtSummaryContent) GetType() isThoughtSummaryContent_Type {
-	if x != nil {
-		return x.Type
-	}
-	return nil
-}
-
-func (x *ThoughtSummaryContent) GetText() *TextContent {
-	if x != nil {
-		if x, ok := x.Type.(*ThoughtSummaryContent_Text); ok {
-			return x.Text
-		}
-	}
-	return nil
-}
-
-type isThoughtSummaryContent_Type interface {
-	isThoughtSummaryContent_Type()
-}
-
-type ThoughtSummaryContent_Text struct {
-	Text *TextContent `protobuf:"bytes,1,opt,name=text,proto3,oneof"`
-}
-
-func (*ThoughtSummaryContent_Text) isThoughtSummaryContent_Type() {}
-
-type ThoughtContent struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	Signature     []byte                   `protobuf:"bytes,7,opt,name=signature,proto3" json:"signature,omitempty"`
-	Summary       []*ThoughtSummaryContent `protobuf:"bytes,9,rep,name=summary,proto3" json:"summary,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ThoughtContent) Reset() {
-	*x = ThoughtContent{}
-	mi := &file_proto_content_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ThoughtContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ThoughtContent) ProtoMessage() {}
-
-func (x *ThoughtContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ThoughtContent.ProtoReflect.Descriptor instead.
-func (*ThoughtContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ThoughtContent) GetSignature() []byte {
-	if x != nil {
-		return x.Signature
-	}
-	return nil
-}
-
-func (x *ThoughtContent) GetSummary() []*ThoughtSummaryContent {
-	if x != nil {
-		return x.Summary
-	}
-	return nil
-}
-
-type ToolCallContent struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`               // A unique ID for this specific tool call.
-	Signature []byte                 `protobuf:"bytes,9,opt,name=signature,proto3" json:"signature,omitempty"` // A signature hash for backend validation.
-	// Types that are valid to be assigned to Type:
-	//
-	//	*ToolCallContent_FunctionCall
-	Type          isToolCallContent_Type `protobuf_oneof:"type"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ToolCallContent) Reset() {
-	*x = ToolCallContent{}
-	mi := &file_proto_content_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ToolCallContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ToolCallContent) ProtoMessage() {}
-
-func (x *ToolCallContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ToolCallContent.ProtoReflect.Descriptor instead.
-func (*ToolCallContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ToolCallContent) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *ToolCallContent) GetSignature() []byte {
-	if x != nil {
-		return x.Signature
-	}
-	return nil
-}
-
-func (x *ToolCallContent) GetType() isToolCallContent_Type {
-	if x != nil {
-		return x.Type
-	}
-	return nil
-}
-
-func (x *ToolCallContent) GetFunctionCall() *FunctionCallContent {
-	if x != nil {
-		if x, ok := x.Type.(*ToolCallContent_FunctionCall); ok {
-			return x.FunctionCall
-		}
-	}
-	return nil
-}
-
-type isToolCallContent_Type interface {
-	isToolCallContent_Type()
-}
-
-type ToolCallContent_FunctionCall struct {
-	FunctionCall *FunctionCallContent `protobuf:"bytes,2,opt,name=function_call,json=functionCall,proto3,oneof"`
-}
-
-func (*ToolCallContent_FunctionCall) isToolCallContent_Type() {}
-
-type ToolResultContent struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	CallId    string                 `protobuf:"bytes,8,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"` // ID to match the ID from the function call block.
-	Signature []byte                 `protobuf:"bytes,9,opt,name=signature,proto3" json:"signature,omitempty"`         // A signature hash for backend validation.
-	// Types that are valid to be assigned to Type:
-	//
-	//	*ToolResultContent_FunctionResult
-	Type          isToolResultContent_Type `protobuf_oneof:"type"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ToolResultContent) Reset() {
-	*x = ToolResultContent{}
-	mi := &file_proto_content_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ToolResultContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ToolResultContent) ProtoMessage() {}
-
-func (x *ToolResultContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ToolResultContent.ProtoReflect.Descriptor instead.
-func (*ToolResultContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *ToolResultContent) GetCallId() string {
-	if x != nil {
-		return x.CallId
-	}
-	return ""
-}
-
-func (x *ToolResultContent) GetSignature() []byte {
-	if x != nil {
-		return x.Signature
-	}
-	return nil
-}
-
-func (x *ToolResultContent) GetType() isToolResultContent_Type {
-	if x != nil {
-		return x.Type
-	}
-	return nil
-}
-
-func (x *ToolResultContent) GetFunctionResult() *FunctionResultContent {
-	if x != nil {
-		if x, ok := x.Type.(*ToolResultContent_FunctionResult); ok {
-			return x.FunctionResult
-		}
-	}
-	return nil
-}
-
-type isToolResultContent_Type interface {
-	isToolResultContent_Type()
-}
-
-type ToolResultContent_FunctionResult struct {
-	FunctionResult *FunctionResultContent `protobuf:"bytes,2,opt,name=function_result,json=functionResult,proto3,oneof"`
-}
-
-func (*ToolResultContent_FunctionResult) isToolResultContent_Type() {}
-
-type FunctionCallContent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Arguments     *structpb.Struct       `protobuf:"bytes,4,opt,name=arguments,proto3" json:"arguments,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FunctionCallContent) Reset() {
-	*x = FunctionCallContent{}
-	mi := &file_proto_content_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FunctionCallContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FunctionCallContent) ProtoMessage() {}
-
-func (x *FunctionCallContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FunctionCallContent.ProtoReflect.Descriptor instead.
-func (*FunctionCallContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *FunctionCallContent) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *FunctionCallContent) GetArguments() *structpb.Struct {
-	if x != nil {
-		return x.Arguments
-	}
-	return nil
-}
-
-type FunctionResultContent struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,8,opt,name=name,proto3" json:"name,omitempty"`
-	// Types that are valid to be assigned to Result:
-	//
-	//	*FunctionResultContent_Response
-	Result        isFunctionResultContent_Result `protobuf_oneof:"result"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *FunctionResultContent) Reset() {
-	*x = FunctionResultContent{}
-	mi := &file_proto_content_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FunctionResultContent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FunctionResultContent) ProtoMessage() {}
-
-func (x *FunctionResultContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FunctionResultContent.ProtoReflect.Descriptor instead.
-func (*FunctionResultContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *FunctionResultContent) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *FunctionResultContent) GetResult() isFunctionResultContent_Result {
-	if x != nil {
-		return x.Result
-	}
-	return nil
-}
-
-func (x *FunctionResultContent) GetResponse() *structpb.Struct {
-	if x != nil {
-		if x, ok := x.Result.(*FunctionResultContent_Response); ok {
-			return x.Response
-		}
-	}
-	return nil
-}
-
-type isFunctionResultContent_Result interface {
-	isFunctionResultContent_Result()
-}
-
-type FunctionResultContent_Response struct {
-	Response *structpb.Struct `protobuf:"bytes,3,opt,name=response,proto3,oneof"`
-}
-
-func (*FunctionResultContent_Response) isFunctionResultContent_Result() {}
-
 // An image content block.
 type ImageContent struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
@@ -1018,7 +609,7 @@ type ImageContent struct {
 
 func (x *ImageContent) Reset() {
 	*x = ImageContent{}
-	mi := &file_proto_content_proto_msgTypes[10]
+	mi := &file_proto_content_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1030,7 +621,7 @@ func (x *ImageContent) String() string {
 func (*ImageContent) ProtoMessage() {}
 
 func (x *ImageContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[10]
+	mi := &file_proto_content_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1043,7 +634,7 @@ func (x *ImageContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageContent.ProtoReflect.Descriptor instead.
 func (*ImageContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{10}
+	return file_proto_content_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ImageContent) GetMimeType() ImageContent_MimeType {
@@ -1118,7 +709,7 @@ type AudioContent struct {
 
 func (x *AudioContent) Reset() {
 	*x = AudioContent{}
-	mi := &file_proto_content_proto_msgTypes[11]
+	mi := &file_proto_content_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1130,7 +721,7 @@ func (x *AudioContent) String() string {
 func (*AudioContent) ProtoMessage() {}
 
 func (x *AudioContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[11]
+	mi := &file_proto_content_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1143,7 +734,7 @@ func (x *AudioContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AudioContent.ProtoReflect.Descriptor instead.
 func (*AudioContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{11}
+	return file_proto_content_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AudioContent) GetMimeType() AudioContent_MimeType {
@@ -1223,7 +814,7 @@ type DocumentContent struct {
 
 func (x *DocumentContent) Reset() {
 	*x = DocumentContent{}
-	mi := &file_proto_content_proto_msgTypes[12]
+	mi := &file_proto_content_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1235,7 +826,7 @@ func (x *DocumentContent) String() string {
 func (*DocumentContent) ProtoMessage() {}
 
 func (x *DocumentContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[12]
+	mi := &file_proto_content_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1248,7 +839,7 @@ func (x *DocumentContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentContent.ProtoReflect.Descriptor instead.
 func (*DocumentContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{12}
+	return file_proto_content_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DocumentContent) GetMimeType() DocumentContent_MimeType {
@@ -1315,7 +906,7 @@ type VideoContent struct {
 
 func (x *VideoContent) Reset() {
 	*x = VideoContent{}
-	mi := &file_proto_content_proto_msgTypes[13]
+	mi := &file_proto_content_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1327,7 +918,7 @@ func (x *VideoContent) String() string {
 func (*VideoContent) ProtoMessage() {}
 
 func (x *VideoContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[13]
+	mi := &file_proto_content_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1340,7 +931,7 @@ func (x *VideoContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VideoContent.ProtoReflect.Descriptor instead.
 func (*VideoContent) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{13}
+	return file_proto_content_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *VideoContent) GetMimeType() VideoContent_MimeType {
@@ -1398,20 +989,16 @@ func (*VideoContent_Data) isVideoContent_DataOrUri() {}
 
 func (*VideoContent_Uri) isVideoContent_DataOrUri() {}
 
-// Content represents a content input or output.
 type Content struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Type:
 	//
-	//	*Content_Thought
 	//	*Content_Text
 	//	*Content_Image
 	//	*Content_Audio
 	//	*Content_Document
 	//	*Content_Video
 	//	*Content_Confirmation
-	//	*Content_ToolCall
-	//	*Content_ToolResult
 	Type          isContent_Type `protobuf_oneof:"type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1419,7 +1006,7 @@ type Content struct {
 
 func (x *Content) Reset() {
 	*x = Content{}
-	mi := &file_proto_content_proto_msgTypes[14]
+	mi := &file_proto_content_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1431,7 +1018,7 @@ func (x *Content) String() string {
 func (*Content) ProtoMessage() {}
 
 func (x *Content) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_content_proto_msgTypes[14]
+	mi := &file_proto_content_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1444,21 +1031,12 @@ func (x *Content) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Content.ProtoReflect.Descriptor instead.
 func (*Content) Descriptor() ([]byte, []int) {
-	return file_proto_content_proto_rawDescGZIP(), []int{14}
+	return file_proto_content_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Content) GetType() isContent_Type {
 	if x != nil {
 		return x.Type
-	}
-	return nil
-}
-
-func (x *Content) GetThought() *ThoughtContent {
-	if x != nil {
-		if x, ok := x.Type.(*Content_Thought); ok {
-			return x.Thought
-		}
 	}
 	return nil
 }
@@ -1517,30 +1095,8 @@ func (x *Content) GetConfirmation() *ConfirmationContent {
 	return nil
 }
 
-func (x *Content) GetToolCall() *ToolCallContent {
-	if x != nil {
-		if x, ok := x.Type.(*Content_ToolCall); ok {
-			return x.ToolCall
-		}
-	}
-	return nil
-}
-
-func (x *Content) GetToolResult() *ToolResultContent {
-	if x != nil {
-		if x, ok := x.Type.(*Content_ToolResult); ok {
-			return x.ToolResult
-		}
-	}
-	return nil
-}
-
 type isContent_Type interface {
 	isContent_Type()
-}
-
-type Content_Thought struct {
-	Thought *ThoughtContent `protobuf:"bytes,5,opt,name=thought,proto3,oneof"`
 }
 
 type Content_Text struct {
@@ -1564,18 +1120,8 @@ type Content_Video struct {
 }
 
 type Content_Confirmation struct {
-	Confirmation *ConfirmationContent `protobuf:"bytes,26,opt,name=confirmation,proto3,oneof"` // TODO(jbd): Remove out of the Content.
+	Confirmation *ConfirmationContent `protobuf:"bytes,26,opt,name=confirmation,proto3,oneof"` // TODO(jbd): Remove out of the Content and replace it with EliciationStep.
 }
-
-type Content_ToolCall struct {
-	ToolCall *ToolCallContent `protobuf:"bytes,24,opt,name=tool_call,json=toolCall,proto3,oneof"`
-}
-
-type Content_ToolResult struct {
-	ToolResult *ToolResultContent `protobuf:"bytes,25,opt,name=tool_result,json=toolResult,proto3,oneof"`
-}
-
-func (*Content_Thought) isContent_Type() {}
 
 func (*Content_Text) isContent_Type() {}
 
@@ -1589,15 +1135,11 @@ func (*Content_Video) isContent_Type() {}
 
 func (*Content_Confirmation) isContent_Type() {}
 
-func (*Content_ToolCall) isContent_Type() {}
-
-func (*Content_ToolResult) isContent_Type() {}
-
 var File_proto_content_proto protoreflect.FileDescriptor
 
 const file_proto_content_proto_rawDesc = "" +
 	"\n" +
-	"\x13proto/content.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\"3\n" +
+	"\x13proto/content.proto\x12\x02ax\"3\n" +
 	"\vTextContent\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04textJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x04type\".\n" +
 	"\x10ApprovalDecision\x12\x1a\n" +
@@ -1610,30 +1152,7 @@ const file_proto_content_proto_rawDesc = "" +
 	"\bapproval\x18\x05 \x01(\v2\x14.ax.ApprovalDecisionH\x00R\bapproval\x12/\n" +
 	"\adecline\x18\x06 \x01(\v2\x13.ax.DeclineDecisionH\x00R\adeclineB\n" +
 	"\n" +
-	"\bdecisionJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x04type\"L\n" +
-	"\x15ThoughtSummaryContent\x12%\n" +
-	"\x04text\x18\x01 \x01(\v2\x0f.ax.TextContentH\x00R\x04textB\x06\n" +
-	"\x04typeJ\x04\b\x02\x10\x03\"\x8d\x01\n" +
-	"\x0eThoughtContent\x12\x1c\n" +
-	"\tsignature\x18\a \x01(\fR\tsignature\x123\n" +
-	"\asummary\x18\t \x03(\v2\x19.ax.ThoughtSummaryContentR\asummaryJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\b\x10\tR\x04type\"\x87\x01\n" +
-	"\x0fToolCallContent\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
-	"\tsignature\x18\t \x01(\fR\tsignature\x12>\n" +
-	"\rfunction_call\x18\x02 \x01(\v2\x17.ax.FunctionCallContentH\x00R\ffunctionCallB\x06\n" +
-	"\x04type\"\x9e\x01\n" +
-	"\x11ToolResultContent\x12\x17\n" +
-	"\acall_id\x18\b \x01(\tR\x06callId\x12\x1c\n" +
-	"\tsignature\x18\t \x01(\fR\tsignature\x12D\n" +
-	"\x0ffunction_result\x18\x02 \x01(\v2\x19.ax.FunctionResultContentH\x00R\x0efunctionResultB\x06\n" +
-	"\x04typeJ\x04\b\x01\x10\x02\"l\n" +
-	"\x13FunctionCallContent\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x125\n" +
-	"\targuments\x18\x04 \x01(\v2\x17.google.protobuf.StructR\targumentsJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03\"~\n" +
-	"\x15FunctionResultContent\x12\x12\n" +
-	"\x04name\x18\b \x01(\tR\x04name\x125\n" +
-	"\bresponse\x18\x03 \x01(\v2\x17.google.protobuf.StructH\x00R\bresponseB\b\n" +
-	"\x06resultJ\x04\b\x01\x10\x02J\x04\b\x04\x10\x05R\x04type\"\xde\x02\n" +
+	"\bdecisionJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x04type\"\xde\x02\n" +
 	"\fImageContent\x126\n" +
 	"\tmime_type\x18\x01 \x01(\x0e2\x19.ax.ImageContent.MimeTypeR\bmimeType\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04data\x12\x12\n" +
@@ -1707,21 +1226,17 @@ const file_proto_content_proto_rawDesc = "" +
 	"\tTYPE_WEBM\x10\a\x12\f\n" +
 	"\bTYPE_WMV\x10\b\x12\r\n" +
 	"\tTYPE_3GPP\x10\tB\r\n" +
-	"\vdata_or_uriJ\x04\b\x03\x10\x04R\x04type\"\xd8\x03\n" +
-	"\aContent\x12.\n" +
-	"\athought\x18\x05 \x01(\v2\x12.ax.ThoughtContentH\x00R\athought\x12%\n" +
+	"\vdata_or_uriJ\x04\b\x03\x10\x04R\x04type\"\xb4\x02\n" +
+	"\aContent\x12%\n" +
 	"\x04text\x18\n" +
 	" \x01(\v2\x0f.ax.TextContentH\x00R\x04text\x12(\n" +
 	"\x05image\x18\v \x01(\v2\x10.ax.ImageContentH\x00R\x05image\x12(\n" +
 	"\x05audio\x18\f \x01(\v2\x10.ax.AudioContentH\x00R\x05audio\x121\n" +
 	"\bdocument\x18\r \x01(\v2\x13.ax.DocumentContentH\x00R\bdocument\x12(\n" +
 	"\x05video\x18\x0e \x01(\v2\x10.ax.VideoContentH\x00R\x05video\x12=\n" +
-	"\fconfirmation\x18\x1a \x01(\v2\x17.ax.ConfirmationContentH\x00R\fconfirmation\x122\n" +
-	"\ttool_call\x18\x18 \x01(\v2\x13.ax.ToolCallContentH\x00R\btoolCall\x128\n" +
-	"\vtool_result\x18\x19 \x01(\v2\x15.ax.ToolResultContentH\x00R\n" +
-	"toolResultB\x06\n" +
-	"\x04typeJ\x04\b\x01\x10\x05J\x04\b\x06\x10\n" +
-	"J\x04\b\x0f\x10\x18*b\n" +
+	"\fconfirmation\x18\x1a \x01(\v2\x17.ax.ConfirmationContentH\x00R\fconfirmationB\x06\n" +
+	"\x04typeJ\x04\b\x01\x10\n" +
+	"J\x04\b\x0f\x10\x1a*b\n" +
 	"\x0fMediaResolution\x12 \n" +
 	"\x1cMEDIA_RESOLUTION_UNSPECIFIED\x10\x00\x12\a\n" +
 	"\x03LOW\x10\x01\x12\n" +
@@ -1744,7 +1259,7 @@ func file_proto_content_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_content_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_content_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_proto_content_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_proto_content_proto_goTypes = []any{
 	(MediaResolution)(0),          // 0: ax.MediaResolution
 	(ImageContent_MimeType)(0),    // 1: ax.ImageContent.MimeType
@@ -1755,48 +1270,32 @@ var file_proto_content_proto_goTypes = []any{
 	(*ApprovalDecision)(nil),      // 6: ax.ApprovalDecision
 	(*DeclineDecision)(nil),       // 7: ax.DeclineDecision
 	(*ConfirmationContent)(nil),   // 8: ax.ConfirmationContent
-	(*ThoughtSummaryContent)(nil), // 9: ax.ThoughtSummaryContent
-	(*ThoughtContent)(nil),        // 10: ax.ThoughtContent
-	(*ToolCallContent)(nil),       // 11: ax.ToolCallContent
-	(*ToolResultContent)(nil),     // 12: ax.ToolResultContent
-	(*FunctionCallContent)(nil),   // 13: ax.FunctionCallContent
-	(*FunctionResultContent)(nil), // 14: ax.FunctionResultContent
-	(*ImageContent)(nil),          // 15: ax.ImageContent
-	(*AudioContent)(nil),          // 16: ax.AudioContent
-	(*DocumentContent)(nil),       // 17: ax.DocumentContent
-	(*VideoContent)(nil),          // 18: ax.VideoContent
-	(*Content)(nil),               // 19: ax.Content
-	(*structpb.Struct)(nil),       // 20: google.protobuf.Struct
+	(*ImageContent)(nil),          // 9: ax.ImageContent
+	(*AudioContent)(nil),          // 10: ax.AudioContent
+	(*DocumentContent)(nil),       // 11: ax.DocumentContent
+	(*VideoContent)(nil),          // 12: ax.VideoContent
+	(*Content)(nil),               // 13: ax.Content
 }
 var file_proto_content_proto_depIdxs = []int32{
 	6,  // 0: ax.ConfirmationContent.approval:type_name -> ax.ApprovalDecision
 	7,  // 1: ax.ConfirmationContent.decline:type_name -> ax.DeclineDecision
-	5,  // 2: ax.ThoughtSummaryContent.text:type_name -> ax.TextContent
-	9,  // 3: ax.ThoughtContent.summary:type_name -> ax.ThoughtSummaryContent
-	13, // 4: ax.ToolCallContent.function_call:type_name -> ax.FunctionCallContent
-	14, // 5: ax.ToolResultContent.function_result:type_name -> ax.FunctionResultContent
-	20, // 6: ax.FunctionCallContent.arguments:type_name -> google.protobuf.Struct
-	20, // 7: ax.FunctionResultContent.response:type_name -> google.protobuf.Struct
-	1,  // 8: ax.ImageContent.mime_type:type_name -> ax.ImageContent.MimeType
-	0,  // 9: ax.ImageContent.resolution:type_name -> ax.MediaResolution
-	2,  // 10: ax.AudioContent.mime_type:type_name -> ax.AudioContent.MimeType
-	3,  // 11: ax.DocumentContent.mime_type:type_name -> ax.DocumentContent.MimeType
-	4,  // 12: ax.VideoContent.mime_type:type_name -> ax.VideoContent.MimeType
-	0,  // 13: ax.VideoContent.resolution:type_name -> ax.MediaResolution
-	10, // 14: ax.Content.thought:type_name -> ax.ThoughtContent
-	5,  // 15: ax.Content.text:type_name -> ax.TextContent
-	15, // 16: ax.Content.image:type_name -> ax.ImageContent
-	16, // 17: ax.Content.audio:type_name -> ax.AudioContent
-	17, // 18: ax.Content.document:type_name -> ax.DocumentContent
-	18, // 19: ax.Content.video:type_name -> ax.VideoContent
-	8,  // 20: ax.Content.confirmation:type_name -> ax.ConfirmationContent
-	11, // 21: ax.Content.tool_call:type_name -> ax.ToolCallContent
-	12, // 22: ax.Content.tool_result:type_name -> ax.ToolResultContent
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	1,  // 2: ax.ImageContent.mime_type:type_name -> ax.ImageContent.MimeType
+	0,  // 3: ax.ImageContent.resolution:type_name -> ax.MediaResolution
+	2,  // 4: ax.AudioContent.mime_type:type_name -> ax.AudioContent.MimeType
+	3,  // 5: ax.DocumentContent.mime_type:type_name -> ax.DocumentContent.MimeType
+	4,  // 6: ax.VideoContent.mime_type:type_name -> ax.VideoContent.MimeType
+	0,  // 7: ax.VideoContent.resolution:type_name -> ax.MediaResolution
+	5,  // 8: ax.Content.text:type_name -> ax.TextContent
+	9,  // 9: ax.Content.image:type_name -> ax.ImageContent
+	10, // 10: ax.Content.audio:type_name -> ax.AudioContent
+	11, // 11: ax.Content.document:type_name -> ax.DocumentContent
+	12, // 12: ax.Content.video:type_name -> ax.VideoContent
+	8,  // 13: ax.Content.confirmation:type_name -> ax.ConfirmationContent
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_proto_content_proto_init() }
@@ -1809,43 +1308,28 @@ func file_proto_content_proto_init() {
 		(*ConfirmationContent_Decline)(nil),
 	}
 	file_proto_content_proto_msgTypes[4].OneofWrappers = []any{
-		(*ThoughtSummaryContent_Text)(nil),
-	}
-	file_proto_content_proto_msgTypes[6].OneofWrappers = []any{
-		(*ToolCallContent_FunctionCall)(nil),
-	}
-	file_proto_content_proto_msgTypes[7].OneofWrappers = []any{
-		(*ToolResultContent_FunctionResult)(nil),
-	}
-	file_proto_content_proto_msgTypes[9].OneofWrappers = []any{
-		(*FunctionResultContent_Response)(nil),
-	}
-	file_proto_content_proto_msgTypes[10].OneofWrappers = []any{
 		(*ImageContent_Data)(nil),
 		(*ImageContent_Uri)(nil),
 	}
-	file_proto_content_proto_msgTypes[11].OneofWrappers = []any{
+	file_proto_content_proto_msgTypes[5].OneofWrappers = []any{
 		(*AudioContent_Data)(nil),
 		(*AudioContent_Uri)(nil),
 	}
-	file_proto_content_proto_msgTypes[12].OneofWrappers = []any{
+	file_proto_content_proto_msgTypes[6].OneofWrappers = []any{
 		(*DocumentContent_Data)(nil),
 		(*DocumentContent_Uri)(nil),
 	}
-	file_proto_content_proto_msgTypes[13].OneofWrappers = []any{
+	file_proto_content_proto_msgTypes[7].OneofWrappers = []any{
 		(*VideoContent_Data)(nil),
 		(*VideoContent_Uri)(nil),
 	}
-	file_proto_content_proto_msgTypes[14].OneofWrappers = []any{
-		(*Content_Thought)(nil),
+	file_proto_content_proto_msgTypes[8].OneofWrappers = []any{
 		(*Content_Text)(nil),
 		(*Content_Image)(nil),
 		(*Content_Audio)(nil),
 		(*Content_Document)(nil),
 		(*Content_Video)(nil),
 		(*Content_Confirmation)(nil),
-		(*Content_ToolCall)(nil),
-		(*Content_ToolResult)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1853,7 +1337,7 @@ func file_proto_content_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_content_proto_rawDesc), len(file_proto_content_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   15,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

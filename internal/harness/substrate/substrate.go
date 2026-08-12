@@ -177,17 +177,17 @@ type substrateExecution struct {
 	harnessConfig  []byte
 
 	mu      sync.Mutex
-	pending []*proto.Message
+	pending []*proto.Step
 }
 
 func (e *substrateExecution) ID() string {
 	return e.execID
 }
 
-func (e *substrateExecution) Queue(ctx context.Context, msg ...*proto.Message) error {
+func (e *substrateExecution) Queue(ctx context.Context, steps ...*proto.Step) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.pending = append(e.pending, msg...)
+	e.pending = append(e.pending, steps...)
 	return nil
 }
 
@@ -208,11 +208,11 @@ func (e *substrateExecution) Run(ctx context.Context, handler harness.Handler) e
 	// Send a HarnessRequest to initiate the turn.
 	start := &proto.HarnessRequest{
 		ConversationId: e.conversationID,
-		HarnessId:      e.harness.harnessID,
+		AgentId:        e.harness.harnessID,
 		Type: &proto.HarnessRequest_Start{
 			Start: &proto.HarnessStart{
-				HarnessConfig: e.harnessConfig,
-				Messages:      inputs,
+				AgentConfig: e.harnessConfig,
+				Steps:       inputs,
 			},
 		},
 	}

@@ -98,9 +98,9 @@ func (f *MockControlServer) Calls() (create, resume, suspend []string) {
 type MockHarnessServer struct {
 	proto.UnimplementedHarnessServiceServer
 
-	// Outputs are the messages emitted (in a single Outputs frame) before the
+	// Outputs are the steps emitted (in a single Outputs frame) before the
 	// terminal HarnessEnd. When nil, each input is echoed as "ack: <input>".
-	Outputs []*proto.Message
+	Outputs []*proto.Step
 	// FailConnect makes Connect return an RPC error before any frame.
 	FailConnect bool
 	// FailFrame makes Connect terminate the turn with HarnessEnd{STATE_FAILED}.
@@ -128,15 +128,19 @@ func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 	}
 
 	var inputs []string
-	for _, m := range req.GetStart().GetMessages() {
-		if text := m.GetContent().GetText().GetText(); text != "" {
-			inputs = append(inputs, text)
+	for _, step := range req.GetStart().GetSteps() {
+		if contentStep := step.GetContent(); contentStep != nil {
+			for _, c := range contentStep.Content {
+				if text := c.GetText().GetText(); text != "" {
+					inputs = append(inputs, text)
+				}
+			}
 		}
 	}
 	s.mu.Lock()
 	s.gotConvID = req.GetConversationId()
-	s.gotHarnessID = req.GetHarnessId()
-	s.gotHarnessConfig = req.GetStart().GetHarnessConfig()
+	s.gotHarnessID = req.GetAgentId()
+	s.gotHarnessConfig = req.GetStart().GetAgentConfig()
 	s.gotInputs = inputs
 	s.mu.Unlock()
 
@@ -156,17 +160,17 @@ func (s *MockHarnessServer) Connect(stream proto.HarnessService_ConnectServer) e
 		})
 	}
 
-	msgs := s.Outputs
-	if msgs == nil {
+	steps := s.Outputs
+	if steps == nil {
 		for _, in := range inputs {
-			msgs = append(msgs, AssistantText("ack: "+in))
+			steps = append(steps, AssistantStep("ack: "+in))
 		}
 	}
-	if len(msgs) > 0 {
+	if len(steps) > 0 {
 		if err := stream.Send(&proto.HarnessResponse{
 			ConversationId: convID,
 			Type: &proto.HarnessResponse_Outputs{
-				Outputs: &proto.HarnessOutputs{Messages: msgs},
+				Outputs: &proto.HarnessOutputs{Steps: steps},
 			},
 		}); err != nil {
 			return err
@@ -185,19 +189,19 @@ func (s *MockHarnessServer) Received() (convID, harnessID string, harnessConfig 
 	return s.gotConvID, s.gotHarnessID, append([]byte(nil), s.gotHarnessConfig...), append([]string(nil), s.gotInputs...)
 }
 
-// mockHandler records the messages and completion streamed during a turn.
+// MockHandler records the steps and completion streamed during a turn.
 type MockHandler struct {
 	mu       sync.Mutex
-	messages []*proto.Message
+	steps    []*proto.Step
 	complete bool
 }
 
 var _ harness.Handler = (*MockHandler)(nil)
 
-func (h *MockHandler) OnMessage(_ context.Context, _ string, msg *proto.Message) error {
+func (h *MockHandler) OnMessage(_ context.Context, _ string, step *proto.Step) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.messages = append(h.messages, msg)
+	h.steps = append(h.steps, step)
 	return nil
 }
 
@@ -214,47 +218,56 @@ func (h *MockHandler) IsDone() bool {
 	return h.complete
 }
 
-// Collected returns a copy of the messages received via OnMessage.
-func (h *MockHandler) Collected() []*proto.Message {
+// Collected returns a copy of the steps received via OnMessage.
+func (h *MockHandler) Collected() []*proto.Step {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append([]*proto.Message(nil), h.messages...)
+	return append([]*proto.Step(nil), h.steps...)
 }
 
-// Texts returns the text content of each received message, in order.
+// Texts returns the text content of each received step, in order.
 func (h *MockHandler) Texts() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []string
-	for _, m := range h.messages {
-		out = append(out, m.GetContent().GetText().GetText())
+	for _, s := range h.steps {
+		if contentStep := s.GetContent(); contentStep != nil {
+			for _, part := range contentStep.Content {
+				out = append(out, part.GetText().GetText())
+			}
+		}
 	}
 	return out
 }
 
-func AssistantText(text string) *proto.Message {
-	return &proto.Message{
-		Role:    "assistant",
-		Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}},
+func UserStep(text string) *proto.Step {
+	return &proto.Step{
+		Type: &proto.Step_Content{
+			Content: &proto.ContentStep{
+				Role:    "user",
+				Content: []*proto.Content{{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}}},
+			},
+		},
 	}
 }
 
-func UserText(text string) *proto.Message {
-	return &proto.Message{
-		Role:    "user",
-		Content: &proto.Content{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}},
+func AssistantStep(text string) *proto.Step {
+	return &proto.Step{
+		Type: &proto.Step_Content{
+			Content: &proto.ContentStep{
+				Role:    "assistant",
+				Content: []*proto.Content{{Type: &proto.Content_Text{Text: &proto.TextContent{Text: text}}}},
+			},
+		},
 	}
 }
 
-func ThoughtText(summary string) *proto.Message {
-	return &proto.Message{
-		Role: "model",
-		Content: &proto.Content{
-			Type: &proto.Content_Thought{
-				Thought: &proto.ThoughtContent{
-					Summary: []*proto.ThoughtSummaryContent{
-						{Type: &proto.ThoughtSummaryContent_Text{Text: &proto.TextContent{Text: summary}}},
-					},
+func ThoughtStep(summary string) *proto.Step {
+	return &proto.Step{
+		Type: &proto.Step_Thought{
+			Thought: &proto.ThoughtStep{
+				Summary: []*proto.Content{
+					{Type: &proto.Content_Text{Text: &proto.TextContent{Text: summary}}},
 				},
 			},
 		},

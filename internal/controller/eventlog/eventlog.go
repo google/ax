@@ -29,14 +29,11 @@ type EventLogBuilder func() (EventLog, error)
 // exec. Every entry is an atomic step: replaying the log in order brings
 // the executor back to a consistent state from which execution can resume.
 type EventLog interface {
-	// Append adds a conversation event to the end of the log.
-	Append(ctx context.Context, event *proto.ConversationEvent) (int32, error)
+	// Append adds a step event to the end of the log.
+	Append(ctx context.Context, event *proto.StepEvent) (int64, error)
 
 	// Events returns all events for the conversation.
-	Events(ctx context.Context, conversationID string) ([]*proto.ConversationEvent, error)
-
-	// DeleteAll deletes all events for a specific conversation ID.
-	DeleteAll(ctx context.Context, conversationID string) error
+	Events(ctx context.Context, conversationID string) ([]*proto.StepEvent, error)
 
 	// Close releases the underlying resources and closes the log.
 	Close() error

@@ -145,90 +145,36 @@ func (CancelReason) EnumDescriptor() ([]byte, []int) {
 	return file_proto_ax_proto_rawDescGZIP(), []int{1}
 }
 
-// Message is a message in the history.
-type Message struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`       // user, assistant, or model
-	Content       *Content               `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"` // content of the message
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Message) Reset() {
-	*x = Message{}
-	mi := &file_proto_ax_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Message) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Message) ProtoMessage() {}
-
-func (x *Message) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Message.ProtoReflect.Descriptor instead.
-func (*Message) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Message) GetRole() string {
-	if x != nil {
-		return x.Role
-	}
-	return ""
-}
-
-func (x *Message) GetContent() *Content {
-	if x != nil {
-		return x.Content
-	}
-	return nil
-}
-
 // A conversation is the historical session that consist of
 // a number of execution. A conversation cannot be continued
 // before the last execution is completed or failed.
-type ConversationEvent struct {
+type StepEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Step           int32                  `protobuf:"varint,2,opt,name=step,proto3" json:"step,omitempty"`
-	ExecId         string                 `protobuf:"bytes,3,opt,name=exec_id,json=execId,proto3" json:"exec_id,omitempty"`
-	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
-	HarnessConfig  *structpb.Struct       `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
-	Messages       []*Message             `protobuf:"bytes,6,rep,name=messages,proto3" json:"messages,omitempty"`
-	State          State                  `protobuf:"varint,7,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
+	InteractionId  string                 `protobuf:"bytes,2,opt,name=interaction_id,json=interactionId,proto3" json:"interaction_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,3,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	AgentConfig    *structpb.Struct       `protobuf:"bytes,4,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
+	Steps          []*Step                `protobuf:"bytes,5,rep,name=steps,proto3" json:"steps,omitempty"`
+	State          State                  `protobuf:"varint,6,opt,name=state,proto3,enum=ax.State" json:"state,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *ConversationEvent) Reset() {
-	*x = ConversationEvent{}
-	mi := &file_proto_ax_proto_msgTypes[1]
+func (x *StepEvent) Reset() {
+	*x = StepEvent{}
+	mi := &file_proto_ax_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ConversationEvent) String() string {
+func (x *StepEvent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ConversationEvent) ProtoMessage() {}
+func (*StepEvent) ProtoMessage() {}
 
-func (x *ConversationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[1]
+func (x *StepEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -239,54 +185,47 @@ func (x *ConversationEvent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ConversationEvent.ProtoReflect.Descriptor instead.
-func (*ConversationEvent) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use StepEvent.ProtoReflect.Descriptor instead.
+func (*StepEvent) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ConversationEvent) GetConversationId() string {
+func (x *StepEvent) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
 	return ""
 }
 
-func (x *ConversationEvent) GetStep() int32 {
+func (x *StepEvent) GetInteractionId() string {
 	if x != nil {
-		return x.Step
-	}
-	return 0
-}
-
-func (x *ConversationEvent) GetExecId() string {
-	if x != nil {
-		return x.ExecId
+		return x.InteractionId
 	}
 	return ""
 }
 
-func (x *ConversationEvent) GetHarnessId() string {
+func (x *StepEvent) GetAgentId() string {
 	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
 
-func (x *ConversationEvent) GetHarnessConfig() *structpb.Struct {
+func (x *StepEvent) GetAgentConfig() *structpb.Struct {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
 
-func (x *ConversationEvent) GetMessages() []*Message {
+func (x *StepEvent) GetSteps() []*Step {
 	if x != nil {
-		return x.Messages
+		return x.Steps
 	}
 	return nil
 }
 
-func (x *ConversationEvent) GetState() State {
+func (x *StepEvent) GetState() State {
 	if x != nil {
 		return x.State
 	}
@@ -295,16 +234,16 @@ func (x *ConversationEvent) GetState() State {
 
 type HarnessStart struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Per-execution harness configuration.
-	HarnessConfig []byte     `protobuf:"bytes,1,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`
-	Messages      []*Message `protobuf:"bytes,2,rep,name=messages,proto3" json:"messages,omitempty"`
+	// Per-execution agent configuration.
+	AgentConfig   []byte  `protobuf:"bytes,1,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`
+	Steps         []*Step `protobuf:"bytes,2,rep,name=steps,proto3" json:"steps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HarnessStart) Reset() {
 	*x = HarnessStart{}
-	mi := &file_proto_ax_proto_msgTypes[2]
+	mi := &file_proto_ax_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -316,7 +255,7 @@ func (x *HarnessStart) String() string {
 func (*HarnessStart) ProtoMessage() {}
 
 func (x *HarnessStart) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[2]
+	mi := &file_proto_ax_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -329,19 +268,19 @@ func (x *HarnessStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessStart.ProtoReflect.Descriptor instead.
 func (*HarnessStart) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{2}
+	return file_proto_ax_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *HarnessStart) GetHarnessConfig() []byte {
+func (x *HarnessStart) GetAgentConfig() []byte {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
 
-func (x *HarnessStart) GetMessages() []*Message {
+func (x *HarnessStart) GetSteps() []*Step {
 	if x != nil {
-		return x.Messages
+		return x.Steps
 	}
 	return nil
 }
@@ -356,7 +295,7 @@ type HarnessCancel struct {
 
 func (x *HarnessCancel) Reset() {
 	*x = HarnessCancel{}
-	mi := &file_proto_ax_proto_msgTypes[3]
+	mi := &file_proto_ax_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -368,7 +307,7 @@ func (x *HarnessCancel) String() string {
 func (*HarnessCancel) ProtoMessage() {}
 
 func (x *HarnessCancel) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[3]
+	mi := &file_proto_ax_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,7 +320,7 @@ func (x *HarnessCancel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessCancel.ProtoReflect.Descriptor instead.
 func (*HarnessCancel) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{3}
+	return file_proto_ax_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HarnessCancel) GetReason() CancelReason {
@@ -394,7 +333,7 @@ func (x *HarnessCancel) GetReason() CancelReason {
 type HarnessRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	HarnessId      string                 `protobuf:"bytes,2,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Types that are valid to be assigned to Type:
 	//
 	//	*HarnessRequest_Start
@@ -406,7 +345,7 @@ type HarnessRequest struct {
 
 func (x *HarnessRequest) Reset() {
 	*x = HarnessRequest{}
-	mi := &file_proto_ax_proto_msgTypes[4]
+	mi := &file_proto_ax_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +357,7 @@ func (x *HarnessRequest) String() string {
 func (*HarnessRequest) ProtoMessage() {}
 
 func (x *HarnessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[4]
+	mi := &file_proto_ax_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +370,7 @@ func (x *HarnessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessRequest.ProtoReflect.Descriptor instead.
 func (*HarnessRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{4}
+	return file_proto_ax_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HarnessRequest) GetConversationId() string {
@@ -441,9 +380,9 @@ func (x *HarnessRequest) GetConversationId() string {
 	return ""
 }
 
-func (x *HarnessRequest) GetHarnessId() string {
+func (x *HarnessRequest) GetAgentId() string {
 	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
@@ -491,14 +430,14 @@ func (*HarnessRequest_Cancel) isHarnessRequest_Type() {}
 
 type HarnessOutputs struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Messages      []*Message             `protobuf:"bytes,1,rep,name=messages,proto3" json:"messages,omitempty"`
+	Steps         []*Step                `protobuf:"bytes,1,rep,name=steps,proto3" json:"steps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HarnessOutputs) Reset() {
 	*x = HarnessOutputs{}
-	mi := &file_proto_ax_proto_msgTypes[5]
+	mi := &file_proto_ax_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -510,7 +449,7 @@ func (x *HarnessOutputs) String() string {
 func (*HarnessOutputs) ProtoMessage() {}
 
 func (x *HarnessOutputs) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[5]
+	mi := &file_proto_ax_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -523,12 +462,12 @@ func (x *HarnessOutputs) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessOutputs.ProtoReflect.Descriptor instead.
 func (*HarnessOutputs) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{5}
+	return file_proto_ax_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *HarnessOutputs) GetMessages() []*Message {
+func (x *HarnessOutputs) GetSteps() []*Step {
 	if x != nil {
-		return x.Messages
+		return x.Steps
 	}
 	return nil
 }
@@ -545,7 +484,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_proto_ax_proto_msgTypes[6]
+	mi := &file_proto_ax_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -557,7 +496,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[6]
+	mi := &file_proto_ax_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -570,7 +509,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{6}
+	return file_proto_ax_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Error) GetCode() int32 {
@@ -599,7 +538,7 @@ type HarnessEnd struct {
 
 func (x *HarnessEnd) Reset() {
 	*x = HarnessEnd{}
-	mi := &file_proto_ax_proto_msgTypes[7]
+	mi := &file_proto_ax_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -611,7 +550,7 @@ func (x *HarnessEnd) String() string {
 func (*HarnessEnd) ProtoMessage() {}
 
 func (x *HarnessEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[7]
+	mi := &file_proto_ax_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -624,7 +563,7 @@ func (x *HarnessEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessEnd.ProtoReflect.Descriptor instead.
 func (*HarnessEnd) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{7}
+	return file_proto_ax_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *HarnessEnd) GetState() State {
@@ -655,7 +594,7 @@ type HarnessResponse struct {
 
 func (x *HarnessResponse) Reset() {
 	*x = HarnessResponse{}
-	mi := &file_proto_ax_proto_msgTypes[8]
+	mi := &file_proto_ax_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -667,7 +606,7 @@ func (x *HarnessResponse) String() string {
 func (*HarnessResponse) ProtoMessage() {}
 
 func (x *HarnessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[8]
+	mi := &file_proto_ax_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -680,7 +619,7 @@ func (x *HarnessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessResponse.ProtoReflect.Descriptor instead.
 func (*HarnessResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{8}
+	return file_proto_ax_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *HarnessResponse) GetConversationId() string {
@@ -731,33 +670,32 @@ func (*HarnessResponse_Outputs) isHarnessResponse_Type() {}
 
 func (*HarnessResponse_End) isHarnessResponse_Type() {}
 
-// ExecRequest for executing.
-type ExecRequest struct {
+// CreateInteractionEvent for creating an interaction.
+type CreateInteractionEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"` // Unique conversation identifier
-	Inputs         []*Message             `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`                                       // New inputs
-	LastStep       int32                  `protobuf:"varint,3,opt,name=last_step,json=lastStep,proto3" json:"last_step,omitempty"`                  // Last step number seen by the client
-	HarnessId      string                 `protobuf:"bytes,4,opt,name=harness_id,json=harnessId,proto3" json:"harness_id,omitempty"`                // Harness ID, empty selects the default harness
-	HarnessConfig  []byte                 `protobuf:"bytes,5,opt,name=harness_config,json=harnessConfig,proto3" json:"harness_config,omitempty"`    // Per-request harness configuration (opaque JSON), if any
+	Inputs         []*Step                `protobuf:"bytes,2,rep,name=inputs,proto3" json:"inputs,omitempty"`                                       // New inputs
+	AgentId        string                 `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`                      // Agent ID, empty selects the default agent
+	AgentConfig    []byte                 `protobuf:"bytes,5,opt,name=agent_config,json=agentConfig,proto3" json:"agent_config,omitempty"`          // Per-request agent configuration (opaque JSON), if any
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
-func (x *ExecRequest) Reset() {
-	*x = ExecRequest{}
-	mi := &file_proto_ax_proto_msgTypes[9]
+func (x *CreateInteractionEvent) Reset() {
+	*x = CreateInteractionEvent{}
+	mi := &file_proto_ax_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ExecRequest) String() string {
+func (x *CreateInteractionEvent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ExecRequest) ProtoMessage() {}
+func (*CreateInteractionEvent) ProtoMessage() {}
 
-func (x *ExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[9]
+func (x *CreateInteractionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,70 +706,62 @@ func (x *ExecRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
-func (*ExecRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{9}
+// Deprecated: Use CreateInteractionEvent.ProtoReflect.Descriptor instead.
+func (*CreateInteractionEvent) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ExecRequest) GetConversationId() string {
+func (x *CreateInteractionEvent) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
 	return ""
 }
 
-func (x *ExecRequest) GetInputs() []*Message {
+func (x *CreateInteractionEvent) GetInputs() []*Step {
 	if x != nil {
 		return x.Inputs
 	}
 	return nil
 }
 
-func (x *ExecRequest) GetLastStep() int32 {
+func (x *CreateInteractionEvent) GetAgentId() string {
 	if x != nil {
-		return x.LastStep
-	}
-	return 0
-}
-
-func (x *ExecRequest) GetHarnessId() string {
-	if x != nil {
-		return x.HarnessId
+		return x.AgentId
 	}
 	return ""
 }
 
-func (x *ExecRequest) GetHarnessConfig() []byte {
+func (x *CreateInteractionEvent) GetAgentConfig() []byte {
 	if x != nil {
-		return x.HarnessConfig
+		return x.AgentConfig
 	}
 	return nil
 }
 
-// ExecResponse contains the result of an execution.
-type ExecResponse struct {
+// CreateInteractionResponse contains the result of an interaction.
+type CreateInteractionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Outputs       []*Message             `protobuf:"bytes,1,rep,name=outputs,proto3" json:"outputs,omitempty"` // Output content
-	Step          int32                  `protobuf:"varint,2,opt,name=step,proto3" json:"step,omitempty"`      // Step of the outputs
+	Outputs       []*Step                `protobuf:"bytes,1,rep,name=outputs,proto3" json:"outputs,omitempty"` // Output content
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ExecResponse) Reset() {
-	*x = ExecResponse{}
-	mi := &file_proto_ax_proto_msgTypes[10]
+func (x *CreateInteractionResponse) Reset() {
+	*x = CreateInteractionResponse{}
+	mi := &file_proto_ax_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ExecResponse) String() string {
+func (x *CreateInteractionResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ExecResponse) ProtoMessage() {}
+func (*CreateInteractionResponse) ProtoMessage() {}
 
-func (x *ExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[10]
+func (x *CreateInteractionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -842,89 +772,224 @@ func (x *ExecResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
-func (*ExecResponse) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{10}
+// Deprecated: Use CreateInteractionResponse.ProtoReflect.Descriptor instead.
+func (*CreateInteractionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *ExecResponse) GetOutputs() []*Message {
+func (x *CreateInteractionResponse) GetOutputs() []*Step {
 	if x != nil {
 		return x.Outputs
 	}
 	return nil
 }
 
-func (x *ExecResponse) GetStep() int32 {
-	if x != nil {
-		return x.Step
-	}
-	return 0
-}
-
-type DeleteConversationRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *DeleteConversationRequest) Reset() {
-	*x = DeleteConversationRequest{}
-	mi := &file_proto_ax_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteConversationRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteConversationRequest) ProtoMessage() {}
-
-func (x *DeleteConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ax_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteConversationRequest.ProtoReflect.Descriptor instead.
-func (*DeleteConversationRequest) Descriptor() ([]byte, []int) {
-	return file_proto_ax_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *DeleteConversationRequest) GetConversationId() string {
-	if x != nil {
-		return x.ConversationId
-	}
-	return ""
-}
-
-type DeleteConversationResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+type Step struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Description string                 `protobuf:"bytes,16,opt,name=description,proto3" json:"description,omitempty"`
+	// Types that are valid to be assigned to Type:
+	//
+	//	*Step_Content
+	//	*Step_Thought
+	//	*Step_ToolCall
+	//	*Step_ToolResult
+	Type          isStep_Type `protobuf_oneof:"type"`
+	Index         int64       `protobuf:"varint,22,opt,name=index,proto3" json:"index,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteConversationResponse) Reset() {
-	*x = DeleteConversationResponse{}
+func (x *Step) Reset() {
+	*x = Step{}
+	mi := &file_proto_ax_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Step) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Step) ProtoMessage() {}
+
+func (x *Step) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Step.ProtoReflect.Descriptor instead.
+func (*Step) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Step) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *Step) GetType() isStep_Type {
+	if x != nil {
+		return x.Type
+	}
+	return nil
+}
+
+func (x *Step) GetContent() *ContentStep {
+	if x != nil {
+		if x, ok := x.Type.(*Step_Content); ok {
+			return x.Content
+		}
+	}
+	return nil
+}
+
+func (x *Step) GetThought() *ThoughtStep {
+	if x != nil {
+		if x, ok := x.Type.(*Step_Thought); ok {
+			return x.Thought
+		}
+	}
+	return nil
+}
+
+func (x *Step) GetToolCall() *ToolCallStep {
+	if x != nil {
+		if x, ok := x.Type.(*Step_ToolCall); ok {
+			return x.ToolCall
+		}
+	}
+	return nil
+}
+
+func (x *Step) GetToolResult() *ToolResultStep {
+	if x != nil {
+		if x, ok := x.Type.(*Step_ToolResult); ok {
+			return x.ToolResult
+		}
+	}
+	return nil
+}
+
+func (x *Step) GetIndex() int64 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+type isStep_Type interface {
+	isStep_Type()
+}
+
+type Step_Content struct {
+	Content *ContentStep `protobuf:"bytes,12,opt,name=content,proto3,oneof"`
+}
+
+type Step_Thought struct {
+	Thought *ThoughtStep `protobuf:"bytes,3,opt,name=thought,proto3,oneof"`
+}
+
+type Step_ToolCall struct {
+	ToolCall *ToolCallStep `protobuf:"bytes,4,opt,name=tool_call,json=toolCall,proto3,oneof"`
+}
+
+type Step_ToolResult struct {
+	ToolResult *ToolResultStep `protobuf:"bytes,5,opt,name=tool_result,json=toolResult,proto3,oneof"`
+}
+
+func (*Step_Content) isStep_Type() {}
+
+func (*Step_Thought) isStep_Type() {}
+
+func (*Step_ToolCall) isStep_Type() {}
+
+func (*Step_ToolResult) isStep_Type() {}
+
+type ContentStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	Content       []*Content             `protobuf:"bytes,2,rep,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContentStep) Reset() {
+	*x = ContentStep{}
+	mi := &file_proto_ax_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContentStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContentStep) ProtoMessage() {}
+
+func (x *ContentStep) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContentStep.ProtoReflect.Descriptor instead.
+func (*ContentStep) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ContentStep) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *ContentStep) GetContent() []*Content {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+type ThoughtStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A signature hash for backend validation.
+	Signature []byte `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	// A summary of the thought.
+	Summary       []*Content `protobuf:"bytes,2,rep,name=summary,proto3" json:"summary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ThoughtStep) Reset() {
+	*x = ThoughtStep{}
 	mi := &file_proto_ax_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteConversationResponse) String() string {
+func (x *ThoughtStep) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteConversationResponse) ProtoMessage() {}
+func (*ThoughtStep) ProtoMessage() {}
 
-func (x *DeleteConversationResponse) ProtoReflect() protoreflect.Message {
+func (x *ThoughtStep) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_ax_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -936,42 +1001,546 @@ func (x *DeleteConversationResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteConversationResponse.ProtoReflect.Descriptor instead.
-func (*DeleteConversationResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ThoughtStep.ProtoReflect.Descriptor instead.
+func (*ThoughtStep) Descriptor() ([]byte, []int) {
 	return file_proto_ax_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ThoughtStep) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *ThoughtStep) GetSummary() []*Content {
+	if x != nil {
+		return x.Summary
+	}
+	return nil
+}
+
+type ToolCallStep struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Signature []byte                 `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	// Types that are valid to be assigned to Type:
+	//
+	//	*ToolCallStep_FunctionCall
+	Type          isToolCallStep_Type `protobuf_oneof:"type"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolCallStep) Reset() {
+	*x = ToolCallStep{}
+	mi := &file_proto_ax_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolCallStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolCallStep) ProtoMessage() {}
+
+func (x *ToolCallStep) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolCallStep.ProtoReflect.Descriptor instead.
+func (*ToolCallStep) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ToolCallStep) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ToolCallStep) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *ToolCallStep) GetType() isToolCallStep_Type {
+	if x != nil {
+		return x.Type
+	}
+	return nil
+}
+
+func (x *ToolCallStep) GetFunctionCall() *FunctionCallStep {
+	if x != nil {
+		if x, ok := x.Type.(*ToolCallStep_FunctionCall); ok {
+			return x.FunctionCall
+		}
+	}
+	return nil
+}
+
+type isToolCallStep_Type interface {
+	isToolCallStep_Type()
+}
+
+type ToolCallStep_FunctionCall struct {
+	FunctionCall *FunctionCallStep `protobuf:"bytes,3,opt,name=function_call,json=functionCall,proto3,oneof"`
+}
+
+func (*ToolCallStep_FunctionCall) isToolCallStep_Type() {}
+
+type FunctionCallStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Arguments     *structpb.Struct       `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionCallStep) Reset() {
+	*x = FunctionCallStep{}
+	mi := &file_proto_ax_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionCallStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionCallStep) ProtoMessage() {}
+
+func (x *FunctionCallStep) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionCallStep.ProtoReflect.Descriptor instead.
+func (*FunctionCallStep) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *FunctionCallStep) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FunctionCallStep) GetArguments() *structpb.Struct {
+	if x != nil {
+		return x.Arguments
+	}
+	return nil
+}
+
+type ToolResultStep struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	CallId    string                 `protobuf:"bytes,1,opt,name=call_id,json=callId,proto3" json:"call_id,omitempty"`
+	Signature []byte                 `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+	// Types that are valid to be assigned to Type:
+	//
+	//	*ToolResultStep_FunctionResult
+	Type          isToolResultStep_Type `protobuf_oneof:"type"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolResultStep) Reset() {
+	*x = ToolResultStep{}
+	mi := &file_proto_ax_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolResultStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolResultStep) ProtoMessage() {}
+
+func (x *ToolResultStep) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolResultStep.ProtoReflect.Descriptor instead.
+func (*ToolResultStep) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ToolResultStep) GetCallId() string {
+	if x != nil {
+		return x.CallId
+	}
+	return ""
+}
+
+func (x *ToolResultStep) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *ToolResultStep) GetType() isToolResultStep_Type {
+	if x != nil {
+		return x.Type
+	}
+	return nil
+}
+
+func (x *ToolResultStep) GetFunctionResult() *FunctionResultStep {
+	if x != nil {
+		if x, ok := x.Type.(*ToolResultStep_FunctionResult); ok {
+			return x.FunctionResult
+		}
+	}
+	return nil
+}
+
+type isToolResultStep_Type interface {
+	isToolResultStep_Type()
+}
+
+type ToolResultStep_FunctionResult struct {
+	FunctionResult *FunctionResultStep `protobuf:"bytes,3,opt,name=function_result,json=functionResult,proto3,oneof"`
+}
+
+func (*ToolResultStep_FunctionResult) isToolResultStep_Type() {}
+
+type FunctionResultStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The name of the tool that was called.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Whether the tool call resulted in an error.
+	IsError bool `protobuf:"varint,3,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
+	// The result of the tool call.
+	Result        *Value `protobuf:"bytes,7,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionResultStep) Reset() {
+	*x = FunctionResultStep{}
+	mi := &file_proto_ax_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionResultStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionResultStep) ProtoMessage() {}
+
+func (x *FunctionResultStep) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionResultStep.ProtoReflect.Descriptor instead.
+func (*FunctionResultStep) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *FunctionResultStep) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FunctionResultStep) GetIsError() bool {
+	if x != nil {
+		return x.IsError
+	}
+	return false
+}
+
+func (x *FunctionResultStep) GetResult() *Value {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+type Value struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The kind of value.
+	//
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Value_NullValue
+	//	*Value_NumberValue
+	//	*Value_StringValue
+	//	*Value_BoolValue
+	//	*Value_StructValue
+	//	*Value_ListValue
+	//	*Value_ContentValue
+	Kind          isValue_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Value) Reset() {
+	*x = Value{}
+	mi := &file_proto_ax_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Value) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Value) ProtoMessage() {}
+
+func (x *Value) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Value.ProtoReflect.Descriptor instead.
+func (*Value) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Value) GetKind() isValue_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Value) GetNullValue() structpb.NullValue {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_NullValue); ok {
+			return x.NullValue
+		}
+	}
+	return structpb.NullValue(0)
+}
+
+func (x *Value) GetNumberValue() float64 {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_NumberValue); ok {
+			return x.NumberValue
+		}
+	}
+	return 0
+}
+
+func (x *Value) GetStringValue() string {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_StringValue); ok {
+			return x.StringValue
+		}
+	}
+	return ""
+}
+
+func (x *Value) GetBoolValue() bool {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_BoolValue); ok {
+			return x.BoolValue
+		}
+	}
+	return false
+}
+
+func (x *Value) GetStructValue() *structpb.Struct {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_StructValue); ok {
+			return x.StructValue
+		}
+	}
+	return nil
+}
+
+func (x *Value) GetListValue() *ListValue {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_ListValue); ok {
+			return x.ListValue
+		}
+	}
+	return nil
+}
+
+func (x *Value) GetContentValue() *Content {
+	if x != nil {
+		if x, ok := x.Kind.(*Value_ContentValue); ok {
+			return x.ContentValue
+		}
+	}
+	return nil
+}
+
+type isValue_Kind interface {
+	isValue_Kind()
+}
+
+type Value_NullValue struct {
+	// Represents a null value.
+	NullValue structpb.NullValue `protobuf:"varint,1,opt,name=null_value,json=nullValue,proto3,enum=google.protobuf.NullValue,oneof"`
+}
+
+type Value_NumberValue struct {
+	// Represents a double value.
+	NumberValue float64 `protobuf:"fixed64,2,opt,name=number_value,json=numberValue,proto3,oneof"`
+}
+
+type Value_StringValue struct {
+	// Represents a string value.
+	StringValue string `protobuf:"bytes,3,opt,name=string_value,json=stringValue,proto3,oneof"`
+}
+
+type Value_BoolValue struct {
+	// Represents a boolean value.
+	BoolValue bool `protobuf:"varint,4,opt,name=bool_value,json=boolValue,proto3,oneof"`
+}
+
+type Value_StructValue struct {
+	// Represents a structured value.
+	StructValue *structpb.Struct `protobuf:"bytes,5,opt,name=struct_value,json=structValue,proto3,oneof"`
+}
+
+type Value_ListValue struct {
+	// Represents a repeated `Value`.
+	ListValue *ListValue `protobuf:"bytes,6,opt,name=list_value,json=listValue,proto3,oneof"`
+}
+
+type Value_ContentValue struct {
+	// Represents rich content (text, image, etc.).
+	ContentValue *Content `protobuf:"bytes,7,opt,name=content_value,json=contentValue,proto3,oneof"`
+}
+
+func (*Value_NullValue) isValue_Kind() {}
+
+func (*Value_NumberValue) isValue_Kind() {}
+
+func (*Value_StringValue) isValue_Kind() {}
+
+func (*Value_BoolValue) isValue_Kind() {}
+
+func (*Value_StructValue) isValue_Kind() {}
+
+func (*Value_ListValue) isValue_Kind() {}
+
+func (*Value_ContentValue) isValue_Kind() {}
+
+// `ListValue` is a wrapper around a repeated field of values.
+type ListValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Repeated field of dynamically typed values.
+	Values        []*Value `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListValue) Reset() {
+	*x = ListValue{}
+	mi := &file_proto_ax_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListValue) ProtoMessage() {}
+
+func (x *ListValue) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ax_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListValue.ProtoReflect.Descriptor instead.
+func (*ListValue) Descriptor() ([]byte, []int) {
+	return file_proto_ax_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListValue) GetValues() []*Value {
+	if x != nil {
+		return x.Values
+	}
+	return nil
 }
 
 var File_proto_ax_proto protoreflect.FileDescriptor
 
 const file_proto_ax_proto_rawDesc = "" +
 	"\n" +
-	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"D\n" +
-	"\aMessage\x12\x12\n" +
-	"\x04role\x18\x01 \x01(\tR\x04role\x12%\n" +
-	"\acontent\x18\x02 \x01(\v2\v.ax.ContentR\acontent\"\x92\x02\n" +
-	"\x11ConversationEvent\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x12\n" +
-	"\x04step\x18\x02 \x01(\x05R\x04step\x12\x17\n" +
-	"\aexec_id\x18\x03 \x01(\tR\x06execId\x12\x1d\n" +
-	"\n" +
-	"harness_id\x18\x04 \x01(\tR\tharnessId\x12>\n" +
-	"\x0eharness_config\x18\x05 \x01(\v2\x17.google.protobuf.StructR\rharnessConfig\x12'\n" +
-	"\bmessages\x18\x06 \x03(\v2\v.ax.MessageR\bmessages\x12\x1f\n" +
-	"\x05state\x18\a \x01(\x0e2\t.ax.StateR\x05state\"^\n" +
-	"\fHarnessStart\x12%\n" +
-	"\x0eharness_config\x18\x01 \x01(\fR\rharnessConfig\x12'\n" +
-	"\bmessages\x18\x02 \x03(\v2\v.ax.MessageR\bmessages\"9\n" +
+	"\x0eproto/ax.proto\x12\x02ax\x1a\x1cgoogle/protobuf/struct.proto\x1a\x13proto/content.proto\"\xf3\x01\n" +
+	"\tStepEvent\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12%\n" +
+	"\x0einteraction_id\x18\x02 \x01(\tR\rinteractionId\x12\x19\n" +
+	"\bagent_id\x18\x03 \x01(\tR\aagentId\x12:\n" +
+	"\fagent_config\x18\x04 \x01(\v2\x17.google.protobuf.StructR\vagentConfig\x12\x1e\n" +
+	"\x05steps\x18\x05 \x03(\v2\b.ax.StepR\x05steps\x12\x1f\n" +
+	"\x05state\x18\x06 \x01(\x0e2\t.ax.StateR\x05state\"Q\n" +
+	"\fHarnessStart\x12!\n" +
+	"\fagent_config\x18\x01 \x01(\fR\vagentConfig\x12\x1e\n" +
+	"\x05steps\x18\x02 \x03(\v2\b.ax.StepR\x05steps\"9\n" +
 	"\rHarnessCancel\x12(\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x10.ax.CancelReasonR\x06reason\"\xb7\x01\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x10.ax.CancelReasonR\x06reason\"\xb3\x01\n" +
 	"\x0eHarnessRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1d\n" +
-	"\n" +
-	"harness_id\x18\x02 \x01(\tR\tharnessId\x12(\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12(\n" +
 	"\x05start\x18\x03 \x01(\v2\x10.ax.HarnessStartH\x00R\x05start\x12+\n" +
 	"\x06cancel\x18\x04 \x01(\v2\x11.ax.HarnessCancelH\x00R\x06cancelB\x06\n" +
-	"\x04type\"9\n" +
-	"\x0eHarnessOutputs\x12'\n" +
-	"\bmessages\x18\x01 \x03(\v2\v.ax.MessageR\bmessages\"=\n" +
+	"\x04type\"0\n" +
+	"\x0eHarnessOutputs\x12\x1e\n" +
+	"\x05steps\x18\x01 \x03(\v2\b.ax.StepR\x05steps\"=\n" +
 	"\x05Error\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\"N\n" +
@@ -983,20 +1552,65 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12.\n" +
 	"\aoutputs\x18\x02 \x01(\v2\x12.ax.HarnessOutputsH\x00R\aoutputs\x12\"\n" +
 	"\x03end\x18\x03 \x01(\v2\x0e.ax.HarnessEndH\x00R\x03endB\x06\n" +
-	"\x04type\"\xbe\x01\n" +
-	"\vExecRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12#\n" +
-	"\x06inputs\x18\x02 \x03(\v2\v.ax.MessageR\x06inputs\x12\x1b\n" +
-	"\tlast_step\x18\x03 \x01(\x05R\blastStep\x12\x1d\n" +
+	"\x04type\"\xa7\x01\n" +
+	"\x16CreateInteractionEvent\x12'\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12 \n" +
+	"\x06inputs\x18\x02 \x03(\v2\b.ax.StepR\x06inputs\x12\x19\n" +
+	"\bagent_id\x18\x04 \x01(\tR\aagentId\x12!\n" +
+	"\fagent_config\x18\x05 \x01(\fR\vagentConfigJ\x04\b\x03\x10\x04\"?\n" +
+	"\x19CreateInteractionResponse\x12\"\n" +
+	"\aoutputs\x18\x01 \x03(\v2\b.ax.StepR\aoutputs\"\x88\x02\n" +
+	"\x04Step\x12 \n" +
+	"\vdescription\x18\x10 \x01(\tR\vdescription\x12+\n" +
+	"\acontent\x18\f \x01(\v2\x0f.ax.ContentStepH\x00R\acontent\x12+\n" +
+	"\athought\x18\x03 \x01(\v2\x0f.ax.ThoughtStepH\x00R\athought\x12/\n" +
+	"\ttool_call\x18\x04 \x01(\v2\x10.ax.ToolCallStepH\x00R\btoolCall\x125\n" +
+	"\vtool_result\x18\x05 \x01(\v2\x12.ax.ToolResultStepH\x00R\n" +
+	"toolResult\x12\x14\n" +
+	"\x05index\x18\x16 \x01(\x03R\x05indexB\x06\n" +
+	"\x04type\"Z\n" +
+	"\vContentStep\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12%\n" +
+	"\acontent\x18\x02 \x03(\v2\v.ax.ContentR\acontentR\x04typeR\n" +
+	"event_type\"d\n" +
+	"\vThoughtStep\x12\x1c\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature\x12%\n" +
+	"\asummary\x18\x02 \x03(\v2\v.ax.ContentR\asummaryR\x04typeR\n" +
+	"event_type\"\x8d\x01\n" +
+	"\fToolCallStep\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\x12;\n" +
+	"\rfunction_call\x18\x03 \x01(\v2\x14.ax.FunctionCallStepH\x00R\ffunctionCallB\x06\n" +
+	"\x04typeR\n" +
+	"event_type\"c\n" +
+	"\x10FunctionCallStep\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x125\n" +
+	"\targuments\x18\x02 \x01(\v2\x17.google.protobuf.StructR\targumentsR\x04type\"\x9e\x01\n" +
+	"\x0eToolResultStep\x12\x17\n" +
+	"\acall_id\x18\x01 \x01(\tR\x06callId\x12\x1c\n" +
+	"\tsignature\x18\x02 \x01(\fR\tsignature\x12A\n" +
+	"\x0ffunction_result\x18\x03 \x01(\v2\x16.ax.FunctionResultStepH\x00R\x0efunctionResultB\x06\n" +
+	"\x04typeR\n" +
+	"event_type\"\x8a\x01\n" +
+	"\x12FunctionResultStep\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x19\n" +
+	"\bis_error\x18\x03 \x01(\bR\aisError\x12!\n" +
+	"\x06result\x18\a \x01(\v2\t.ax.ValueR\x06resultJ\x04\b\x01\x10\x02J\x04\b\x04\x10\x05J\x04\b\n" +
+	"\x10\vJ\x04\b\v\x10\fJ\x04\b\f\x10\rR\x04type\"\xd9\x02\n" +
+	"\x05Value\x12;\n" +
 	"\n" +
-	"harness_id\x18\x04 \x01(\tR\tharnessId\x12%\n" +
-	"\x0eharness_config\x18\x05 \x01(\fR\rharnessConfig\"I\n" +
-	"\fExecResponse\x12%\n" +
-	"\aoutputs\x18\x01 \x03(\v2\v.ax.MessageR\aoutputs\x12\x12\n" +
-	"\x04step\x18\x02 \x01(\x05R\x04step\"D\n" +
-	"\x19DeleteConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\x1c\n" +
-	"\x1aDeleteConversationResponse*l\n" +
+	"null_value\x18\x01 \x01(\x0e2\x1a.google.protobuf.NullValueH\x00R\tnullValue\x12#\n" +
+	"\fnumber_value\x18\x02 \x01(\x01H\x00R\vnumberValue\x12#\n" +
+	"\fstring_value\x18\x03 \x01(\tH\x00R\vstringValue\x12\x1f\n" +
+	"\n" +
+	"bool_value\x18\x04 \x01(\bH\x00R\tboolValue\x12<\n" +
+	"\fstruct_value\x18\x05 \x01(\v2\x17.google.protobuf.StructH\x00R\vstructValue\x12.\n" +
+	"\n" +
+	"list_value\x18\x06 \x01(\v2\r.ax.ListValueH\x00R\tlistValue\x122\n" +
+	"\rcontent_value\x18\a \x01(\v2\v.ax.ContentH\x00R\fcontentValueB\x06\n" +
+	"\x04kind\".\n" +
+	"\tListValue\x12!\n" +
+	"\x06values\x18\x01 \x03(\v2\t.ax.ValueR\x06values*l\n" +
 	"\x05State\x12\x15\n" +
 	"\x11STATE_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rSTATE_PENDING\x10\x01\x12\x10\n" +
@@ -1009,11 +1623,9 @@ const file_proto_ax_proto_rawDesc = "" +
 	"\x15CANCEL_REASON_TIMEOUT\x10\x02\x12 \n" +
 	"\x1cCANCEL_REASON_INTERNAL_ERROR\x10\x032H\n" +
 	"\x0eHarnessService\x126\n" +
-	"\aConnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x010\x012?\n" +
-	"\x10ExecutionService\x12+\n" +
-	"\x04Exec\x12\x0f.ax.ExecRequest\x1a\x10.ax.ExecResponse0\x012j\n" +
-	"\x13ConversationService\x12S\n" +
-	"\x12DeleteConversation\x12\x1d.ax.DeleteConversationRequest\x1a\x1e.ax.DeleteConversationResponseB\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
+	"\aConnect\x12\x12.ax.HarnessRequest\x1a\x13.ax.HarnessResponse(\x010\x012g\n" +
+	"\x13InteractionsService\x12P\n" +
+	"\x11CreateInteraction\x12\x1a.ax.CreateInteractionEvent\x1a\x1d.ax.CreateInteractionResponse0\x01B\x1cZ\x1agithub.com/google/ax/protob\x06proto3"
 
 var (
 	file_proto_ax_proto_rawDescOnce sync.Once
@@ -1028,53 +1640,72 @@ func file_proto_ax_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_ax_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_ax_proto_goTypes = []any{
-	(State)(0),                         // 0: ax.State
-	(CancelReason)(0),                  // 1: ax.CancelReason
-	(*Message)(nil),                    // 2: ax.Message
-	(*ConversationEvent)(nil),          // 3: ax.ConversationEvent
-	(*HarnessStart)(nil),               // 4: ax.HarnessStart
-	(*HarnessCancel)(nil),              // 5: ax.HarnessCancel
-	(*HarnessRequest)(nil),             // 6: ax.HarnessRequest
-	(*HarnessOutputs)(nil),             // 7: ax.HarnessOutputs
-	(*Error)(nil),                      // 8: ax.Error
-	(*HarnessEnd)(nil),                 // 9: ax.HarnessEnd
-	(*HarnessResponse)(nil),            // 10: ax.HarnessResponse
-	(*ExecRequest)(nil),                // 11: ax.ExecRequest
-	(*ExecResponse)(nil),               // 12: ax.ExecResponse
-	(*DeleteConversationRequest)(nil),  // 13: ax.DeleteConversationRequest
-	(*DeleteConversationResponse)(nil), // 14: ax.DeleteConversationResponse
-	(*Content)(nil),                    // 15: ax.Content
-	(*structpb.Struct)(nil),            // 16: google.protobuf.Struct
+	(State)(0),                        // 0: ax.State
+	(CancelReason)(0),                 // 1: ax.CancelReason
+	(*StepEvent)(nil),                 // 2: ax.StepEvent
+	(*HarnessStart)(nil),              // 3: ax.HarnessStart
+	(*HarnessCancel)(nil),             // 4: ax.HarnessCancel
+	(*HarnessRequest)(nil),            // 5: ax.HarnessRequest
+	(*HarnessOutputs)(nil),            // 6: ax.HarnessOutputs
+	(*Error)(nil),                     // 7: ax.Error
+	(*HarnessEnd)(nil),                // 8: ax.HarnessEnd
+	(*HarnessResponse)(nil),           // 9: ax.HarnessResponse
+	(*CreateInteractionEvent)(nil),    // 10: ax.CreateInteractionEvent
+	(*CreateInteractionResponse)(nil), // 11: ax.CreateInteractionResponse
+	(*Step)(nil),                      // 12: ax.Step
+	(*ContentStep)(nil),               // 13: ax.ContentStep
+	(*ThoughtStep)(nil),               // 14: ax.ThoughtStep
+	(*ToolCallStep)(nil),              // 15: ax.ToolCallStep
+	(*FunctionCallStep)(nil),          // 16: ax.FunctionCallStep
+	(*ToolResultStep)(nil),            // 17: ax.ToolResultStep
+	(*FunctionResultStep)(nil),        // 18: ax.FunctionResultStep
+	(*Value)(nil),                     // 19: ax.Value
+	(*ListValue)(nil),                 // 20: ax.ListValue
+	(*structpb.Struct)(nil),           // 21: google.protobuf.Struct
+	(*Content)(nil),                   // 22: ax.Content
+	(structpb.NullValue)(0),           // 23: google.protobuf.NullValue
 }
 var file_proto_ax_proto_depIdxs = []int32{
-	15, // 0: ax.Message.content:type_name -> ax.Content
-	16, // 1: ax.ConversationEvent.harness_config:type_name -> google.protobuf.Struct
-	2,  // 2: ax.ConversationEvent.messages:type_name -> ax.Message
-	0,  // 3: ax.ConversationEvent.state:type_name -> ax.State
-	2,  // 4: ax.HarnessStart.messages:type_name -> ax.Message
-	1,  // 5: ax.HarnessCancel.reason:type_name -> ax.CancelReason
-	4,  // 6: ax.HarnessRequest.start:type_name -> ax.HarnessStart
-	5,  // 7: ax.HarnessRequest.cancel:type_name -> ax.HarnessCancel
-	2,  // 8: ax.HarnessOutputs.messages:type_name -> ax.Message
-	0,  // 9: ax.HarnessEnd.state:type_name -> ax.State
-	8,  // 10: ax.HarnessEnd.error:type_name -> ax.Error
-	7,  // 11: ax.HarnessResponse.outputs:type_name -> ax.HarnessOutputs
-	9,  // 12: ax.HarnessResponse.end:type_name -> ax.HarnessEnd
-	2,  // 13: ax.ExecRequest.inputs:type_name -> ax.Message
-	2,  // 14: ax.ExecResponse.outputs:type_name -> ax.Message
-	6,  // 15: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
-	11, // 16: ax.ExecutionService.Exec:input_type -> ax.ExecRequest
-	13, // 17: ax.ConversationService.DeleteConversation:input_type -> ax.DeleteConversationRequest
-	10, // 18: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
-	12, // 19: ax.ExecutionService.Exec:output_type -> ax.ExecResponse
-	14, // 20: ax.ConversationService.DeleteConversation:output_type -> ax.DeleteConversationResponse
-	18, // [18:21] is the sub-list for method output_type
-	15, // [15:18] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	21, // 0: ax.StepEvent.agent_config:type_name -> google.protobuf.Struct
+	12, // 1: ax.StepEvent.steps:type_name -> ax.Step
+	0,  // 2: ax.StepEvent.state:type_name -> ax.State
+	12, // 3: ax.HarnessStart.steps:type_name -> ax.Step
+	1,  // 4: ax.HarnessCancel.reason:type_name -> ax.CancelReason
+	3,  // 5: ax.HarnessRequest.start:type_name -> ax.HarnessStart
+	4,  // 6: ax.HarnessRequest.cancel:type_name -> ax.HarnessCancel
+	12, // 7: ax.HarnessOutputs.steps:type_name -> ax.Step
+	0,  // 8: ax.HarnessEnd.state:type_name -> ax.State
+	7,  // 9: ax.HarnessEnd.error:type_name -> ax.Error
+	6,  // 10: ax.HarnessResponse.outputs:type_name -> ax.HarnessOutputs
+	8,  // 11: ax.HarnessResponse.end:type_name -> ax.HarnessEnd
+	12, // 12: ax.CreateInteractionEvent.inputs:type_name -> ax.Step
+	12, // 13: ax.CreateInteractionResponse.outputs:type_name -> ax.Step
+	13, // 14: ax.Step.content:type_name -> ax.ContentStep
+	14, // 15: ax.Step.thought:type_name -> ax.ThoughtStep
+	15, // 16: ax.Step.tool_call:type_name -> ax.ToolCallStep
+	17, // 17: ax.Step.tool_result:type_name -> ax.ToolResultStep
+	22, // 18: ax.ContentStep.content:type_name -> ax.Content
+	22, // 19: ax.ThoughtStep.summary:type_name -> ax.Content
+	16, // 20: ax.ToolCallStep.function_call:type_name -> ax.FunctionCallStep
+	21, // 21: ax.FunctionCallStep.arguments:type_name -> google.protobuf.Struct
+	18, // 22: ax.ToolResultStep.function_result:type_name -> ax.FunctionResultStep
+	19, // 23: ax.FunctionResultStep.result:type_name -> ax.Value
+	23, // 24: ax.Value.null_value:type_name -> google.protobuf.NullValue
+	21, // 25: ax.Value.struct_value:type_name -> google.protobuf.Struct
+	20, // 26: ax.Value.list_value:type_name -> ax.ListValue
+	22, // 27: ax.Value.content_value:type_name -> ax.Content
+	19, // 28: ax.ListValue.values:type_name -> ax.Value
+	5,  // 29: ax.HarnessService.Connect:input_type -> ax.HarnessRequest
+	10, // 30: ax.InteractionsService.CreateInteraction:input_type -> ax.CreateInteractionEvent
+	9,  // 31: ax.HarnessService.Connect:output_type -> ax.HarnessResponse
+	11, // 32: ax.InteractionsService.CreateInteraction:output_type -> ax.CreateInteractionResponse
+	31, // [31:33] is the sub-list for method output_type
+	29, // [29:31] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_proto_ax_proto_init() }
@@ -1083,13 +1714,34 @@ func file_proto_ax_proto_init() {
 		return
 	}
 	file_proto_content_proto_init()
-	file_proto_ax_proto_msgTypes[4].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[3].OneofWrappers = []any{
 		(*HarnessRequest_Start)(nil),
 		(*HarnessRequest_Cancel)(nil),
 	}
-	file_proto_ax_proto_msgTypes[8].OneofWrappers = []any{
+	file_proto_ax_proto_msgTypes[7].OneofWrappers = []any{
 		(*HarnessResponse_Outputs)(nil),
 		(*HarnessResponse_End)(nil),
+	}
+	file_proto_ax_proto_msgTypes[10].OneofWrappers = []any{
+		(*Step_Content)(nil),
+		(*Step_Thought)(nil),
+		(*Step_ToolCall)(nil),
+		(*Step_ToolResult)(nil),
+	}
+	file_proto_ax_proto_msgTypes[13].OneofWrappers = []any{
+		(*ToolCallStep_FunctionCall)(nil),
+	}
+	file_proto_ax_proto_msgTypes[15].OneofWrappers = []any{
+		(*ToolResultStep_FunctionResult)(nil),
+	}
+	file_proto_ax_proto_msgTypes[17].OneofWrappers = []any{
+		(*Value_NullValue)(nil),
+		(*Value_NumberValue)(nil),
+		(*Value_StringValue)(nil),
+		(*Value_BoolValue)(nil),
+		(*Value_StructValue)(nil),
+		(*Value_ListValue)(nil),
+		(*Value_ContentValue)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1097,9 +1749,9 @@ func file_proto_ax_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ax_proto_rawDesc), len(file_proto_ax_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   13,
+			NumMessages:   19,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_ax_proto_goTypes,
 		DependencyIndexes: file_proto_ax_proto_depIdxs,
