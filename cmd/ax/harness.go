@@ -119,11 +119,10 @@ func runAntigravityHarness(cmd *cobra.Command) error {
 			"--port", strconv.Itoa(harnessPort),
 			"--state-dir", stateDir,
 		},
-		Stdout:      os.Stdout,
-		Stderr:      os.Stderr,
-		ReadyFunc:   pythonsidecar.TCPReady(addr),
-		KillOrphans: true,
-		Address:     addr,
+		Stdout:    os.Stdout,
+		Stderr:    os.Stderr,
+		ReadyFunc: pythonsidecar.TCPReady(addr),
+		Address:   addr,
 	}
 
 	sidecar := pythonsidecar.New(cfg)

@@ -54,6 +54,7 @@ func TestSidecar_ConfigValidation(t *testing.T) {
 
 func TestSidecar_ModuleExecution(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("AX_DURABLE_DIR", tmpDir)
 	modulePath := filepath.Join(tmpDir, "test_module.py")
 	moduleContent := `
 import sys
@@ -96,6 +97,7 @@ sys.exit(0)
 }
 
 func TestSidecar_ModuleServerWithTCPReady(t *testing.T) {
+	t.Setenv("AX_DURABLE_DIR", t.TempDir())
 	port := getFreePort(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
@@ -127,6 +129,7 @@ func TestSidecar_ModuleServerWithTCPReady(t *testing.T) {
 
 func TestSidecar_ReadinessFailureOnPrematureExit(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("AX_DURABLE_DIR", tmpDir)
 	modulePath := filepath.Join(tmpDir, "crash.py")
 	if err := os.WriteFile(modulePath, []byte("import sys; sys.exit(1)\n"), 0644); err != nil {
 		t.Fatalf("failed to write script: %v", err)
@@ -158,6 +161,7 @@ func TestSidecar_ReadinessFailureOnPrematureExit(t *testing.T) {
 }
 
 func TestSidecar_EndpointAlreadyInUse(t *testing.T) {
+	t.Setenv("AX_DURABLE_DIR", t.TempDir())
 	// Start a dummy TCP listener on a free port
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -184,39 +188,90 @@ func TestSidecar_EndpointAlreadyInUse(t *testing.T) {
 	}
 }
 
-func TestSidecar_KillOrphans(t *testing.T) {
+func TestSidecar_PIDFileHandling(t *testing.T) {
+	durableDir := t.TempDir()
+	t.Setenv("AX_DURABLE_DIR", durableDir)
+	pidFile := filepath.Join(durableDir, ".ax", "sidecar.pid")
+
 	port := getFreePort(t)
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	// Start a dummy sidecar listening on `port`
-	dummyCfg := pythonsidecar.Config{
+	cfg1 := pythonsidecar.Config{
 		Module:    "http.server",
 		Args:      []string{strconv.Itoa(port), "--bind", "127.0.0.1"},
 		ReadyFunc: pythonsidecar.TCPReady(addr),
 	}
-	dummySidecar := pythonsidecar.New(dummyCfg)
+
+	s1 := pythonsidecar.New(cfg1)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := dummySidecar.Start(ctx, ""); err != nil {
-		t.Fatalf("failed to start dummy sidecar: %v", err)
+	if err := s1.Start(ctx, ""); err != nil {
+		t.Fatalf("s1.Start() failed: %v", err)
 	}
 
-	// Now start a new sidecar with KillOrphans: true on the same addr
-	newCfg := pythonsidecar.Config{
-		Module:      "http.server",
-		Args:        []string{strconv.Itoa(port), "--bind", "127.0.0.1"},
-		ReadyFunc:   pythonsidecar.TCPReady(addr),
-		KillOrphans: true,
-		Address:     addr,
+	// 1. Verify PID file was written in AX config directory
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("failed to read PID file at %s: %v", pidFile, err)
 	}
-	newSidecar := pythonsidecar.New(newCfg)
-	if err := newSidecar.Start(ctx, ""); err != nil {
-		t.Fatalf("Start() with KillOrphans failed: %v", err)
+	filePID, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || filePID != s1.Pid() {
+		t.Fatalf("PID file content mismatch: got %d, expected %d", filePID, s1.Pid())
 	}
-	defer newSidecar.Stop()
 
-	if !newSidecar.IsRunning() {
-		t.Fatalf("expected new sidecar to be running")
+	// 2. Verify second sidecar instance adopts the working PID from PID file
+	cfg2 := pythonsidecar.Config{
+		Module:    "http.server",
+		Args:      []string{strconv.Itoa(port), "--bind", "127.0.0.1"},
+		ReadyFunc: pythonsidecar.TCPReady(addr),
+	}
+	s2 := pythonsidecar.New(cfg2)
+	if err := s2.Start(ctx, ""); err != nil {
+		t.Fatalf("s2.Start() failed to attach to working PID: %v", err)
+	}
+
+	if s2.Pid() != s1.Pid() {
+		t.Fatalf("s2 PID %d does not match s1 working PID %d", s2.Pid(), s1.Pid())
+	}
+
+	// Stop s1
+	if err := s1.Stop(); err != nil {
+		t.Fatalf("s1.Stop() failed: %v", err)
+	}
+
+	// 3. Test dead PID cleanup
+	if err := os.MkdirAll(filepath.Dir(pidFile), 0755); err != nil {
+		t.Fatalf("failed to create dir for dead PID file: %v", err)
+	}
+	if err := os.WriteFile(pidFile, []byte("999999\n"), 0644); err != nil {
+		t.Fatalf("failed to write dead PID file: %v", err)
+	}
+
+	port2 := getFreePort(t)
+	addr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	cfg3 := pythonsidecar.Config{
+		Module:    "http.server",
+		Args:      []string{strconv.Itoa(port2), "--bind", "127.0.0.1"},
+		ReadyFunc: pythonsidecar.TCPReady(addr2),
+	}
+	s3 := pythonsidecar.New(cfg3)
+	if err := s3.Start(ctx, ""); err != nil {
+		t.Fatalf("s3.Start() failed when replacing dead PID: %v", err)
+	}
+	defer s3.Stop()
+
+	if s3.Pid() == 999999 {
+		t.Fatalf("s3 should have started a new process, but got dead PID 999999")
+	}
+
+	newData, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("failed to read updated PID file: %v", err)
+	}
+	newPID, _ := strconv.Atoi(strings.TrimSpace(string(newData)))
+	if newPID != s3.Pid() {
+		t.Fatalf("updated PID file mismatch: got %d, expected %d", newPID, s3.Pid())
 	}
 }
+

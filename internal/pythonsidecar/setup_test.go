@@ -73,6 +73,7 @@ func TestSetup_EmbeddedFS(t *testing.T) {
 
 func TestSidecar_PythonPath(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("AX_DURABLE_DIR", tmpDir)
 	customPath := filepath.Join(tmpDir, "custom_python_path")
 	if err := os.MkdirAll(customPath, 0755); err != nil {
 		t.Fatalf("failed to create custom path: %v", err)

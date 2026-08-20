@@ -84,11 +84,10 @@ func New(ctx context.Context, address, stateDir string, autoStart bool) (*Antigr
 		args = append(args, "--state-dir", stateDir)
 	}
 	cfg := pythonsidecar.Config{
-		Module:      "python.antigravity.harness_server",
-		Args:        args,
-		ReadyFunc:   pythonsidecar.TCPReady(address),
-		KillOrphans: true,
-		Address:     address,
+		Module:    "python.antigravity.harness_server",
+		Args:      args,
+		ReadyFunc: pythonsidecar.TCPReady(address),
+		Address:   address,
 	}
 	sidecar := pythonsidecar.New(cfg)
 	path, err := pythonsidecar.Setup(ctx, pythonsidecar.SetupOptions{
