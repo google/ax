@@ -60,7 +60,6 @@ type Sidecar struct {
 	mu       sync.Mutex
 	cmd      *exec.Cmd
 	pid      int
-	attached bool
 	stopping bool
 	exitErr  error
 	doneChan chan struct{}
@@ -158,8 +157,8 @@ func (s *Sidecar) Start(ctx context.Context, pythonPath string) error {
 		if readyErr == nil {
 			// Existing process is alive and working!
 			s.mu.Lock()
+			s.cmd = nil
 			s.pid = existingPID
-			s.attached = true
 			s.stopping = false
 			s.exitErr = nil
 			s.doneChan = make(chan struct{})
@@ -222,7 +221,6 @@ func (s *Sidecar) Start(ctx context.Context, pythonPath string) error {
 
 	s.cmd = cmd
 	s.pid = cmd.Process.Pid
-	s.attached = false
 	s.stopping = false
 	s.exitErr = nil
 	s.doneChan = make(chan struct{})
@@ -252,11 +250,10 @@ func (s *Sidecar) monitor() {
 	s.mu.Lock()
 	cmd := s.cmd
 	pid := s.pid
-	attached := s.attached
 	s.mu.Unlock()
 
 	var exitErr error
-	if attached {
+	if cmd == nil {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -274,7 +271,7 @@ func (s *Sidecar) monitor() {
 				break
 			}
 		}
-	} else if cmd != nil {
+	} else {
 		err := cmd.Wait()
 		s.mu.Lock()
 		stopping := s.stopping
@@ -372,12 +369,11 @@ func (s *Sidecar) Stop() error {
 	done := s.doneChan
 	cmd := s.cmd
 	pid := s.pid
-	attached := s.attached
 	s.mu.Unlock()
 
 	defer cleanPID(pid)
 
-	if attached {
+	if cmd == nil {
 		if proc, err := os.FindProcess(pid); err == nil {
 			_ = proc.Signal(syscall.SIGTERM)
 		}
