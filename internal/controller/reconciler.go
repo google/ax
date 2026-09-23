@@ -33,6 +33,7 @@ import (
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
 )
@@ -153,8 +154,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, gat
 		extraEnv[geminiSecretKey] = geminiKey
 	}
 
-	// Inject Task YAML specification into container environment
-	if taskYAML, err := yaml.Marshal(task); err == nil {
+	// Only launch configuration belongs in the template; status and suspend
+	// changes must not create new golden snapshots.
+	launchTask := proto.Clone(task).(*v1alpha1.Task)
+	launchTask.Status = nil
+	launchTask.Spec.Suspend = false
+	if taskYAML, err := yaml.Marshal(launchTask); err == nil {
 		extraEnv["AX_TASK_YAML"] = string(taskYAML)
 	}
 

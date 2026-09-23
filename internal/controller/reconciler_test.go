@@ -26,7 +26,9 @@ import (
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type mockControlServer struct {
@@ -45,6 +47,23 @@ type mockControlServer struct {
 // noSecrets is a SecretResolver for tests: it never finds a key and never touches a cluster.
 func noSecrets(context.Context, string, string, string) (string, error) {
 	return "", nil
+}
+
+func (m *mockControlServer) GetActorTemplate(_ context.Context, req *ateapipb.GetActorTemplateRequest) (*ateapipb.ActorTemplate, error) {
+	ref := req.GetActorTemplate()
+	if !m.actorTemplates[ref.GetName()] {
+		return nil, status.Error(codes.NotFound, "template not found")
+	}
+	return &ateapipb.ActorTemplate{Metadata: &ateapipb.ResourceMetadata{Name: ref.GetName(), Atespace: ref.GetAtespace()}}, nil
+}
+
+func (m *mockControlServer) CreateActorTemplate(_ context.Context, req *ateapipb.CreateActorTemplateRequest) (*ateapipb.ActorTemplate, error) {
+	if m.actorTemplates == nil {
+		m.actorTemplates = make(map[string]bool)
+	}
+	tmpl := req.GetActorTemplate()
+	m.actorTemplates[tmpl.GetMetadata().GetName()] = true
+	return tmpl, nil
 }
 
 func (m *mockControlServer) CreateAtespace(ctx context.Context, req *ateapipb.CreateAtespaceRequest) (*ateapipb.Atespace, error) {
@@ -382,6 +401,18 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	assertCondition(t, reconciledResumed, "WorkspaceReady", "True", "SetupComplete")
 	assertCondition(t, reconciledResumed, "Ready", "True", "TaskRunning")
+	if got := len(mockSrv.actorTemplates); got != 1 {
+		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
+	}
+
+	// A launch configuration change must still get a distinct template.
+	task.Spec.Command = []string{"python3", "agent.py"}
+	if _, err := reconciler.Reconcile(ctx, task, nil); err != nil {
+		t.Fatalf("Reconcile with changed command failed: %v", err)
+	}
+	if got := len(mockSrv.actorTemplates); got != 2 {
+		t.Errorf("command change left %d templates, want 2", got)
+	}
 }
 
 // assertCondition fails the test unless the task has a condition of the given type with
