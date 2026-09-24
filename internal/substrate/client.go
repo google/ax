@@ -206,7 +206,7 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 
 const (
 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
-	DefaultSnapshotsBucket = "gs://snapshot-substrate-test-ax-substrate/ate-env/"
+	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
 )
 
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.

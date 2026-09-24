@@ -130,8 +130,9 @@ func (s *Store) taskPubSubChannel(atespace, name string) string {
 	return fmt.Sprintf("%s:pubsub:task:%s:%s", s.opts.KeyPrefix, atespace, name)
 }
 
-// SaveTask stores or updates a task and publishes a reconcile event to the stream.
-func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
+// CreateTask stores a new task and publishes a reconcile event to the stream.
+// It returns store.ErrAlreadyExists if a task with the same atespace and name already exists.
+func (s *Store) CreateTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -161,28 +162,58 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 
 	atespace := task.Metadata.Atespace
 	name := task.Metadata.Name
+	key := s.taskKey(atespace, name)
 	score := float64(time.Now().UnixNano())
 	member := fmt.Sprintf("%s:%s", atespace, name)
 
-	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, s.taskKey(atespace, name), data, s.opts.TTL)
-	pipe.ZAdd(ctx, s.taskIndexKey(), redis.Z{Score: score, Member: member})
-	pipe.ZAdd(ctx, s.taskAtespaceIndexKey(atespace), redis.Z{Score: score, Member: name})
-	pipe.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.opts.StreamName,
-		Values: map[string]interface{}{
-			"action":   "reconcile",
-			"atespace": atespace,
-			"name":     name,
-		},
-	})
-	pipe.Publish(ctx, s.taskPubSubChannel(atespace, name), data)
-
-	_, err = pipe.Exec(ctx)
+	err = s.client.Watch(ctx, func(tx *redis.Tx) error {
+		exists, err := tx.Exists(ctx, key).Result()
+		if err != nil {
+			return err
+		}
+		if exists > 0 {
+			return store.ErrAlreadyExists
+		}
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(ctx, key, data, s.opts.TTL)
+			pipe.ZAdd(ctx, s.taskIndexKey(), redis.Z{Score: score, Member: member})
+			pipe.ZAdd(ctx, s.taskAtespaceIndexKey(atespace), redis.Z{Score: score, Member: name})
+			pipe.XAdd(ctx, &redis.XAddArgs{
+				Stream: s.opts.StreamName,
+				Values: map[string]interface{}{
+					"action":   "reconcile",
+					"atespace": atespace,
+					"name":     name,
+				},
+			})
+			pipe.Publish(ctx, s.taskPubSubChannel(atespace, name), data)
+			return nil
+		})
+		return err
+	}, key)
 	if err != nil {
-		return fmt.Errorf("saving task to redis: %w", err)
+		if errors.Is(err, store.ErrAlreadyExists) || errors.Is(err, redis.TxFailedErr) {
+			return store.ErrAlreadyExists
+		}
+		return fmt.Errorf("creating task in redis: %w", err)
 	}
 	return nil
+}
+
+// PublishEvent pushes a task event to the stream for worker consumption.
+func (s *Store) PublishEvent(ctx context.Context, ev store.TaskEvent) error {
+	atespace := ev.Atespace
+	if atespace == "" {
+		atespace = "default"
+	}
+	return s.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: s.opts.StreamName,
+		Values: map[string]interface{}{
+			"action":   ev.Action,
+			"atespace": atespace,
+			"name":     ev.Name,
+		},
+	}).Err()
 }
 
 // GetTask retrieves a task by atespace and name.
@@ -286,42 +317,6 @@ func (s *Store) UpdateTaskStatus(ctx context.Context, atespace, name string, sta
 	_, err = pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("updating task status in redis: %w", err)
-	}
-	return nil
-}
-
-// MarkTaskDeleting flips the task to the Terminating phase, notifies watchers, and
-// publishes a delete event for the controller. The record stays until DeleteTask.
-func (s *Store) MarkTaskDeleting(ctx context.Context, atespace, name string) error {
-	if atespace == "" {
-		atespace = "default"
-	}
-	task, err := s.GetTask(ctx, atespace, name)
-	if err != nil {
-		return err
-	}
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.Phase = v1alpha1.PhaseTerminating
-	data, err := protojson.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("marshaling task: %w", err)
-	}
-
-	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, s.taskKey(atespace, name), data, s.opts.TTL)
-	pipe.Publish(ctx, s.taskPubSubChannel(atespace, name), data)
-	pipe.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.opts.StreamName,
-		Values: map[string]interface{}{
-			"action":   "delete",
-			"atespace": atespace,
-			"name":     name,
-		},
-	})
-	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("marking task deleting in redis: %w", err)
 	}
 	return nil
 }

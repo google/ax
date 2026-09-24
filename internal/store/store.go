@@ -23,7 +23,8 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("resource not found")
+	ErrNotFound      = errors.New("resource not found")
+	ErrAlreadyExists = errors.New("resource already exists")
 )
 
 // TaskEvent represents an event published to the task event stream.
@@ -31,13 +32,15 @@ type TaskEvent struct {
 	ID       string
 	Atespace string
 	Name     string
-	Action   string // "reconcile", "delete"
+	Action   string // "reconcile", "suspend", "resume", "delete"
 }
 
 // EventQueue delivers task events to groups of cooperating workers. Every event
 // is delivered to exactly one member of a group, and stays pending until that
 // member acknowledges it, so a crashed worker's events can be picked up again.
 type EventQueue interface {
+	// PublishEvent publishes a task event to the stream for worker consumption.
+	PublishEvent(ctx context.Context, ev TaskEvent) error
 	// Subscribe joins group as consumer, creating the group if it does not exist.
 	// All members of a group share one stream of events.
 	Subscribe(ctx context.Context, group, consumer string) (Subscription, error)
@@ -57,15 +60,10 @@ type Subscription interface {
 type Store interface {
 	EventQueue
 
-	SaveTask(ctx context.Context, task *v1alpha1.Task) error
+	CreateTask(ctx context.Context, task *v1alpha1.Task) error
 	GetTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error)
 	ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error)
 	UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error
-	// MarkTaskDeleting begins a two-phase delete: the task's phase becomes
-	// "Terminating" and a delete event is published for the controller, which
-	// removes the actor and then calls DeleteTask. Returns ErrNotFound if the
-	// task does not exist.
-	MarkTaskDeleting(ctx context.Context, atespace, name string) error
 	// DeleteTask removes the task record. It publishes no event; callers are
 	// expected to have cleaned up the task's actor first.
 	DeleteTask(ctx context.Context, atespace, name string) error

@@ -154,11 +154,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, gat
 		extraEnv[geminiSecretKey] = geminiKey
 	}
 
-	// Only launch configuration belongs in the template; status and suspend
-	// changes must not create new golden snapshots.
+	// Only launch configuration belongs in the template; status changes must not
+	// create new golden snapshots.
 	launchTask := proto.Clone(task).(*v1alpha1.Task)
 	launchTask.Status = nil
-	launchTask.Spec.Suspend = false
 	if taskYAML, err := yaml.Marshal(launchTask); err == nil {
 		extraEnv["AX_TASK_YAML"] = string(taskYAML)
 	}
@@ -209,32 +208,17 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, gat
 		r.setCondition(task, condGatewayReady, "True", "PoliciesApplied", "Network policies active", now)
 	}
 
-	// 5. Suspend or Resume the Actor
-	if task.Spec != nil && task.Spec.Suspend {
-		slog.Info("suspending actor on Substrate", "actor", actorName)
-		if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
-			r.setNotReady(task, "ActorSuspendFailed", err.Error(), now)
-			task.Status.Phase = "Failed"
-			return task, fmt.Errorf("suspending actor: %w", err)
-		}
-		task.Status.WorkerIp = ""
-		task.Status.Phase = "Suspended"
-		r.setCondition(task, condReady, "False", "TaskSuspended", "Task is suspended", now)
-		slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
-		return task, nil
-	}
-
-	// Resume the Actor to activate container execution
+	// 5. Resume the Actor to activate container execution
 	slog.Info("resuming actor on Substrate worker", "actor", actorName)
 	_, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
 		r.setNotReady(task, "ActorResumeFailed", err.Error(), now)
-		task.Status.Phase = "Failed"
+		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("resuming actor: %w", err)
 	}
 
 	task.Status.WorkerIp = workerIP
-	task.Status.Phase = "Running"
+	task.Status.Phase = v1alpha1.PhaseRunning
 
 	// Check if workspace setup inside the actor has completed
 	host := workerIP
@@ -483,3 +467,31 @@ func marshalWorkspaces(workspaces []*v1alpha1.Workspace) (string, error) {
 	}
 	return sb.String(), nil
 }
+
+// ReconcileSuspend checkpoints and pauses the task's actor on Substrate.
+func (r *TaskReconciler) ReconcileSuspend(ctx context.Context, task *v1alpha1.Task) (*v1alpha1.Task, error) {
+	if task.Metadata == nil {
+		task.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
+	}
+	atespace := task.Metadata.Atespace
+	if atespace == "" {
+		atespace = "default"
+	}
+	actorName := task.Metadata.Name
+	slog.Info("suspending actor on Substrate", "actor", actorName)
+	now := time.Now()
+	if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
+		r.setNotReady(task, "ActorSuspendFailed", err.Error(), now)
+		task.Status.Phase = v1alpha1.PhaseFailed
+		return task, fmt.Errorf("suspending actor: %w", err)
+	}
+	task.Status.WorkerIp = ""
+	task.Status.Phase = v1alpha1.PhaseSuspended
+	r.setCondition(task, condReady, "False", "TaskSuspended", "Task is suspended", now)
+	slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
+	return task, nil
+}
+

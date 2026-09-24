@@ -109,11 +109,11 @@ func TestServerGRPC(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("UpdateModel failed: %v", err)
 	}
-	if _, err := client.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &v1alpha1.Task{
+	if _, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-task"},
 		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
 	}}); err != nil {
-		t.Fatalf("UpdateTask failed: %v", err)
+		t.Fatalf("CreateTask failed: %v", err)
 	}
 
 	// 2. Defaulting applies to every kind: atespace and creation timestamp are filled in.
@@ -148,14 +148,17 @@ func TestServerGRPC(t *testing.T) {
 		t.Errorf("expected creation timestamp on listed task")
 	}
 
-	// Test UpdateTask
+	// Tasks are immutable once created: attempting to create a task with the same name fails.
 	task.Spec.Image = "ghcr.io/test/updated-image"
-	updatedTask, err := client.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: task})
-	if err != nil {
-		t.Fatalf("UpdateTask failed: %v", err)
+	if _, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: task}); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("expected AlreadyExists when recreating task, got %v", err)
 	}
-	if updatedTask.Spec.Image != "ghcr.io/test/updated-image" {
-		t.Errorf("expected image 'ghcr.io/test/updated-image', got %s", updatedTask.Spec.Image)
+	unchangedTask, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: "default", Name: "grpc-task"})
+	if err != nil {
+		t.Fatalf("GetTask failed: %v", err)
+	}
+	if unchangedTask.Spec.Image != "alpine" {
+		t.Errorf("expected task image to remain 'alpine', got %s", unchangedTask.Spec.Image)
 	}
 
 	// 4. Suspend & Resume Task
@@ -163,16 +166,16 @@ func TestServerGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SuspendTask failed: %v", err)
 	}
-	if !suspTask.Spec.Suspend {
-		t.Errorf("expected task to be suspended")
+	if suspTask.Status.Phase != v1alpha1.PhaseSuspended {
+		t.Errorf("expected phase %q, got %q", v1alpha1.PhaseSuspended, suspTask.Status.Phase)
 	}
 
 	resTask, err := client.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Atespace: "default", Name: "grpc-task"})
 	if err != nil {
 		t.Fatalf("ResumeTask failed: %v", err)
 	}
-	if resTask.Spec.Suspend {
-		t.Errorf("expected task to be resumed")
+	if resTask.Status.Phase == v1alpha1.PhaseSuspended {
+		t.Errorf("expected task to be resumed, still suspended")
 	}
 
 	// 5. Gateways
@@ -279,11 +282,11 @@ func TestServerGRPC(t *testing.T) {
 	}
 }
 
-func TestUpdateTask_ValidatesWorkspaceBindings(t *testing.T) {
+func TestCreateTask_ValidatesWorkspaceBindings(t *testing.T) {
 	srv := server.NewServer(memory.NewStore())
 	ctx := context.Background()
 
-	_, err := srv.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &v1alpha1.Task{
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "bad"},
 		Spec: &v1alpha1.TaskSpec{
 			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "/same"}, {Name: "b", Path: "/same"}},
@@ -293,7 +296,7 @@ func TestUpdateTask_ValidatesWorkspaceBindings(t *testing.T) {
 		t.Fatalf("expected InvalidArgument for colliding workspace paths, got %v", err)
 	}
 
-	_, err = srv.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &v1alpha1.Task{
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},
 		Spec: &v1alpha1.TaskSpec{
 			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}, {Name: "b"}},

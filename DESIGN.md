@@ -52,9 +52,9 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 
 | RPC | Description |
 |---|---|
+| `CreateTask` | Create a task. Tasks are immutable once created. |
 | `GetTask` | Get a task by atespace and name. |
 | `ListTasks` | List tasks in an atespace, with pagination. |
-| `UpdateTask` | Create or update a task. |
 | `DeleteTask` | Delete a task. |
 | `SuspendTask` | Checkpoint actor state and pause the task. |
 | `ResumeTask` | Resume a suspended task. |

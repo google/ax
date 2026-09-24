@@ -22,6 +22,7 @@ import (
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -80,8 +81,8 @@ func TestWorkerReconciliation(t *testing.T) {
 			Image:   "ghrc.io/test/img",
 		},
 	}
-	if err := memStore.SaveTask(ctx, task); err != nil {
-		t.Fatalf("failed to save task: %v", err)
+	if err := memStore.CreateTask(ctx, task); err != nil {
+		t.Fatalf("failed to create task: %v", err)
 	}
 
 	// 4. Start the worker in the background
@@ -146,24 +147,25 @@ func TestWorkerDeletion(t *testing.T) {
 		Spec:     &v1alpha1.TaskSpec{Image: "ghcr.io/test/img"},
 		Status:   &v1alpha1.TaskStatus{Phase: "Running", Actor: "doomed"},
 	}
-	if err := memStore.SaveTask(ctx, task); err != nil {
-		t.Fatalf("failed to save task: %v", err)
+	if err := memStore.CreateTask(ctx, task); err != nil {
+		t.Fatalf("failed to create task: %v", err)
 	}
-	// Drain the reconcile event SaveTask published so only the delete is processed.
+	// Drain the reconcile event CreateTask published so only the delete is processed.
 	drain, _ := memStore.Subscribe(ctx, "drain", "drain")
 	drainCtx, drainCancel := context.WithTimeout(ctx, time.Second)
 	_, _ = drain.Next(drainCtx)
 	drainCancel()
 
-	if err := memStore.MarkTaskDeleting(ctx, "default", "doomed"); err != nil {
-		t.Fatalf("MarkTaskDeleting failed: %v", err)
-	}
 	marked, err := memStore.GetTask(ctx, "default", "doomed")
 	if err != nil {
-		t.Fatalf("GetTask after mark failed: %v", err)
+		t.Fatalf("GetTask failed: %v", err)
 	}
-	if marked.Status.Phase != v1alpha1.PhaseTerminating {
-		t.Fatalf("expected phase Terminating, got %q", marked.Status.Phase)
+	marked.Status.Phase = v1alpha1.PhaseTerminating
+	if err := memStore.UpdateTaskStatus(ctx, "default", "doomed", marked.Status); err != nil {
+		t.Fatalf("UpdateTaskStatus failed: %v", err)
+	}
+	if err := memStore.PublishEvent(ctx, store.TaskEvent{Atespace: "default", Name: "doomed", Action: "delete"}); err != nil {
+		t.Fatalf("PublishEvent failed: %v", err)
 	}
 
 	worker := controller.NewWorker(memStore, reconciler, "test-group", "worker-1")
@@ -184,5 +186,71 @@ func TestWorkerDeletion(t *testing.T) {
 	}
 	if len(mockSrv.deletedTemplates) != 1 || mockSrv.deletedTemplates[0] != "doomed-tmpl-0a1b2c3d" {
 		t.Errorf("expected template deleted, got %v", mockSrv.deletedTemplates)
+	}
+}
+
+func TestWorkerSuspend(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	subClient, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer subClient.Close()
+
+	reconciler := controller.NewTaskReconciler(subClient, "default-template", "ax-system")
+	reconciler.SecretResolver = noSecrets
+	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+
+	memStore := memory.NewStore()
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "suspend-me", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Image: "ghcr.io/test/img"},
+		Status:   &v1alpha1.TaskStatus{Phase: "Running", Actor: "suspend-me"},
+	}
+	if err := memStore.CreateTask(ctx, task); err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
+	// Drain the reconcile event CreateTask published.
+	drain, _ := memStore.Subscribe(ctx, "drain", "drain")
+	drainCtx, drainCancel := context.WithTimeout(ctx, time.Second)
+	_, _ = drain.Next(drainCtx)
+	drainCancel()
+
+	worker := controller.NewWorker(memStore, reconciler, "test-group", "worker-1")
+	go func() { _ = worker.Run(ctx) }()
+
+	if err := memStore.PublishEvent(ctx, store.TaskEvent{Atespace: "default", Name: "suspend-me", Action: "suspend"}); err != nil {
+		t.Fatalf("PublishEvent failed: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	var finalTask *v1alpha1.Task
+	for time.Now().Before(deadline) {
+		tItem, err := memStore.GetTask(ctx, "default", "suspend-me")
+		if err == nil && tItem.Status.Phase == "Suspended" {
+			finalTask = tItem
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if finalTask == nil {
+		t.Fatalf("task did not transition to Suspended phase in time")
+	}
+	if len(mockSrv.suspendedActors) != 1 || mockSrv.suspendedActors[0] != "suspend-me" {
+		t.Errorf("expected actor 'suspend-me' suspended, got %v", mockSrv.suspendedActors)
 	}
 }

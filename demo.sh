@@ -32,7 +32,7 @@ AX_BIN="${AX_BIN:-./bin/ax}"
 # ax runs the CLI at AX_BIN so the commands below read the way you would type them.
 ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
-TASK_NAME="test-task"
+TASK_NAME="demo"
 WORKSPACE_NAME="demo-workspace"
 TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
 
