@@ -15,8 +15,8 @@
 
 # AX demo: the full lifecycle of one task in about two minutes.
 #
-#   1. Declare a Workspace (a Git repo) and a Task in YAML and apply them.
-#   2. Watch the task come up and the workspace get cloned.
+#   1. Declare a Workspace and a Task in YAML and apply them.
+#   2. Watch the task come up and the workspace get initialized.
 #   3. Look inside the task with `ax ssh`.
 #   4. Suspend the task, checkpointing its workspace.
 #
@@ -32,9 +32,9 @@ AX_BIN="${AX_BIN:-./bin/ax}"
 # ax runs the CLI at AX_BIN so the commands below read the way you would type them.
 ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
-TASK_NAME="demo-task"
+TASK_NAME="test-task"
 WORKSPACE_NAME="demo-workspace"
-REPO_URL="https://github.com/chalk/chalk.git"
+TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
@@ -120,12 +120,6 @@ kind: Workspace
 metadata:
   name: ${WORKSPACE_NAME}
   atespace: ${ATESPACE}
-spec:
-  git:
-    - name: chalk
-      repo: "${REPO_URL}"
-      branch: "main"
-      depth: 1
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
@@ -133,8 +127,8 @@ metadata:
   name: ${TASK_NAME}
   atespace: ${ATESPACE}
 spec:
-  debug: true   # serve guest services so we can ax ssh in
-  image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
+  debug: true
+  image: "${TASK_IMAGE}"
   workspaces:
     - name: ${WORKSPACE_NAME}
       path: "/workspace"
@@ -146,7 +140,7 @@ printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
 
 step "Watch the task come up"
-note "The controller creates an actor on Agent Substrate; the runner clones ${REPO_URL##*/} into /workspace."
+note "The controller creates an actor on Agent Substrate and initializes /workspace."
 wait_for "Running" "True"
 ok "${TASK_NAME} is Running and Ready"
 echo
@@ -156,8 +150,6 @@ run ax describe task "${TASK_NAME}" -a "${ATESPACE}"
 
 step "Look inside the task with ax ssh"
 in_sandbox 'ls -la /workspace'
-echo
-in_sandbox 'ls -la /workspace/chalk'
 echo
 in_sandbox 'echo "DEMO_ENV=$DEMO_ENV"; echo "AX_METADATA_URL=$AX_METADATA_URL"'
 echo
