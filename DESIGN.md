@@ -31,7 +31,6 @@ Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its co
                 │ • Atespace Provisioning       │
                 │ • Actor Creation & Activation │
                 │ • Worker Assignment           │
-                │ • Egress Policy Filtering     │
                 └───────────────────────────────┘
 ```
 
@@ -41,7 +40,7 @@ Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its co
 |---|---|
 | `ax` | Developer CLI. Applies manifests, inspects and watches resources, tunnels to the cluster. |
 | `ax-server` | Stateless gRPC API on port 8080. Validates manifests, persists to Redis, publishes events. |
-| `ax-controller` | Reconciliation workers. Consume the Redis stream, provision atespaces and actors on Agent Substrate, apply egress policy, and drive tasks toward desired state. Scale by adding replicas. |
+| `ax-controller` | Reconciliation workers. Consume the Redis stream, provision atespaces and actors on Agent Substrate, and drive tasks toward desired state. Scale by adding replicas. |
 | `ax-task-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
 
 ## API reference
@@ -59,15 +58,6 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 | `SuspendTask` | Checkpoint actor state and pause the task. |
 | `ResumeTask` | Resume a suspended task. |
 | `WatchTask` | Server-streaming RPC that emits status and condition transitions as they happen. |
-
-**Gateways**
-
-| RPC | Description |
-|---|---|
-| `GetGateway` | Get a gateway by atespace and name. |
-| `ListGateways` | List gateways in an atespace. |
-| `UpdateGateway` | Create or update a gateway. |
-| `DeleteGateway` | Delete a gateway. |
 
 **Workspaces**
 

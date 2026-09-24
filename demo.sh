@@ -32,7 +32,7 @@ AX_BIN="${AX_BIN:-./bin/ax}"
 # ax runs the CLI at AX_BIN so the commands below read the way you would type them.
 ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
-TASK_NAME="test-task"
+TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
 TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
 
@@ -41,9 +41,9 @@ TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-r
 # ---------------------------------------------------------------------------
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-  BOLD=$'\e[1m'; DIM=$'\e[2m'; CYAN=$'\e[36m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RESET=$'\e[0m'
+  BOLD=$'\e[1m'; DIM=$'\e[2m'; CYAN=$'\e[36m'; GREEN=$'\e[32m'; YELLOW=$'\e[33m'; RED=$'\e[31m'; RESET=$'\e[0m'
 else
-  BOLD=""; DIM=""; CYAN=""; GREEN=""; YELLOW=""; RESET=""
+  BOLD=""; DIM=""; CYAN=""; GREEN=""; YELLOW=""; RED=""; RESET=""
 fi
 
 STEP=0
@@ -66,6 +66,7 @@ in_sandbox() {
 
 ok()   { printf '%s✔ %s%s\n' "${GREEN}" "$*" "${RESET}"; }
 note() { printf '%s%s%s\n' "${YELLOW}" "$*" "${RESET}"; }
+err()  { printf '%s✘ %s%s\n' "${RED}" "$*" "${RESET}"; }
 task_field() {
   ax describe task "${TASK_NAME}" -a "${ATESPACE}" 2>/dev/null | awk -v key="$1" '$1 == key {print $2}'
 }
@@ -86,6 +87,12 @@ wait_for() {
       elapsed=$(( $(date +%s) - start ))
       printf ' %s%ds%s\n' "${GREEN}" "${elapsed}" "${RESET}"
       return 0
+    fi
+    if [[ "${phase}" == "Failed" && "${want_phase}" != "Failed" ]]; then
+      printf '\n'
+      err "Task entered Failed phase! Last seen Ready=${ready:-?}"
+      ax describe task "${TASK_NAME}" -a "${ATESPACE}" || true
+      return 1
     fi
     if (( $(date +%s) - start > timeout )); then
       printf '\n'

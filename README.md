@@ -8,7 +8,7 @@
 > and specifications. We will likely to introduce major breaking
 > changes prior to a stable release.
 
-**Declare an agentic task with workspaces and gateway specifications. AX sandboxes it, wires up its workspace, fences its network, and helps running it at scale.**
+**Declare an agentic task with workspaces and model specifications. AX sandboxes it, wires up its workspace, and helps running it at scale.**
 
 AX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
 
@@ -44,13 +44,12 @@ ax ssh test -- ls -al /workspace
 
 ## Why?
 
-Agents are a new kind of workload. They are neither stateless microservices nor run-to-completion batch jobs. They accumulate state, need strict isolation, call out to model APIs and tool servers, and can burn money in a loop if nobody is watching. AX gives you four small primitives that handle all of that declaratively:
+Agents are a new kind of workload. They are neither stateless microservices nor run-to-completion batch jobs. They accumulate state, need strict isolation, call out to model APIs and tool servers, and can burn money in a loop if nobody is watching. AX gives you three small primitives that handle all of that declaratively:
 
 | You want to... | AX gives you |
 |---|---|
 | Run untrusted agent code in an isolated sandbox with CPU/memory limits | **`Task`** |
 | Pre-wire Git repos, MCP servers, and skill packages so every agent starts warm | **`Workspace`** |
-| Lock outbound traffic down to an explicit host allowlist | **`Gateway`** |
 | Configure which LLM the platform itself uses, with credentials from a Kubernetes secret | **`Model`** |
 | Pause an idle agent and pick up exactly where it left off | `ax suspend` / `ax resume` |
 | Shell into a running agent to see what it is doing | `ax ssh` |
@@ -80,7 +79,7 @@ This deploys Redis, then builds and deploys the control plane images with `ko`. 
 ### 3. Run your first task
 
 ```bash
-ax apply -f examples/task.yaml       # Task + Workspace + Gateway + Model in one file
+ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
 ax get tasks
 # NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
 # task123   default    Running   task123         10.20.3.67   1m
@@ -97,7 +96,7 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 
 | Guide | Read it to... |
 |---|---|
-| [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, `Gateway`, and `Model` each do, and how a task moves through phases and conditions. |
+| [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, and `Model` each do, and how a task moves through phases and conditions. |
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
 | [Runners](docs/runner.md) | Understand the contract between the control plane and the task container, and build your own runner image to replace the default. |
@@ -131,12 +130,7 @@ ax ssh task123                        # interactive shell (task needs spec.debug
 ax ssh task123 -- ls -la /workspace   # one-off command
 ax ssh task123 -- python3 main.py
 
-# Gateways, workspaces, models follow the same pattern
-ax get gateways
-# NAME              ATESPACE   LISTENERS             EGRESS-HOSTS
-# default-gateway   default    8494/gRPC,8080/HTTP   *
-ax describe gateway default-gateway
-ax delete gateway default-gateway
+# Workspaces and models follow the same pattern
 
 ax get workspaces
 # NAME                ATESPACE   GIT-REPOS   MCP-SERVERS

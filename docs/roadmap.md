@@ -8,7 +8,6 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 |---|---|
 | **`Task`** | Lifecycle phases, status conditions, resource limits, token/timeout budgets, and approval policies. |
 | **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, mount paths, and goal overrides. |
-| **`Gateway`** | Inbound listeners (`gRPC`, `HTTP`) and outbound egress host/port allowlists. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
 | **`Sandbox` / `SandboxConfig`** | Runtime isolation backends, kernel/syscall constraints, filesystem mounts, and security profiles. |
 
@@ -36,11 +35,9 @@ Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 Harden perimeter security, enterprise governance, and platform observability for production deployments:
 
-- **Reconciliation of `Gateway` Specs**: Implement full continuous reconciliation for `Gateway` resources in `ax-controller` so updates to listeners and egress allowlists dynamically propagate to all referencing tasks and underlying Substrate network policies.
-- **Swappable Google-Managed Gateway**: Abstract the gateway data/control plane interface so clusters can seamlessly swap between the built-in Substrate gateway and a Google-managed gateway implementation.
-- **SPIFFE Identity for Tasks and Gateways**: Issue cryptographic workload identities (SPIFFE IDs / X.509-SVIDs) to every `Task` actor and `Gateway`, enabling zero-trust mutual TLS (mTLS) authentication across tasks, gateways, MCP servers, and internal services.
+- **SPIFFE Identity for Tasks**: Issue cryptographic workload identities (SPIFFE IDs / X.509-SVIDs) to every `Task` actor, enabling zero-trust mutual TLS (mTLS) authentication across tasks, MCP servers, and internal services.
 - **Google Platform Requirements for Governance**: Meet baseline Google platform requirements for MCP and skill registry integration, access control, policy enforcement, budget guardrails, and audit compliance.
-- **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner and gateway layers without requiring custom instrumentation in user containers.
+- **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner layer without requiring custom instrumentation in user containers.
 
 
 ## 5. Documentation

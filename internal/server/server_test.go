@@ -89,14 +89,6 @@ func TestServerGRPC(t *testing.T) {
 
 	// 1. Create one resource of each kind through the typed RPCs. Metadata is left
 	// partially empty to exercise server-side defaulting.
-	if _, err := client.UpdateGateway(ctx, &v1alpha1.UpdateGatewayRequest{Gateway: &v1alpha1.Gateway{
-		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-gw"},
-		Spec: &v1alpha1.GatewaySpec{
-			Listeners: []*v1alpha1.Listener{{Name: "http", Port: 80, Protocol: "HTTP"}},
-		},
-	}}); err != nil {
-		t.Fatalf("UpdateGateway failed: %v", err)
-	}
 	if _, err := client.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-ws"},
 		Spec:     &v1alpha1.WorkspaceSpec{},
@@ -117,12 +109,12 @@ func TestServerGRPC(t *testing.T) {
 	}
 
 	// 2. Defaulting applies to every kind: atespace and creation timestamp are filled in.
-	gw, err := client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: "default", Name: "grpc-gw"})
+	ws, err := client.GetWorkspace(ctx, &v1alpha1.GetWorkspaceRequest{Atespace: "default", Name: "grpc-ws"})
 	if err != nil {
-		t.Fatalf("GetGateway failed: %v", err)
+		t.Fatalf("GetWorkspace failed: %v", err)
 	}
-	if gw.GetMetadata().GetAtespace() != "default" || gw.GetMetadata().GetCreationTimestamp() == nil {
-		t.Errorf("expected gateway metadata to be defaulted, got %v", gw.GetMetadata())
+	if ws.GetMetadata().GetAtespace() != "default" || ws.GetMetadata().GetCreationTimestamp() == nil {
+		t.Errorf("expected workspace metadata to be defaulted, got %v", ws.GetMetadata())
 	}
 
 	// 3. GetTask & ListTasks
@@ -175,25 +167,9 @@ func TestServerGRPC(t *testing.T) {
 		t.Errorf("expected task to be resumed")
 	}
 
-	// 5. Gateways
-	gw, err = client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: "default", Name: "grpc-gw"})
-	if err != nil {
-		t.Fatalf("GetGateway failed: %v", err)
-	}
-	if gw.Metadata.Name != "grpc-gw" {
-		t.Errorf("expected gateway 'grpc-gw', got %s", gw.Metadata.Name)
-	}
 
-	listGatewaysResp, err := client.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: "default"})
-	if err != nil {
-		t.Fatalf("ListGateways failed: %v", err)
-	}
-	if len(listGatewaysResp.Gateways) != 1 {
-		t.Fatalf("expected 1 gateway in list, got %d", len(listGatewaysResp.Gateways))
-	}
-
-	// 6. Workspaces
-	ws, err := client.GetWorkspace(ctx, &v1alpha1.GetWorkspaceRequest{Atespace: "default", Name: "grpc-ws"})
+	// 5. Workspaces
+	ws, err = client.GetWorkspace(ctx, &v1alpha1.GetWorkspaceRequest{Atespace: "default", Name: "grpc-ws"})
 	if err != nil {
 		t.Fatalf("GetWorkspace failed: %v", err)
 	}
@@ -261,9 +237,6 @@ func TestServerGRPC(t *testing.T) {
 	// Stand in for the controller finishing cleanup.
 	if err := memStore.DeleteTask(ctx, "default", "grpc-task"); err != nil {
 		t.Fatalf("removing task record failed: %v", err)
-	}
-	if _, err := client.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Atespace: "default", Name: "grpc-gw"}); err != nil {
-		t.Fatalf("DeleteGateway failed: %v", err)
 	}
 	if _, err := client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: "default", Name: "grpc-ws"}); err != nil {
 		t.Fatalf("DeleteWorkspace failed: %v", err)

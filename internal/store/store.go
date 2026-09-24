@@ -70,11 +70,6 @@ type Store interface {
 	// expected to have cleaned up the task's actor first.
 	DeleteTask(ctx context.Context, atespace, name string) error
 
-	SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error
-	GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error)
-	ListGateways(ctx context.Context, atespace string) ([]*v1alpha1.Gateway, error)
-	DeleteGateway(ctx context.Context, atespace, name string) error
-
 	SaveWorkspace(ctx context.Context, ws *v1alpha1.Workspace) error
 	GetWorkspace(ctx context.Context, atespace, name string) (*v1alpha1.Workspace, error)
 	ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha1.Workspace, error)

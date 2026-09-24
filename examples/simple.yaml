@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The smallest useful Task: no Workspace, Gateway, or Model.
+# The smallest useful Task: no Workspace or Model.
 #
 # The controller runs it on the default task-runner image with an empty
-# /workspace directory and allows all egress on port 443.
+# /workspace directory.
 #
 #   ax apply -f examples/simple.yaml
 #   ax describe task simple-task

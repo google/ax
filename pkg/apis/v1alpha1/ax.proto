@@ -35,11 +35,6 @@ service AX {
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
   rpc WatchTask(WatchTaskRequest) returns (stream WatchTaskResponse);
 
-  // Gateways
-  rpc GetGateway(GetGatewayRequest) returns (Gateway);
-  rpc ListGateways(ListGatewaysRequest) returns (ListGatewaysResponse);
-  rpc UpdateGateway(UpdateGatewayRequest) returns (Gateway);
-  rpc DeleteGateway(DeleteGatewayRequest) returns (DeleteGatewayResponse);
 
   // Workspaces
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
@@ -84,7 +79,9 @@ message TaskSpec {
   // workspaces binds one or more Workspaces, each mounted at its own path
   // under /workspace. The first entry is the task command's working directory.
   repeated WorkspaceRef workspaces = 7;
-  GatewayRef gateway = 8;
+  // Field 8 was `gateway`, removed.
+  reserved 8;
+  reserved "gateway";
   // Field 9 was `policies` (budget and approval config), removed for now.
   reserved 9;
   reserved "policies";
@@ -112,10 +109,6 @@ message WorkspaceRef {
   string name = 1;
   string path = 2;
   string goal = 3;
-}
-
-message GatewayRef {
-  string name = 1;
 }
 
 message TaskStatus {
@@ -146,39 +139,6 @@ message Condition {
   google.protobuf.Timestamp last_transition_time = 3;
   string reason = 4;
   string message = 5;
-}
-
-// --- Gateway ---
-
-message Gateway {
-  string api_version = 1;
-  string kind = 2;
-  ObjectMeta metadata = 3;
-  GatewaySpec spec = 4;
-}
-
-message GatewaySpec {
-  repeated Listener listeners = 1;
-  EgressConfig egress = 2;
-}
-
-message Listener {
-  string name = 1;
-  int32 port = 2;
-  string protocol = 3;
-}
-
-message EgressConfig {
-  EgressAllowlist allowlist = 1;
-}
-
-message EgressAllowlist {
-  repeated HostRule hosts = 1;
-}
-
-message HostRule {
-  string host = 1;
-  int32 port = 2;
 }
 
 // --- Workspace ---
@@ -309,31 +269,6 @@ message WatchTaskResponse {
   Task task = 1;
   string action = 2;
 }
-
-// Gateways
-message GetGatewayRequest {
-  string atespace = 1;
-  string name = 2;
-}
-
-message ListGatewaysRequest {
-  string atespace = 1;
-}
-
-message ListGatewaysResponse {
-  repeated Gateway gateways = 1;
-}
-
-message UpdateGatewayRequest {
-  Gateway gateway = 1;
-}
-
-message DeleteGatewayRequest {
-  string atespace = 1;
-  string name = 2;
-}
-
-message DeleteGatewayResponse {}
 
 // Workspaces
 message GetWorkspaceRequest {

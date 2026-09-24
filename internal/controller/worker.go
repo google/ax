@@ -127,16 +127,6 @@ func (w *Worker) processEvent(ctx context.Context, ev store.TaskEvent) error {
 		return fmt.Errorf("fetching task %s/%s: %w", ev.Atespace, ev.Name, err)
 	}
 
-	var gw *v1alpha1.Gateway
-	if task.Spec.Gateway != nil && task.Spec.Gateway.Name != "" {
-		g, err := w.store.GetGateway(ctx, task.Metadata.Atespace, task.Spec.Gateway.Name)
-		if err == nil {
-			gw = g
-		} else if !errors.Is(err, store.ErrNotFound) {
-			slog.Warn("error fetching gateway", "name", task.Spec.Gateway.Name, "error", err)
-		}
-	}
-
 	// Resolve every bound workspace. A missing one is skipped so the task still
 	// runs; the runner creates an empty directory at its path.
 	var workspaces []*v1alpha1.Workspace
@@ -152,7 +142,7 @@ func (w *Worker) processEvent(ctx context.Context, ev store.TaskEvent) error {
 		}
 	}
 
-	reconciled, err := w.reconciler.Reconcile(ctx, task, gw, workspaces...)
+	reconciled, err := w.reconciler.Reconcile(ctx, task, workspaces...)
 	if err != nil {
 		task.Status.Phase = "Failed"
 		_ = w.store.UpdateTaskStatus(ctx, task.Metadata.Atespace, task.Metadata.Name, task.Status)

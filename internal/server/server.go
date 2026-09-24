@@ -237,68 +237,6 @@ func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStr
 	}
 }
 
-// --- Gateways ---
-
-func (s *Server) GetGateway(ctx context.Context, req *v1alpha1.GetGatewayRequest) (*v1alpha1.Gateway, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing request")
-	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
-	gw, err := s.store.GetGateway(ctx, atespace, req.Name)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "gateway %q not found in atespace %q", req.Name, atespace)
-		}
-		return nil, status.Errorf(codes.Internal, "getting gateway: %v", err)
-	}
-	return gw, nil
-}
-
-func (s *Server) ListGateways(ctx context.Context, req *v1alpha1.ListGatewaysRequest) (*v1alpha1.ListGatewaysResponse, error) {
-	atespace := ""
-	if req != nil {
-		atespace = req.Atespace
-	}
-	gateways, err := s.store.ListGateways(ctx, atespace)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "listing gateways: %v", err)
-	}
-	return &v1alpha1.ListGatewaysResponse{Gateways: gateways}, nil
-}
-
-func (s *Server) UpdateGateway(ctx context.Context, req *v1alpha1.UpdateGatewayRequest) (*v1alpha1.Gateway, error) {
-	if req == nil || req.Gateway == nil {
-		return nil, status.Error(codes.InvalidArgument, "gateway required")
-	}
-	req.Gateway.Metadata = defaultMetadata(req.Gateway.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetGateway(ctx, atespace, name)
-		if err != nil {
-			return nil
-		}
-		return existing.GetMetadata()
-	})
-	if err := s.store.SaveGateway(ctx, req.Gateway); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving gateway: %v", err)
-	}
-	return req.Gateway, nil
-}
-
-func (s *Server) DeleteGateway(ctx context.Context, req *v1alpha1.DeleteGatewayRequest) (*v1alpha1.DeleteGatewayResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing request")
-	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
-	if err := s.store.DeleteGateway(ctx, atespace, req.Name); err != nil {
-		return nil, status.Errorf(codes.Internal, "deleting gateway: %v", err)
-	}
-	return &v1alpha1.DeleteGatewayResponse{}, nil
-}
 
 // --- Workspaces ---
 

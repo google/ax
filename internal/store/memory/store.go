@@ -42,7 +42,6 @@ func clone[T proto.Message](m T) T {
 type MemoryStore struct {
 	mu         sync.RWMutex
 	tasks      map[string]*v1alpha1.Task
-	gateways   map[string]*v1alpha1.Gateway
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
 	events     chan store.TaskEvent
@@ -53,7 +52,6 @@ type MemoryStore struct {
 func NewStore() *MemoryStore {
 	return &MemoryStore{
 		tasks:      make(map[string]*v1alpha1.Task),
-		gateways:   make(map[string]*v1alpha1.Gateway),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
 		events:     make(chan store.TaskEvent, 1000),
@@ -219,53 +217,6 @@ func (s *MemoryStore) DeleteTask(ctx context.Context, atespace, name string) err
 	return nil
 }
 
-func (s *MemoryStore) SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error {
-	if gw.Metadata.Name == "" {
-		return errors.New("gateway name is required")
-	}
-	if gw.Metadata.Atespace == "" {
-		gw.Metadata.Atespace = "default"
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cp := clone(gw)
-	s.gateways[taskKey(gw.Metadata.Atespace, gw.Metadata.Name)] = cp
-	return nil
-}
-
-func (s *MemoryStore) GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	gw, ok := s.gateways[taskKey(atespace, name)]
-	if !ok {
-		return nil, store.ErrNotFound
-	}
-	cp := clone(gw)
-	return cp, nil
-}
-
-func (s *MemoryStore) ListGateways(ctx context.Context, atespace string) ([]*v1alpha1.Gateway, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*v1alpha1.Gateway
-	for _, g := range s.gateways {
-		if atespace == "" || atespace == "*" || g.Metadata.Atespace == atespace {
-			cp := clone(g)
-			result = append(result, cp)
-		}
-	}
-	return result, nil
-}
-
-func (s *MemoryStore) DeleteGateway(ctx context.Context, atespace, name string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.gateways, taskKey(atespace, name))
-	return nil
-}
 
 func (s *MemoryStore) SaveModel(ctx context.Context, model *v1alpha1.Model) error {
 	if model.Metadata.Name == "" {

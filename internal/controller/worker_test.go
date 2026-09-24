@@ -60,24 +60,11 @@ func TestWorkerReconciliation(t *testing.T) {
 	// 3. In-memory store
 	memStore := memory.NewStore()
 
-	// Pre-create gateway
-	_ = memStore.SaveGateway(ctx, &v1alpha1.Gateway{
-		Metadata: &v1alpha1.ObjectMeta{Name: "default-gw", Atespace: "default"},
-		Spec: &v1alpha1.GatewaySpec{
-			Egress: &v1alpha1.EgressConfig{
-				Allowlist: &v1alpha1.EgressAllowlist{
-					Hosts: []*v1alpha1.HostRule{{Host: "api.openai.com"}},
-				},
-			},
-		},
-	})
-
 	// Save task
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "worker-task", Atespace: "default"},
 		Spec: &v1alpha1.TaskSpec{
-			Gateway: &v1alpha1.GatewayRef{Name: "default-gw"},
-			Image:   "ghrc.io/test/img",
+			Image: "ghrc.io/test/img",
 		},
 	}
 	if err := memStore.SaveTask(ctx, task); err != nil {

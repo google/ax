@@ -35,9 +35,6 @@ spec:
     - name: default-workspace
       path: "/workspace"
 
-  gateway:
-    name: default-gateway
-
   debug: true # serve guest services so `ax ssh` works; off by default
 ---
 apiVersion: ax.io/v1alpha1
@@ -62,26 +59,6 @@ spec:
       - provider: google
         query: "skills.tags:nodejs"
     path: "/.agents/skills"
----
-apiVersion: ax.io/v1alpha1
-kind: Gateway
-metadata:
-  name: default-gateway
-  atespace: default
-spec:
-  listeners:
-    - name: grpc
-      port: 8494
-      protocol: gRPC
-
-    - name: http
-      port: 8080
-      protocol: HTTP
-  egress:
-    allowlist:
-      hosts:
-        - host: "*"
-          port: 443
 ---
 apiVersion: ax.io/v1alpha1
 kind: Model

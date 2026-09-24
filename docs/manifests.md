@@ -30,9 +30,6 @@ spec:
       path: "/workspace"
       goal: "Install dependencies and run the test suite"   # Antigravity prepares the workspace to this goal on first run
 
-  gateway:
-    name: default-gateway
-
   debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
 
@@ -78,28 +75,6 @@ spec:
     path: "/.agents/skills"
 ```
 
-## Gateway
-
-```yaml
-apiVersion: ax.io/v1alpha1
-kind: Gateway
-metadata:
-  name: default-gateway
-  atespace: default
-spec:
-  listeners:
-    - name: grpc
-      port: 8494
-      protocol: gRPC
-    - name: http
-      port: 8080
-      protocol: HTTP
-  egress:
-    allowlist:
-      hosts:
-        - host: "*"      # allow everything on 443; tighten this in production
-          port: 443
-```
 
 ## Model
 

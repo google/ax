@@ -46,7 +46,6 @@ func fullTask() *v1alpha1.Task {
 				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
 			},
 			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "ws", Path: "/workspace", Goal: "build"}},
-			Gateway:    &v1alpha1.GatewayRef{Name: "gw"},
 			Debug:      true,
 		},
 		Status: &v1alpha1.TaskStatus{
@@ -128,40 +127,6 @@ func TestStrictDecoding_RejectsUnknownFields(t *testing.T) {
 	err := yaml.Unmarshal([]byte("kind: Task\nspec:\n  imgae: typo\n"), &task)
 	if err == nil || !strings.Contains(err.Error(), "imgae") {
 		t.Errorf("expected error naming the unknown field, got %v", err)
-	}
-
-	var gw v1alpha1.Gateway
-	err = yaml.Unmarshal([]byte("kind: Gateway\nspec:\n  egress:\n    allowlst: {}\n"), &gw)
-	if err == nil || !strings.Contains(err.Error(), "allowlst") {
-		t.Errorf("expected error naming the nested unknown field, got %v", err)
-	}
-}
-
-func TestGateway_RoundTrip(t *testing.T) {
-	want := &v1alpha1.Gateway{
-		ApiVersion: v1alpha1.APIVersion,
-		Kind:       v1alpha1.KindGateway,
-		Metadata:   &v1alpha1.ObjectMeta{Name: "gw", Atespace: "default"},
-		Spec: &v1alpha1.GatewaySpec{
-			Listeners: []*v1alpha1.Listener{{Name: "http", Port: 8080, Protocol: "HTTP"}},
-			Egress: &v1alpha1.EgressConfig{Allowlist: &v1alpha1.EgressAllowlist{
-				Hosts: []*v1alpha1.HostRule{{Host: "*", Port: 443}},
-			}},
-		},
-	}
-	out, err := yaml.Marshal(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got v1alpha1.Gateway
-	if err := yaml.Unmarshal(out, &got); err != nil {
-		t.Fatal(err)
-	}
-	if !proto.Equal(want, &got) {
-		t.Errorf("gateway round trip changed:\n%s", out)
-	}
-	if !strings.Contains(string(out), "port: 8080") {
-		t.Errorf("expected integer port to render unquoted:\n%s", out)
 	}
 }
 

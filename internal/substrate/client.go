@@ -31,7 +31,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // ClientOptions configures connection to the Substrate Control API server.
@@ -206,7 +205,7 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 
 const (
 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
-	DefaultSnapshotsBucket = "gs://snapshot-substrate-test-ax-substrate/ate-env/"
+	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
 )
 
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
@@ -446,90 +445,4 @@ func (c *Client) DeleteActorTemplate(ctx context.Context, atespace, templateName
 	return nil
 }
 
-// ApplyEgressPolicy applies egress rules to the Actor from a Gateway's allowlist.
-func (c *Client) ApplyEgressPolicy(ctx context.Context, atespace, actorName string, allowlist *v1alpha1.EgressAllowlist) error {
-	if allowlist == nil || len(allowlist.Hosts) == 0 {
-		return nil
-	}
 
-	var patterns []string
-	var allowAll bool
-	var cidrs []string
-
-	for _, h := range allowlist.Hosts {
-		if h.Host == "*" || h.Host == "0.0.0.0/0" {
-			allowAll = true
-			break
-		}
-		if strings.Contains(h.Host, "/") {
-			cidrs = append(cidrs, h.Host)
-		} else if h.Host != "" {
-			patterns = append(patterns, h.Host)
-		}
-	}
-
-	var rules []*ateapipb.EgressRule
-	if allowAll {
-		rules = append(rules, &ateapipb.EgressRule{
-			All: &emptypb.Empty{},
-		})
-	} else {
-		if len(patterns) > 0 {
-			rules = append(rules, &ateapipb.EgressRule{
-				Hostnames: &ateapipb.HostnameRule{
-					Patterns: patterns,
-				},
-			})
-		}
-		if len(cidrs) > 0 {
-			rules = append(rules, &ateapipb.EgressRule{
-				Cidrs: &ateapipb.CIDRRule{
-					Cidrs: cidrs,
-				},
-			})
-		}
-	}
-
-	egressPolicy := &ateapipb.EgressPolicy{
-		Metadata: &ateapipb.ResourceMetadata{
-			Atespace: atespace,
-			Name:     "default",
-		},
-		Rules: rules,
-	}
-
-	actorRef := &ateapipb.ObjectRef{
-		Atespace: atespace,
-		Name:     actorName,
-	}
-
-	// Try creating the policy; if it already exists, update it.
-	createReq := &ateapipb.CreateActorEgressPolicyRequest{
-		Actor:        actorRef,
-		EgressPolicy: egressPolicy,
-	}
-	_, err := c.control.CreateActorEgressPolicy(ctx, createReq)
-	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
-			existing, getErr := c.control.GetActorEgressPolicy(ctx, &ateapipb.GetActorEgressPolicyRequest{
-				Actor: actorRef,
-			})
-			if getErr == nil && existing != nil && existing.Metadata != nil {
-				egressPolicy.Metadata.Uid = existing.Metadata.Uid
-				egressPolicy.Metadata.Version = existing.Metadata.Version
-			}
-			updateReq := &ateapipb.UpdateActorEgressPolicyRequest{
-				Actor:        actorRef,
-				EgressPolicy: egressPolicy,
-			}
-			_, updateErr := c.control.UpdateActorEgressPolicy(ctx, updateReq)
-			if updateErr != nil {
-				return fmt.Errorf("updating egress policy on %s/%s: %w", atespace, actorName, updateErr)
-			}
-			return nil
-		}
-		slog.Warn("failed to apply egress policy", "actor", actorName, "error", err)
-		return fmt.Errorf("creating egress policy on %s/%s: %w", atespace, actorName, err)
-	}
-	return nil
-}
