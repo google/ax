@@ -108,7 +108,7 @@ func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) 
 	return &v1alpha1.ListTasksResponse{Tasks: tasks}, nil
 }
 
-func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest) (*v1alpha1.Task, error) {
+func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest) (*v1alpha1.Task, error) {
 	if req == nil || req.Task == nil {
 		return nil, status.Error(codes.InvalidArgument, "task required")
 	}
@@ -116,15 +116,20 @@ func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest
 	if err := v1alpha1.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	task.Metadata = defaultMetadata(task.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetTask(ctx, atespace, name)
-		if err != nil {
-			return nil
+	if task.Metadata == nil {
+		task.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	if task.Metadata.Atespace == "" {
+		task.Metadata.Atespace = "default"
+	}
+	if task.Metadata.CreationTimestamp == nil {
+		task.Metadata.CreationTimestamp = timestamppb.Now()
+	}
+	if err := s.store.CreateTask(ctx, task); err != nil {
+		if errors.Is(err, store.ErrAlreadyExists) {
+			return nil, status.Errorf(codes.AlreadyExists, "task %q already exists in atespace %q", task.Metadata.Name, task.Metadata.Atespace)
 		}
-		return existing.GetMetadata()
-	})
-	if err := s.store.SaveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
+		return nil, status.Errorf(codes.Internal, "creating task: %v", err)
 	}
 	return task, nil
 }
@@ -137,13 +142,26 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	if atespace == "" {
 		atespace = "default"
 	}
-	// Deletion is two-phase: mark the task Terminating and let the controller tear
-	// down the actor before the record is removed. Clients poll GetTask for NotFound.
-	if err := s.store.MarkTaskDeleting(ctx, atespace, req.Name); err != nil {
+	task, err := s.store.GetTask(ctx, atespace, req.Name)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", req.Name, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "deleting task: %v", err)
+		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
+	}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
+	}
+	task.Status.Phase = v1alpha1.PhaseTerminating
+	if err := s.store.UpdateTaskStatus(ctx, atespace, req.Name, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+	}
+	if err := s.store.PublishEvent(ctx, store.TaskEvent{
+		Atespace: atespace,
+		Name:     req.Name,
+		Action:   "delete",
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "publishing delete event: %v", err)
 	}
 	return &v1alpha1.DeleteTaskResponse{}, nil
 }
@@ -163,12 +181,19 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = true
-	if err := s.store.SaveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
+	task.Status.Phase = v1alpha1.PhaseSuspended
+	if err := s.store.UpdateTaskStatus(ctx, atespace, req.Name, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+	}
+	if err := s.store.PublishEvent(ctx, store.TaskEvent{
+		Atespace: atespace,
+		Name:     req.Name,
+		Action:   "suspend",
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "publishing suspend event: %v", err)
 	}
 	return task, nil
 }
@@ -188,12 +213,19 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = false
-	if err := s.store.SaveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
+	task.Status.Phase = v1alpha1.PhasePending
+	if err := s.store.UpdateTaskStatus(ctx, atespace, req.Name, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+	}
+	if err := s.store.PublishEvent(ctx, store.TaskEvent{
+		Atespace: atespace,
+		Name:     req.Name,
+		Action:   "resume",
+	}); err != nil {
+		return nil, status.Errorf(codes.Internal, "publishing resume event: %v", err)
 	}
 	return task, nil
 }

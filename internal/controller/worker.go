@@ -127,6 +127,20 @@ func (w *Worker) processEvent(ctx context.Context, ev store.TaskEvent) error {
 		return fmt.Errorf("fetching task %s/%s: %w", ev.Atespace, ev.Name, err)
 	}
 
+	if ev.Action == "suspend" {
+		slog.Info("handling task suspend event", "atespace", ev.Atespace, "name", ev.Name)
+		reconciled, err := w.reconciler.ReconcileSuspend(ctx, task)
+		if err != nil {
+			task.Status.Phase = v1alpha1.PhaseFailed
+			_ = w.store.UpdateTaskStatus(ctx, task.Metadata.Atespace, task.Metadata.Name, task.Status)
+			return fmt.Errorf("suspending task %s/%s: %w", task.Metadata.Atespace, task.Metadata.Name, err)
+		}
+		if err := w.store.UpdateTaskStatus(ctx, task.Metadata.Atespace, task.Metadata.Name, reconciled.Status); err != nil {
+			return fmt.Errorf("updating task status %s/%s: %w", task.Metadata.Atespace, task.Metadata.Name, err)
+		}
+		return nil
+	}
+
 	var gw *v1alpha1.Gateway
 	if task.Spec.Gateway != nil && task.Spec.Gateway.Name != "" {
 		g, err := w.store.GetGateway(ctx, task.Metadata.Atespace, task.Spec.Gateway.Name)

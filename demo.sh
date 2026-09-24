@@ -35,6 +35,7 @@ ATESPACE="${ATESPACE:-default}"
 TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
 REPO_URL="https://github.com/chalk/chalk.git"
+TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner:latest}"
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
@@ -134,7 +135,7 @@ metadata:
   atespace: ${ATESPACE}
 spec:
   debug: true   # serve guest services so we can ax ssh in
-  image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
+  image: "${TASK_IMAGE}"
   workspaces:
     - name: ${WORKSPACE_NAME}
       path: "/workspace"

@@ -68,7 +68,7 @@ func taskKey(atespace, name string) string {
 	return fmt.Sprintf("%s:%s", atespace, name)
 }
 
-func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
+func (s *MemoryStore) CreateTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -88,6 +88,10 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	key := taskKey(task.Metadata.Atespace, task.Metadata.Name)
 
 	s.mu.Lock()
+	if _, exists := s.tasks[key]; exists {
+		s.mu.Unlock()
+		return store.ErrAlreadyExists
+	}
 	cp := clone(task)
 	s.tasks[key] = cp
 
@@ -114,6 +118,20 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	default:
 	}
 
+	return nil
+}
+
+func (s *MemoryStore) PublishEvent(ctx context.Context, ev store.TaskEvent) error {
+	if ev.ID == "" {
+		ev.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	if ev.Atespace == "" {
+		ev.Atespace = "default"
+	}
+	select {
+	case s.events <- ev:
+	default:
+	}
 	return nil
 }
 
@@ -172,42 +190,6 @@ func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name strin
 			default:
 			}
 		}
-	}
-	return nil
-}
-
-func (s *MemoryStore) MarkTaskDeleting(ctx context.Context, atespace, name string) error {
-	key := taskKey(atespace, name)
-
-	s.mu.Lock()
-	t, ok := s.tasks[key]
-	if !ok {
-		s.mu.Unlock()
-		return store.ErrNotFound
-	}
-	if t.Status == nil {
-		t.Status = &v1alpha1.TaskStatus{}
-	}
-	t.Status.Phase = v1alpha1.PhaseTerminating
-	cp := clone(t)
-	if chs, ok := s.watchers[key]; ok {
-		for _, ch := range chs {
-			select {
-			case ch <- cp:
-			default:
-			}
-		}
-	}
-	s.mu.Unlock()
-
-	select {
-	case s.events <- store.TaskEvent{
-		ID:       fmt.Sprintf("%d", time.Now().UnixNano()),
-		Atespace: atespace,
-		Name:     name,
-		Action:   "delete",
-	}:
-	default:
 	}
 	return nil
 }

@@ -24,12 +24,12 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 // AX defines the core control plane gRPC service for autonomous agent orchestration.
 service AX {
   // Manifests are parsed by the client (see `ax apply`) and submitted through the
-  // typed Update* RPCs below; the server never receives raw YAML.
+  // typed CreateTask / Update* RPCs below; the server never receives raw YAML.
 
   // Tasks
+  rpc CreateTask(CreateTaskRequest) returns (Task);
   rpc GetTask(GetTaskRequest) returns (Task);
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
-  rpc UpdateTask(UpdateTaskRequest) returns (Task);
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
@@ -76,7 +76,9 @@ message TaskSpec {
   // Field 1 was `goal`, removed; the workspace goal lives on WorkspaceRef.
   reserved 1;
   reserved "goal";
-  bool suspend = 2;
+  // Field 2 was `suspend`, removed; task lifecycle is driven via RPCs.
+  reserved 2;
+  reserved "suspend";
   string image = 3;
   repeated string command = 4;
   repeated EnvVar env = 5;
@@ -264,6 +266,10 @@ message SecretKeyRef {
 // --- RPC Request & Response Messages ---
 
 // Tasks
+message CreateTaskRequest {
+  Task task = 1;
+}
+
 message GetTaskRequest {
   string atespace = 1;
   string name = 2;
@@ -277,10 +283,6 @@ message ListTasksRequest {
 
 message ListTasksResponse {
   repeated Task tasks = 1;
-}
-
-message UpdateTaskRequest {
-  Task task = 1;
 }
 
 message DeleteTaskRequest {

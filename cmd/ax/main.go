@@ -250,7 +250,7 @@ func runApply(serverURL string, args []string) error {
 }
 
 // applyDocument decodes one manifest by its kind and submits it with the matching
-// Update RPC. It reports the kind, the resource name, and whether the resource was
+// RPC. It reports the kind, the resource name, and whether the resource was
 // created, configured (spec changed), or unchanged, in the style of kubectl apply.
 func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node) (kind, name, outcome string, err error) {
 	var head struct {
@@ -266,13 +266,8 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err := doc.Decode(&task); err != nil {
 			return "", "", "", err
 		}
-		existing, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: task.GetMetadata().GetAtespace(), Name: task.GetMetadata().GetName()})
-		outcome, err := applyOutcome(err, existing.GetSpec(), task.GetSpec())
-		if err != nil {
-			return "", "", "", err
-		}
-		res, err := client.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &task})
-		return head.Kind, res.GetMetadata().GetName(), outcome, err
+		res, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &task})
+		return head.Kind, res.GetMetadata().GetName(), "created", err
 
 	case v1alpha1.KindGateway:
 		var gw v1alpha1.Gateway

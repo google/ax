@@ -36,6 +36,11 @@ const (
 
 	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 
+	PhasePending     = "Pending"
+	PhaseRunning     = "Running"
+	PhaseSuspended   = "Suspended"
+	PhaseFailed      = "Failed"
+	PhaseCompleted   = "Completed"
 	// PhaseTerminating marks a task whose deletion has been requested and whose
 	// actor is being torn down. The record disappears once cleanup completes.
 	PhaseTerminating = "Terminating"
