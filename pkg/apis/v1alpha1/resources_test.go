@@ -85,11 +85,12 @@ func TestValidateResources(t *testing.T) {
 	}
 
 	// ValidateTask runs the same check, so ax apply rejects bad limits up front.
-	err := v1alpha1.ValidateTask(&v1alpha1.Task{Spec: &v1alpha1.TaskSpec{Resources: limits("abc", "")}})
+	meta := &v1alpha1.ObjectMeta{Name: "task", Atespace: "default"}
+	err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("abc", "")}})
 	if err == nil || !strings.Contains(err.Error(), "spec.resources.limits.cpu") {
 		t.Fatalf("ValidateTask error = %v, want cpu limit error", err)
 	}
-	if err := v1alpha1.ValidateTask(&v1alpha1.Task{Spec: &v1alpha1.TaskSpec{Resources: limits("2", "4Gi")}}); err != nil {
+	if err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("2", "4Gi")}}); err != nil {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
 	}
 }
