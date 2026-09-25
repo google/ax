@@ -18,6 +18,8 @@ SHELL := /bin/bash
 AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
 TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
 CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
+KO_PLATFORM ?= linux/amd64,linux/arm64
+TASK_RUNNER_PLATFORMS ?= $(KO_PLATFORM)
 
 .PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-controller deploy-server deploy-redis apply-example test clean
 
@@ -42,18 +44,31 @@ install:
 	@echo "==> Installing ax CLI to $$(go env GOPATH)/bin..."
 	go install -trimpath -ldflags="-s -w" ./cmd/ax
 
-# Cross-compile ax-task-runner for Linux amd64 and build container image with Python, Antigravity, and git/curl
+# Cross-compile ax-task-runner for all target platforms and build multi-platform container image
 build-task-runner:
-	@echo "==> Cross-compiling ax-task-runner for linux/amd64..."
-	@mkdir -p bin/linux_amd64
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_amd64/ax-task-runner ./cmd/ax-task-runner
+	@echo "==> Cross-compiling ax-task-runner for $(TASK_RUNNER_PLATFORMS)..."
+	@for p in $$(echo $(TASK_RUNNER_PLATFORMS) | tr ',' ' '); do \
+		arch=$$(basename $$p); \
+		echo "    --> linux/$$arch"; \
+		mkdir -p bin/linux_$$arch; \
+		GOOS=linux GOARCH=$$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$$arch/ax-task-runner ./cmd/ax-task-runner; \
+	done
 	@echo "==> Building container image $(TASK_RUNNER_REPO):latest using $(CONTAINER_CLI)..."
-	$(CONTAINER_CLI) build --platform linux/amd64 -t $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner .
+	@if [ "$$(basename $(CONTAINER_CLI))" = "podman" ]; then \
+		$(CONTAINER_CLI) rmi -f $(TASK_RUNNER_REPO):latest 2>/dev/null || true; \
+		$(CONTAINER_CLI) build --platform $(TASK_RUNNER_PLATFORMS) --manifest $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner .; \
+	else \
+		$(CONTAINER_CLI) buildx build --platform $(TASK_RUNNER_PLATFORMS) -t $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner .; \
+	fi
 
 # Push task-runner container image to registry
 push-task-runner: build-task-runner
 	@echo "==> Pushing task runner image to $(TASK_RUNNER_REPO):latest..."
-	$(CONTAINER_CLI) push $(TASK_RUNNER_REPO):latest
+	@if [ "$$(basename $(CONTAINER_CLI))" = "podman" ]; then \
+		$(CONTAINER_CLI) manifest push $(TASK_RUNNER_REPO):latest $(TASK_RUNNER_REPO):latest 2>/dev/null || $(CONTAINER_CLI) push $(TASK_RUNNER_REPO):latest; \
+	else \
+		$(CONTAINER_CLI) buildx build --platform $(TASK_RUNNER_PLATFORMS) -t $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner --push .; \
+	fi
 	@echo "==> Current pushed digest:"
 	@gcloud container images list-tags $(TASK_RUNNER_REPO) --filter="tags=latest" --format="get(digest)"
 
@@ -73,11 +88,11 @@ deploy-redis:
 
 deploy-controller:
 	@echo "==> Building and deploying ax-controller using ko..."
-	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply -f deploy/ax-controller.yaml
+	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply --platform=$(KO_PLATFORM) -f deploy/ax-controller.yaml
 
 deploy-server:
 	@echo "==> Building and deploying ax-server using ko..."
-	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply -f deploy/ax-server.yaml
+	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply --platform=$(KO_PLATFORM) -f deploy/ax-server.yaml
 
 # Apply example task and resources
 apply-example:
