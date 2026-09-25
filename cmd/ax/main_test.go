@@ -18,6 +18,7 @@ import (
 	"context"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +29,79 @@ import (
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
+
+func TestRunApplyEmptyDocuments(t *testing.T) {
+	const first = "apiVersion: ax.io/v1alpha1\nkind: Workspace\nmetadata:\n  name: first\nspec: {}\n"
+	second := strings.Replace(first, "name: first", "name: second", 1)
+	for _, tc := range []struct {
+		name      string
+		manifest  string
+		wantNames []string
+		wantErr   string
+	}{
+		{name: "empty file"},
+		{name: "empty documents only", manifest: "---\n# empty\n---\n"},
+		{name: "leading empty document", manifest: "---\n---\n" + first, wantNames: []string{"first"}},
+		{name: "trailing separator", manifest: first + "---\n", wantNames: []string{"first"}},
+		{name: "middle empty documents", manifest: first + "---\n# empty\n---\n---\n" + second, wantNames: []string{"first", "second"}},
+		{name: "missing kind", manifest: first + "---\n---\n{}\n---\n" + second, wantNames: []string{"first"}, wantErr: "applying document 3: missing kind"},
+		{name: "explicit null", manifest: "null\n", wantErr: "applying document 1: missing kind"},
+		{name: "tagged null", manifest: "!!null\n", wantErr: "applying document 1: missing kind"},
+		{name: "tagged quoted null", manifest: "!!null \"\"\n", wantErr: "applying document 1: missing kind"},
+		{name: "empty string", manifest: "\"\"\n", wantErr: "applying document 1: reading kind"},
+		{name: "invalid YAML", manifest: first + "---\n[\n", wantNames: []string{"first"}, wantErr: "decoding document 2:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := memory.NewStore()
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := server.NewServer(s).GRPCServer()
+			t.Cleanup(srv.Stop)
+			go func() { _ = srv.Serve(listener) }()
+
+			path := filepath.Join(t.TempDir(), "manifest.yaml")
+			if err := os.WriteFile(path, []byte(tc.manifest), 0600); err != nil {
+				t.Fatal(err)
+			}
+			// runApply writes to os.Stdout, so these subtests must remain sequential.
+			output, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := os.Stdout
+			os.Stdout = output
+			t.Cleanup(func() {
+				os.Stdout = stdout
+				_ = output.Close()
+			})
+
+			runErr := runApply(listener.Addr().String(), []string{"-f", path})
+			if tc.wantErr == "" {
+				if runErr != nil {
+					t.Fatal(runErr)
+				}
+			} else if runErr == nil || !strings.Contains(runErr.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, runErr)
+			}
+			var wantOutput strings.Builder
+			for _, name := range tc.wantNames {
+				if _, err := s.GetWorkspace(context.Background(), "default", name); err != nil {
+					t.Fatalf("expected workspace %q to be created: %v", name, err)
+				}
+				wantOutput.WriteString("workspace.ax.io/" + name + " created\n")
+			}
+			data, err := os.ReadFile(output.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != wantOutput.String() {
+				t.Fatalf("expected output %q, got %q", wantOutput.String(), data)
+			}
+		})
+	}
+}
 
 func TestRunGetResourceAliases(t *testing.T) {
 	const atespace = "test-space"

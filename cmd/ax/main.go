@@ -236,6 +236,13 @@ func runApply(serverURL string, args []string) error {
 		if doc.Kind == 0 || (doc.Kind == yaml.DocumentNode && len(doc.Content) == 0) {
 			continue // empty document, e.g. a trailing "---"
 		}
+		if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
+			root := doc.Content[0]
+			// yaml.v3 represents empty documents as implicitly tagged null scalars with no value.
+			if root.Kind == yaml.ScalarNode && root.Tag == "!!null" && root.Value == "" && root.Style&yaml.TaggedStyle == 0 {
+				continue
+			}
+		}
 
 		kind, name, outcome, err := applyDocument(ctx, client, &doc)
 		if err != nil {
