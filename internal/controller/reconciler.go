@@ -224,7 +224,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		host = h
 		port = p
 	}
-	readyURL := fmt.Sprintf("http://%s:%s/readyz?check=workspace", host, port)
+	readyURL := fmt.Sprintf("http://%s/readyz?check=workspace", net.JoinHostPort(host, port))
 	// Workspace setup happens once per task. After it has completed, WorkspaceReady stays
 	// True across suspend/resume cycles, so only poll while it is still initializing.
 	workspaceReady := r.conditionTrue(task, condWorkspaceReady)
@@ -238,11 +238,13 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 
 		checkReady := func() bool {
 			// 1. Direct readyz check
-			req, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, readyURL, nil)
-			if resp, err := r.httpClient.Do(req); err == nil {
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return true
+			req, err := http.NewRequestWithContext(pollCtx, http.MethodGet, readyURL, nil)
+			if err == nil {
+				if resp, err := r.httpClient.Do(req); err == nil {
+					_ = resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						return true
+					}
 				}
 			}
 
