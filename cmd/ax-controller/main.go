@@ -42,12 +42,14 @@ func main() {
 		redisPassword           string
 		redisGroup              string
 		redisConsumer           string
+		concurrency             int
 	)
 
 	flag.StringVar(&redisAddr, "redis-addr", "localhost:6379", "Redis server address (e.g. localhost:6379)")
 	flag.StringVar(&redisPassword, "redis-password", "", "Redis password")
 	flag.StringVar(&redisGroup, "redis-group", "ax-controllers", "Redis stream consumer group")
 	flag.StringVar(&redisConsumer, "redis-consumer", "", "Redis stream consumer ID (defaults to hostname)")
+	flag.IntVar(&concurrency, "concurrency", 16, "Number of tasks reconciled in parallel by this controller")
 	flag.StringVar(&substrateEndpoint, "substrate-endpoint", "api.ate-system.svc.cluster.local:443", "Agent Substrate Control API endpoint")
 	flag.StringVar(&substrateAuthority, "substrate-authority", "api.ate-system.svc", "Authority / TLS ServerName for Substrate endpoint")
 	flag.StringVar(&substrateTokenFile, "substrate-token-file", "", "Path to bearer token file for Substrate auth")
@@ -104,6 +106,7 @@ func main() {
 
 	rStore := redis.NewStore(rClient, redis.Options{})
 	worker := controller.NewWorker(rStore, reconciler, redisGroup, redisConsumer)
+	worker.Concurrency = concurrency
 	if err := worker.Run(ctx); err != nil && err != context.Canceled {
 		slog.Error("redis worker stopped with error", "error", err)
 		os.Exit(1)

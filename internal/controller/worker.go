@@ -18,8 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/google/ax/internal/store"
@@ -31,6 +33,10 @@ const (
 	// readRetryDelay is how long the worker waits after a transient error from the
 	// event queue before trying again.
 	readRetryDelay = time.Second
+	// slotQueueSize is how many events may wait for one busy slot before the worker
+	// stops reading. It keeps a task with several queued events from stalling the
+	// other slots while bounding how much the worker holds unacknowledged.
+	slotQueueSize = 64
 )
 
 // Worker consumes task events from the store's event queue and reconciles each
@@ -41,6 +47,11 @@ type Worker struct {
 	reconciler *TaskReconciler
 	group      string
 	consumer   string
+
+	// Concurrency is how many events the worker reconciles at once. Events for the
+	// same task always go to the same slot, in order, so a task is never reconciled
+	// concurrently with itself. Values below 1 mean 1.
+	Concurrency int
 }
 
 // NewWorker creates a worker that joins group as consumer. An empty group uses the
@@ -62,16 +73,38 @@ func NewWorker(s store.Store, reconciler *TaskReconciler, group, consumer string
 }
 
 // Run subscribes to task events and processes them until ctx is done. It returns
-// ctx.Err() on shutdown; every event is acknowledged after processing, even when
-// reconciliation fails, so a bad task cannot wedge the queue.
+// ctx.Err() on shutdown, after in-flight events finish; every event is acknowledged
+// after processing, even when reconciliation fails, so a bad task cannot wedge the queue.
 func (w *Worker) Run(ctx context.Context) error {
-	slog.Info("starting AX task worker", "group", w.group, "consumer", w.consumer)
+	concurrency := max(w.Concurrency, 1)
+	slog.Info("starting AX task worker", "group", w.group, "consumer", w.consumer, "concurrency", concurrency)
 
 	sub, err := w.store.Subscribe(ctx, w.group, w.consumer)
 	if err != nil {
 		return fmt.Errorf("subscribing to task events: %w", err)
 	}
 	defer sub.Close()
+
+	// Each slot is a goroutine with its own queue. Hashing the task key to a slot
+	// keeps per-task ordering while unrelated tasks reconcile in parallel.
+	slots := make([]chan store.TaskEvent, concurrency)
+	var wg sync.WaitGroup
+	for i := range slots {
+		slots[i] = make(chan store.TaskEvent, slotQueueSize)
+		wg.Add(1)
+		go func(events <-chan store.TaskEvent) {
+			defer wg.Done()
+			for ev := range events {
+				w.handle(ctx, sub, ev)
+			}
+		}(slots[i])
+	}
+	defer func() {
+		for _, ch := range slots {
+			close(ch)
+		}
+		wg.Wait()
+	}()
 
 	for {
 		ev, err := sub.Next(ctx)
@@ -89,19 +122,42 @@ func (w *Worker) Run(ctx context.Context) error {
 			continue
 		}
 
-		if err := w.processEvent(ctx, ev); err != nil {
-			slog.Error("error processing task event",
-				"id", ev.ID,
-				"atespace", ev.Atespace,
-				"name", ev.Name,
-				"action", ev.Action,
-				"error", err,
-			)
-		}
-		if err := sub.Ack(ctx, ev); err != nil {
-			slog.Warn("failed to acknowledge task event", "id", ev.ID, "error", err)
+		select {
+		case slots[slotFor(ev, concurrency)] <- ev:
+		case <-ctx.Done():
+			// Unacknowledged, so the event stays pending for the group.
+			return ctx.Err()
 		}
 	}
+}
+
+// handle reconciles one event and acknowledges it.
+func (w *Worker) handle(ctx context.Context, sub store.Subscription, ev store.TaskEvent) {
+	if err := w.processEvent(ctx, ev); err != nil {
+		slog.Error("error processing task event",
+			"id", ev.ID,
+			"atespace", ev.Atespace,
+			"name", ev.Name,
+			"action", ev.Action,
+			"error", err,
+		)
+	}
+	if err := sub.Ack(ctx, ev); err != nil {
+		slog.Warn("failed to acknowledge task event", "id", ev.ID, "error", err)
+	}
+}
+
+// slotFor maps an event to a worker slot by task, so every event for a given
+// task is processed by the same slot.
+func slotFor(ev store.TaskEvent, n int) int {
+	if n <= 1 {
+		return 0
+	}
+	h := fnv.New32a()
+	h.Write([]byte(ev.Atespace))
+	h.Write([]byte{0})
+	h.Write([]byte(ev.Name))
+	return int(h.Sum32() % uint32(n))
 }
 
 func (w *Worker) processEvent(ctx context.Context, ev store.TaskEvent) error {
