@@ -252,6 +252,48 @@ func TestServerGRPC(t *testing.T) {
 	}
 }
 
+// Names and atespaces become Substrate resource names, which must be RFC 1123
+// labels. The server rejects them up front instead of letting the controller
+// fail asynchronously with ActorCreationFailed.
+func TestUpdate_RejectsInvalidNames(t *testing.T) {
+	srv := server.NewServer(memory.NewStore())
+	ctx := context.Background()
+
+	for _, meta := range []*v1alpha1.ObjectMeta{
+		{Name: "Task-With-Caps"},
+		{Name: "under_score"},
+		{Name: ""},
+		{Name: "ok", Atespace: "Not-Lowercase"},
+	} {
+		if _, err := srv.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &v1alpha1.Task{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("UpdateTask(%v): got %v, want InvalidArgument", meta, err)
+		}
+		if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("UpdateWorkspace(%v): got %v, want InvalidArgument", meta, err)
+		}
+		if _, err := srv.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: &v1alpha1.Model{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("UpdateModel(%v): got %v, want InvalidArgument", meta, err)
+		}
+	}
+
+	// Nothing invalid was persisted.
+	if resp, err := srv.ListTasks(ctx, &v1alpha1.ListTasksRequest{}); err != nil || len(resp.GetTasks()) != 0 {
+		t.Errorf("ListTasks after rejected applies = %v, %v; want empty", resp.GetTasks(), err)
+	}
+
+	// Valid names still go through, with and without an explicit atespace.
+	good := &v1alpha1.ObjectMeta{Name: "task-with-caps", Atespace: "team-a"}
+	if _, err := srv.UpdateTask(ctx, &v1alpha1.UpdateTaskRequest{Task: &v1alpha1.Task{Metadata: good}}); err != nil {
+		t.Errorf("UpdateTask(%v): %v", good, err)
+	}
+	if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws-1"}}}); err != nil {
+		t.Errorf("UpdateWorkspace: %v", err)
+	}
+	if _, err := srv.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "gemini"}}}); err != nil {
+		t.Errorf("UpdateModel: %v", err)
+	}
+}
+
 func TestUpdateTask_ValidatesWorkspaceBindings(t *testing.T) {
 	srv := server.NewServer(memory.NewStore())
 	ctx := context.Background()

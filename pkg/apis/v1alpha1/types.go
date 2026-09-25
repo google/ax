@@ -17,7 +17,9 @@ package v1alpha1
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -241,9 +243,62 @@ func (s *TaskSpec) WorkspacePaths() []string {
 	return paths
 }
 
-// ValidateTask reports the first problem with a task's spec that would make it
+// Resource names.
+//
+// A resource's name and atespace become Substrate resource names (the task's
+// actor and ActorTemplate, and the atespace itself), which must be lowercase
+// RFC 1123 labels. Checking them at apply time turns an asynchronous
+// ActorCreationFailed condition into an immediate error.
+
+// MaxNameLength is the longest name or atespace a resource may have.
+const MaxNameLength = 63
+
+var nameRegexp = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// ValidateName reports whether s can be used as a resource name or atespace: a
+// lowercase RFC 1123 label of at most MaxNameLength characters.
+func ValidateName(s string) error {
+	if s == "" {
+		return errors.New("must not be empty")
+	}
+	if len(s) > MaxNameLength || !nameRegexp.MatchString(s) {
+		return fmt.Errorf("must be a lowercase RFC 1123 label: at most %d lowercase alphanumeric characters or '-', starting and ending with an alphanumeric character", MaxNameLength)
+	}
+	return nil
+}
+
+// ValidateObjectMeta checks a resource's name and, when set, its atespace. An
+// empty atespace is fine here; the API server defaults it.
+func ValidateObjectMeta(meta *ObjectMeta) error {
+	if err := ValidateName(meta.GetName()); err != nil {
+		return fmt.Errorf("metadata.name: invalid value %q: %w", meta.GetName(), err)
+	}
+	if atespace := meta.GetAtespace(); atespace != "" {
+		if err := ValidateName(atespace); err != nil {
+			return fmt.Errorf("metadata.atespace: invalid value %q: %w", atespace, err)
+		}
+	}
+	return nil
+}
+
+// ValidateWorkspace reports the first problem with a workspace that would make
+// it unusable. It is called by the API server before saving.
+func ValidateWorkspace(w *Workspace) error {
+	return ValidateObjectMeta(w.GetMetadata())
+}
+
+// ValidateModel reports the first problem with a model that would make it
+// unusable. It is called by the API server before saving.
+func ValidateModel(m *Model) error {
+	return ValidateObjectMeta(m.GetMetadata())
+}
+
+// ValidateTask reports the first problem with a task that would make it
 // impossible to run correctly. It is called by the API server before saving.
 func ValidateTask(t *Task) error {
+	if err := ValidateObjectMeta(t.GetMetadata()); err != nil {
+		return err
+	}
 	spec := t.GetSpec()
 	if spec == nil {
 		return nil
