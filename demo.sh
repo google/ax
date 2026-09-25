@@ -34,7 +34,7 @@ ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
 TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
-TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
+TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:397788a11a2720b4fbbdb3bcb49f39629464d1f1f92aac85982f46acd4cf11f6}"
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
