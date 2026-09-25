@@ -98,8 +98,6 @@ spec:
   secretKey:
     name: gemini-api-secret
     key: GEMINI_API_KEY
-  parameters:
-    temperature: 0.9
 ```
 
 For Anthropic models, store the key the same way and set `provider: anthropic`.
@@ -122,5 +120,4 @@ spec:
     key: ANTHROPIC_API_KEY
   parameters:
     maxTokens: 16000
-    temperature: 0.9
 ```

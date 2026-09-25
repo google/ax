@@ -71,5 +71,3 @@ spec:
   secretKey:
     name: gemini-api-secret
     key: GEMINI_API_KEY
-  parameters:
-    temperature: 0.9
