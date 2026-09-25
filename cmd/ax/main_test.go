@@ -16,19 +16,113 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/ax/internal/server"
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
+
+func TestApplyAtespace(t *testing.T) {
+	// Exercise flag parsing and dispatch as well as the resource RPCs.
+	binary := filepath.Join(t.TempDir(), "ax")
+	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building CLI: %v\n%s", err, output)
+	}
+	for _, kind := range []string{"Task", "Workspace", "Model"} {
+		for _, tc := range []struct {
+			name             string
+			manifestAtespace string
+			flags            []string
+			wantAtespace     string
+			wantErr          string
+		}{
+			{name: "default", wantAtespace: "default"},
+			{name: "flag only", flags: []string{"-a", "team-a"}, wantAtespace: "team-a"},
+			{name: "manifest only", manifestAtespace: "team-a", wantAtespace: "team-a"},
+			{name: "matching", manifestAtespace: "team-a", flags: []string{"--atespace", "team-a"}, wantAtespace: "team-a"},
+			{name: "conflicting", manifestAtespace: "team-a", flags: []string{"--atespace=team-b"}, wantErr: `metadata.atespace "team-a" does not match --atespace "team-b"`},
+			{name: "explicit default", manifestAtespace: "team-a", flags: []string{"-a", "default"}, wantErr: `metadata.atespace "team-a" does not match --atespace "default"`},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				s := memory.NewStore()
+				listener, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				srv := server.NewServer(s).GRPCServer()
+				t.Cleanup(srv.Stop)
+				go func() { _ = srv.Serve(listener) }()
+
+				path := filepath.Join(t.TempDir(), "resource.yaml")
+				manifest := fmt.Sprintf("apiVersion: ax.io/v1alpha1\nkind: %s\nmetadata:\n  name: example\n", kind)
+				if tc.manifestAtespace != "" {
+					manifest += fmt.Sprintf("  atespace: %q\n", tc.manifestAtespace)
+				}
+				manifest += "spec: {}\n"
+				if err := os.WriteFile(path, []byte(manifest), 0600); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				args := append([]string{"--server", listener.Addr().String(), "apply", "-f", path}, tc.flags...)
+				output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+				if tc.wantErr != "" {
+					var exitErr *exec.ExitError
+					if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(string(output), tc.wantErr) {
+						t.Fatalf("expected exit 1 with %q, got %v\n%s", tc.wantErr, err, output)
+					}
+				} else {
+					wantOutput := strings.ToLower(kind) + ".ax.io/example created\n"
+					if err != nil || string(output) != wantOutput {
+						t.Fatalf("expected %q, got %v\n%s", wantOutput, err, output)
+					}
+					// Reapplying must look up the resource in the same atespace.
+					output, err = exec.CommandContext(ctx, binary, args...).CombinedOutput()
+					wantOutput = strings.ToLower(kind) + ".ax.io/example unchanged\n"
+					if err != nil || string(output) != wantOutput {
+						t.Fatalf("expected %q on reapply, got %v\n%s", wantOutput, err, output)
+					}
+				}
+
+				for _, atespace := range []string{"default", "team-a", "team-b"} {
+					var meta *v1alpha1.ObjectMeta
+					var getErr error
+					switch kind {
+					case "Task":
+						resource, err := s.GetTask(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					case "Workspace":
+						resource, err := s.GetWorkspace(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					case "Model":
+						resource, err := s.GetModel(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					}
+					if atespace == tc.wantAtespace {
+						if getErr != nil || meta.GetAtespace() != atespace {
+							t.Errorf("expected resource in %q, got metadata %v, error %v", atespace, meta, getErr)
+						}
+					} else if !errors.Is(getErr, store.ErrNotFound) {
+						t.Errorf("expected no resource in %q, got metadata %v, error %v", atespace, meta, getErr)
+					}
+				}
+			})
+		}
+	}
+}
 
 func TestRunApplyEmptyDocuments(t *testing.T) {
 	const first = "apiVersion: ax.io/v1alpha1\nkind: Workspace\nmetadata:\n  name: first\nspec: {}\n"
@@ -77,7 +171,7 @@ func TestRunApplyEmptyDocuments(t *testing.T) {
 				_ = output.Close()
 			})
 
-			runErr := runApply(listener.Addr().String(), []string{"-f", path})
+			runErr := runApply(listener.Addr().String(), nil, []string{"-f", path})
 			if tc.wantErr == "" {
 				if runErr != nil {
 					t.Fatal(runErr)
