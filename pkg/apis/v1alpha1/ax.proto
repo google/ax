@@ -29,7 +29,7 @@ service AX {
   // Tasks
   rpc GetTask(GetTaskRequest) returns (Task);
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
-  rpc UpdateTask(UpdateTaskRequest) returns (Task);
+  rpc CreateTask(CreateTaskRequest) returns (Task);
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
@@ -239,7 +239,7 @@ message ListTasksResponse {
   repeated Task tasks = 1;
 }
 
-message UpdateTaskRequest {
+message CreateTaskRequest {
   Task task = 1;
 }
 

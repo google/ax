@@ -108,7 +108,7 @@ func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) 
 	return &v1alpha1.ListTasksResponse{Tasks: tasks}, nil
 }
 
-func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest) (*v1alpha1.Task, error) {
+func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest) (*v1alpha1.Task, error) {
 	if req == nil || req.Task == nil {
 		return nil, status.Error(codes.InvalidArgument, "task required")
 	}
@@ -116,12 +116,20 @@ func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest
 	if err := v1alpha1.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	atespace := task.Metadata.GetAtespace()
+	if atespace == "" {
+		atespace = "default"
+	}
+	_, err := s.store.GetTask(ctx, atespace, task.Metadata.GetName())
+	if err == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, task.Metadata.GetName())
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
+	}
+
 	task.Metadata = defaultMetadata(task.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetTask(ctx, atespace, name)
-		if err != nil {
-			return nil
-		}
-		return existing.GetMetadata()
+		return nil
 	})
 	if err := s.store.SaveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)

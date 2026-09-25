@@ -1618,27 +1618,27 @@ func (x *ListTasksResponse) GetTasks() []*Task {
 	return nil
 }
 
-type UpdateTaskRequest struct {
+type CreateTaskRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateTaskRequest) Reset() {
-	*x = UpdateTaskRequest{}
+func (x *CreateTaskRequest) Reset() {
+	*x = CreateTaskRequest{}
 	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateTaskRequest) String() string {
+func (x *CreateTaskRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateTaskRequest) ProtoMessage() {}
+func (*CreateTaskRequest) ProtoMessage() {}
 
-func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
+func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1650,12 +1650,12 @@ func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateTaskRequest.ProtoReflect.Descriptor instead.
-func (*UpdateTaskRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
+func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{25}
 }
 
-func (x *UpdateTaskRequest) GetTask() *Task {
+func (x *CreateTaskRequest) GetTask() *Task {
 	if x != nil {
 		return x.Task
 	}
@@ -2638,7 +2638,7 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\x06offset\x18\x03 \x01(\x03R\x06offset\"<\n" +
 	"\x11ListTasksResponse\x12'\n" +
 	"\x05tasks\x18\x01 \x03(\v2\x11.ax.v1alpha1.TaskR\x05tasks\":\n" +
-	"\x11UpdateTaskRequest\x12%\n" +
+	"\x11CreateTaskRequest\x12%\n" +
 	"\x04task\x18\x01 \x01(\v2\x11.ax.v1alpha1.TaskR\x04task\"C\n" +
 	"\x11DeleteTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
@@ -2688,7 +2688,7 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\aGetTask\x12\x1b.ax.v1alpha1.GetTaskRequest\x1a\x11.ax.v1alpha1.Task\x12J\n" +
 	"\tListTasks\x12\x1d.ax.v1alpha1.ListTasksRequest\x1a\x1e.ax.v1alpha1.ListTasksResponse\x12?\n" +
 	"\n" +
-	"UpdateTask\x12\x1e.ax.v1alpha1.UpdateTaskRequest\x1a\x11.ax.v1alpha1.Task\x12M\n" +
+	"CreateTask\x12\x1e.ax.v1alpha1.CreateTaskRequest\x1a\x11.ax.v1alpha1.Task\x12M\n" +
 	"\n" +
 	"DeleteTask\x12\x1e.ax.v1alpha1.DeleteTaskRequest\x1a\x1f.ax.v1alpha1.DeleteTaskResponse\x12A\n" +
 	"\vSuspendTask\x12\x1f.ax.v1alpha1.SuspendTaskRequest\x1a\x11.ax.v1alpha1.Task\x12?\n" +
@@ -2744,7 +2744,7 @@ var file_pkg_apis_v1alpha1_ax_proto_goTypes = []any{
 	(*GetTaskRequest)(nil),          // 22: ax.v1alpha1.GetTaskRequest
 	(*ListTasksRequest)(nil),        // 23: ax.v1alpha1.ListTasksRequest
 	(*ListTasksResponse)(nil),       // 24: ax.v1alpha1.ListTasksResponse
-	(*UpdateTaskRequest)(nil),       // 25: ax.v1alpha1.UpdateTaskRequest
+	(*CreateTaskRequest)(nil),       // 25: ax.v1alpha1.CreateTaskRequest
 	(*DeleteTaskRequest)(nil),       // 26: ax.v1alpha1.DeleteTaskRequest
 	(*DeleteTaskResponse)(nil),      // 27: ax.v1alpha1.DeleteTaskResponse
 	(*SuspendTaskRequest)(nil),      // 28: ax.v1alpha1.SuspendTaskRequest
@@ -2795,7 +2795,7 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	21, // 25: ax.v1alpha1.ModelSpec.secret_key:type_name -> ax.v1alpha1.SecretKeyRef
 	45, // 26: ax.v1alpha1.ModelSpec.parameters:type_name -> google.protobuf.Struct
 	1,  // 27: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	1,  // 28: ax.v1alpha1.UpdateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	1,  // 28: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
 	1,  // 29: ax.v1alpha1.WatchTaskResponse.task:type_name -> ax.v1alpha1.Task
 	11, // 30: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
 	11, // 31: ax.v1alpha1.UpdateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
@@ -2803,7 +2803,7 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	19, // 33: ax.v1alpha1.UpdateModelRequest.model:type_name -> ax.v1alpha1.Model
 	22, // 34: ax.v1alpha1.AX.GetTask:input_type -> ax.v1alpha1.GetTaskRequest
 	23, // 35: ax.v1alpha1.AX.ListTasks:input_type -> ax.v1alpha1.ListTasksRequest
-	25, // 36: ax.v1alpha1.AX.UpdateTask:input_type -> ax.v1alpha1.UpdateTaskRequest
+	25, // 36: ax.v1alpha1.AX.CreateTask:input_type -> ax.v1alpha1.CreateTaskRequest
 	26, // 37: ax.v1alpha1.AX.DeleteTask:input_type -> ax.v1alpha1.DeleteTaskRequest
 	28, // 38: ax.v1alpha1.AX.SuspendTask:input_type -> ax.v1alpha1.SuspendTaskRequest
 	29, // 39: ax.v1alpha1.AX.ResumeTask:input_type -> ax.v1alpha1.ResumeTaskRequest
@@ -2818,7 +2818,7 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	42, // 48: ax.v1alpha1.AX.DeleteModel:input_type -> ax.v1alpha1.DeleteModelRequest
 	1,  // 49: ax.v1alpha1.AX.GetTask:output_type -> ax.v1alpha1.Task
 	24, // 50: ax.v1alpha1.AX.ListTasks:output_type -> ax.v1alpha1.ListTasksResponse
-	1,  // 51: ax.v1alpha1.AX.UpdateTask:output_type -> ax.v1alpha1.Task
+	1,  // 51: ax.v1alpha1.AX.CreateTask:output_type -> ax.v1alpha1.Task
 	27, // 52: ax.v1alpha1.AX.DeleteTask:output_type -> ax.v1alpha1.DeleteTaskResponse
 	1,  // 53: ax.v1alpha1.AX.SuspendTask:output_type -> ax.v1alpha1.Task
 	1,  // 54: ax.v1alpha1.AX.ResumeTask:output_type -> ax.v1alpha1.Task

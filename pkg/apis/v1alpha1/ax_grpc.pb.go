@@ -35,7 +35,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	AX_GetTask_FullMethodName         = "/ax.v1alpha1.AX/GetTask"
 	AX_ListTasks_FullMethodName       = "/ax.v1alpha1.AX/ListTasks"
-	AX_UpdateTask_FullMethodName      = "/ax.v1alpha1.AX/UpdateTask"
+	AX_CreateTask_FullMethodName      = "/ax.v1alpha1.AX/CreateTask"
 	AX_DeleteTask_FullMethodName      = "/ax.v1alpha1.AX/DeleteTask"
 	AX_SuspendTask_FullMethodName     = "/ax.v1alpha1.AX/SuspendTask"
 	AX_ResumeTask_FullMethodName      = "/ax.v1alpha1.AX/ResumeTask"
@@ -59,7 +59,7 @@ type AXClient interface {
 	// Tasks
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
-	UpdateTask(ctx context.Context, in *UpdateTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
 	SuspendTask(ctx context.Context, in *SuspendTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts ...grpc.CallOption) (*Task, error)
@@ -104,10 +104,10 @@ func (c *aXClient) ListTasks(ctx context.Context, in *ListTasksRequest, opts ...
 	return out, nil
 }
 
-func (c *aXClient) UpdateTask(ctx context.Context, in *UpdateTaskRequest, opts ...grpc.CallOption) (*Task, error) {
+func (c *aXClient) CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*Task, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Task)
-	err := c.cc.Invoke(ctx, AX_UpdateTask_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, AX_CreateTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ type AXServer interface {
 	// Tasks
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
-	UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error)
+	CreateTask(context.Context, *CreateTaskRequest) (*Task, error)
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
 	SuspendTask(context.Context, *SuspendTaskRequest) (*Task, error)
 	ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error)
@@ -283,8 +283,8 @@ func (UnimplementedAXServer) GetTask(context.Context, *GetTaskRequest) (*Task, e
 func (UnimplementedAXServer) ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTasks not implemented")
 }
-func (UnimplementedAXServer) UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateTask not implemented")
+func (UnimplementedAXServer) CreateTask(context.Context, *CreateTaskRequest) (*Task, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateTask not implemented")
 }
 func (UnimplementedAXServer) DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteTask not implemented")
@@ -379,20 +379,20 @@ func _AX_ListTasks_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AX_UpdateTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateTaskRequest)
+func _AX_CreateTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTaskRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AXServer).UpdateTask(ctx, in)
+		return srv.(AXServer).CreateTask(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AX_UpdateTask_FullMethodName,
+		FullMethod: AX_CreateTask_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AXServer).UpdateTask(ctx, req.(*UpdateTaskRequest))
+		return srv.(AXServer).CreateTask(ctx, req.(*CreateTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -622,8 +622,8 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AX_ListTasks_Handler,
 		},
 		{
-			MethodName: "UpdateTask",
-			Handler:    _AX_UpdateTask_Handler,
+			MethodName: "CreateTask",
+			Handler:    _AX_CreateTask_Handler,
 		},
 		{
 			MethodName: "DeleteTask",
