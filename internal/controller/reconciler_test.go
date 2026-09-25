@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type mockControlServer struct {
@@ -40,6 +41,7 @@ type mockControlServer struct {
 	suspendedActors  []string
 	deletedActors    []string
 	actorTemplates   map[string]bool
+	createdTemplates []*ateapipb.ActorTemplate
 	deletedTemplates []string
 }
 
@@ -62,6 +64,7 @@ func (m *mockControlServer) CreateActorTemplate(_ context.Context, req *ateapipb
 	}
 	tmpl := req.GetActorTemplate()
 	m.actorTemplates[tmpl.GetMetadata().GetName()] = true
+	m.createdTemplates = append(m.createdTemplates, tmpl)
 	return tmpl, nil
 }
 
@@ -384,6 +387,90 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	if got := len(mockSrv.actorTemplates); got != 2 {
 		t.Errorf("command change left %d templates, want 2", got)
+	}
+}
+
+func TestTaskReconciler_ResourceLimits(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler.SecretResolver = noSecrets
+	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+
+	task := &v1alpha1.Task{
+		ApiVersion: v1alpha1.APIVersion,
+		Kind:       v1alpha1.KindTask,
+		Metadata: &v1alpha1.ObjectMeta{
+			Name:     "sized-task",
+			Atespace: "default",
+		},
+		Spec: &v1alpha1.TaskSpec{
+			Image: "ghrc.io/my-org/my-image",
+			Resources: &v1alpha1.ResourceReqs{
+				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
+				Limits:   &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
+			},
+		},
+	}
+
+	if _, err := reconciler.Reconcile(ctx, task); err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+	if len(mockSrv.createdTemplates) != 1 {
+		t.Fatalf("created %d templates, want 1", len(mockSrv.createdTemplates))
+	}
+	want := &ateapipb.Resources{Limits: []*ateapipb.Limits{
+		{Name: "cpu", Quantity: "2"},
+		{Name: "memory", Quantity: "4Gi"},
+	}}
+	if got := mockSrv.createdTemplates[0].GetResources(); !proto.Equal(got, want) {
+		t.Errorf("template resources = %v, want %v", got, want)
+	}
+
+	// Raising a limit is a launch configuration change and must provision a new
+	// template carrying the new value.
+	task.Spec.Resources.Limits.Memory = "8Gi"
+	if _, err := reconciler.Reconcile(ctx, task); err != nil {
+		t.Fatalf("Reconcile with changed limits failed: %v", err)
+	}
+	if len(mockSrv.createdTemplates) != 2 {
+		t.Fatalf("limits change left %d templates, want 2", len(mockSrv.createdTemplates))
+	}
+	want.Limits[1].Quantity = "8Gi"
+	if got := mockSrv.createdTemplates[1].GetResources(); !proto.Equal(got, want) {
+		t.Errorf("template resources after change = %v, want %v", got, want)
+	}
+
+	// A task without limits inherits the worker defaults: no resources block.
+	plain := &v1alpha1.Task{
+		ApiVersion: v1alpha1.APIVersion,
+		Kind:       v1alpha1.KindTask,
+		Metadata:   &v1alpha1.ObjectMeta{Name: "plain-task", Atespace: "default"},
+		Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+	}
+	if _, err := reconciler.Reconcile(ctx, plain); err != nil {
+		t.Fatalf("Reconcile of task without limits failed: %v", err)
+	}
+	if got := mockSrv.createdTemplates[len(mockSrv.createdTemplates)-1].GetResources(); got != nil {
+		t.Errorf("template for task without limits has resources %v, want none", got)
 	}
 }
 

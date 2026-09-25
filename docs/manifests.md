@@ -48,6 +48,12 @@ spec:
 
 Each entry is set up independently at its own path, in order. Every entry needs a `name`; without a `path` it lands at `/workspace/<name>`, and paths must be unique. The first entry is the working directory of `spec.command`, and the task reports `WorkspaceReady` only once all of them are prepared. See [`examples/multi-workspace.yaml`](../examples/multi-workspace.yaml) for a complete set.
 
+### Sizing the sandbox
+
+`spec.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. A task without limits is sized by its worker's defaults.
+
+Substrate sizes sandboxes by limits alone, so `spec.resources.requests` is stored on the task but not applied.
+
 ## Workspace
 
 ```yaml
