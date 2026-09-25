@@ -91,16 +91,19 @@ make deploy AX_IMAGE_REPO=gcr.io/<your-project>/ax-images
 
 ## Creating a Pull Request
 
-1. **Fork or Clone the Repository**:
+1. **Fork and Clone the Repository**:
+   Fork [google/ax](https://github.com/google/ax) on GitHub, then clone your fork. Replace `YOUR_USERNAME` with your GitHub username:
    ```bash
-   git clone git@github.com:rakyll/ax2.git
-   cd ax2
+   git clone git@github.com:YOUR_USERNAME/ax.git
+   cd ax
+   git remote add upstream git@github.com:google/ax.git
    ```
 
 2. **Ensure `main` is up to date**:
    ```bash
+   git fetch upstream
    git checkout main
-   git pull -r origin main
+   git merge --ff-only upstream/main
    ```
 
 3. **Create a feature branch**:
@@ -117,6 +120,6 @@ make deploy AX_IMAGE_REPO=gcr.io/<your-project>/ax-images
    ```bash
    git add .
    git commit -m "feat: describe your changes"
-   git push origin my-feature
+   git push -u origin my-feature
    ```
-   Open a pull request on GitHub describing the motivation and changes.
+   Open a pull request from your fork's `my-feature` branch to `google/ax`'s `main` branch, describing the motivation and changes.
