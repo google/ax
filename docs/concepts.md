@@ -4,7 +4,7 @@ Every AX resource lives in an **atespace**. The default atespace is `default`.
 
 ## Task
 
-The smallest unit of isolated execution. A `Task` declares the container image and command, compute requests and limits, environment variables, and references to one or more `Workspace`s under `spec.workspaces`. Each workspace is mounted at its own path, and the first serves as the command's working directory.
+The smallest unit of isolated execution. A `Task` declares the container image and command, compute limits, environment variables, and references to one or more `Workspace`s under `spec.workspaces`. Each workspace is mounted at its own path, and the first serves as the command's working directory.
 
 The unit is deliberately small. An agent is not one process that runs to completion; over its lifetime it plans, delegates, retries, and fans work out. AX does not try to model that shape. It gives you one primitive that is cheap to create, isolate, suspend, and throw away, and lets the agent compose as many of them as its work demands. A single task may be the whole job, or it may be the root of a large tree of tasks spawned as the agent breaks the problem down. Either way each node gets the same sandbox, the same lifecycle, and the same tooling.
 
