@@ -30,10 +30,7 @@ func TestResourceLimits(t *testing.T) {
 	}{
 		{name: "nil"},
 		{name: "empty", reqs: &v1alpha1.ResourceReqs{}},
-		{
-			name: "requests only are not applied",
-			reqs: &v1alpha1.ResourceReqs{Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"}},
-		},
+		{name: "empty limits", reqs: &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{}}},
 		{
 			name: "cpu limit",
 			reqs: &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
@@ -47,8 +44,7 @@ func TestResourceLimits(t *testing.T) {
 		{
 			name: "cpu and memory limits",
 			reqs: &v1alpha1.ResourceReqs{
-				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
-				Limits:   &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
+				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 			},
 			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{
 				{Name: "cpu", Quantity: "2"},

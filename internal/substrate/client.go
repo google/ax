@@ -208,10 +208,10 @@ const (
 	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
 )
 
-// ResourceLimits translates a Task's resource requirements into the Substrate
-// ActorTemplate resources block. Substrate sizes a sandbox by limits alone, so
-// only spec.resources.limits is carried over; requests are not applied. It
-// returns nil when no limit is set so the template inherits the worker defaults.
+// ResourceLimits translates a Task's resource limits into the Substrate
+// ActorTemplate resources block. Substrate sizes a sandbox by limits alone
+// (requests are rejected by v1alpha1.ValidateResources). It returns nil when no
+// limit is set so the template inherits the worker defaults.
 func ResourceLimits(reqs *v1alpha1.ResourceReqs) *ateapipb.Resources {
 	limits := reqs.GetLimits()
 	var out []*ateapipb.Limits

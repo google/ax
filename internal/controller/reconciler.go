@@ -168,6 +168,15 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		extraEnv["AX_WORKSPACES_YAML"] = wsYAML
 	}
 
+	// Resource limits are enforced by the per-task template, so they are checked
+	// here as well as at apply time: a task must never run without limits it asked for.
+	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
+		r.setNotReady(task, "InvalidResources", err.Error(), now)
+		task.Status.Phase = "Failed"
+		return task, fmt.Errorf("validating resources: %w", err)
+	}
+	resources := substrate.ResourceLimits(task.Spec.Resources)
+
 	// If a custom image, workspace, or extra environment is specified, provision or use a dedicated ActorTemplate
 	if task.Spec != nil && (task.Spec.Image != "" || len(extraEnv) > 0) {
 		slog.Info("ensuring custom ActorTemplate for task", "image", task.Spec.Image)
@@ -175,8 +184,14 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 
 		// spec.resources rides along in AX_TASK_YAML, so a limits change is already
 		// part of the template digest and re-provisions the template.
-		resources := substrate.ResourceLimits(task.Spec.Resources)
 		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, task.Spec.Image, resources, extraEnv)
+		if err != nil && resources != nil {
+			// The default template does not carry the task's limits, so falling back
+			// would silently run the task unconstrained.
+			r.setNotReady(task, "TemplateCreationFailed", err.Error(), now)
+			task.Status.Phase = "Failed"
+			return task, fmt.Errorf("ensuring actor template: %w", err)
+		}
 		if err != nil {
 			slog.Warn("could not create custom ActorTemplate, falling back to default template", "error", err)
 		} else if tmpl != nil && tmpl.Metadata != nil {
