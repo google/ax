@@ -101,7 +101,7 @@ wait_for() {
       return 1
     fi
     printf '.'
-    sleep 2
+    sleep 0.2
   done
 }
 
