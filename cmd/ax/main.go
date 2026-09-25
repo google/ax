@@ -45,52 +45,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	opts := parseGlobalArgs(os.Args[1:])
 	var (
-		cmd            string
-		cleanArgs      []string
-		atespace       = "default"
-		explicitServer = ""
-		kubeContext    = ""
-		axNamespace    = "ax-system"
+		cmd            = opts.cmd
+		cleanArgs      = opts.args
+		atespace       = opts.atespace
+		explicitServer = opts.server
+		kubeContext    = opts.kubeContext
+		axNamespace    = opts.namespace
 	)
-
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		if arg == "-a" || arg == "--atespace" {
-			if i+1 < len(args) {
-				atespace = args[i+1]
-				i++
-			}
-		} else if strings.HasPrefix(arg, "--atespace=") {
-			atespace = strings.TrimPrefix(arg, "--atespace=")
-		} else if arg == "--server" {
-			if i+1 < len(args) {
-				explicitServer = args[i+1]
-				i++
-			}
-		} else if strings.HasPrefix(arg, "--server=") {
-			explicitServer = strings.TrimPrefix(arg, "--server=")
-		} else if arg == "--context" {
-			if i+1 < len(args) {
-				kubeContext = args[i+1]
-				i++
-			}
-		} else if strings.HasPrefix(arg, "--context=") {
-			kubeContext = strings.TrimPrefix(arg, "--context=")
-		} else if arg == "-n" || arg == "--namespace" {
-			if i+1 < len(args) {
-				axNamespace = args[i+1]
-				i++
-			}
-		} else if strings.HasPrefix(arg, "--namespace=") {
-			axNamespace = strings.TrimPrefix(arg, "--namespace=")
-		} else if cmd == "" && !strings.HasPrefix(arg, "-") {
-			cmd = arg
-		} else {
-			cleanArgs = append(cleanArgs, arg)
-		}
-	}
 
 	if cmd == "" {
 		printUsage()
@@ -117,6 +80,17 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "ssh":
+		// Answer help and usage errors before resolving the server, which may
+		// start a port-forward to the cluster.
+		if _, _, help, err := parseSSHArgs(cleanArgs); help || err != nil {
+			fmt.Println(sshUsage)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 
 	// Resolve the AX server URL (auto-tunneling to active kube context if not explicitly set)
@@ -157,6 +131,64 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// globalArgs holds the command name, the flags shared by every command, and the
+// remaining arguments for the command itself.
+type globalArgs struct {
+	cmd         string
+	args        []string
+	atespace    string
+	server      string
+	kubeContext string
+	namespace   string
+}
+
+// parseGlobalArgs extracts the command name and the global flags from args. It
+// stops interpreting flags at "--", so everything after it (for example the
+// command run by `ax ssh <task> -- ...`) is passed through to the command intact.
+func parseGlobalArgs(args []string) globalArgs {
+	g := globalArgs{atespace: "default", namespace: "ax-system"}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			g.args = append(g.args, args[i:]...)
+			break
+		} else if arg == "-a" || arg == "--atespace" {
+			if i+1 < len(args) {
+				g.atespace = args[i+1]
+				i++
+			}
+		} else if strings.HasPrefix(arg, "--atespace=") {
+			g.atespace = strings.TrimPrefix(arg, "--atespace=")
+		} else if arg == "--server" {
+			if i+1 < len(args) {
+				g.server = args[i+1]
+				i++
+			}
+		} else if strings.HasPrefix(arg, "--server=") {
+			g.server = strings.TrimPrefix(arg, "--server=")
+		} else if arg == "--context" {
+			if i+1 < len(args) {
+				g.kubeContext = args[i+1]
+				i++
+			}
+		} else if strings.HasPrefix(arg, "--context=") {
+			g.kubeContext = strings.TrimPrefix(arg, "--context=")
+		} else if arg == "-n" || arg == "--namespace" {
+			if i+1 < len(args) {
+				g.namespace = args[i+1]
+				i++
+			}
+		} else if strings.HasPrefix(arg, "--namespace=") {
+			g.namespace = strings.TrimPrefix(arg, "--namespace=")
+		} else if g.cmd == "" && !strings.HasPrefix(arg, "-") {
+			g.cmd = arg
+		} else {
+			g.args = append(g.args, arg)
+		}
+	}
+	return g
 }
 
 func printUsage() {
@@ -1008,24 +1040,50 @@ func runTunnel(args []string) error {
 	}
 }
 
-func runSSH(serverURL, atespace, kubeContext string, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: ax ssh <task-name> [-- command...]")
+const sshUsage = `Usage:
+  ax ssh <task-name> [-- command...]
+
+Run a command inside a running task's container, or /bin/sh when no command is
+given. The task must be Running and have spec.debug: true.
+
+Examples:
+  ax ssh task123
+  ax ssh task123 -- ls -la /workspace
+  ax ssh -a my-atespace task123 -- python3 main.py`
+
+// parseSSHArgs splits the arguments of `ax ssh` into the task name and the command
+// to run, defaulting the command to /bin/sh. help reports a -h or --help given in
+// place of the task name. Arguments after the task name form the command, with or
+// without a separating "--".
+func parseSSHArgs(args []string) (taskName string, command []string, help bool, err error) {
+	if len(args) == 0 || args[0] == "--" {
+		return "", nil, false, errors.New("missing task name")
+	}
+	if args[0] == "-h" || args[0] == "--help" {
+		return "", nil, true, nil
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return "", nil, false, fmt.Errorf("unknown flag %q", args[0])
 	}
 
-	taskName := args[0]
-	var cmdToRun []string
+	taskName = args[0]
 	for i := 1; i < len(args); i++ {
 		if args[i] == "--" {
-			cmdToRun = args[i+1:]
+			command = append(command, args[i+1:]...)
 			break
-		} else {
-			cmdToRun = append(cmdToRun, args[i])
 		}
+		command = append(command, args[i])
 	}
+	if len(command) == 0 {
+		command = []string{"/bin/sh"}
+	}
+	return taskName, command, false, nil
+}
 
-	if len(cmdToRun) == 0 {
-		cmdToRun = []string{"/bin/sh"}
+func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+	taskName, cmdToRun, _, err := parseSSHArgs(args)
+	if err != nil {
+		return err
 	}
 
 	client, conn, err := getAXClient(serverURL)

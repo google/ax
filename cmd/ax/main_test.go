@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -204,5 +205,94 @@ func TestRunGetResourceAliases(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestParseGlobalArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want globalArgs
+	}{
+		{
+			name: "flags before and after the command",
+			args: []string{"-a", "team", "get", "tasks", "--namespace=ax"},
+			want: globalArgs{cmd: "get", args: []string{"tasks"}, atespace: "team", namespace: "ax"},
+		},
+		{
+			name: "flags after -- belong to the remote command",
+			args: []string{"ssh", "task123", "--", "grep", "-n", "foo", "-a", "file"},
+			want: globalArgs{
+				cmd:       "ssh",
+				args:      []string{"task123", "--", "grep", "-n", "foo", "-a", "file"},
+				atespace:  "default",
+				namespace: "ax-system",
+			},
+		},
+		{
+			name: "global flags before -- still apply",
+			args: []string{"ssh", "-a", "team", "task123", "--", "ls", "--context=x"},
+			want: globalArgs{
+				cmd:       "ssh",
+				args:      []string{"task123", "--", "ls", "--context=x"},
+				atespace:  "team",
+				namespace: "ax-system",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseGlobalArgs(tt.args); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseGlobalArgs(%q) = %+v, want %+v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSSHArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantTask    string
+		wantCommand []string
+		wantHelp    bool
+		wantErr     bool
+	}{
+		{name: "long help", args: []string{"--help"}, wantHelp: true},
+		{name: "short help", args: []string{"-h"}, wantHelp: true},
+		{name: "no args", args: nil, wantErr: true},
+		{name: "no task before --", args: []string{"--", "ls"}, wantErr: true},
+		{name: "unknown flag", args: []string{"--verbose", "task123"}, wantErr: true},
+		{name: "default shell", args: []string{"task123"}, wantTask: "task123", wantCommand: []string{"/bin/sh"}},
+		{
+			name:        "command after --",
+			args:        []string{"task123", "--", "ls", "-la", "/workspace"},
+			wantTask:    "task123",
+			wantCommand: []string{"ls", "-la", "/workspace"},
+		},
+		{
+			name:        "command without --",
+			args:        []string{"task123", "python3", "main.py"},
+			wantTask:    "task123",
+			wantCommand: []string{"python3", "main.py"},
+		},
+		{
+			name:        "help after the task name goes to the remote command",
+			args:        []string{"task123", "--", "git", "--help"},
+			wantTask:    "task123",
+			wantCommand: []string{"git", "--help"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task, command, help, err := parseSSHArgs(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseSSHArgs(%q) error = %v, wantErr %v", tt.args, err, tt.wantErr)
+			}
+			if task != tt.wantTask || help != tt.wantHelp || !reflect.DeepEqual(command, tt.wantCommand) {
+				t.Errorf("parseSSHArgs(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.args, task, command, help, tt.wantTask, tt.wantCommand, tt.wantHelp)
+			}
+		})
 	}
 }
