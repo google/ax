@@ -336,7 +336,7 @@ func runGet(serverURL, atespace string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	if resource == "tasks" || resource == "task" && len(args) == 1 {
+	if (resource == "tasks" || resource == "task") && len(args) == 1 {
 		resp, err := client.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing tasks: %w", err)
@@ -396,7 +396,7 @@ func runGet(serverURL, atespace string, args []string) error {
 	}
 
 
-	if resource == "workspaces" || resource == "workspace" && len(args) == 1 {
+	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
 		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing workspaces: %w", err)
@@ -441,7 +441,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		return yaml.NewEncoder(os.Stdout).Encode(ws)
 	}
 
-	if resource == "models" || resource == "model" && len(args) == 1 {
+	if (resource == "models" || resource == "model") && len(args) == 1 {
 		resp, err := client.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
