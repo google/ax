@@ -387,6 +387,52 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 }
 
+func TestTaskReconciler_WorkspaceReadyIPv6(t *testing.T) {
+	httpLis, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	defer httpLis.Close()
+	httpServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})}
+	go httpServer.Serve(httpLis)
+	defer httpServer.Close()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+	mockSrv := &mockControlServer{workerIP: httpLis.Addr().String()}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler.SecretResolver = noSecrets
+	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+
+	task := &v1alpha1.Task{
+		ApiVersion: v1alpha1.APIVersion,
+		Kind:       v1alpha1.KindTask,
+		Metadata:   &v1alpha1.ObjectMeta{Name: "ipv6-task", Atespace: "default"},
+		Spec:       &v1alpha1.TaskSpec{},
+	}
+	reconciled, err := reconciler.Reconcile(context.Background(), task, nil)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+	assertCondition(t, reconciled, "WorkspaceReady", "True", "SetupComplete")
+}
+
 // assertCondition fails the test unless the task has a condition of the given type with
 // the expected status and reason.
 func assertCondition(t *testing.T, task *v1alpha1.Task, condType, wantStatus, wantReason string) {
