@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
@@ -1104,10 +1105,23 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 	}
 	defer guestClient.Close()
 
+	// A bare shell on a terminal runs with -i, so it prompts and Ctrl-C stops the
+	// command it is running rather than the shell itself.
+	if stdinIsTerminal() && len(cmdToRun) == 1 && cmdToRun[0] == "/bin/sh" {
+		cmdToRun = []string{"/bin/sh", "-i"}
+	}
+
+	// Ctrl-C is passed on to the remote command instead of ending ax ssh.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+	defer signal.Stop(sigs)
+
 	exitCode, err := guestClient.Exec(context.Background(), guest.ExecOptions{
 		Command: cmdToRun,
+		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
+		Signals: sigs,
 	})
 	if err != nil {
 		return err
@@ -1118,4 +1132,11 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 	}
 
 	return nil
+}
+
+// stdinIsTerminal reports whether standard input is a terminal rather than a
+// pipe or file.
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
