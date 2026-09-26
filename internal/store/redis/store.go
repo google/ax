@@ -28,12 +28,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const (
-	defaultStreamName    = "ax:stream:tasks"
-	defaultReadBatchSize = 10
-	defaultReadBlock     = 2 * time.Second
-)
-
 var (
 	jsonMarshalOpts   = protojson.MarshalOptions{UseProtoNames: false, EmitUnpopulated: false}
 	jsonUnmarshalOpts = protojson.UnmarshalOptions{DiscardUnknown: true}
@@ -41,15 +35,8 @@ var (
 
 // Options contains configuration for the Redis store.
 type Options struct {
-	StreamName string
-	KeyPrefix  string
-	TTL        time.Duration // Optional TTL for task records
-
-	// ReadBatchSize is how many events one XREADGROUP call may return.
-	ReadBatchSize int64
-	// ReadBlock is how long one XREADGROUP call waits for events before returning
-	// empty. Shorter values make shutdown more responsive at the cost of more calls.
-	ReadBlock time.Duration
+	KeyPrefix string
+	TTL       time.Duration // Optional TTL for task records
 }
 
 // Store is a Redis-backed implementation of store.Store.
@@ -60,17 +47,8 @@ type Store struct {
 
 // NewStore creates a new Redis store.
 func NewStore(client *redis.Client, opts Options) *Store {
-	if opts.StreamName == "" {
-		opts.StreamName = defaultStreamName
-	}
 	if opts.KeyPrefix == "" {
 		opts.KeyPrefix = "ax"
-	}
-	if opts.ReadBatchSize <= 0 {
-		opts.ReadBatchSize = defaultReadBatchSize
-	}
-	if opts.ReadBlock <= 0 {
-		opts.ReadBlock = defaultReadBlock
 	}
 	return &Store{
 		client: client,
@@ -157,14 +135,6 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	pipe.Set(ctx, s.taskKey(atespace, name), data, s.opts.TTL)
 	pipe.ZAdd(ctx, s.taskIndexKey(), redis.Z{Score: score, Member: member})
 	pipe.ZAdd(ctx, s.taskAtespaceIndexKey(atespace), redis.Z{Score: score, Member: name})
-	pipe.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.opts.StreamName,
-		Values: map[string]interface{}{
-			"action":   "reconcile",
-			"atespace": atespace,
-			"name":     name,
-		},
-	})
 	pipe.Publish(ctx, s.taskPubSubChannel(atespace, name), data)
 
 	_, err = pipe.Exec(ctx)
@@ -279,43 +249,7 @@ func (s *Store) UpdateTaskStatus(ctx context.Context, atespace, name string, sta
 	return nil
 }
 
-// MarkTaskDeleting flips the task to the Terminating phase, notifies watchers, and
-// publishes a delete event for the controller. The record stays until DeleteTask.
-func (s *Store) MarkTaskDeleting(ctx context.Context, atespace, name string) error {
-	if atespace == "" {
-		atespace = "default"
-	}
-	task, err := s.GetTask(ctx, atespace, name)
-	if err != nil {
-		return err
-	}
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.Phase = v1alpha1.PhaseTerminating
-	data, err := protojson.Marshal(task)
-	if err != nil {
-		return fmt.Errorf("marshaling task: %w", err)
-	}
-
-	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, s.taskKey(atespace, name), data, s.opts.TTL)
-	pipe.Publish(ctx, s.taskPubSubChannel(atespace, name), data)
-	pipe.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.opts.StreamName,
-		Values: map[string]interface{}{
-			"action":   "delete",
-			"atespace": atespace,
-			"name":     name,
-		},
-	})
-	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("marking task deleting in redis: %w", err)
-	}
-	return nil
-}
-
-// DeleteTask removes the task record and its index entries. No event is published.
+// DeleteTask removes the task record and its index entries.
 func (s *Store) DeleteTask(ctx context.Context, atespace, name string) error {
 	if atespace == "" {
 		atespace = "default"
@@ -585,98 +519,6 @@ func (s *Store) GetWorkspace(ctx context.Context, atespace, name string) (*v1alp
 		return nil, fmt.Errorf("unmarshaling workspace: %w", err)
 	}
 	return &w, nil
-}
-
-// Subscribe joins a Redis Streams consumer group, creating the group (and the
-// stream) if needed. A new group starts at the tail of the stream, so it only
-// sees events published after it was created; an existing group keeps its
-// position and any pending entries.
-func (s *Store) Subscribe(ctx context.Context, group, consumer string) (store.Subscription, error) {
-	err := s.client.XGroupCreateMkStream(ctx, s.opts.StreamName, group, "$").Err()
-	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
-		return nil, fmt.Errorf("creating consumer group %q: %w", group, err)
-	}
-	return &subscription{store: s, group: group, consumer: consumer}, nil
-}
-
-// subscription reads from a consumer group in batches and hands events out one
-// at a time. Delivery is at-least-once: an event stays in the group's pending
-// list until Ack is called for it.
-type subscription struct {
-	store    *Store
-	group    string
-	consumer string
-	pending  []store.TaskEvent
-}
-
-func (sub *subscription) Next(ctx context.Context) (store.TaskEvent, error) {
-	for len(sub.pending) == 0 {
-		if err := ctx.Err(); err != nil {
-			return store.TaskEvent{}, err
-		}
-		events, err := sub.read(ctx)
-		if err != nil {
-			return store.TaskEvent{}, err
-		}
-		sub.pending = events
-	}
-	ev := sub.pending[0]
-	sub.pending = sub.pending[1:]
-	return ev, nil
-}
-
-// read performs one blocking XREADGROUP call. It returns an empty slice, not an
-// error, when the block time elapses without events.
-func (sub *subscription) read(ctx context.Context) ([]store.TaskEvent, error) {
-	streams, err := sub.store.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group:    sub.group,
-		Consumer: sub.consumer,
-		Streams:  []string{sub.store.opts.StreamName, ">"},
-		Count:    sub.store.opts.ReadBatchSize,
-		Block:    sub.store.opts.ReadBlock,
-	}).Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("reading task events: %w", err)
-	}
-
-	var events []store.TaskEvent
-	for _, stream := range streams {
-		for _, msg := range stream.Messages {
-			events = append(events, eventFromMessage(msg))
-		}
-	}
-	return events, nil
-}
-
-func (sub *subscription) Ack(ctx context.Context, ev store.TaskEvent) error {
-	return sub.store.client.XAck(ctx, sub.store.opts.StreamName, sub.group, ev.ID).Err()
-}
-
-// Close releases the subscription. The consumer is deliberately left registered
-// so that any events it had claimed but not acknowledged remain claimable.
-func (sub *subscription) Close() error {
-	return nil
-}
-
-// eventFromMessage decodes a stream entry. "namespace" is accepted as a legacy
-// alias for "atespace".
-func eventFromMessage(msg redis.XMessage) store.TaskEvent {
-	ev := store.TaskEvent{ID: msg.ID}
-	if atespace, ok := msg.Values["atespace"].(string); ok {
-		ev.Atespace = atespace
-	} else if ns, ok := msg.Values["namespace"].(string); ok {
-		ev.Atespace = ns
-	}
-	if name, ok := msg.Values["name"].(string); ok {
-		ev.Name = name
-	}
-	if action, ok := msg.Values["action"].(string); ok {
-		ev.Action = action
-	}
-	return ev
 }
 
 // WatchTask subscribes to status change notifications for a specific task.

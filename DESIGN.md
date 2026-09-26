@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its comfort zone (single-digit GB storage limits, write-rate bottlenecks, control plane degradation). AX keeps its state in Redis and uses Redis Streams as the work queue between the API server and a horizontally scaled pool of controllers.
+Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its comfort zone (single-digit GB storage limits, write-rate bottlenecks, control plane degradation). AX stores its state in Redis and reconciles directly with Agent Substrate under fine-grained distributed locks.
 
 ```
                       ax apply -f task.yaml
@@ -11,27 +11,14 @@ Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its co
                             ax-server
                       (gRPC API + /healthz)
                                 │
-                     store & publish event
-                                │
-                                ▼
-                              Redis
-               (Task Hashes + Event Streams + PubSub)
-                                │
-                      XREADGROUP (Streams)
-                                │
-                                ▼
-                          ax-controller
-                   (Horizontally Scaled Workers)
-                                │
-                        gRPC (Control API)
-                                │
-                                ▼
-                         Agent Substrate
-                ┌───────────────────────────────┐
-                │ • Atespace Provisioning       │
-                │ • Actor Creation & Activation │
-                │ • Worker Assignment           │
-                └───────────────────────────────┘
+         ┌──────────────────────┴──────────────────────┐
+         ▼                                             ▼
+       Redis                                    Agent Substrate
+ (Resource Store,                       ┌───────────────────────────────┐
+  Locks, PubSub)                        │ • Atespace Provisioning       │
+                                        │ • Actor Creation & Activation │
+                                        │ • Worker Assignment           │
+                                        └───────────────────────────────┘
 ```
 
 ## Components
@@ -39,8 +26,7 @@ Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its co
 | Binary | Role |
 |---|---|
 | `ax` | Developer CLI. Applies manifests, inspects and watches resources, tunnels to the cluster. |
-| `ax-server` | Stateless gRPC API on port 8080. Validates manifests, persists to Redis, publishes events. |
-| `ax-controller` | Reconciliation workers. Consume the Redis stream, provision atespaces and actors on Agent Substrate, and drive tasks toward desired state. Scale by adding replicas. |
+| `ax-server` | Direct-execution gRPC API on port 8080. Validates manifests, manages distributed locks, reconciles directly with Agent Substrate, and persists state to Redis. |
 | `ax-task-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
 
 ## API reference

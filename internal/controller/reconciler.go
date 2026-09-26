@@ -348,7 +348,7 @@ func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, rea
 }
 
 // lookupGeminiKey resolves the Gemini API key for the task container, preferring the
-// Kubernetes secret in the task's atespace and falling back to the controller's own
+// Kubernetes secret in the task's atespace and falling back to the server's own
 // environment. It returns "" when neither source has a value.
 func (r *TaskReconciler) lookupGeminiKey(ctx context.Context, atespace string) string {
 	if r.SecretResolver != nil {
@@ -360,7 +360,7 @@ func (r *TaskReconciler) lookupGeminiKey(ctx context.Context, atespace string) s
 		}
 	}
 	if key := os.Getenv(geminiSecretKey); key != "" {
-		slog.Info("resolved GEMINI_API_KEY from controller environment for actor template")
+		slog.Info("resolved GEMINI_API_KEY from server environment for actor template")
 		return key
 	}
 	return ""

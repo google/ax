@@ -219,24 +219,11 @@ func TestServerGRPC(t *testing.T) {
 	}
 
 	// 8. Delete operations
-	// Task deletion is two-phase: the RPC marks the task Terminating and the
-	// controller removes the record after tearing down the actor.
 	if _, err := client.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Atespace: "default", Name: "grpc-task"}); err != nil {
 		t.Fatalf("DeleteTask failed: %v", err)
 	}
-	terminating, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: "default", Name: "grpc-task"})
-	if err != nil {
-		t.Fatalf("GetTask after DeleteTask failed: %v", err)
-	}
-	if terminating.GetStatus().GetPhase() != v1alpha1.PhaseTerminating {
-		t.Errorf("expected phase %q after DeleteTask, got %q", v1alpha1.PhaseTerminating, terminating.GetStatus().GetPhase())
-	}
 	if _, err := client.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Atespace: "default", Name: "no-such-task"}); status.Code(err) != codes.NotFound {
 		t.Errorf("expected NotFound deleting a missing task, got %v", err)
-	}
-	// Stand in for the controller finishing cleanup.
-	if err := memStore.DeleteTask(ctx, "default", "grpc-task"); err != nil {
-		t.Fatalf("removing task record failed: %v", err)
 	}
 	if _, err := client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: "default", Name: "grpc-ws"}); err != nil {
 		t.Fatalf("DeleteWorkspace failed: %v", err)
@@ -253,8 +240,8 @@ func TestServerGRPC(t *testing.T) {
 }
 
 // Names and atespaces become Substrate resource names, which must be RFC 1123
-// labels. The server rejects them up front instead of letting the controller
-// fail asynchronously with ActorCreationFailed.
+// labels. The server rejects them up front instead of failing during Substrate
+// actor creation.
 func TestCreate_RejectsInvalidNames(t *testing.T) {
 	srv := server.NewServer(memory.NewStore())
 	ctx := context.Background()
@@ -316,5 +303,85 @@ func TestCreateTask_ValidatesWorkspaceBindings(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatalf("expected a valid multi-workspace task to be accepted, got %v", err)
+	}
+}
+
+type fakeReconciler struct {
+	reconcileCount int
+	deleteCount    int
+}
+
+func (f *fakeReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+	f.reconcileCount++
+	task.Status = &v1alpha1.TaskStatus{
+		Phase: task.GetStatus().GetPhase(),
+	}
+	return task, nil
+}
+
+func (f *fakeReconciler) ReconcileDelete(ctx context.Context, atespace, taskName string) error {
+	f.deleteCount++
+	return nil
+}
+
+func TestServer_DirectReconcilerLifecycle(t *testing.T) {
+	rec := &fakeReconciler{}
+	srv := server.NewServer(memory.NewStore(), server.Options{Reconciler: rec})
+	ctx := context.Background()
+
+	// 1. CreateTask directly calls Reconciler
+	task, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "task-rec"},
+			Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if rec.reconcileCount != 1 {
+		t.Errorf("expected 1 reconcile call on CreateTask, got %d", rec.reconcileCount)
+	}
+	if task.GetStatus().GetPhase() != "Suspended" {
+		t.Errorf("expected phase Suspended, got %s", task.GetStatus().GetPhase())
+	}
+
+	// 2. ResumeTask directly calls Reconciler
+	task, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task-rec"})
+	if err != nil {
+		t.Fatalf("ResumeTask: %v", err)
+	}
+	if rec.reconcileCount != 2 {
+		t.Errorf("expected 2 reconcile calls after ResumeTask, got %d", rec.reconcileCount)
+	}
+	if task.GetStatus().GetPhase() != "Running" {
+		t.Errorf("expected phase Running, got %s", task.GetStatus().GetPhase())
+	}
+
+	// 3. SuspendTask directly calls Reconciler
+	task, err = srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task-rec"})
+	if err != nil {
+		t.Fatalf("SuspendTask: %v", err)
+	}
+	if rec.reconcileCount != 3 {
+		t.Errorf("expected 3 reconcile calls after SuspendTask, got %d", rec.reconcileCount)
+	}
+	if task.GetStatus().GetPhase() != "Suspended" {
+		t.Errorf("expected phase Suspended, got %s", task.GetStatus().GetPhase())
+	}
+
+	// 4. DeleteTask directly calls ReconcileDelete
+	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "task-rec"})
+	if err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	if rec.deleteCount != 1 {
+		t.Errorf("expected 1 delete call, got %d", rec.deleteCount)
+	}
+
+	// 5. Verify task is gone
+	_, err = srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-rec"})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound after DeleteTask, got %v", err)
 	}
 }

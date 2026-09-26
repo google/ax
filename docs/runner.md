@@ -1,6 +1,6 @@
 # Runners
 
-A runner is the program that AX starts as PID 1 inside every task container. It is the bridge between the control plane and whatever your agent actually is: the controller hands it the `Task` and `Workspace` specs, and the runner turns them into a prepared workspace, a running command, and a small HTTP surface that the rest of AX uses to observe the sandbox.
+A runner is the program that AX starts as PID 1 inside every task container. It is the bridge between the control plane and whatever your agent actually is: the control plane hands it the `Task` and `Workspace` specs, and the runner turns them into a prepared workspace, a running command, and a small HTTP surface that the rest of AX uses to observe the sandbox.
 
 AX ships a default runner, `ax-task-runner`, baked into the default task image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.image`, and the control plane will treat it exactly like the default.
 
@@ -8,9 +8,9 @@ This page describes what a runner must do. For what the default runner exposes t
 
 ## How a runner is launched
 
-The controller does not run `spec.command` as the container entrypoint. It always starts the container with a fixed command and lets the runner take it from there:
+The control plane does not run `spec.command` as the container entrypoint. It always starts the container with a fixed command and lets the runner take it from there:
 
-| What the controller sets | Value |
+| What AX sets | Value |
 |---|---|
 | Container image | `spec.image`, or the default `ax-task-runner` image when unset |
 | Container command | `/usr/local/bin/ax-task-runner`, always |
@@ -27,12 +27,12 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 ## What a runner must do
 
-**Serve HTTP on port 80.** Both Agent Substrate and the AX controller probe the container on this port. The paths that matter:
+**Serve HTTP on port 80.** Both Agent Substrate and the AX server probe the container on this port. The paths that matter:
 
 | Path | Behavior |
 |---|---|
 | `/healthz` | Return `200` as soon as the runner is alive. |
-| `/readyz` | Return `503` until the workspace is prepared, then `200`. The controller polls this to set the task's `WorkspaceReady` condition, and `ax watch` shows the transition. |
+| `/readyz` | Return `503` until the workspace is prepared, then `200`. AX polls this to set the task's `WorkspaceReady` condition, and `ax watch` shows the transition. |
 | `/metadata/v1alpha1/ax/task` | Return the `Task` as `application/yaml`. Optional, but your command and `ax` tooling may expect it. |
 | `/metadata/v1alpha1/ax/workspaces` | Return every bound `Workspace` as a multi-document YAML stream. Optional, as above. |
 
@@ -148,7 +148,7 @@ spec:
   debug: true
 ```
 
-The controller provisions a dedicated Agent Substrate actor template for each distinct image and environment, so different tasks can run different runners side by side in the same atespace.
+AX provisions a dedicated Agent Substrate actor template for each distinct image and environment, so different tasks can run different runners side by side in the same atespace.
 
 ## Testing a runner locally
 

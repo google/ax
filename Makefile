@@ -19,7 +19,7 @@ AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
 TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
 CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
 
-.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-controller deploy-server deploy-redis apply-example test clean
+.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test clean
 
 all: build
 
@@ -27,14 +27,13 @@ all: build
 ## Build Targets
 ## --------------------------------------
 
-# Build all local binaries (ax CLI, controller, server)
+# Build all local binaries (ax CLI, server)
 build: build-binaries
 
 build-binaries:
-	@echo "==> Building local binaries (ax, ax-controller, ax-server)..."
+	@echo "==> Building local binaries (ax, ax-server)..."
 	@mkdir -p bin
 	go build -trimpath -ldflags="-s -w" -o bin/ax ./cmd/ax
-	go build -trimpath -ldflags="-s -w" -o bin/ax-controller ./cmd/ax-controller
 	go build -trimpath -ldflags="-s -w" -o bin/ax-server ./cmd/ax-server
 
 # Install the ax CLI into $(go env GOPATH)/bin
@@ -64,16 +63,12 @@ push: push-task-runner
 ## Deployment Targets
 ## --------------------------------------
 
-# Deploy all AX components to Kubernetes (Redis, ax-controller, ax-server)
-deploy: deploy-redis deploy-controller deploy-server
+# Deploy all AX components to Kubernetes (Redis, ax-server)
+deploy: deploy-redis deploy-server
 
 deploy-redis:
 	@echo "==> Deploying Redis to ax-system namespace..."
 	kubectl apply -f deploy/redis.yaml
-
-deploy-controller:
-	@echo "==> Building and deploying ax-controller using ko..."
-	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply -f deploy/ax-controller.yaml
 
 deploy-server:
 	@echo "==> Building and deploying ax-server using ko..."
