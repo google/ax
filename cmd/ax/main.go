@@ -236,6 +236,13 @@ func runApply(serverURL string, args []string) error {
 		if doc.Kind == 0 || (doc.Kind == yaml.DocumentNode && len(doc.Content) == 0) {
 			continue // empty document, e.g. a trailing "---"
 		}
+		if doc.Kind == yaml.DocumentNode && len(doc.Content) == 1 {
+			root := doc.Content[0]
+			// yaml.v3 represents empty documents as implicitly tagged null scalars with no value.
+			if root.Kind == yaml.ScalarNode && root.Tag == "!!null" && root.Value == "" && root.Style&yaml.TaggedStyle == 0 {
+				continue
+			}
+		}
 
 		kind, name, outcome, err := applyDocument(ctx, client, &doc)
 		if err != nil {
@@ -334,7 +341,7 @@ func runGet(serverURL, atespace string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	if resource == "tasks" || resource == "task" && len(args) == 1 {
+	if (resource == "tasks" || resource == "task") && len(args) == 1 {
 		resp, err := client.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing tasks: %w", err)
@@ -394,7 +401,7 @@ func runGet(serverURL, atespace string, args []string) error {
 	}
 
 
-	if resource == "workspaces" || resource == "workspace" && len(args) == 1 {
+	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
 		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing workspaces: %w", err)
@@ -439,7 +446,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		return yaml.NewEncoder(os.Stdout).Encode(ws)
 	}
 
-	if resource == "models" || resource == "model" && len(args) == 1 {
+	if (resource == "models" || resource == "model") && len(args) == 1 {
 		resp, err := client.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: atespace})
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)

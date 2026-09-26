@@ -126,6 +126,12 @@ func (w *Worker) processEvent(ctx context.Context, ev store.TaskEvent) error {
 		}
 		return fmt.Errorf("fetching task %s/%s: %w", ev.Atespace, ev.Name, err)
 	}
+	// A pending delete event owns this task now; reconciling would resume an actor
+	// that is about to be torn down and overwrite the Terminating phase.
+	if task.GetStatus().GetPhase() == v1alpha1.PhaseTerminating {
+		slog.Info("task is terminating, skipping reconcile", "atespace", ev.Atespace, "name", ev.Name)
+		return nil
+	}
 
 	// Resolve every bound workspace. A missing one is skipped so the task still
 	// runs; the runner creates an empty directory at its path.

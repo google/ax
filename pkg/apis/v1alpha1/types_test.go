@@ -367,6 +367,85 @@ func TestTaskSpec_WorkspaceRefs(t *testing.T) {
 	}
 }
 
+func TestValidateName(t *testing.T) {
+	valid := []string{
+		"a",
+		"0",
+		"task123",
+		"my-task",
+		"a-b-c",
+		"123-abc",
+		strings.Repeat("a", 63),
+	}
+	for _, name := range valid {
+		if err := v1alpha1.ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"Task-With-Caps",
+		"my_task",
+		"my.task",
+		"-leading-dash",
+		"trailing-dash-",
+		"with space",
+		"tab\tchar",
+		"ünïcödé",
+		"slash/name",
+		strings.Repeat("a", 64),
+	}
+	for _, name := range invalid {
+		if err := v1alpha1.ValidateName(name); err == nil {
+			t.Errorf("ValidateName(%q) = nil, want error", name)
+		}
+	}
+}
+
+func TestValidateObjectMeta(t *testing.T) {
+	tests := []struct {
+		name    string
+		meta    *v1alpha1.ObjectMeta
+		wantErr string
+	}{
+		{name: "nil metadata", wantErr: "metadata.name"},
+		{name: "missing name", meta: &v1alpha1.ObjectMeta{Atespace: "default"}, wantErr: `metadata.name: invalid value ""`},
+		{name: "name only", meta: &v1alpha1.ObjectMeta{Name: "task123"}},
+		{name: "name and atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team-a"}},
+		{name: "uppercase name", meta: &v1alpha1.ObjectMeta{Name: "Task-With-Caps"}, wantErr: `metadata.name: invalid value "Task-With-Caps"`},
+		{name: "underscore in name", meta: &v1alpha1.ObjectMeta{Name: "my_task"}, wantErr: "metadata.name"},
+		{name: "name too long", meta: &v1alpha1.ObjectMeta{Name: strings.Repeat("x", 64)}, wantErr: "metadata.name"},
+		{name: "uppercase atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "Default"}, wantErr: `metadata.atespace: invalid value "Default"`},
+		{name: "dotted atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team.a"}, wantErr: "metadata.atespace"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := v1alpha1.ValidateObjectMeta(tt.meta)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+
+	// Every kind is validated the same way.
+	if err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateTask accepted an invalid name")
+	}
+	if err := v1alpha1.ValidateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateWorkspace accepted an invalid name")
+	}
+	if err := v1alpha1.ValidateModel(&v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateModel accepted an invalid name")
+	}
+}
+
 func TestValidateTask(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -411,7 +490,7 @@ func TestValidateTask(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := v1alpha1.ValidateTask(&v1alpha1.Task{Spec: tt.spec})
+			err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "task"}, Spec: tt.spec})
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

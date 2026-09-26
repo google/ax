@@ -21,13 +21,15 @@
 #   4. Suspend the task, checkpointing its workspace.
 #
 # Environment:
-#   AX_BIN    path to the ax CLI            (default: ./bin/ax)
-#   ATESPACE  atespace to run the demo in   (default: default)
-#   NO_COLOR  set to disable colored output
+#   AX_BIN               path to the ax CLI                        (default: ./bin/ax)
+#   ATESPACE             atespace to run the demo in               (default: default)
+#   SUBSTRATE_NAMESPACE  namespace Agent Substrate is installed in (default: ate-system)
+#   NO_COLOR             set to disable colored output
 
 set -euo pipefail
 
 AX_BIN="${AX_BIN:-./bin/ax}"
+SUBSTRATE_NAMESPACE="${SUBSTRATE_NAMESPACE:-ate-system}"
 
 # ax runs the CLI at AX_BIN so the commands below read the way you would type them.
 ax() { "${AX_BIN}" "$@"; }
@@ -111,6 +113,27 @@ wait_for() {
 
 printf '\n%s🚀 AX demo%s  %sworkspace=%s task=%s atespace=%s%s\n' \
   "${BOLD}" "${RESET}" "${DIM}" "${WORKSPACE_NAME}" "${TASK_NAME}" "${ATESPACE}" "${RESET}"
+
+step "Preflight checks"
+if ! command -v "${AX_BIN}" >/dev/null 2>&1 && [[ ! -x "${AX_BIN}" ]]; then
+  err "ax CLI not found at '${AX_BIN}'. Build it with 'make build' or point AX_BIN at your binary."
+  exit 1
+fi
+ok "ax CLI found at ${AX_BIN}"
+if ! command -v kubectl >/dev/null 2>&1; then
+  err "kubectl not found. It is needed to verify that Agent Substrate is installed."
+  exit 1
+fi
+# AX schedules tasks as actors on Agent Substrate; without it every task
+# fails at actor creation. Check for its Control API before touching anything.
+if ! kubectl get svc api -n "${SUBSTRATE_NAMESPACE}" --request-timeout=10s >/dev/null 2>&1; then
+  err "Agent Substrate not detected: no 'api' Service in namespace '${SUBSTRATE_NAMESPACE}'."
+  note "Install Agent Substrate first — see the Prerequisites section of the AX README"
+  note "or https://github.com/agent-substrate/substrate. If it is installed in a"
+  note "different namespace, set SUBSTRATE_NAMESPACE."
+  exit 1
+fi
+ok "Agent Substrate Control API found in namespace ${SUBSTRATE_NAMESPACE}"
 
 step "Clean up any previous demo run"
 CLEANED=0

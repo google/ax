@@ -58,6 +58,20 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 
 ## Quick start
 
+### Prerequisites
+
+AX schedules every task as a sandboxed actor on [Agent Substrate](https://github.com/agent-substrate/substrate), so Substrate must be running in your cluster before you deploy AX. You need:
+
+- A Kubernetes cluster with **Agent Substrate** installed (see below)
+- [Go](https://go.dev/doc/install) and `kubectl`
+- [`ko`](https://ko.build/) (`brew install ko`) and a container registry your cluster can pull from
+
+To install Agent Substrate, follow the instructions in the [Substrate README](https://github.com/agent-substrate/substrate#readme). Substrate lands in the `ate-system` namespace and exposes its Control API at `api.ate-system.svc.cluster.local:443`, which is where AX expects to find it. Verify it is up before moving on:
+
+```bash
+kubectl get svc api -n ate-system
+```
+
 ### 1. Install the CLI
 
 ```bash
@@ -68,7 +82,7 @@ This puts the `ax` binary in `$(go env GOPATH)/bin`. Make sure that directory is
 
 ### 2. Deploy the control plane
 
-You need a Kubernetes cluster, [`ko`](https://ko.build/) (`brew install ko`), a container registry your cluster can pull from, and a reachable Agent Substrate Control API (in-cluster default: `api.ate-system.svc.cluster.local:443`).
+With the [prerequisites](#prerequisites) in place — most importantly a reachable Agent Substrate Control API — deploy the AX control plane:
 
 ```bash
 make deploy AX_IMAGE_REPO=<your-registry>
