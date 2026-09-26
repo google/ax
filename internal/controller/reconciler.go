@@ -154,11 +154,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		extraEnv[geminiSecretKey] = geminiKey
 	}
 
-	// Only launch configuration belongs in the template; status and suspend
-	// changes must not create new golden snapshots.
+	// Only launch configuration belongs in the template; status changes
+	// must not create new golden snapshots.
 	launchTask := proto.Clone(task).(*v1alpha1.Task)
 	launchTask.Status = nil
-	launchTask.Spec.Suspend = false
 	if taskYAML, err := yaml.Marshal(launchTask); err == nil {
 		extraEnv["AX_TASK_YAML"] = string(taskYAML)
 	}
@@ -191,12 +190,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 	}
 
 	// 4. Suspend or Resume the Actor
-	if task.Spec != nil && task.Spec.Suspend {
+	// Tasks are suspended by default upon creation until explicitly resumed to "Running".
+	if task.Status.Phase == "Suspended" || task.Status.Phase == "" {
 		slog.Info("suspending actor on Substrate", "actor", actorName)
 		if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
-			r.setNotReady(task, "ActorSuspendFailed", err.Error(), now)
-			task.Status.Phase = "Failed"
-			return task, fmt.Errorf("suspending actor: %w", err)
+			slog.Warn("could not suspend actor on Substrate", "error", err)
 		}
 		task.Status.WorkerIp = ""
 		task.Status.Phase = "Suspended"

@@ -155,16 +155,16 @@ func TestServerGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SuspendTask failed: %v", err)
 	}
-	if !suspTask.Spec.Suspend {
-		t.Errorf("expected task to be suspended")
+	if suspTask.Status.Phase != "Suspended" {
+		t.Errorf("expected task phase to be 'Suspended', got %q", suspTask.Status.Phase)
 	}
 
 	resTask, err := client.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Atespace: "default", Name: "grpc-task"})
 	if err != nil {
 		t.Fatalf("ResumeTask failed: %v", err)
 	}
-	if resTask.Spec.Suspend {
-		t.Errorf("expected task to be resumed")
+	if resTask.Status.Phase != "Running" {
+		t.Errorf("expected task phase to be 'Running', got %q", resTask.Status.Phase)
 	}
 
 

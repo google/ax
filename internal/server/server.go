@@ -45,11 +45,6 @@ func NewServer(s store.Store) *Server {
 	return srv
 }
 
-// GRPCServer returns the underlying gRPC server.
-func (s *Server) GRPCServer() *grpc.Server {
-	return s.grpcServer
-}
-
 // Handler returns the HTTP handler for the server, routing gRPC and HTTP health checks.
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,9 +111,13 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := v1alpha1.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	atespace := task.Metadata.GetAtespace()
+	if task.Metadata == nil {
+		task.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	atespace := task.Metadata.Atespace
 	if atespace == "" {
 		atespace = "default"
+		task.Metadata.Atespace = atespace
 	}
 	_, err := s.store.GetTask(ctx, atespace, task.Metadata.GetName())
 	if err == nil {
@@ -128,9 +127,13 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
-	task.Metadata = defaultMetadata(task.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		return nil
-	})
+	if task.Metadata.CreationTimestamp == nil {
+		task.Metadata.CreationTimestamp = timestamppb.Now()
+	}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
+	}
+	task.Status.Phase = "Suspended"
 	if err := s.store.SaveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
@@ -171,10 +174,10 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = true
+	task.Status.Phase = "Suspended"
 	if err := s.store.SaveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
 	}
@@ -196,10 +199,10 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = false
+	task.Status.Phase = "Running"
 	if err := s.store.SaveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
 	}
@@ -369,7 +372,11 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 		meta.Atespace = "default"
 	}
 	if meta.CreationTimestamp == nil {
-		if prev := existing(meta.Atespace, meta.Name); prev.GetCreationTimestamp() != nil {
+		var prev *v1alpha1.ObjectMeta
+		if existing != nil {
+			prev = existing(meta.Atespace, meta.Name)
+		}
+		if prev.GetCreationTimestamp() != nil {
 			meta.CreationTimestamp = prev.GetCreationTimestamp()
 		} else {
 			meta.CreationTimestamp = timestamppb.Now()

@@ -38,7 +38,6 @@ func fullTask() *v1alpha1.Task {
 			CreationTimestamp: timestamppb.New(time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)),
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Suspend: true,
 			Image:   "example.com/img:1",
 			Command: []string{"sh", "-c", "true"},
 			Env:     []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},

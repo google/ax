@@ -34,7 +34,7 @@ ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
 TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
-TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
+TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/ax-substrate/ate-images}/ax-task-runner@sha256:464c5a53c68c67e929dbbb5450f1eb41f99b2742efcf42b721c09825a58397f1}"
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
@@ -146,8 +146,9 @@ YAML
 printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
 
-step "Watch the task come up"
-note "The controller creates an actor on Agent Substrate and initializes /workspace."
+step "Resume the task and watch it come up"
+note "New tasks are created Suspended by default. Resuming creates the worker on Agent Substrate and initializes /workspace."
+run ax resume task "${TASK_NAME}" -a "${ATESPACE}"
 wait_for "Running" "True"
 ok "${TASK_NAME} is Running and Ready"
 echo

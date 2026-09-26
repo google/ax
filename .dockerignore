@@ -4,7 +4,9 @@
 .claude
 *.log
 tmp/
-bin/
+bin/*
+!bin/linux_amd64
+!bin/linux_amd64/ax-task-runner
 ax
 ax-server
 ax-task-runner

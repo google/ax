@@ -68,26 +68,16 @@ message Task {
 }
 
 message TaskSpec {
-  // Field 1 was `goal`, removed; the workspace goal lives on WorkspaceRef.
-  reserved 1;
-  reserved "goal";
-  bool suspend = 2;
-  string image = 3;
-  repeated string command = 4;
-  repeated EnvVar env = 5;
-  ResourceReqs resources = 6;
+  string image = 1;
+  repeated string command = 2;
+  repeated EnvVar env = 3;
+  ResourceReqs resources = 4;
   // workspaces binds one or more Workspaces, each mounted at its own path
   // under /workspace. The first entry is the task command's working directory.
-  repeated WorkspaceRef workspaces = 7;
-  // Field 8 was `gateway`, removed.
-  reserved 8;
-  reserved "gateway";
-  // Field 9 was `policies` (budget and approval config), removed for now.
-  reserved 9;
-  reserved "policies";
+  repeated WorkspaceRef workspaces = 5;
   // debug enables the in-container guest services (process execution and file
   // access) that back `ax ssh`. Off by default.
-  bool debug = 10;
+  bool debug = 6;
 }
 
 message EnvVar {

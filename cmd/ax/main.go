@@ -262,19 +262,11 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err := doc.Decode(&task); err != nil {
 			return "", "", "", err
 		}
-		existing, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: task.GetMetadata().GetAtespace(), Name: task.GetMetadata().GetName()})
-		outcome, err := applyOutcome(err, existing.GetSpec(), task.GetSpec())
+		res, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &task})
 		if err != nil {
 			return "", "", "", err
 		}
-		if outcome == "unchanged" {
-			return head.Kind, task.GetMetadata().GetName(), outcome, nil
-		}
-		if outcome == "configured" {
-			return "", "", "", fmt.Errorf("task %s/%s already exists and is immutable", task.GetMetadata().GetAtespace(), task.GetMetadata().GetName())
-		}
-		res, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &task})
-		return head.Kind, res.GetMetadata().GetName(), outcome, err
+		return head.Kind, res.GetMetadata().GetName(), "created", nil
 
 	case v1alpha1.KindWorkspace:
 		var ws v1alpha1.Workspace

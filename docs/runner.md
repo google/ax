@@ -14,7 +14,7 @@ The controller does not run `spec.command` as the container entrypoint. It alway
 |---|---|
 | Container image | `spec.image`, or the default `ax-task-runner` image when unset |
 | Container command | `/usr/local/bin/ax-task-runner`, always |
-| `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status and the suspend flag |
+| `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
 | `AX_WORKSPACES_YAML` | Every bound `Workspace` resource as a multi-document YAML stream, in the task's binding order |
 | `spec.env` entries | Each one set directly in the container environment |
 | `GEMINI_API_KEY` | Set when the atespace has a Gemini credential configured |

@@ -187,7 +187,7 @@ func TestTaskReconciler(t *testing.T) {
 		},
 		// A client-supplied actor name must not survive: the actor is always
 		// named after the task.
-		Status: &v1alpha1.TaskStatus{Actor: "not-the-task"},
+		Status: &v1alpha1.TaskStatus{Actor: "not-the-task", Phase: "Running"},
 	}
 
 	reconciled, err := reconciler.Reconcile(ctx, task)
@@ -251,8 +251,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Suspend: true,
-			Image:   "ghrc.io/my-org/my-image",
+			Image: "ghrc.io/my-org/my-image",
 		},
 	}
 
@@ -329,6 +328,9 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{},
+		Status: &v1alpha1.TaskStatus{
+			Phase: "Running",
+		},
 	}
 
 	// Case 1: Worker not responding on readyz -> WorkspaceReady=False and Ready=False.
@@ -351,7 +353,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// Case 3: Suspending the task -> Ready=False (TaskSuspended), but the workspace was
 	// already initialized so WorkspaceReady stays True.
 	task = reconciledReady
-	task.Spec.Suspend = true
+	task.Status.Phase = "Suspended"
 	reconciledSuspended, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile with suspend failed: %v", err)
@@ -366,7 +368,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// WorkspaceReady instead of re-polling, so the task is Ready again immediately.
 	mockSrv.workerIP = "127.0.0.1:1"
 	task = reconciledSuspended
-	task.Spec.Suspend = false
+	task.Status.Phase = "Running"
 	reconciledResumed, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile with resume failed: %v", err)
