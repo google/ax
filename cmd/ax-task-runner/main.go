@@ -16,7 +16,7 @@
 // loads the Task and Workspace specs and hands them to the runner package,
 // which does everything else.
 //
-// The controller delivers the Task as YAML in AX_TASK_YAML and the bound
+// AX delivers the Task as YAML in AX_TASK_YAML and the bound
 // Workspaces as a multi-document YAML stream in AX_WORKSPACES_YAML. For local
 // runs the specs can be read from files instead with --task-file and one or
 // more --workspace-file flags.

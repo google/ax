@@ -10,7 +10,7 @@
 ## Build
 
 ```bash
-make build                 # bin/ax, bin/ax-controller, bin/ax-server
+make build                 # bin/ax, bin/ax-server
 make install               # install the ax CLI into $(go env GOPATH)/bin
 make build-task-runner     # cross-compile the runner for linux/amd64 and build its image
 make push-task-runner      # ...and push it (set TASK_RUNNER_REPO)

@@ -69,43 +69,6 @@ in_sandbox() {
 ok()   { printf '%s✔ %s%s\n' "${GREEN}" "$*" "${RESET}"; }
 note() { printf '%s%s%s\n' "${YELLOW}" "$*" "${RESET}"; }
 err()  { printf '%s✘ %s%s\n' "${RED}" "$*" "${RESET}"; }
-task_field() {
-  ax describe task "${TASK_NAME}" -a "${ATESPACE}" 2>/dev/null | awk -v key="$1" '$1 == key {print $2}'
-}
-
-# wait_for PHASE [READY] polls the task until it reaches PHASE (and Ready=READY
-# when given), printing a dot per poll and the elapsed time when it gets there.
-wait_for() {
-  local want_phase="$1" want_ready="${2:-}" timeout="${3:-180}"
-  local start phase ready elapsed
-  start=$(date +%s)
-  printf '%swaiting for Phase=%s' "${DIM}" "${want_phase}"
-  [[ -n "${want_ready}" ]] && printf ' Ready=%s' "${want_ready}"
-  printf '%s ' "${RESET}"
-  while :; do
-    phase=$(task_field "Phase:")
-    ready=$(task_field "Ready")
-    if [[ "${phase}" == "${want_phase}" && ( -z "${want_ready}" || "${ready}" == "${want_ready}" ) ]]; then
-      elapsed=$(( $(date +%s) - start ))
-      printf ' %s%ds%s\n' "${GREEN}" "${elapsed}" "${RESET}"
-      return 0
-    fi
-    if [[ "${phase}" == "Failed" && "${want_phase}" != "Failed" ]]; then
-      printf '\n'
-      err "Task entered Failed phase! Last seen Ready=${ready:-?}"
-      ax describe task "${TASK_NAME}" -a "${ATESPACE}" || true
-      return 1
-    fi
-    if (( $(date +%s) - start > timeout )); then
-      printf '\n'
-      note "Gave up after ${timeout}s. Last seen Phase=${phase:-?} Ready=${ready:-?}"
-      ax describe task "${TASK_NAME}" -a "${ATESPACE}" || true
-      return 1
-    fi
-    printf '.'
-    sleep 0.2
-  done
-}
 
 # ---------------------------------------------------------------------------
 # Demo
@@ -169,10 +132,9 @@ YAML
 printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
 
-step "Resume the task and watch it come up"
+step "Resume the task"
 note "New tasks are created Suspended by default. Resuming creates the worker on Agent Substrate and initializes /workspace."
 run ax resume task "${TASK_NAME}" -a "${ATESPACE}"
-wait_for "Running" "True"
 ok "${TASK_NAME} is Running and Ready"
 echo
 run ax get tasks -a "${ATESPACE}"
@@ -189,7 +151,6 @@ in_sandbox 'curl -s "$AX_METADATA_URL/metadata/v1alpha1/ax/task" | head -20'
 
 step "Suspend the task"
 run ax suspend task "${TASK_NAME}" -a "${ATESPACE}"
-wait_for "Suspended"
 ok "${TASK_NAME} is Suspended. The workspace has been checkpointed and the sandbox is gone."
 echo
 run ax get tasks -a "${ATESPACE}"

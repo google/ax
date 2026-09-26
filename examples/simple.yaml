@@ -14,7 +14,7 @@
 
 # The smallest useful Task: no Workspace or Model.
 #
-# The controller runs it on the default task-runner image with an empty
+# The server runs it on the default task-runner image with an empty
 # /workspace directory.
 #
 #   ax apply -f examples/simple.yaml

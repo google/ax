@@ -12,6 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ax-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ax-server
+  namespace: ax-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ax-server
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ax-server
+subjects:
+  - kind: ServiceAccount
+    name: ax-server
+    namespace: ax-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ax-server
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,6 +63,7 @@ spec:
       labels:
         app.kubernetes.io/name: ax-server
     spec:
+      serviceAccountName: ax-server
       containers:
         - name: ax-server
           image: ko://github.com/google/ax/cmd/ax-server
@@ -37,6 +71,17 @@ spec:
           args:
             - "--addr=:8080"
             - "--redis-addr=ax-redis.ax-system.svc.cluster.local:6379"
+            - "--substrate-endpoint=api.ate-system.svc.cluster.local:443"
+            - "--substrate-authority=api.ate-system.svc"
+            - "--substrate-token-file=/var/run/secrets/ateapi/token"
+            - "--substrate-ca-file=/run/servicedns-ca/trust-bundle.pem"
+            - "--template=default-template"
+            - "--template-atespace=ax-system"
+          env:
+            - name: ATENET_ROUTER_ADDR
+              value: "atenet-router.ate-system.svc.cluster.local:80"
+            - name: AX_SNAPSHOTS_BUCKET
+              value: "gs://snapshot-substrate-test-ax-substrate/ate-env/"
           ports:
             - containerPort: 8080
               name: http
@@ -59,6 +104,32 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+          volumeMounts:
+            - mountPath: /var/run/secrets/ateapi
+              name: ate-token
+              readOnly: true
+            - mountPath: /run/servicedns-ca
+              name: servicedns-ca
+              readOnly: true
+      volumes:
+        - name: ate-token
+          projected:
+            defaultMode: 420
+            sources:
+              - serviceAccountToken:
+                  audience: api.ate-system.svc
+                  expirationSeconds: 7200
+                  path: token
+        - name: servicedns-ca
+          projected:
+            defaultMode: 420
+            sources:
+              - clusterTrustBundle:
+                  labelSelector:
+                    matchLabels:
+                      podcert.ate.dev/canarying: live
+                  path: trust-bundle.pem
+                  signerName: servicedns.podcert.ate.dev/identity
 ---
 apiVersion: v1
 kind: Service
@@ -75,3 +146,4 @@ spec:
       name: http
   selector:
     app.kubernetes.io/name: ax-server
+

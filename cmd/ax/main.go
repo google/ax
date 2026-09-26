@@ -712,7 +712,7 @@ func runWatch(serverURL, atespace string, args []string) error {
 				actor,
 				workerIP,
 			)
-			if phase == "Running" || phase == "Completed" || phase == "Failed" {
+			if phase == "Completed" || phase == "Failed" {
 				fmt.Printf("Task reached terminal phase %q.\n", phase)
 				break
 			}
@@ -737,25 +737,13 @@ func runDelete(serverURL, atespace string, args []string) error {
 	}
 	defer conn.Close()
 
-	// Task deletion waits for the controller to tear down the actor, which can take
-	// a while; the other kinds are removed synchronously.
-	timeout := 15 * time.Second
-	if kind == v1alpha1.KindTask {
-		timeout = deleteTaskTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	return deleteResource(ctx, client, kind, atespace, args[1])
 }
 
-const (
-	deleteTaskTimeout  = 5 * time.Minute
-	deletePollInterval = 500 * time.Millisecond
-)
-
-// deleteResource requests deletion, then blocks until the resource is really gone
-// and prints a kubectl-style confirmation.
+// deleteResource requests deletion and prints a confirmation.
 func deleteResource(ctx context.Context, client v1alpha1.AXClient, kind, atespace, name string) error {
 	lower := strings.ToLower(kind)
 
@@ -774,47 +762,8 @@ func deleteResource(ctx context.Context, client v1alpha1.AXClient, kind, atespac
 		return fmt.Errorf("deleting %s %s/%s: %w", lower, atespace, name, err)
 	}
 
-	if err := waitForDeletion(ctx, client, kind, atespace, name); err != nil {
-		return err
-	}
 	fmt.Printf("%s.ax.io/%s deleted\n", lower, name)
 	return nil
-}
-
-// waitForDeletion polls until the resource returns NotFound or ctx expires.
-func waitForDeletion(ctx context.Context, client v1alpha1.AXClient, kind, atespace, name string) error {
-	lookup := func() error {
-		var err error
-		switch kind {
-		case v1alpha1.KindTask:
-			_, err = client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: atespace, Name: name})
-		case v1alpha1.KindWorkspace:
-			_, err = client.GetWorkspace(ctx, &v1alpha1.GetWorkspaceRequest{Atespace: atespace, Name: name})
-		case v1alpha1.KindModel:
-			_, err = client.GetModel(ctx, &v1alpha1.GetModelRequest{Atespace: atespace, Name: name})
-		}
-		return err
-	}
-
-	announced := false
-	for {
-		err := lookup()
-		if status.Code(err) == codes.NotFound {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("checking %s %s/%s after delete: %w", strings.ToLower(kind), atespace, name, err)
-		}
-		if !announced {
-			fmt.Fprintf(os.Stderr, "waiting for %s %s/%s to be deleted...\n", strings.ToLower(kind), atespace, name)
-			announced = true
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for %s %s/%s to be deleted; it is still being torn down (check `ax describe` and the controller logs)", strings.ToLower(kind), atespace, name)
-		case <-time.After(deletePollInterval):
-		}
-	}
 }
 
 // normalizeKind maps user-typed kinds ("task", "tasks", "Task") to the canonical
