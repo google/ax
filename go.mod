@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/agent-substrate/env v0.0.11-0.20260912052224-4468a200b170
-	github.com/agent-substrate/substrate v0.0.0-20260911232748-672533541dbf
+	github.com/agent-substrate/substrate v0.0.0-20260918201817-944abe3278b8
 	github.com/redis/go-redis/v9 v9.22.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12

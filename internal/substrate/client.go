@@ -329,7 +329,18 @@ func (c *Client) EnsureActor(ctx context.Context, atespace, actorName, templateA
 			if getErr == nil && existing != nil {
 				state := existing.GetStatus().GetState()
 				if state == ateapipb.ActorState_ACTOR_STATE_CRASHED {
-					slog.Warn("existing actor is crashed, deleting and recreating", "actor", actorName)
+					// Revert to the last snapshot so the workspace survives the crash.
+					reverted, revertErr := c.control.RevertActor(ctx, &ateapipb.RevertActorRequest{
+						Actor: &ateapipb.ObjectRef{
+							Atespace: atespace,
+							Name:     actorName,
+						},
+					})
+					if revertErr == nil {
+						slog.Warn("existing actor is crashed, reverted to its last snapshot", "actor", actorName)
+						return reverted.GetActor(), nil
+					}
+					slog.Warn("existing actor is crashed and could not be reverted, deleting and recreating", "actor", actorName, "error", revertErr)
 					_, _ = c.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{
 						Actor: &ateapipb.ObjectRef{
 							Atespace: atespace,
