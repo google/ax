@@ -90,10 +90,30 @@ make deploy AX_IMAGE_REPO=<your-registry>
 
 This deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
 
-### 3. Run your first task
+### 3. Create a WorkerPool
+
+Every task runs as a Substrate actor, and an actor needs a free worker from a `WorkerPool`. Nothing creates one for you — not `make deploy`, and not the Substrate installer — so without a pool, the first `ax resume` fails with `ResourceExhausted: no free workers available` (the task itself stays `Suspended`).
+
+Apply [`examples/workerpool.yaml`](examples/workerpool.yaml) to create a small pool. Worker selection is cluster-wide — matched by sandbox class and labels, not by namespace — but the worker image is a `ko://` reference built from Substrate sources, so run `ko apply` from a Substrate checkout:
+
+```bash
+git clone https://github.com/agent-substrate/substrate   # anywhere you like; skip if you have it
+cd substrate
+KO_DOCKER_REPO=<your-registry> ko apply -f <path-to-your-ax-checkout>/examples/workerpool.yaml
+kubectl get workerpools -n default
+```
+
+`KO_DOCKER_REPO` is where `ko` pushes the built worker image — use the same registry you passed as `AX_IMAGE_REPO` above, so your cluster can pull it.
+
+Before applying, set the pool's `nodeSelector` to the `ate.dev/substrate-version` label your Substrate install put on your nodes (`kubectl get ds -n ate-system -l app=atelet -L ate.dev/substrate-version`; source installs use a git-describe string like `v0.2.0-10-g1d7ca8ce`). A pool whose selector matches no node never schedules its workers. After applying, wait until the pool reports its workers ready — workers stuck at zero usually mean a label mismatch or an image the cluster cannot pull.
+
+### 4. Run your first task
+
+From your ax checkout:
 
 ```bash
 ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
+ax resume task task123               # new tasks start Suspended; resume schedules the actor and starts it
 ax get tasks
 # NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
 # task123   default    Running   task123         10.20.3.67   1m
@@ -104,7 +124,9 @@ ax suspend task task123              # checkpoint and pause
 ax resume task task123               # pick up where it left off
 ```
 
-Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.
+The first resume also waits for the workspace to initialize (cloning its git repos), so it can take a while; if the CLI gives up first, the task keeps coming up in the background — `ax get tasks` tells you where it is.
+
+Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
 
 ## Documentation
 
