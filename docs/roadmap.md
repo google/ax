@@ -16,7 +16,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 
 Evolve how AX maps tasks onto Agent Substrate actors to improve security boundaries, cluster utilization, and stateful workflows:
 
-- **Migration to the New Actor**: Migrate `ax-controller` and the Substrate integration layer (`internal/substrate`) to the new Agent Substrate Actor API and lifecycle model.
+- **Migration to the New Actor**: Migrate the Substrate integration layer (`internal/substrate`) to the new Agent Substrate Actor API and lifecycle model.
 - **Splitting Task Workspace Setup into a Separate Actor**: Decouple maiden workspace initialization (Git repository cloning, MCP and skill materialization, and goal-driven bootstrap) from the primary task runtime by executing setup in a dedicated setup actor before handing off the prepared workspace state to the task actor.
 - **Minimally Privileged Policies**: Apply strict least-privilege policies tailored independently to the workspace setup actor and the task execution actor—scoping repository/registry credentials and setup egress exclusively to the initialization phase while enforcing minimal runtime permissions, network egress, and capabilities on the task actor.
 - **Idleness Detection and Automatic Suspension for Density**: Continuously monitor actor activity (process execution, I/O, network traffic, and active gRPC/SSH sessions) to detect idle tasks and automatically trigger `SuspendActor` checkpointing, reclaiming worker CPU and memory to maximize cluster density.

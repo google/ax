@@ -4,9 +4,9 @@
 </h1>
 
 > [!WARNING]
-> We are still actively refining our core concepts, protocols,
-> and specifications. We will likely to introduce major breaking
-> changes prior to a stable release.
+> AX and several of its features are in heavy development. We are actively
+> refining our core concepts, protocols, and specifications, and will likely
+> introduce major breaking changes prior to a stable release.
 
 **Declare an agentic task with workspaces and model specifications. AX sandboxes it, wires up its workspace, and helps running it at scale.**
 

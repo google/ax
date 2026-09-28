@@ -42,7 +42,6 @@ jobs:
     - name: Build local binaries
       run: |
         go build -v ./cmd/ax
-        go build -v ./cmd/ax-controller
         go build -v ./cmd/ax-server
         go build -v ./cmd/ax-task-runner
 

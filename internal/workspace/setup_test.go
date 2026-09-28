@@ -284,3 +284,50 @@ func TestMarkerName(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupWorkspace_InlinedFiles(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "ax-ws-files-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "files-ws"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Files: []*v1alpha1.File{
+				{Path: "config/settings.json", Content: `{"env": "production"}`},
+				{Path: "notes.txt", Content: "Hello AX"},
+			},
+		},
+	}
+
+	stateDir := filepath.Join(tempDir, "ax-state")
+	origAXDir := workspace.AXDir
+	workspace.AXDir = stateDir
+	defer func() { workspace.AXDir = origAXDir }()
+
+	res, err := workspace.SetupWorkspace(context.Background(), ws, tempDir, "")
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if !res.IsMaidenRun {
+		t.Errorf("expected maiden run to be true")
+	}
+
+	configData, err := os.ReadFile(filepath.Join(tempDir, "config", "settings.json"))
+	if err != nil {
+		t.Fatalf("reading config/settings.json: %v", err)
+	}
+	if string(configData) != `{"env": "production"}` {
+		t.Errorf("unexpected content in config/settings.json: %s", string(configData))
+	}
+
+	notesData, err := os.ReadFile(filepath.Join(tempDir, "notes.txt"))
+	if err != nil {
+		t.Fatalf("reading notes.txt: %v", err)
+	}
+	if string(notesData) != "Hello AX" {
+		t.Errorf("unexpected content in notes.txt: %s", string(notesData))
+	}
+}

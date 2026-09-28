@@ -38,7 +38,6 @@ func fullTask() *v1alpha1.Task {
 			CreationTimestamp: timestamppb.New(time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)),
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Suspend: true,
 			Image:   "example.com/img:1",
 			Command: []string{"sh", "-c", "true"},
 			Env:     []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
@@ -539,5 +538,60 @@ spec:
 	}
 	if !proto.Equal(&task, &back) {
 		t.Errorf("round trip changed the task:\n%s", out)
+	}
+}
+
+func TestWorkspace_Files_YAML(t *testing.T) {
+	wsYAML := `
+apiVersion: ax.io/v1alpha1
+kind: Workspace
+metadata:
+  name: files-demo
+spec:
+  files:
+    - path: AGENTS.md
+      content: "# Agent Guidelines\nFollow best practices."
+    - path: README.md
+      content: "# Demo Workspace\nWelcome!"
+`
+	var ws v1alpha1.Workspace
+	if err := yaml.Unmarshal([]byte(wsYAML), &ws); err != nil {
+		t.Fatalf("unmarshaling workspace: %v", err)
+	}
+	if len(ws.GetSpec().GetFiles()) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(ws.GetSpec().GetFiles()))
+	}
+	if ws.GetSpec().GetFiles()[0].GetPath() != "AGENTS.md" || ws.GetSpec().GetFiles()[0].GetContent() != "# Agent Guidelines\nFollow best practices." {
+		t.Errorf("unexpected file 0: %+v", ws.GetSpec().GetFiles()[0])
+	}
+	if ws.GetSpec().GetFiles()[1].GetPath() != "README.md" {
+		t.Errorf("unexpected file 1: %+v", ws.GetSpec().GetFiles()[1])
+	}
+
+	out, err := yaml.Marshal(&ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var back v1alpha1.Workspace
+	if err := yaml.Unmarshal(out, &back); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	if !proto.Equal(&ws, &back) {
+		t.Errorf("round trip changed workspace:\n%s", out)
+	}
+}
+
+func TestValidateWorkspace_Files(t *testing.T) {
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "valid-ws"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Files: []*v1alpha1.File{
+				{Path: "", Content: "missing path"},
+			},
+		},
+	}
+	if err := v1alpha1.ValidateWorkspace(ws); err == nil || !strings.Contains(err.Error(), "spec.files[0]: path is required") {
+		t.Errorf("expected path is required error, got %v", err)
 	}
 }

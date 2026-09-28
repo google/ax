@@ -33,7 +33,7 @@ All submissions, including submissions by project members, require review. We us
 
 ### Building Binaries
 
-Build all local binaries (`bin/ax`, `bin/ax-controller`, `bin/ax-server`):
+Build all local binaries (`bin/ax`, `bin/ax-server`):
 
 ```bash
 make build
@@ -81,7 +81,7 @@ make push-task-runner TASK_RUNNER_REPO=gcr.io/<your-project>/ax-task-runner
 
 ### Deploying to Kubernetes
 
-Deploy Redis, controller, and server components to your cluster in the `ax-system` namespace:
+Deploy Redis and server components to your cluster in the `ax-system` namespace:
 
 ```bash
 make deploy AX_IMAGE_REPO=gcr.io/<your-project>/ax-images

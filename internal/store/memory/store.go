@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -44,7 +43,6 @@ type MemoryStore struct {
 	tasks      map[string]*v1alpha1.Task
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
-	events     chan store.TaskEvent
 	watchers   map[string][]chan *v1alpha1.Task
 }
 
@@ -54,7 +52,6 @@ func NewStore() *MemoryStore {
 		tasks:      make(map[string]*v1alpha1.Task),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
-		events:     make(chan store.TaskEvent, 1000),
 		watchers:   make(map[string][]chan *v1alpha1.Task),
 	}
 }
@@ -89,13 +86,6 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	cp := clone(task)
 	s.tasks[key] = cp
 
-	event := store.TaskEvent{
-		ID:       fmt.Sprintf("%d", time.Now().UnixNano()),
-		Atespace: task.Metadata.Atespace,
-		Name:     task.Metadata.Name,
-		Action:   "reconcile",
-	}
-
 	// Notify watchers
 	if chs, ok := s.watchers[key]; ok {
 		for _, ch := range chs {
@@ -106,11 +96,6 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 		}
 	}
 	s.mu.Unlock()
-
-	select {
-	case s.events <- event:
-	default:
-	}
 
 	return nil
 }
@@ -174,49 +159,12 @@ func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name strin
 	return nil
 }
 
-func (s *MemoryStore) MarkTaskDeleting(ctx context.Context, atespace, name string) error {
-	key := taskKey(atespace, name)
-
-	s.mu.Lock()
-	t, ok := s.tasks[key]
-	if !ok {
-		s.mu.Unlock()
-		return store.ErrNotFound
-	}
-	if t.Status == nil {
-		t.Status = &v1alpha1.TaskStatus{}
-	}
-	t.Status.Phase = v1alpha1.PhaseTerminating
-	cp := clone(t)
-	if chs, ok := s.watchers[key]; ok {
-		for _, ch := range chs {
-			select {
-			case ch <- cp:
-			default:
-			}
-		}
-	}
-	s.mu.Unlock()
-
-	select {
-	case s.events <- store.TaskEvent{
-		ID:       fmt.Sprintf("%d", time.Now().UnixNano()),
-		Atespace: atespace,
-		Name:     name,
-		Action:   "delete",
-	}:
-	default:
-	}
-	return nil
-}
-
 func (s *MemoryStore) DeleteTask(ctx context.Context, atespace, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.tasks, taskKey(atespace, name))
 	return nil
 }
-
 
 func (s *MemoryStore) SaveModel(ctx context.Context, model *v1alpha1.Model) error {
 	if model.Metadata.Name == "" {
@@ -311,36 +259,6 @@ func (s *MemoryStore) DeleteWorkspace(ctx context.Context, atespace, name string
 	defer s.mu.Unlock()
 
 	delete(s.workspaces, taskKey(atespace, name))
-	return nil
-}
-
-// Subscribe returns a subscription over the store's single event channel. Every
-// subscription shares that channel, so each event reaches exactly one subscriber,
-// which matches the group semantics of the Redis implementation. Groups and
-// consumers are accepted for interface parity but carry no meaning here.
-func (s *MemoryStore) Subscribe(ctx context.Context, group, consumer string) (store.Subscription, error) {
-	return &subscription{events: s.events}, nil
-}
-
-type subscription struct {
-	events <-chan store.TaskEvent
-}
-
-func (sub *subscription) Next(ctx context.Context) (store.TaskEvent, error) {
-	select {
-	case ev := <-sub.events:
-		return ev, nil
-	case <-ctx.Done():
-		return store.TaskEvent{}, ctx.Err()
-	}
-}
-
-// Ack is a no-op: the channel hands each event out once, so there is nothing to retain.
-func (sub *subscription) Ack(ctx context.Context, ev store.TaskEvent) error {
-	return nil
-}
-
-func (sub *subscription) Close() error {
 	return nil
 }
 

@@ -89,11 +89,19 @@ func TestApplyAtespace(t *testing.T) {
 					if err != nil || string(output) != wantOutput {
 						t.Fatalf("expected %q, got %v\n%s", wantOutput, err, output)
 					}
-					// Reapplying must look up the resource in the same atespace.
+					// Tasks are immutable; other resources remain unchanged on reapply.
 					output, err = exec.CommandContext(ctx, binary, args...).CombinedOutput()
-					wantOutput = strings.ToLower(kind) + ".ax.io/example unchanged\n"
-					if err != nil || string(output) != wantOutput {
-						t.Fatalf("expected %q on reapply, got %v\n%s", wantOutput, err, output)
+					if kind == "Task" {
+						var exitErr *exec.ExitError
+						wantErr := fmt.Sprintf("code = FailedPrecondition desc = task %s/example already exists and is immutable", tc.wantAtespace)
+						if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(string(output), wantErr) {
+							t.Fatalf("expected exit 1 with %q on reapply, got %v\n%s", wantErr, err, output)
+						}
+					} else {
+						wantOutput = strings.ToLower(kind) + ".ax.io/example unchanged\n"
+						if err != nil || string(output) != wantOutput {
+							t.Fatalf("expected %q on reapply, got %v\n%s", wantOutput, err, output)
+						}
 					}
 				}
 
@@ -298,5 +306,74 @@ func TestRunGetResourceAliases(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+type fakeMainReconciler struct {
+	deleted chan struct{}
+}
+
+func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+	return task, nil
+}
+
+func (f *fakeMainReconciler) ReconcileDelete(ctx context.Context, atespace, taskName string) error {
+	time.Sleep(100 * time.Millisecond)
+	close(f.deleted)
+	return nil
+}
+
+func TestRunDeleteTask(t *testing.T) {
+	s := memory.NewStore()
+	meta := &v1alpha1.ObjectMeta{Name: "task-to-delete", Atespace: "default"}
+	if err := s.SaveTask(context.Background(), &v1alpha1.Task{Metadata: meta}); err != nil {
+		t.Fatal(err)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &fakeMainReconciler{deleted: make(chan struct{})}
+	srv := server.NewServer(s, server.Options{Reconciler: rec}).GRPCServer()
+	t.Cleanup(srv.Stop)
+	go func() { _ = srv.Serve(listener) }()
+
+	output, err := os.CreateTemp(t.TempDir(), "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = output
+	t.Cleanup(func() {
+		os.Stdout = stdout
+		_ = output.Close()
+	})
+
+	runErr := runDelete(listener.Addr().String(), "default", []string{"task", "task-to-delete"})
+	if runErr != nil {
+		t.Fatalf("runDelete failed: %v", runErr)
+	}
+
+	// Verify actor deletion finished before runDelete returned
+	select {
+	case <-rec.deleted:
+	default:
+		t.Fatal("expected actor deletion to complete before runDelete returned")
+	}
+
+	data, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOutput := "task.ax.io/task-to-delete deleted\n"
+	if string(data) != wantOutput {
+		t.Fatalf("expected output %q, got %q", wantOutput, string(data))
+	}
+
+	// Verify task is deleted from store
+	_, err = s.GetTask(context.Background(), "default", "task-to-delete")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected task to be NotFound after deletion, got %v", err)
 	}
 }

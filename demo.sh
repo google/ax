@@ -36,7 +36,7 @@ ax() { "${AX_BIN}" "$@"; }
 ATESPACE="${ATESPACE:-default}"
 TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
-TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:127dbe6650f2b93e5af793a9d7995ce0cf70c0f37ffb4c696154d3cc1a32f8bd}"
+TASK_IMAGE="${AX_TASK_IMAGE:-${AX_IMAGE_REPO:-gcr.io/dberkov-gke-dev3}/ax-task-runner@sha256:c81cfd6eaf0a96b7bad8d4e650ab25ca8d632e2e9f522d518f0a8c526fd93943}"
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
@@ -69,43 +69,6 @@ in_sandbox() {
 ok()   { printf '%s✔ %s%s\n' "${GREEN}" "$*" "${RESET}"; }
 note() { printf '%s%s%s\n' "${YELLOW}" "$*" "${RESET}"; }
 err()  { printf '%s✘ %s%s\n' "${RED}" "$*" "${RESET}"; }
-task_field() {
-  ax describe task "${TASK_NAME}" -a "${ATESPACE}" 2>/dev/null | awk -v key="$1" '$1 == key {print $2}'
-}
-
-# wait_for PHASE [READY] polls the task until it reaches PHASE (and Ready=READY
-# when given), printing a dot per poll and the elapsed time when it gets there.
-wait_for() {
-  local want_phase="$1" want_ready="${2:-}" timeout="${3:-180}"
-  local start phase ready elapsed
-  start=$(date +%s)
-  printf '%swaiting for Phase=%s' "${DIM}" "${want_phase}"
-  [[ -n "${want_ready}" ]] && printf ' Ready=%s' "${want_ready}"
-  printf '%s ' "${RESET}"
-  while :; do
-    phase=$(task_field "Phase:")
-    ready=$(task_field "Ready")
-    if [[ "${phase}" == "${want_phase}" && ( -z "${want_ready}" || "${ready}" == "${want_ready}" ) ]]; then
-      elapsed=$(( $(date +%s) - start ))
-      printf ' %s%ds%s\n' "${GREEN}" "${elapsed}" "${RESET}"
-      return 0
-    fi
-    if [[ "${phase}" == "Failed" && "${want_phase}" != "Failed" ]]; then
-      printf '\n'
-      err "Task entered Failed phase! Last seen Ready=${ready:-?}"
-      ax describe task "${TASK_NAME}" -a "${ATESPACE}" || true
-      return 1
-    fi
-    if (( $(date +%s) - start > timeout )); then
-      printf '\n'
-      note "Gave up after ${timeout}s. Last seen Phase=${phase:-?} Ready=${ready:-?}"
-      ax describe task "${TASK_NAME}" -a "${ATESPACE}" || true
-      return 1
-    fi
-    printf '.'
-    sleep 0.2
-  done
-}
 
 # ---------------------------------------------------------------------------
 # Demo
@@ -137,8 +100,16 @@ ok "Agent Substrate Control API found in namespace ${SUBSTRATE_NAMESPACE}"
 
 step "Clean up any previous demo run"
 CLEANED=0
-ax delete task "${TASK_NAME}" -a "${ATESPACE}" >/dev/null 2>&1 && { ok "removed old task"; CLEANED=1; } || true
-ax delete workspace "${WORKSPACE_NAME}" -a "${ATESPACE}" >/dev/null 2>&1 && { ok "removed old workspace"; CLEANED=1; } || true
+if ax get task "${TASK_NAME}" -a "${ATESPACE}" >/dev/null 2>&1; then
+  run ax delete task "${TASK_NAME}" -a "${ATESPACE}"
+  ok "removed old task"
+  CLEANED=1
+fi
+if ax get workspace "${WORKSPACE_NAME}" -a "${ATESPACE}" >/dev/null 2>&1; then
+  run ax delete workspace "${WORKSPACE_NAME}" -a "${ATESPACE}"
+  ok "removed old workspace"
+  CLEANED=1
+fi
 (( CLEANED )) || echo "nothing to clean up"
 
 step "Declare a Workspace and a Task"
@@ -169,9 +140,9 @@ YAML
 printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
 
-step "Watch the task come up"
-note "The controller creates an actor on Agent Substrate and initializes /workspace."
-wait_for "Running" "True"
+step "Resume the task"
+note "New tasks are created Suspended by default. Resuming creates the worker on Agent Substrate and initializes /workspace."
+run ax resume task "${TASK_NAME}" -a "${ATESPACE}"
 ok "${TASK_NAME} is Running and Ready"
 echo
 run ax get tasks -a "${ATESPACE}"
@@ -188,7 +159,6 @@ in_sandbox 'curl -s "$AX_METADATA_URL/metadata/v1alpha1/ax/task" | head -20'
 
 step "Suspend the task"
 run ax suspend task "${TASK_NAME}" -a "${ATESPACE}"
-wait_for "Suspended"
 ok "${TASK_NAME} is Suspended. The workspace has been checkpointed and the sandbox is gone."
 echo
 run ax get tasks -a "${ATESPACE}"

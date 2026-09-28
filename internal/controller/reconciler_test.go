@@ -16,8 +16,10 @@ package controller_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +43,9 @@ type mockControlServer struct {
 	deletedActors    []string
 	actorTemplates   map[string]bool
 	deletedTemplates []string
+	getActorFunc     func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error)
+	crashedActor     string
+	revertedActors   []string
 }
 
 // noSecrets is a SecretResolver for tests: it never finds a key and never touches a cluster.
@@ -78,6 +83,9 @@ func (m *mockControlServer) CreateActor(ctx context.Context, req *ateapipb.Creat
 	name := ""
 	if req.Actor != nil && req.Actor.Metadata != nil {
 		name = req.Actor.Metadata.Name
+	}
+	if name == m.crashedActor {
+		return nil, status.Error(codes.AlreadyExists, "actor exists")
 	}
 	m.createdActors = append(m.createdActors, name)
 	return &ateapipb.Actor{
@@ -123,10 +131,46 @@ func (m *mockControlServer) SuspendActor(ctx context.Context, req *ateapipb.Susp
 }
 
 
+func (m *mockControlServer) RevertActor(_ context.Context, req *ateapipb.RevertActorRequest) (*ateapipb.RevertActorResponse, error) {
+	name := req.GetActor().GetName()
+	m.revertedActors = append(m.revertedActors, name)
+	return &ateapipb.RevertActorResponse{Actor: &ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Name: name},
+		Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+	}}, nil
+}
+
 func (m *mockControlServer) DeleteActor(ctx context.Context, req *ateapipb.DeleteActorRequest) (*ateapipb.Actor, error) {
 	name := req.GetActor().GetName()
 	m.deletedActors = append(m.deletedActors, name)
 	return &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{Name: name}}, nil
+}
+
+func (m *mockControlServer) GetActor(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error) {
+	if m.getActorFunc != nil {
+		return m.getActorFunc(ctx, req)
+	}
+	name := req.GetActor().GetName()
+	if name == m.crashedActor {
+		return &ateapipb.Actor{
+			Metadata: &ateapipb.ResourceMetadata{Name: name},
+			Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+		}, nil
+	}
+	for _, del := range m.deletedActors {
+		if del == name {
+			return nil, status.Errorf(codes.NotFound, "actor %q not found", name)
+		}
+	}
+	for _, a := range m.createdActors {
+		if a == name {
+			return &ateapipb.Actor{
+				Metadata: &ateapipb.ResourceMetadata{Name: name},
+				Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_RUNNING},
+			}, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "actor %q not found", name)
 }
 
 func (m *mockControlServer) ListActorTemplates(ctx context.Context, req *ateapipb.ListActorTemplatesRequest) (*ateapipb.ListActorTemplatesResponse, error) {
@@ -187,7 +231,7 @@ func TestTaskReconciler(t *testing.T) {
 		},
 		// A client-supplied actor name must not survive: the actor is always
 		// named after the task.
-		Status: &v1alpha1.TaskStatus{Actor: "not-the-task"},
+		Status: &v1alpha1.TaskStatus{Actor: "not-the-task", Phase: "Running"},
 	}
 
 	reconciled, err := reconciler.Reconcile(ctx, task)
@@ -251,8 +295,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Suspend: true,
-			Image:   "ghrc.io/my-org/my-image",
+			Image: "ghrc.io/my-org/my-image",
 		},
 	}
 
@@ -329,6 +372,9 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{},
+		Status: &v1alpha1.TaskStatus{
+			Phase: "Running",
+		},
 	}
 
 	// Case 1: Worker not responding on readyz -> WorkspaceReady=False and Ready=False.
@@ -351,7 +397,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// Case 3: Suspending the task -> Ready=False (TaskSuspended), but the workspace was
 	// already initialized so WorkspaceReady stays True.
 	task = reconciledReady
-	task.Spec.Suspend = true
+	task.Status.Phase = "Suspended"
 	reconciledSuspended, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile with suspend failed: %v", err)
@@ -366,7 +412,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// WorkspaceReady instead of re-polling, so the task is Ready again immediately.
 	mockSrv.workerIP = "127.0.0.1:1"
 	task = reconciledSuspended
-	task.Spec.Suspend = false
+	task.Status.Phase = "Running"
 	reconciledResumed, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile with resume failed: %v", err)
@@ -455,5 +501,125 @@ func TestReconcileDelete_RemovesActorAndTemplates(t *testing.T) {
 		if !mockSrv.actorTemplates[keep] {
 			t.Errorf("template %s should not have been deleted", keep)
 		}
+	}
+}
+
+func TestReconcileDelete_BlocksUntilActorDeleted(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	getCalls := 0
+	mockSrv := &mockControlServer{
+		getActorFunc: func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error) {
+			getCalls++
+			if getCalls < 3 {
+				// Simulate actor in deleting state during the first two poll checks
+				return &ateapipb.Actor{
+					Metadata: &ateapipb.ResourceMetadata{Name: req.GetActor().GetName()},
+					Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_DELETING},
+				}, nil
+			}
+			// Once actor is completely torn down
+			return nil, status.Errorf(codes.NotFound, "actor %q not found", req.GetActor().GetName())
+		},
+	}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler.SecretResolver = noSecrets
+
+	if err := reconciler.ReconcileDelete(ctx, "default", "slow-delete-task"); err != nil {
+		t.Fatalf("ReconcileDelete failed: %v", err)
+	}
+
+	if getCalls < 3 {
+		t.Errorf("expected at least 3 GetActor calls before deletion completes, got %d", getCalls)
+	}
+}
+
+func TestReconcileDelete_ActorDeletionTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{
+		getActorFunc: func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error) {
+			// Actor remains in deleting state indefinitely
+			return &ateapipb.Actor{
+				Metadata: &ateapipb.ResourceMetadata{Name: req.GetActor().GetName()},
+				Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_DELETING},
+			}, nil
+		},
+	}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler.SecretResolver = noSecrets
+
+	err = reconciler.ReconcileDelete(ctx, "default", "stuck-task")
+	if err == nil {
+		t.Fatal("expected error due to timeout, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Errorf("expected deadline exceeded error, got %v", err)
+	}
+}
+
+func TestEnsureActor_RevertsCrashedActor(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{crashedActor: "job"}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	actor, err := client.EnsureActor(context.Background(), "default", "job", "default", "job-tmpl-0a1b2c3d")
+	if err != nil {
+		t.Fatalf("EnsureActor failed: %v", err)
+	}
+	if got := actor.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("actor state = %v, want SUSPENDED", got)
+	}
+	if len(mockSrv.revertedActors) != 1 || len(mockSrv.deletedActors) != 0 {
+		t.Errorf("crashed actor: reverted %v, deleted %v; want reverted only", mockSrv.revertedActors, mockSrv.deletedActors)
 	}
 }

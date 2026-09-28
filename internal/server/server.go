@@ -17,9 +17,11 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
@@ -28,24 +30,49 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// Reconciler coordinates sandbox/actor lifecycles on Agent Substrate directly.
+type Reconciler interface {
+	Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error)
+	ReconcileDelete(ctx context.Context, atespace, taskName string) error
+}
+
+// Options configures the AX API Server.
+type Options struct {
+	Locker     lock.Locker
+	Reconciler Reconciler
+}
+
 // Server provides the gRPC API for AX.
 type Server struct {
 	v1alpha1.UnimplementedAXServer
 	store      store.Store
+	locker     lock.Locker
+	reconciler Reconciler
 	grpcServer *grpc.Server
 }
 
 // NewServer creates a new AX API server.
-func NewServer(s store.Store) *Server {
+func NewServer(s store.Store, opts ...Options) *Server {
+	var opt Options
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	locker := opt.Locker
+	if locker == nil {
+		locker = lock.NewMemoryLocker()
+	}
+
 	srv := &Server{
 		store:      s,
+		locker:     locker,
+		reconciler: opt.Reconciler,
 		grpcServer: grpc.NewServer(),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
 	return srv
 }
 
-// GRPCServer returns the underlying gRPC server.
+// GRPCServer returns the underlying gRPC server instance.
 func (s *Server) GRPCServer() *grpc.Server {
 	return s.grpcServer
 }
@@ -108,7 +135,7 @@ func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) 
 	return &v1alpha1.ListTasksResponse{Tasks: tasks}, nil
 }
 
-func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest) (*v1alpha1.Task, error) {
+func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest) (*v1alpha1.Task, error) {
 	if req == nil || req.Task == nil {
 		return nil, status.Error(codes.InvalidArgument, "task required")
 	}
@@ -116,16 +143,58 @@ func (s *Server) UpdateTask(ctx context.Context, req *v1alpha1.UpdateTaskRequest
 	if err := v1alpha1.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	task.Metadata = defaultMetadata(task.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetTask(ctx, atespace, name)
-		if err != nil {
-			return nil
-		}
-		return existing.GetMetadata()
-	})
+	if task.Metadata == nil {
+		task.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	atespace := task.Metadata.Atespace
+	if atespace == "" {
+		atespace = "default"
+		task.Metadata.Atespace = atespace
+	}
+	taskName := task.Metadata.GetName()
+
+	// Acquire exclusive lock for this task
+	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+	}
+	defer unlock()
+
+	_, err = s.store.GetTask(ctx, atespace, taskName)
+	if err == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
+	}
+
+	if task.Metadata.CreationTimestamp == nil {
+		task.Metadata.CreationTimestamp = timestamppb.Now()
+	}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
+	}
+	task.Status.Phase = "Suspended"
 	if err := s.store.SaveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
+
+	// Directly reconcile with Substrate
+	if s.reconciler != nil {
+		workspaces := s.fetchWorkspaces(ctx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		if err != nil {
+			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
+			task.Status.Phase = "Failed"
+			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
+		}
+		task.Status = reconciled.Status
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+		}
+	}
+
 	return task, nil
 }
 
@@ -137,13 +206,50 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	if atespace == "" {
 		atespace = "default"
 	}
-	// Deletion is two-phase: mark the task Terminating and let the controller tear
-	// down the actor before the record is removed. Clients poll GetTask for NotFound.
-	if err := s.store.MarkTaskDeleting(ctx, atespace, req.Name); err != nil {
+	taskName := req.Name
+
+	// Acquire exclusive lock for this task
+	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+	}
+	defer unlock()
+
+	task, err := s.store.GetTask(ctx, atespace, taskName)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", req.Name, atespace)
+			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "deleting task: %v", err)
+		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
+	}
+
+	// Mark the task as terminating while actor cleanup is in progress.
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
+	}
+	task.Status.Phase = v1alpha1.PhaseTerminating
+	if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+	}
+
+	// Directly clean up Substrate actor and templates
+	if s.reconciler != nil {
+		if err := s.reconciler.ReconcileDelete(ctx, atespace, taskName); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil, status.Error(codes.Canceled, err.Error())
+			}
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, status.Error(codes.DeadlineExceeded, err.Error())
+			}
+			if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
+				return nil, err
+			}
+			return nil, status.Errorf(codes.Internal, "cleaning up substrate resources for task %s/%s: %v", atespace, taskName, err)
+		}
+	}
+
+	if err := s.store.DeleteTask(ctx, atespace, taskName); err != nil {
+		return nil, status.Errorf(codes.Internal, "deleting task record: %v", err)
 	}
 	return &v1alpha1.DeleteTaskResponse{}, nil
 }
@@ -156,20 +262,43 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if atespace == "" {
 		atespace = "default"
 	}
-	task, err := s.store.GetTask(ctx, atespace, req.Name)
+	taskName := req.Name
+
+	// Acquire exclusive lock for this task
+	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+	}
+	defer unlock()
+
+	task, err := s.store.GetTask(ctx, atespace, taskName)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", req.Name, atespace)
+			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = true
-	if err := s.store.SaveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
+	task.Status.Phase = "Suspended"
+
+	if s.reconciler != nil {
+		workspaces := s.fetchWorkspaces(ctx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
+		}
+		task.Status = reconciled.Status
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+		}
+	} else {
+		if err := s.store.SaveTask(ctx, task); err != nil {
+			return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
+		}
 	}
+
 	return task, nil
 }
 
@@ -181,21 +310,62 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if atespace == "" {
 		atespace = "default"
 	}
-	task, err := s.store.GetTask(ctx, atespace, req.Name)
+	taskName := req.Name
+
+	// Acquire exclusive lock for this task
+	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+	}
+	defer unlock()
+
+	task, err := s.store.GetTask(ctx, atespace, taskName)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", req.Name, atespace)
+			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if task.Spec == nil {
-		task.Spec = &v1alpha1.TaskSpec{}
+	if task.Status == nil {
+		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Spec.Suspend = false
-	if err := s.store.SaveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
+	task.Status.Phase = "Running"
+
+	if s.reconciler != nil {
+		workspaces := s.fetchWorkspaces(ctx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		if err != nil {
+			task.Status.Phase = "Failed"
+			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
+		}
+		task.Status = reconciled.Status
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+		}
+	} else {
+		if err := s.store.SaveTask(ctx, task); err != nil {
+			return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
+		}
 	}
+
 	return task, nil
+}
+
+func (s *Server) fetchWorkspaces(ctx context.Context, atespace string, task *v1alpha1.Task) []*v1alpha1.Workspace {
+	var workspaces []*v1alpha1.Workspace
+	if task.Spec == nil {
+		return workspaces
+	}
+	for _, ref := range task.Spec.WorkspaceRefs() {
+		if ref.Name == "" {
+			continue
+		}
+		if wsp, err := s.store.GetWorkspace(ctx, atespace, ref.Name); err == nil {
+			workspaces = append(workspaces, wsp)
+		}
+	}
+	return workspaces
 }
 
 func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStreamingServer[v1alpha1.WatchTaskResponse]) error {
@@ -230,13 +400,12 @@ func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStr
 			if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: task, Action: "MODIFIED"}); err != nil {
 				return err
 			}
-			if task.Status != nil && (task.Status.Phase == "Running" || task.Status.Phase == "Failed" || task.Status.Phase == "Completed") {
+			if task.Status != nil && (task.Status.Phase == "Failed" || task.Status.Phase == "Completed") {
 				return nil
 			}
 		}
 	}
 }
-
 
 // --- Workspaces ---
 
@@ -284,6 +453,17 @@ func (s *Server) UpdateWorkspace(ctx context.Context, req *v1alpha1.UpdateWorksp
 		}
 		return existing.GetMetadata()
 	})
+
+	atespace := req.Workspace.Metadata.Atespace
+	wsName := req.Workspace.Metadata.Name
+
+	// Acquire exclusive lock for this workspace
+	unlock, err := s.locker.Lock(ctx, "workspace", atespace, wsName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, wsName, err)
+	}
+	defer unlock()
+
 	if err := s.store.SaveWorkspace(ctx, req.Workspace); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving workspace: %v", err)
 	}
@@ -298,7 +478,16 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	if atespace == "" {
 		atespace = "default"
 	}
-	if err := s.store.DeleteWorkspace(ctx, atespace, req.Name); err != nil {
+	wsName := req.Name
+
+	// Acquire exclusive lock for this workspace
+	unlock, err := s.locker.Lock(ctx, "workspace", atespace, wsName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, wsName, err)
+	}
+	defer unlock()
+
+	if err := s.store.DeleteWorkspace(ctx, atespace, wsName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting workspace: %v", err)
 	}
 	return &v1alpha1.DeleteWorkspaceResponse{}, nil
@@ -350,30 +539,21 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 		}
 		return existing.GetMetadata()
 	})
+
+	atespace := req.Model.Metadata.Atespace
+	modelName := req.Model.Metadata.Name
+
+	// Acquire exclusive lock for this model
+	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
+	}
+	defer unlock()
+
 	if err := s.store.SaveModel(ctx, req.Model); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving model: %v", err)
 	}
 	return req.Model, nil
-}
-
-// defaultMetadata normalizes resource metadata before a save: a missing atespace
-// becomes "default", and the creation timestamp is carried over from the existing
-// resource (looked up via existing) or set to now for a new one.
-func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name string) *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {
-	if meta == nil {
-		meta = &v1alpha1.ObjectMeta{}
-	}
-	if meta.Atespace == "" {
-		meta.Atespace = "default"
-	}
-	if meta.CreationTimestamp == nil {
-		if prev := existing(meta.Atespace, meta.Name); prev.GetCreationTimestamp() != nil {
-			meta.CreationTimestamp = prev.GetCreationTimestamp()
-		} else {
-			meta.CreationTimestamp = timestamppb.Now()
-		}
-	}
-	return meta
 }
 
 func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelRequest) (*v1alpha1.DeleteModelResponse, error) {
@@ -384,8 +564,39 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	if atespace == "" {
 		atespace = "default"
 	}
-	if err := s.store.DeleteModel(ctx, atespace, req.Name); err != nil {
+	modelName := req.Name
+
+	// Acquire exclusive lock for this model
+	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
+	}
+	defer unlock()
+
+	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting model: %v", err)
 	}
 	return &v1alpha1.DeleteModelResponse{}, nil
 }
+
+func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name string) *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {
+	if meta == nil {
+		meta = &v1alpha1.ObjectMeta{}
+	}
+	if meta.Atespace == "" {
+		meta.Atespace = "default"
+	}
+	if meta.CreationTimestamp == nil {
+		var prev *v1alpha1.ObjectMeta
+		if existing != nil {
+			prev = existing(meta.Atespace, meta.Name)
+		}
+		if prev.GetCreationTimestamp() != nil {
+			meta.CreationTimestamp = prev.GetCreationTimestamp()
+		} else {
+			meta.CreationTimestamp = timestamppb.Now()
+		}
+	}
+	return meta
+}
+

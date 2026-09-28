@@ -109,6 +109,7 @@ func SetupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, targetPath stri
 
 	gitOK := true
 	if ws != nil && ws.Spec != nil {
+		writeFiles(ws.Spec.Files, targetPath)
 		res.ClonedRepos, gitOK = cloneRepos(ctx, ws.Spec.Git, targetPath)
 		res.SkillsMounted = setupSkills(ws.Spec.Skills)
 	}
@@ -373,4 +374,28 @@ func RepoDirName(repoURL string) string {
 		return trimmed
 	}
 	return trimmed[idx+1:]
+}
+
+// writeFiles writes inlined files into the workspace directory.
+func writeFiles(files []*v1alpha1.File, targetPath string) {
+	for _, f := range files {
+		if f == nil || f.GetPath() == "" {
+			continue
+		}
+		var dest string
+		if filepath.IsAbs(f.GetPath()) {
+			dest = f.GetPath()
+		} else {
+			dest = filepath.Join(targetPath, f.GetPath())
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), dirPerm); err != nil {
+			slog.Warn("failed to create directory for workspace file", "path", dest, "error", err)
+			continue
+		}
+		if err := os.WriteFile(dest, []byte(f.GetContent()), filePerm); err != nil {
+			slog.Warn("failed to write workspace file", "path", dest, "error", err)
+			continue
+		}
+		slog.Info("wrote inlined workspace file", "path", dest)
+	}
 }

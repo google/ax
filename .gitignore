@@ -6,6 +6,5 @@ bin/
 /ax
 /ax-server
 /ax-task-runner
-/ax-controller
 
 cmd/ax-task-runner/__pycache__/antigravity_bootstrap.cpython-313.pyc

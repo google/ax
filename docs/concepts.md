@@ -17,7 +17,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 | `WorkspaceReady` | Every workspace has finished setting up. Stays True afterwards. |
 | `Ready` | The task is running and `WorkspaceReady` is True. This is the one to wait on. |
 
-Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `TaskSuspended`; resuming sets it back. Deleting a task moves it to `Terminating` while the controller tears down the sandbox, then removes the record entirely. `ax delete` blocks until that has happened.
+Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `TaskSuspended`; resuming sets it back. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
 
 ## Workspace
 
@@ -33,6 +33,6 @@ A binding can also carry a `goal`, a plain-language description of the environme
 
 ## Model
 
-A `Model` is not a model. It is a named model configuration: which provider to call, which model identifier to use, provider-specific generation parameters such as temperature, and a reference to the Kubernetes secret holding the API key.
+A configuration for a model provider and its parameters: which provider to call, the model identifier, provider-specific generation parameters such as max_tokens, and references to the Kubernetes secret holding the credentials.
 
-Declaring it as a resource is what makes it manageable across the cluster. The configuration lives in one place instead of in every agent's environment, so rotating a key, pinning a new model version, or tightening a parameter is one `ax apply` rather than a hunt through task definitions. AX's own components read it too, for example when planning a workspace from a goal.
+Declaring models as cluster resources makes them manageable and reusable across tasks. The configuration lives in one place instead of in every agent's environment, so rotating a key, pinning a new model version, or tuning parameters is a single `ax apply` rather than a hunt through task definitions. AX's own components read `Model` resources as well, for example when planning a workspace from a goal.

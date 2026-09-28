@@ -65,6 +65,12 @@ spec:
     - name: origin
       repo: "https://github.com/chalk/chalk.git"
       branch: "main"
+  files:
+    - path: "AGENTS.md"
+      content: |
+        # Project Guidelines
+        - Run `go test ./...` before submitting changes.
+        - Keep dependencies minimal.
   mcp:
     registries:
       - provider: google

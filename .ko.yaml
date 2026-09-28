@@ -16,8 +16,8 @@ defaultBaseImage: cgr.dev/chainguard/static:latest
 baseImageOverrides:
   github.com/google/ax/cmd/ax-task-runner: alpine/git:latest
 builds:
-  - id: ax-controller
-    main: ./cmd/ax-controller
+  - id: ax-server
+    main: ./cmd/ax-server
     env:
       - CGO_ENABLED=0
     flags:

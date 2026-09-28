@@ -284,7 +284,18 @@ func ValidateObjectMeta(meta *ObjectMeta) error {
 // ValidateWorkspace reports the first problem with a workspace that would make
 // it unusable. It is called by the API server before saving.
 func ValidateWorkspace(w *Workspace) error {
-	return ValidateObjectMeta(w.GetMetadata())
+	if err := ValidateObjectMeta(w.GetMetadata()); err != nil {
+		return err
+	}
+	if w.GetSpec() != nil {
+		for i, f := range w.GetSpec().GetFiles() {
+			field := fmt.Sprintf("spec.files[%d]", i)
+			if f == nil || f.GetPath() == "" {
+				return fmt.Errorf("%s: path is required", field)
+			}
+		}
+	}
+	return nil
 }
 
 // ValidateModel reports the first problem with a model that would make it
