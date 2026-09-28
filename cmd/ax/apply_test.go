@@ -79,7 +79,7 @@ spec:
 	}
 
 	docNode := node.Content[0]
-	kind, name, outcome, err := applyDocument(context.Background(), client, docNode)
+	kind, name, outcome, err := applyDocument(context.Background(), client, docNode, nil)
 	if err != nil {
 		t.Fatalf("expected applyDocument to succeed, got: %v", err)
 	}
@@ -114,7 +114,7 @@ spec:
 	}
 
 	docNode := node.Content[0]
-	_, _, _, err := applyDocument(context.Background(), client, docNode)
+	_, _, _, err := applyDocument(context.Background(), client, docNode, nil)
 	if err == nil {
 		t.Fatalf("expected error applying to existing task, got nil")
 	}
