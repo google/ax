@@ -24,7 +24,7 @@ Two consequences follow from that table. Your image must contain an executable a
 
 **Runner-specific settings** belong in `spec.config`, a free-form object that AX passes through unchanged inside `AX_TASK_YAML` (and the task metadata endpoint). The runner owns its schema; the control plane only checks that it is an object of at most 16 KiB and that the whole encoded task fits in 31 KiB. Decode `AX_TASK_YAML` leniently (the Go package offers `v1alpha1.UnmarshalYAMLLenient`) so the runner keeps working when a newer control plane adds fields. See [Runner configuration](manifests.md#runner-configuration).
 
-The `/workspace` volume is what survives suspend and resume. Agent Substrate snapshots it when a task is suspended and restores it into a fresh container when the task is resumed, so the runner will see the same files but a new process tree.
+AX uses Agent Substrate DATA snapshots for suspend and resume: the durable `/workspace` volume is saved and restored, while process memory and files outside that volume are not preserved by the suspend snapshot. Resume uses the golden boot snapshot as its baseline, so do not rely on processes or files created after that boot surviving. `spec.command` can run during the golden boot and may start again on resume; commands should tolerate repeated starts.
 
 ## What a runner must do
 
@@ -42,13 +42,13 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/metadata/v1alpha1/ax/task` | Return the `Task` as `application/yaml`. Optional, but your command and `ax` tooling may expect it. |
 | `/metadata/v1alpha1/ax/workspace` | Return the bound `Workspace` as `application/yaml`, or `404` when there is none. Optional, as above. |
 
-**Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, clone the Git repos from `spec.git`, create the skills path, and write any MCP configuration. A task with no binding gets an empty `/workspace`. Record that setup happened somewhere on the durable volume or in a known location, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `/ax`.
+**Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, clone the Git repos from `spec.git`, create the skills path, and write any MCP configuration. A task with no binding gets an empty `/workspace`. Record that setup happened somewhere on the durable volume or in a known location, then skip the work on later boots. Re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `/ax`.
 
 **Run the command and supervise it.** Start `spec.command` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
 **Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
 
-**Shut down cleanly on `SIGTERM`.** Stop and suspend both deliver `SIGTERM` to PID 1. Forward it to the command's process group, wait a bounded grace period, then `SIGKILL` whatever is left. Flush anything the agent needs to survive a resume before you exit.
+**Shut down cleanly on `SIGTERM`.** When PID 1 receives `SIGTERM`, forward it to the command's process group, wait a bounded grace period, then `SIGKILL` whatever is left. Suspend checkpoints the sandbox without sending `SIGTERM`, so it gives the runner no signal-driven opportunity to flush state. Write resumable state to `/workspace` during normal operation rather than waiting for a shutdown signal.
 
 **Serve guest services only when asked.** When `spec.debug` is true, the runner should also serve the [Agent Substrate guest services](https://github.com/agent-substrate/env) over gRPC on port 80, multiplexed with the HTTP endpoints using `h2c`. This is what `ax ssh` connects to. When `spec.debug` is false, leave them off. They allow arbitrary process execution and file access inside the sandbox, and `ax ssh` refuses to connect to a task that has not opted in.
 
