@@ -79,7 +79,7 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 		defaultTemplate = "default-template"
 	}
 	if defaultTemplateAtespace == "" {
-		defaultTemplateAtespace = "ax-system"
+		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
 	}
 	return &TaskReconciler{
 		client:                  client,
@@ -222,7 +222,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		host = h
 		port = p
 	}
-	readyURL := fmt.Sprintf("http://%s:%s/readyz?check=workspace", host, port)
+	readyURL := fmt.Sprintf("http://%s/readyz?check=workspace", net.JoinHostPort(host, port))
 	// Workspace setup happens once per task. After it has completed, WorkspaceReady stays
 	// True across suspend/resume cycles, so only poll while it is still initializing.
 	workspaceReady := r.conditionTrue(task, condWorkspaceReady)

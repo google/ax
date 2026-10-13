@@ -18,19 +18,23 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 // ClientOptions configures connection to the Substrate Control API server.
@@ -206,7 +210,59 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 const (
 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
 	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
+
+	// defaultRetryAttempts is the maximum number of calls retryOnCodes makes. With
+	// exponential backoff from defaultRetryInterval capped at maxRetryInterval
+	// (±50% jitter), the total wait across all attempts is roughly 6s-20s.
+	defaultRetryAttempts = 10
+
+	// retryBackoffFactor is the multiplier applied to the backoff after each failed attempt.
+	retryBackoffFactor = 2
+
+	// actorDeletingWaitAttempts bounds how many times EnsureActor retries creation
+	// while a previous actor with the same name is still being deleted.
+	actorDeletingWaitAttempts = 20
 )
+
+var (
+	// defaultRetryInterval is the initial backoff for retryOnCodes and the poll
+	// interval used while waiting for actor deletion.
+	defaultRetryInterval = 200 * time.Millisecond
+
+	// maxRetryInterval caps the exponential backoff in retryOnCodes.
+	maxRetryInterval = 2 * time.Second
+
+	// actorDeletingWaitInterval is the interval between creation attempts while a
+	// previous actor is still deleting (actorDeletingWaitAttempts * interval ~= 10s).
+	actorDeletingWaitInterval = 500 * time.Millisecond
+)
+
+// retryOnCodes calls fn until it succeeds, returns an error whose gRPC code is not in
+// retryable, defaultRetryAttempts is exhausted, or ctx is done. Between attempts it
+// waits with jittered exponential backoff starting at defaultRetryInterval and
+// capped at maxRetryInterval.
+func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code) error {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = defaultRetryInterval
+	b.MaxInterval = maxRetryInterval
+	b.Multiplier = retryBackoffFactor
+
+	_, err := backoff.Retry(ctx, func() (struct{}, error) {
+		err := fn()
+		if err != nil && !slices.Contains(retryable, status.Code(err)) {
+			return struct{}{}, backoff.Permanent(err)
+		}
+		return struct{}{}, err
+	}, backoff.WithBackOff(b), backoff.WithMaxTries(defaultRetryAttempts))
+
+	// backoff.Retry returns the *PermanentError wrapper as-is when the attempt limit
+	// is hit on the same try, so unwrap it to always surface the original error.
+	var permanent *backoff.PermanentError
+	if errors.As(err, &permanent) {
+		return permanent.Unwrap()
+	}
+	return err
+}
 
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
 func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string) *ateapipb.ActorTemplate {
@@ -245,7 +301,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			Image:   image,
 			Command: command,
 			Env:     envList,
-			Readyz: &ateapipb.ContainerReadyz{
+			WakeupProbe: &ateapipb.ContainerWakeupProbe{
 				HttpGet: &ateapipb.HTTPGetAction{
 					Path: "/readyz",
 					Port: 80,
@@ -260,13 +316,9 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			Name:       "workspace",
 			DurableDir: &ateapipb.DurableDirVolumeSource{},
 		}},
-		SnapshotsConfig: &ateapipb.SnapshotsConfig{
-			StorageLocation: snapshotsBucket,
-			OnPause:         ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			OnCommit:        ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
-			OnResume: &ateapipb.OnResumeConfig{
-				FromData: ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
-			},
+		SnapshotConfig: &ateapipb.SnapshotConfig{
+			StorageLocation:   snapshotsBucket,
+			PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES,
 		},
 		SandboxConfig: &ateapipb.SandboxConfig{
 			SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR,
@@ -275,7 +327,33 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	}
 }
 
+// cloneFromBaseTemplate clones a cluster-provisioned base ActorTemplate (preserving
+// its SnapshotConfig, Volumes, and SandboxConfig) and applies the target metadata
+// and container configuration from desired. The base template's containers are
+// intentionally replaced wholesale by desired's containers (image, command, env,
+// probes); only template-level settings are inherited from base.
+func cloneFromBaseTemplate(base, desired *ateapipb.ActorTemplate) *ateapipb.ActorTemplate {
+	cloned := proto.Clone(base).(*ateapipb.ActorTemplate)
+	cloned.Metadata = &ateapipb.ResourceMetadata{
+		Name:     desired.GetMetadata().GetName(),
+		Atespace: desired.GetMetadata().GetAtespace(),
+	}
+	cloned.Status = nil
+	cloned.Containers = desired.GetContainers()
+	if len(cloned.GetVolumes()) == 0 {
+		cloned.Volumes = desired.GetVolumes()
+	}
+	if cloned.GetSandboxConfig() == nil {
+		cloned.SandboxConfig = desired.GetSandboxConfig()
+	}
+	return cloned
+}
+
 // EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image and optional environment variables.
+// If the server rejects the directly-built template as invalid or unsupported (InvalidArgument/Unimplemented,
+// e.g. due to Substrate API version skew) and a baseTemplate is configured, it falls back to cloning baseTemplate
+// so cluster-specific template settings (such as SnapshotConfig) are preserved. Other errors (including
+// transient ones) are returned as-is.
 func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
 	if err == nil && existing != nil {
@@ -294,6 +372,33 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
 		ActorTemplate: tmpl,
 	}
 	created, err := c.control.CreateActorTemplate(ctx, req)
+	if code := status.Code(err); (code == codes.InvalidArgument || code == codes.Unimplemented) && baseTemplate != "" {
+		if baseAtespace == "" {
+			baseAtespace = v1alpha1.DefaultSystemNamespace
+		}
+		base, baseErr := c.GetActorTemplate(ctx, baseAtespace, baseTemplate)
+		if baseErr != nil || base == nil {
+			slog.Warn("direct ActorTemplate creation failed and base ActorTemplate is unavailable for fallback",
+				"baseAtespace", baseAtespace,
+				"baseTemplate", baseTemplate,
+				"targetAtespace", targetAtespace,
+				"targetTemplate", targetTemplate,
+				"reason", err,
+				"baseError", baseErr,
+			)
+		} else {
+			slog.Info("direct ActorTemplate creation failed; retrying by cloning base ActorTemplate with task overrides",
+				"baseAtespace", baseAtespace,
+				"baseTemplate", baseTemplate,
+				"targetAtespace", targetAtespace,
+				"targetTemplate", targetTemplate,
+				"reason", err,
+			)
+			created, err = c.control.CreateActorTemplate(ctx, &ateapipb.CreateActorTemplateRequest{
+				ActorTemplate: cloneFromBaseTemplate(base, tmpl),
+			})
+		}
+	}
 	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return nil, fmt.Errorf("creating actor template %s/%s: %w", targetAtespace, targetTemplate, err)
 	}
@@ -347,11 +452,11 @@ func (c *Client) EnsureActor(ctx context.Context, atespace, actorName, templateA
 				}
 				if state == ateapipb.ActorState_ACTOR_STATE_DELETING {
 					// Wait briefly for previous actor deletion to finalize before recreating
-					for i := 0; i < 20; i++ {
+					for i := 0; i < actorDeletingWaitAttempts; i++ {
 						select {
 						case <-ctx.Done():
 							return nil, ctx.Err()
-						case <-time.After(500 * time.Millisecond):
+						case <-time.After(actorDeletingWaitInterval):
 						}
 						actor, err = c.control.CreateActor(ctx, req)
 						if err == nil {
@@ -379,18 +484,23 @@ func (c *Client) ResumeActor(ctx context.Context, atespace, actorName string) (*
 			Name:     actorName,
 		},
 	}
-	resp, err := c.control.ResumeActor(ctx, req)
+	var resp *ateapipb.ResumeActorResponse
+	err := retryOnCodes(ctx, func() error {
+		var err error
+		resp, err = c.control.ResumeActor(ctx, req)
+		return err
+	}, codes.ResourceExhausted, codes.Aborted)
 	if err != nil {
 		return nil, "", fmt.Errorf("resuming actor %s/%s: %w", atespace, actorName, err)
 	}
-	if resp.Actor == nil {
+	if resp.GetActor() == nil {
 		return nil, "", fmt.Errorf("nil actor returned when resuming %s/%s", atespace, actorName)
 	}
 	var workerIP string
-	if resp.Actor.Status != nil && resp.Actor.Status.WorkerAssignment != nil {
-		workerIP = resp.Actor.Status.WorkerAssignment.WorkerPodIp
+	if ips := resp.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) > 0 {
+		workerIP = ips[0]
 	}
-	return resp.Actor, workerIP, nil
+	return resp.GetActor(), workerIP, nil
 }
 
 // SuspendActor suspends the specified actor, triggering state checkpointing.
@@ -401,7 +511,10 @@ func (c *Client) SuspendActor(ctx context.Context, atespace, actorName string) e
 			Name:     actorName,
 		},
 	}
-	_, err := c.control.SuspendActor(ctx, req)
+	err := retryOnCodes(ctx, func() error {
+		_, err := c.control.SuspendActor(ctx, req)
+		return err
+	}, codes.Aborted)
 	if err != nil {
 		return fmt.Errorf("suspending actor %s/%s: %w", atespace, actorName, err)
 	}
@@ -419,9 +532,6 @@ func (c *Client) GetActor(ctx context.Context, atespace, actorName string) (*ate
 	return c.control.GetActor(ctx, req)
 }
 
-// actorDeletionPollInterval is the interval between checks when waiting for an actor to be deleted.
-var actorDeletionPollInterval = 200 * time.Millisecond
-
 // DeleteActor deletes the specified actor from Substrate and blocks until the actor
 // is fully deleted.
 func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) error {
@@ -432,7 +542,10 @@ func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) er
 		},
 		AnyState: true,
 	}
-	_, err := c.control.DeleteActor(ctx, req)
+	err := retryOnCodes(ctx, func() error {
+		_, err := c.control.DeleteActor(ctx, req)
+		return err
+	}, codes.Aborted)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil
@@ -458,7 +571,7 @@ func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) er
 		}
 	}
 
-	ticker := time.NewTicker(actorDeletionPollInterval)
+	ticker := time.NewTicker(defaultRetryInterval)
 	defer ticker.Stop()
 
 	for {
@@ -499,11 +612,12 @@ func (c *Client) DeleteActorTemplate(ctx context.Context, atespace, templateName
 			Name:     templateName,
 		},
 	}
-	_, err := c.control.DeleteActorTemplate(ctx, req)
+	err := retryOnCodes(ctx, func() error {
+		_, err := c.control.DeleteActorTemplate(ctx, req)
+		return err
+	}, codes.Aborted)
 	if err != nil && status.Code(err) != codes.NotFound {
 		return fmt.Errorf("deleting actor template %s/%s: %w", atespace, templateName, err)
 	}
 	return nil
 }
-
-

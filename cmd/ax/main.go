@@ -51,7 +51,7 @@ func main() {
 		atespace       = "default"
 		explicitServer = ""
 		kubeContext    = ""
-		axNamespace    = "ax-system"
+		axNamespace    = v1alpha1.DefaultSystemNamespace
 	)
 
 	args := os.Args[1:]

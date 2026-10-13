@@ -112,8 +112,8 @@ func (m *mockControlServer) ResumeActor(ctx context.Context, req *ateapipb.Resum
 			Status: &ateapipb.ActorStatus{
 				State: ateapipb.ActorState_ACTOR_STATE_RUNNING,
 				WorkerAssignment: &ateapipb.WorkerAssignment{
-					WorkerPod:   "worker-pod-1",
-					WorkerPodIp: wIP,
+					WorkerPod:    "worker-pod-1",
+					WorkerPodIps: []string{wIP},
 				},
 			},
 		},
@@ -214,7 +214,7 @@ func TestTaskReconciler(t *testing.T) {
 	defer client.Close()
 
 	// 3. Reconcile Task
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -283,7 +283,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -360,7 +360,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -476,7 +476,7 @@ func TestReconcileDelete_RemovesActorAndTemplates(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -539,7 +539,7 @@ func TestReconcileDelete_BlocksUntilActorDeleted(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 
 	if err := reconciler.ReconcileDelete(ctx, "default", "slow-delete-task"); err != nil {
@@ -581,7 +581,7 @@ func TestReconcileDelete_ActorDeletionTimeout(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.SecretResolver = noSecrets
 
 	err = reconciler.ReconcileDelete(ctx, "default", "stuck-task")
