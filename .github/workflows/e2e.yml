@@ -1,0 +1,80 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: E2E
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # Nightly run against Substrate main to catch incompatibilities with
+  # unreleased Substrate changes early. Never blocks PRs.
+  schedule:
+  - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      substrate_ref:
+        description: 'Substrate branch, tag, or commit to test against (default: version in go.mod)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-kind:
+    name: E2E (Kind / Substrate ${{ github.event_name == 'schedule' && 'main' || inputs.substrate_ref || 'go.mod' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - name: Checkout AX
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+
+    - name: Install Kind
+      uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+      with:
+        install_only: true
+
+    # The runner is discarded after the job, so the cluster is left running for
+    # the diagnostics step below rather than cleaned up.
+    # PRs and pushes test the Substrate version in go.mod, so they are not
+    # blocked by unreleased changes on Substrate main. The nightly run tests
+    # main; manual runs test the requested ref (go.mod if empty).
+    - name: Run Kind E2E suite
+      env:
+        EVENT: ${{ github.event_name }}
+        INPUT_REF: ${{ inputs.substrate_ref }}
+      run: |
+        if [[ "${EVENT}" == "schedule" ]]; then
+          make test-e2e-head
+        else
+          make test-e2e ${INPUT_REF:+SUBSTRATE_REF="${INPUT_REF}"}
+        fi
+
+    - name: Collect cluster diagnostics on failure
+      if: failure()
+      env:
+        KUBECONFIG: .tmp/kubeconfig-ax-e2e
+      run: |
+        [[ -f "${KUBECONFIG}" ]] || exit 0
+        kubectl get pods -A -o wide || true
+        kubectl -n ax-system logs deployment/ax-server --tail=200 || true
+        kubectl -n ate-system logs deployment/ate-api-server --all-containers --tail=200 || true

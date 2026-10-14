@@ -109,7 +109,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
 	if task.Spec.Image == "" {
-		task.Spec.Image = v1alpha1.DefaultTaskImage
+		task.Spec.Image = substrate.DefaultTaskImage()
 	}
 
 	slog.Info("reconciling task", "name", task.Metadata.Name, "atespace", atespace, "image", task.Spec.Image)

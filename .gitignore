@@ -1,6 +1,7 @@
 # Binaries
 bin/
 /tmp/
+/.tmp/
 *.exe
 *.test
 /ax
@@ -8,3 +9,4 @@ bin/
 /ax-task-runner
 
 cmd/ax-task-runner/__pycache__/antigravity_bootstrap.cpython-313.pyc
+.vscode/
