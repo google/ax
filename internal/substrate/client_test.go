@@ -237,7 +237,7 @@ func TestClient_ResumeActor_WorkerPodIpsAndRetry(t *testing.T) {
 
 	mock := &mockControlClient{
 		resumeErrs: []error{
-			status.Error(codes.ResourceExhausted, "no worker available"),
+			status.Error(codes.Aborted, "operation aborted"),
 			nil,
 		},
 		resumeActor: &ateapipb.Actor{
@@ -264,6 +264,22 @@ func TestClient_ResumeActor_WorkerPodIpsAndRetry(t *testing.T) {
 	}
 }
 
+func TestClient_ResumeActor_ResourceExhaustedNotRetried(t *testing.T) {
+	mock := &mockControlClient{
+		resumeErrs: []error{
+			status.Error(codes.ResourceExhausted, "no worker available"),
+		},
+	}
+	c := &Client{control: mock}
+	_, _, err := c.ResumeActor(context.Background(), "default", "task-1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if status.Code(err) != codes.ResourceExhausted {
+		t.Errorf("expected ResourceExhausted error, got %v", err)
+	}
+}
+
 func TestClient_DeleteActorTemplate_RetriesOnAborted(t *testing.T) {
 	oldInterval := defaultRetryInterval
 	defaultRetryInterval = 5 * time.Millisecond
@@ -285,26 +301,8 @@ func TestClient_DeleteActorTemplate_RetriesOnAborted(t *testing.T) {
 	}
 }
 
-func TestClient_EnsureActorTemplateWithImage_FallbackToBaseTemplate(t *testing.T) {
-	baseTmpl := &ateapipb.ActorTemplate{
-		Metadata: &ateapipb.ResourceMetadata{
-			Atespace: v1alpha1.DefaultSystemNamespace,
-			Name:     "default-template",
-		},
-		SnapshotConfig: &ateapipb.SnapshotConfig{
-			StorageLocation:   "gs://cluster-base-bucket/snapshots/",
-			PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
-		},
-	}
-	mock := &mockControlClient{
-		templates: map[string]*ateapipb.ActorTemplate{
-			v1alpha1.DefaultSystemNamespace + "/default-template": baseTmpl,
-		},
-		createTemplateErrs: []error{
-			status.Error(codes.InvalidArgument, "actor_template.snapshot_config: unknown field"),
-			nil,
-		},
-	}
+func TestClient_EnsureActorTemplateWithImage_Success(t *testing.T) {
+	mock := &mockControlClient{}
 	c := &Client{control: mock}
 
 	created, err := c.EnsureActorTemplateWithImage(
@@ -320,58 +318,45 @@ func TestClient_EnsureActorTemplateWithImage_FallbackToBaseTemplate(t *testing.T
 		t.Fatalf("EnsureActorTemplateWithImage failed: %v", err)
 	}
 	if created.GetMetadata().GetAtespace() != "default" || created.GetMetadata().GetName() != "task-1-tmpl-abcd" {
-		t.Errorf("unexpected metadata on fallback template: %+v", created.GetMetadata())
-	}
-	if created.GetSnapshotConfig().GetStorageLocation() != "gs://cluster-base-bucket/snapshots/" {
-		t.Errorf("expected SnapshotConfig cloned from base template, got %+v", created.GetSnapshotConfig())
+		t.Errorf("unexpected metadata: %+v", created.GetMetadata())
 	}
 	if len(created.GetContainers()) != 1 || created.GetContainers()[0].GetImage() != "custom-image:v1" {
 		t.Errorf("expected container image custom-image:v1, got %+v", created.GetContainers())
 	}
 
-	// Verify what was actually sent to the server on the fallback attempt.
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
 	if len(mock.createdTemplates) != 1 {
-		t.Fatalf("expected 1 successful CreateActorTemplate request, got %d", len(mock.createdTemplates))
-	}
-	sent := mock.createdTemplates[0]
-	if sent.GetMetadata().GetAtespace() != "default" || sent.GetMetadata().GetName() != "task-1-tmpl-abcd" {
-		t.Errorf("unexpected metadata in request: %+v", sent.GetMetadata())
-	}
-	if sent.GetSnapshotConfig().GetStorageLocation() != "gs://cluster-base-bucket/snapshots/" ||
-		sent.GetSnapshotConfig().GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY {
-		t.Errorf("expected SnapshotConfig cloned from base in request, got %+v", sent.GetSnapshotConfig())
-	}
-	if len(sent.GetVolumes()) == 0 || sent.GetSandboxConfig() == nil {
-		t.Errorf("expected Volumes/SandboxConfig filled from desired template, got volumes=%+v sandbox=%+v", sent.GetVolumes(), sent.GetSandboxConfig())
-	}
-	if baseTmpl.GetMetadata().GetName() != "default-template" {
-		t.Errorf("base template was mutated: %+v", baseTmpl.GetMetadata())
+		t.Fatalf("expected 1 CreateActorTemplate request, got %d", len(mock.createdTemplates))
 	}
 }
 
-func TestClient_EnsureActorTemplateWithImage_NoFallbackOnTransientError(t *testing.T) {
+func TestClient_EnsureActorTemplateWithImage_PropagatesError(t *testing.T) {
 	mock := &mockControlClient{
-		templates: map[string]*ateapipb.ActorTemplate{
-			v1alpha1.DefaultSystemNamespace + "/default-template": {
-				Metadata: &ateapipb.ResourceMetadata{Atespace: v1alpha1.DefaultSystemNamespace, Name: "default-template"},
-			},
-		},
 		createTemplateErrs: []error{
-			status.Error(codes.Unavailable, "connection refused"),
+			status.Error(codes.InvalidArgument, "actor_template.snapshot_config: invalid field"),
 		},
 	}
 	c := &Client{control: mock}
 
-	_, err := c.EnsureActorTemplateWithImage(context.Background(), v1alpha1.DefaultSystemNamespace, "default-template", "default", "task-1-tmpl-abcd", "custom-image:v1")
-	if status.Code(errors.Unwrap(err)) != codes.Unavailable {
-		t.Fatalf("expected Unavailable error, got %v", err)
+	_, err := c.EnsureActorTemplateWithImage(
+		context.Background(),
+		v1alpha1.DefaultSystemNamespace,
+		"default-template",
+		"default",
+		"task-1-tmpl-abcd",
+		"custom-image:v1",
+	)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("expected InvalidArgument error, got %v", err)
 	}
 	mock.mu.Lock()
 	defer mock.mu.Unlock()
 	if len(mock.createdTemplates) != 0 {
-		t.Errorf("expected no fallback template creation, got %d", len(mock.createdTemplates))
+		t.Errorf("expected no created templates on failure, got %d", len(mock.createdTemplates))
 	}
 }
 

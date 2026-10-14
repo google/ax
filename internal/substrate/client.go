@@ -34,7 +34,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 // ClientOptions configures connection to the Substrate Control API server.
@@ -327,33 +326,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	}
 }
 
-// cloneFromBaseTemplate clones a cluster-provisioned base ActorTemplate (preserving
-// its SnapshotConfig, Volumes, and SandboxConfig) and applies the target metadata
-// and container configuration from desired. The base template's containers are
-// intentionally replaced wholesale by desired's containers (image, command, env,
-// probes); only template-level settings are inherited from base.
-func cloneFromBaseTemplate(base, desired *ateapipb.ActorTemplate) *ateapipb.ActorTemplate {
-	cloned := proto.Clone(base).(*ateapipb.ActorTemplate)
-	cloned.Metadata = &ateapipb.ResourceMetadata{
-		Name:     desired.GetMetadata().GetName(),
-		Atespace: desired.GetMetadata().GetAtespace(),
-	}
-	cloned.Status = nil
-	cloned.Containers = desired.GetContainers()
-	if len(cloned.GetVolumes()) == 0 {
-		cloned.Volumes = desired.GetVolumes()
-	}
-	if cloned.GetSandboxConfig() == nil {
-		cloned.SandboxConfig = desired.GetSandboxConfig()
-	}
-	return cloned
-}
-
 // EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image and optional environment variables.
-// If the server rejects the directly-built template as invalid or unsupported (InvalidArgument/Unimplemented,
-// e.g. due to Substrate API version skew) and a baseTemplate is configured, it falls back to cloning baseTemplate
-// so cluster-specific template settings (such as SnapshotConfig) are preserved. Other errors (including
-// transient ones) are returned as-is.
 func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
 	if err == nil && existing != nil {
@@ -372,33 +345,6 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
 		ActorTemplate: tmpl,
 	}
 	created, err := c.control.CreateActorTemplate(ctx, req)
-	if code := status.Code(err); (code == codes.InvalidArgument || code == codes.Unimplemented) && baseTemplate != "" {
-		if baseAtespace == "" {
-			baseAtespace = v1alpha1.DefaultSystemNamespace
-		}
-		base, baseErr := c.GetActorTemplate(ctx, baseAtespace, baseTemplate)
-		if baseErr != nil || base == nil {
-			slog.Warn("direct ActorTemplate creation failed and base ActorTemplate is unavailable for fallback",
-				"baseAtespace", baseAtespace,
-				"baseTemplate", baseTemplate,
-				"targetAtespace", targetAtespace,
-				"targetTemplate", targetTemplate,
-				"reason", err,
-				"baseError", baseErr,
-			)
-		} else {
-			slog.Info("direct ActorTemplate creation failed; retrying by cloning base ActorTemplate with task overrides",
-				"baseAtespace", baseAtespace,
-				"baseTemplate", baseTemplate,
-				"targetAtespace", targetAtespace,
-				"targetTemplate", targetTemplate,
-				"reason", err,
-			)
-			created, err = c.control.CreateActorTemplate(ctx, &ateapipb.CreateActorTemplateRequest{
-				ActorTemplate: cloneFromBaseTemplate(base, tmpl),
-			})
-		}
-	}
 	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return nil, fmt.Errorf("creating actor template %s/%s: %w", targetAtespace, targetTemplate, err)
 	}
@@ -489,7 +435,7 @@ func (c *Client) ResumeActor(ctx context.Context, atespace, actorName string) (*
 		var err error
 		resp, err = c.control.ResumeActor(ctx, req)
 		return err
-	}, codes.ResourceExhausted, codes.Aborted)
+	}, codes.Aborted)
 	if err != nil {
 		return nil, "", fmt.Errorf("resuming actor %s/%s: %w", atespace, actorName, err)
 	}
