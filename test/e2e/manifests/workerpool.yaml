@@ -1,0 +1,12 @@
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: ax-workers
+  namespace: ${AX_SYSTEM_NAMESPACE}
+spec:
+  replicas: ${AX_WORKER_REPLICAS}
+  workerImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
+  sandboxClasses:
+  - name: gvisor
+    configRef:
+      name: gvisor-default
