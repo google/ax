@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ax-redis
+  namespace: ${AX_SYSTEM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ax-redis
+    app.kubernetes.io/part-of: ax
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ax-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ax-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ax-redis
+  namespace: ${AX_SYSTEM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ax-redis
+    app.kubernetes.io/part-of: ax
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  selector:
+    app.kubernetes.io/name: ax-redis

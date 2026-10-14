@@ -1,0 +1,36 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ARG BASE_IMAGE=ax-task-runner:base
+FROM ${BASE_IMAGE}
+
+# Initialize the sample Git repository used by E2E tests
+RUN mkdir -p /workspace /tmp/sample-src && \
+    cd /tmp/sample-src && \
+    git init -b main && \
+    git config user.name "AX E2E" && \
+    git config user.email "e2e@ax.local" && \
+    echo "# Sample E2E Repo" > README.md && \
+    echo "print('hello from git repo v1')" > app.py && \
+    git add README.md app.py && \
+    git commit -m "Initial commit" && \
+    git tag v1.0.0 && \
+    echo "print('hello from git repo main')" > app.py && \
+    git commit -am "Second commit on main" && \
+    git clone --bare /tmp/sample-src /opt/ax-e2e-sample-repo.git && \
+    rm -rf /tmp/sample-src
+
+WORKDIR /workspace
+EXPOSE 80
+ENTRYPOINT ["/usr/local/bin/ax-task-runner"]
