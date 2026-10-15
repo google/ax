@@ -63,6 +63,8 @@ type TaskReconciler struct {
 	httpClient              *http.Client
 	defaultTemplate         string
 	defaultTemplateAtespace string
+	// defaultTaskImage is applied to spec.image for tasks that leave it empty.
+	defaultTaskImage string
 
 	// SecretResolver resolves the Gemini API key for task containers. It defaults
 	// to the Kubernetes secret lookup; tests replace it to avoid touching a cluster.
@@ -73,19 +75,25 @@ type TaskReconciler struct {
 	WorkspaceReadyTimeout time.Duration
 }
 
-// NewTaskReconciler creates a new TaskReconciler.
-func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskReconciler {
+// NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
+// "default-template", v1alpha1.DefaultSystemNamespace and
+// v1alpha1.DefaultTaskImage respectively.
+func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace, defaultTaskImage string) *TaskReconciler {
 	if defaultTemplate == "" {
 		defaultTemplate = "default-template"
 	}
 	if defaultTemplateAtespace == "" {
 		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
 	}
+	if defaultTaskImage == "" {
+		defaultTaskImage = v1alpha1.DefaultTaskImage
+	}
 	return &TaskReconciler{
 		client:                  client,
 		httpClient:              &http.Client{Timeout: 2 * time.Second},
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
+		defaultTaskImage:        defaultTaskImage,
 		SecretResolver:          model.GetKubernetesSecret,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
 	}
@@ -109,7 +117,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
 	if task.Spec.Image == "" {
-		task.Spec.Image = substrate.DefaultTaskImage()
+		task.Spec.Image = r.defaultTaskImage
 	}
 
 	slog.Info("reconciling task", "name", task.Metadata.Name, "atespace", atespace, "image", task.Spec.Image)

@@ -235,22 +235,6 @@ func TestBuildActorTemplate(t *testing.T) {
 	}
 }
 
-func TestDefaultTaskImage(t *testing.T) {
-	t.Setenv(DefaultTaskImageEnv, "")
-	if got := DefaultTaskImage(); got != v1alpha1.DefaultTaskImage {
-		t.Errorf("DefaultTaskImage() = %q, want %q", got, v1alpha1.DefaultTaskImage)
-	}
-
-	const override = "localhost:5001/ax-task-runner:e2e"
-	t.Setenv(DefaultTaskImageEnv, override)
-	if got := DefaultTaskImage(); got != override {
-		t.Errorf("DefaultTaskImage() with $%s set = %q, want %q", DefaultTaskImageEnv, got, override)
-	}
-	if got := BuildActorTemplate("", "tmpl", "", nil, nil, "", nil).GetContainers()[0].GetImage(); got != override {
-		t.Errorf("BuildActorTemplate image = %q, want %q", got, override)
-	}
-}
-
 func TestClient_ResumeActor_WorkerPodIpsAndRetry(t *testing.T) {
 	oldInterval := defaultRetryInterval
 	defaultRetryInterval = 5 * time.Millisecond
