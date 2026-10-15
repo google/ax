@@ -106,7 +106,9 @@ resolve_commit() {
 # HEAD differs from the requested ref, a detached worktree under .tmp is used.
 resolve_substrate_dir() {
   local base_dir="${SUBSTRATE_DIR:-}"
-  if [[ -z "${base_dir}" && -d "${REPO_ROOT}/../substrate/.git" ]]; then
+  if [[ -n "${base_dir}" ]]; then
+    base_dir="$(cd "${base_dir}" && pwd)"
+  elif [[ -d "${REPO_ROOT}/../substrate/.git" ]]; then
     base_dir="$(cd "${REPO_ROOT}/../substrate" && pwd)"
   fi
 
