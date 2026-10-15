@@ -43,6 +43,7 @@ type mockControlServer struct {
 	suspendErr        error
 	deletedActors     []string
 	actorTemplates    map[string]bool
+	templateImages    []string
 	deletedTemplates  []string
 	getActorFunc      func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error)
 	createAtespaceErr error
@@ -71,6 +72,9 @@ func (m *mockControlServer) CreateActorTemplate(_ context.Context, req *ateapipb
 	}
 	tmpl := req.GetActorTemplate()
 	m.actorTemplates[tmpl.GetMetadata().GetName()] = true
+	for _, c := range tmpl.GetContainers() {
+		m.templateImages = append(m.templateImages, c.GetImage())
+	}
 	return tmpl, nil
 }
 
@@ -229,7 +233,7 @@ func TestTaskReconciler(t *testing.T) {
 	defer client.Close()
 
 	// 3. Reconcile Task
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -277,6 +281,63 @@ func TestTaskReconciler(t *testing.T) {
 	}
 }
 
+// TestTaskReconciler_DefaultTaskImage verifies that a task without spec.image is
+// defaulted to the image passed to NewTaskReconciler (or the API default when
+// none is given), and that the image
+// is what ends up in the per-task ActorTemplate.
+func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		override string
+		want     string
+	}{
+		{name: "api default", want: v1alpha1.DefaultTaskImage},
+		{name: "server override", override: "localhost:5001/ax-task-runner:e2e", want: "localhost:5001/ax-task-runner:e2e"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lis, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("failed to listen: %v", err)
+			}
+			defer lis.Close()
+
+			mockSrv := &mockControlServer{}
+			grpcServer := grpc.NewServer()
+			ateapipb.RegisterControlServer(grpcServer, mockSrv)
+			go grpcServer.Serve(lis)
+			defer grpcServer.Stop()
+
+			client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				t.Fatalf("failed to create substrate client: %v", err)
+			}
+			defer client.Close()
+
+			reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, tc.override)
+			reconciler.SecretResolver = noSecrets
+			reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+
+			task := &v1alpha1.Task{
+				ApiVersion: v1alpha1.APIVersion,
+				Kind:       v1alpha1.KindTask,
+				Metadata:   &v1alpha1.ObjectMeta{Name: "no-image", Atespace: "default"},
+				Spec:       &v1alpha1.TaskSpec{},
+				Status:     &v1alpha1.TaskStatus{Phase: "Running"},
+			}
+			reconciled, err := reconciler.Reconcile(context.Background(), task)
+			if err != nil {
+				t.Fatalf("Reconcile failed: %v", err)
+			}
+			if got := reconciled.GetSpec().GetImage(); got != tc.want {
+				t.Errorf("spec.image = %q, want %q", got, tc.want)
+			}
+			if len(mockSrv.templateImages) != 1 || mockSrv.templateImages[0] != tc.want {
+				t.Errorf("ActorTemplate images = %v, want [%q]", mockSrv.templateImages, tc.want)
+			}
+		})
+	}
+}
+
 func TestTaskReconciler_Suspend(t *testing.T) {
 	ctx := context.Background()
 
@@ -298,7 +359,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -353,7 +414,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
 	reconciler.SecretResolver = noSecrets
 
 	workerIp := "10.1.1.1"
@@ -429,7 +490,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -545,7 +606,7 @@ func TestReconcileDelete_RemovesActorAndTemplates(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
@@ -608,7 +669,7 @@ func TestReconcileDelete_BlocksUntilActorDeleted(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 
 	if err := reconciler.ReconcileDelete(ctx, "default", "slow-delete-task"); err != nil {
@@ -650,7 +711,7 @@ func TestReconcileDelete_ActorDeletionTimeout(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 
 	err = reconciler.ReconcileDelete(ctx, "default", "stuck-task")
@@ -714,7 +775,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
 	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
 

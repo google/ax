@@ -219,10 +219,6 @@ const (
 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
 	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
 
-	// DefaultTaskImageEnv names the environment variable that overrides
-	// v1alpha1.DefaultTaskImage (e.g. to point at a locally built image in E2E).
-	DefaultTaskImageEnv = "AX_DEFAULT_TASK_IMAGE"
-
 	// defaultRetryAttempts is the maximum number of calls retryOnCodes makes. With
 	// exponential backoff from defaultRetryInterval capped at maxRetryInterval
 	// (±50% jitter), the total wait across all attempts is roughly 6s-20s.
@@ -294,22 +290,13 @@ func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code)
 	return err
 }
 
-// DefaultTaskImage returns the container image used for tasks that do not set
-// spec.image: the value of $AX_DEFAULT_TASK_IMAGE if set, else v1alpha1.DefaultTaskImage.
-func DefaultTaskImage() string {
-	if img := os.Getenv(DefaultTaskImageEnv); img != "" {
-		return img
-	}
-	return v1alpha1.DefaultTaskImage
-}
-
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
 func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string) *ateapipb.ActorTemplate {
 	if atespace == "" {
 		atespace = "default"
 	}
 	if image == "" {
-		image = DefaultTaskImage()
+		image = v1alpha1.DefaultTaskImage
 	}
 	if len(command) == 0 {
 		command = []string{DefaultGuestCommand}
