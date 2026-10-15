@@ -846,8 +846,12 @@ func manifestFromArgs(args []string) (data []byte, ok bool, err error) {
 }
 
 // lifecycleRPCTimeout bounds suspend/resume RPCs, which wait for Substrate to
-// snapshot or restore the task's sandbox.
-const lifecycleRPCTimeout = 60 * time.Second
+// snapshot or restore the task's sandbox. MicroVM-backed sandboxes can take
+// well over a minute to snapshot/restore, so this is deliberately generous.
+// The server renews its per-task Redis lock for as long as the RPC is in
+// flight, so this deadline is not constrained by the lock TTL (see
+// lock.RedisLocker).
+const lifecycleRPCTimeout = 5 * time.Minute
 
 func runSuspend(serverURL, atespace string, args []string) error {
 	name := ""
