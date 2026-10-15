@@ -244,7 +244,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 	// Newer Substrate versions may return SnapshotConfig fields AX's proto does
 	// not know about, so accept either a known storage location or unknown fields.
-	if sc := tmpl.GetSnapshotConfig(); sc.GetStorageLocation() == "" && len(sc.ProtoReflect().GetUnknown()) == 0 {
+	if sc := tmpl.GetSnapshotConfig(); sc == nil || (sc.GetStorageLocation() == "" && len(sc.ProtoReflect().GetUnknown()) == 0) {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
@@ -502,10 +502,12 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 		t.Fatalf("expected empty WorkerIp when suspended, got %q", ip)
 	}
 	actor := env.getActor(t, ns, task, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
-	// Substrate v0.4 reports the snapshot in ExternalSnapshot; newer versions
-	// track snapshot generations elsewhere, so only check it when present.
-	if snap := actor.GetStatus().GetExternalSnapshot(); snap != nil && snap.GetSnapshotUri() == "" {
-		t.Fatal("expected non-empty ExternalSnapshot.SnapshotUri on suspended actor")
+	snapshots := actor.GetStatus().GetSnapshots()
+	if len(snapshots) == 0 {
+		t.Fatal("expected at least one snapshot on suspended actor")
+	}
+	if uri := snapshots[len(snapshots)-1].GetDurableSnapshot().GetObject().GetSnapshotUri(); uri == "" {
+		t.Fatalf("expected non-empty durable snapshot URI on suspended actor, got %+v", snapshots[len(snapshots)-1])
 	}
 
 	// 3. Resume: VOLUMES-fidelity snapshots restore /workspace but cold-boot the rootfs.
