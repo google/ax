@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/agent-substrate/substrate/pkg/sandboxclass"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
@@ -347,8 +348,8 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			Image:   image,
 			Command: command,
 			Env:     envList,
-			WakeupProbe: &ateapipb.ContainerWakeupProbe{
-				HttpGet: &ateapipb.HTTPGetAction{
+			WakeupProbe: &ateapipb.WakeupProbe{
+				HttpGet: &ateapipb.HttpGetAction{
 					Path: "/readyz",
 					Port: 80,
 				},
@@ -367,7 +368,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES,
 		},
 		SandboxConfig: &ateapipb.SandboxConfig{
-			SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR,
+			SandboxClass: sandboxclass.GVisor,
 			ConfigName:   "gvisor-default",
 		},
 		Resources: resources,

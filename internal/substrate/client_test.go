@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/agent-substrate/substrate/pkg/sandboxclass"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -228,6 +229,9 @@ func TestBuildActorTemplate(t *testing.T) {
 	}
 	if snapCfg.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
 		t.Errorf("expected PreferredFidelity VOLUMES, got %v", snapCfg.GetPreferredFidelity())
+	}
+	if got := tmpl.GetSandboxConfig().GetSandboxClass(); got != sandboxclass.GVisor {
+		t.Errorf("expected SandboxClass %q, got %q", sandboxclass.GVisor, got)
 	}
 }
 
