@@ -116,7 +116,7 @@ func TestServerGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetWorkspace failed: %v", err)
 	}
-	if ws.GetMetadata().GetAtespace() != "default" || ws.GetMetadata().GetCreationTimestamp() == nil {
+	if ws.GetMetadata().GetAtespace() != "default" || ws.GetMetadata().GetCreateTime() == nil {
 		t.Errorf("expected workspace metadata to be defaulted, got %v", ws.GetMetadata())
 	}
 
@@ -128,7 +128,7 @@ func TestServerGRPC(t *testing.T) {
 	if task.Metadata.Name != "grpc-task" {
 		t.Errorf("expected name 'grpc-task', got %s", task.Metadata.Name)
 	}
-	if task.Metadata.CreationTimestamp == nil {
+	if task.Metadata.CreateTime == nil {
 		t.Errorf("expected creation timestamp to be populated on applied task")
 	}
 
@@ -139,7 +139,7 @@ func TestServerGRPC(t *testing.T) {
 	if len(listTasksResp.Tasks) != 1 {
 		t.Fatalf("expected 1 task in list, got %d", len(listTasksResp.Tasks))
 	}
-	if listTasksResp.Tasks[0].Metadata.CreationTimestamp == nil {
+	if listTasksResp.Tasks[0].Metadata.CreateTime == nil {
 		t.Errorf("expected creation timestamp on listed task")
 	}
 
@@ -764,8 +764,8 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	if created.GetStatus().GetPhase() != "Suspended" {
 		t.Errorf("expected phase 'Suspended' after recovery, got %q", created.GetStatus().GetPhase())
 	}
-	if !created.GetMetadata().GetCreationTimestamp().AsTime().Equal(stored.GetMetadata().GetCreationTimestamp().AsTime()) {
-		t.Errorf("expected CreationTimestamp to be preserved across Pending re-apply")
+	if !created.GetMetadata().GetCreateTime().AsTime().Equal(stored.GetMetadata().GetCreateTime().AsTime()) {
+		t.Errorf("expected CreateTime to be preserved across Pending re-apply")
 	}
 
 	// 6. ResumeTask during a brief Substrate outage keeps the task Pending instead of Failed.

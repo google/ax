@@ -349,16 +349,16 @@ func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, rea
 			task.Status.Conditions[i].Status = status
 			task.Status.Conditions[i].Reason = reason
 			task.Status.Conditions[i].Message = message
-			task.Status.Conditions[i].LastTransitionTime = ts
+			task.Status.Conditions[i].UpdateTime = ts
 			return
 		}
 	}
 	task.Status.Conditions = append(task.Status.Conditions, &v1alpha1.Condition{
-		Type:               condType,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: ts,
+		Type:       condType,
+		Status:     status,
+		Reason:     reason,
+		Message:    message,
+		UpdateTime: ts,
 	})
 }
 

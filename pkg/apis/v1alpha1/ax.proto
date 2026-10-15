@@ -54,7 +54,7 @@ service AX {
 message ObjectMeta {
   string name = 1;
   string atespace = 2;
-  google.protobuf.Timestamp creation_timestamp = 3;
+  google.protobuf.Timestamp create_time = 3;
 }
 
 // --- Task ---
@@ -71,7 +71,7 @@ message TaskSpec {
   string image = 1;
   repeated string command = 2;
   repeated EnvVar env = 3;
-  ResourceReqs resources = 4;
+  ResourcesSpec resources = 4;
   // workspaces binds one or more Workspaces, each mounted at its own path
   // under /workspace. The first entry is the task command's working directory.
   repeated WorkspaceRef workspaces = 5;
@@ -85,7 +85,7 @@ message EnvVar {
   string value = 2;
 }
 
-message ResourceReqs {
+message ResourcesSpec {
   ResourceList requests = 1;
   ResourceList limits = 2;
 }
@@ -98,6 +98,7 @@ message ResourceList {
 message WorkspaceRef {
   string name = 1;
   string path = 2;
+  // TODO(jbd): Consider removing goal.
   string goal = 3;
 }
 
@@ -107,26 +108,13 @@ message TaskStatus {
   string actor = 3;
   // json_name keeps the established `workerIP` spelling in YAML and JSON.
   string worker_ip = 4 [json_name = "workerIP"];
-  PendingApproval pending_approval = 5;
-  UsageStats usage = 6;
   repeated Condition conditions = 7;
-}
-
-message PendingApproval {
-  string id = 1;
-  string action = 2;
-  google.protobuf.Timestamp requested_at = 3;
-}
-
-message UsageStats {
-  int32 prompt_tokens = 1;
-  int32 completion_tokens = 2;
 }
 
 message Condition {
   string type = 1;
   string status = 2;
-  google.protobuf.Timestamp last_transition_time = 3;
+  google.protobuf.Timestamp update_time = 3;
   string reason = 4;
   string message = 5;
 }
@@ -202,14 +190,10 @@ message Model {
 message ModelSpec {
   string provider = 1;
   string model = 2;
-  // Fields 3-5 were typed temperature, max_tokens, and system_instruction;
-  // provider settings now live in the free-form `parameters` map.
-  reserved 3, 4, 5;
-  reserved "temperature", "max_tokens", "system_instruction";
-  SecretKeyRef secret_key = 6;
+  SecretKeyRef secret_key = 3;
   // parameters are provider-specific generation settings passed through to the
   // model API as-is, for example temperature or maxOutputTokens for Gemini.
-  google.protobuf.Struct parameters = 7;
+  google.protobuf.Struct parameters = 4;
 }
 
 message SecretKeyRef {

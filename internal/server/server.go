@@ -173,8 +173,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
-	if task.Metadata.CreationTimestamp == nil {
-		task.Metadata.CreationTimestamp = timestamppb.Now()
+	if task.Metadata.CreateTime == nil {
+		task.Metadata.CreateTime = timestamppb.Now()
 	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -614,15 +614,15 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	if meta.Atespace == "" {
 		meta.Atespace = "default"
 	}
-	if meta.CreationTimestamp == nil {
+	if meta.CreateTime == nil {
 		var prev *v1alpha1.ObjectMeta
 		if existing != nil {
 			prev = existing(meta.Atespace, meta.Name)
 		}
-		if prev.GetCreationTimestamp() != nil {
-			meta.CreationTimestamp = prev.GetCreationTimestamp()
+		if prev.GetCreateTime() != nil {
+			meta.CreateTime = prev.GetCreateTime()
 		} else {
-			meta.CreationTimestamp = timestamppb.Now()
+			meta.CreateTime = timestamppb.Now()
 		}
 	}
 	return meta

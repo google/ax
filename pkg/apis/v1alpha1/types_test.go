@@ -33,15 +33,15 @@ func fullTask() *v1alpha1.Task {
 		ApiVersion: v1alpha1.APIVersion,
 		Kind:       v1alpha1.KindTask,
 		Metadata: &v1alpha1.ObjectMeta{
-			Name:              "full",
-			Atespace:          "default",
-			CreationTimestamp: timestamppb.New(time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)),
+			Name:       "full",
+			Atespace:   "default",
+			CreateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)),
 		},
 		Spec: &v1alpha1.TaskSpec{
 			Image:   "example.com/img:1",
 			Command: []string{"sh", "-c", "true"},
 			Env:     []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
-			Resources: &v1alpha1.ResourceReqs{
+			Resources: &v1alpha1.ResourcesSpec{
 				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
 			},
 			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "ws", Path: "/workspace", Goal: "build"}},
@@ -53,11 +53,11 @@ func fullTask() *v1alpha1.Task {
 			Actor:    "actor-1",
 			WorkerIp: "10.0.0.5:80",
 			Conditions: []*v1alpha1.Condition{{
-				Type:               "Ready",
-				Status:             "True",
-				Reason:             "TaskRunning",
-				Message:            "ok",
-				LastTransitionTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
+				Type:       "Ready",
+				Status:     "True",
+				Reason:     "TaskRunning",
+				Message:    "ok",
+				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
 		},
 	}
@@ -83,7 +83,7 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"workerIP: 10.0.0.5:80", "lastTransitionTime: 2026-09-19T12:05:00Z", "creationTimestamp: 2026-09-19T12:00:00Z"} {
+	for _, want := range []string{"workerIP: 10.0.0.5:80", "updateTime: 2026-09-19T12:05:00Z", "createTime: 2026-09-19T12:00:00Z"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("yaml missing %s:\n%s", want, out)
 		}

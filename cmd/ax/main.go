@@ -406,8 +406,8 @@ func runGet(serverURL, atespace string, args []string) error {
 			if t.Metadata != nil {
 				name = t.Metadata.Name
 				tAtespace = t.Metadata.Atespace
-				if t.Metadata.CreationTimestamp != nil {
-					age = formatAge(time.Since(t.Metadata.CreationTimestamp.AsTime()))
+				if t.Metadata.CreateTime != nil {
+					age = formatAge(time.Since(t.Metadata.CreateTime.AsTime()))
 				}
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
