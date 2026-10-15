@@ -22,7 +22,7 @@ on:
   # Nightly run against Substrate main to catch incompatibilities with
   # unreleased Substrate changes early. Never blocks PRs.
   schedule:
-  - cron: '0 6 * * *'
+  - cron: '0 6 * * *'  # every day at 06:00am UTC
   workflow_dispatch:
     inputs:
       substrate_ref:
