@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TMP_DIR="${REPO_ROOT}/.tmp"
 
+REQUESTED_AX_BIN="${AX_BIN:-}"
 if [[ -f "${TMP_DIR}/e2e.env" ]]; then
   # shellcheck disable=SC1091
   source "${TMP_DIR}/e2e.env"
@@ -29,7 +30,7 @@ fi
 # Rebuild the host ax CLI so tests always exercise the current source, unless
 # AX_BIN points at a custom binary.
 DEFAULT_AX_BIN="${TMP_DIR}/bin/ax"
-export AX_BIN="${AX_BIN:-${DEFAULT_AX_BIN}}"
+export AX_BIN="${REQUESTED_AX_BIN:-${AX_BIN:-${DEFAULT_AX_BIN}}}"
 if [[ "${AX_BIN}" == "${DEFAULT_AX_BIN}" ]]; then
   mkdir -p "$(dirname "${AX_BIN}")"
   (cd "${REPO_ROOT}" && CGO_ENABLED=0 go build -o "${AX_BIN}" ./cmd/ax)

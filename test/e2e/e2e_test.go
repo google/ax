@@ -49,7 +49,7 @@ const (
 
 // TestE2E_CLIVersionAndAutoTunnel verifies `ax version` and that, without
 // --server, the CLI automatically opens a port-forward tunnel to ax-server
-// that `ax ctx list` reports as healthy and `ax ctx stop` tears down.
+// that `ax ctx` reports as healthy and `ax tunnel stop` tears down.
 func TestE2E_CLIVersionAndAutoTunnel(t *testing.T) {
 	assertContains(t, "'ax version'", env.mustRunAX(t, "", "version"), "ax version")
 
@@ -68,17 +68,18 @@ func TestE2E_CLIVersionAndAutoTunnel(t *testing.T) {
 		return string(out)
 	}
 	t.Cleanup(func() {
-		cmd, cancel := env.axCommand(axHome, "ctx", "stop", "--all")
+		cmd, cancel := env.axCommand(axHome, "tunnel", "stop", env.KubeContext)
 		defer cancel()
 		_ = cmd.Run()
 	})
 
 	runTunneled("get", "tasks")
 
-	listOut := runTunneled("ctx", "list")
-	assertContains(t, "'ax ctx list'", strings.ToLower(listOut), strings.ToLower(env.KubeContext), "healthy")
+	listOut := runTunneled("ctx")
+	assertContains(t, "'ax ctx'", strings.ToLower(listOut), strings.ToLower(env.KubeContext), "healthy")
 
-	runTunneled("ctx", "stop")
+	runTunneled("tunnel", "stop", env.KubeContext)
+	assertContains(t, "'ax ctx' after stop", runTunneled("ctx"), "No background tunnel running")
 }
 
 const workspaceCRUDManifest = `apiVersion: ax.io/v1alpha1
