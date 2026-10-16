@@ -226,17 +226,17 @@ func (r *RedisLocker) Lock(ctx context.Context, kind, atespace, name string) (fu
 	// renewal goroutine (see "Lease renewal" on RedisLocker) and returns an
 	// unlock function that stops renewal before releasing the key.
 	makeUnlock := func() func() {
-		stop := make(chan struct{})
+		renewCtx, cancelRenew := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			r.renew(key, token, stop)
+			r.renew(renewCtx, key, token)
 		}()
 
 		var once sync.Once
 		return func() {
 			once.Do(func() {
-				close(stop)
+				cancelRenew()
 				<-done
 				releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
@@ -298,8 +298,8 @@ func (r *RedisLocker) Lock(ctx context.Context, kind, atespace, name string) (fu
 }
 
 // renew periodically extends the TTL of the lock identified by key/token until
-// stop is closed or the lock is found to be no longer held by token.
-func (r *RedisLocker) renew(key, token string, stop <-chan struct{}) {
+// ctx is canceled or the lock is found to be no longer held by token.
+func (r *RedisLocker) renew(ctx context.Context, key, token string) {
 	interval := r.ttl / 3
 	if interval <= 0 {
 		interval = time.Millisecond
@@ -314,14 +314,17 @@ func (r *RedisLocker) renew(key, token string, stop <-chan struct{}) {
 
 	for {
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
 
-		renewCtx, cancel := context.WithTimeout(context.Background(), interval)
+		renewCtx, cancel := context.WithTimeout(ctx, interval)
 		res, err := renewScript.Run(renewCtx, r.client, []string{key}, token, ttlMillis).Int()
 		cancel()
+		if ctx.Err() != nil {
+			return
+		}
 		if err != nil {
 			// Transient Redis error: keep trying on the next tick while the
 			// remaining TTL still covers us.

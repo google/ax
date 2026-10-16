@@ -16,6 +16,7 @@ package lock_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -131,8 +132,8 @@ func TestRedisLocker_RenewsLeaseWhileHeld(t *testing.T) {
 	// Hold the lock for several TTLs; a contender must not get it meanwhile.
 	waitCtx, cancel := context.WithTimeout(ctx, 4*ttl)
 	defer cancel()
-	if _, err := locker.Lock(waitCtx, "task", "default", name); err == nil {
-		t.Fatalf("acquired lock while it was still held; lease was not renewed")
+	if _, err := locker.Lock(waitCtx, "task", "default", name); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected contender deadline while lease was held, got %v", err)
 	}
 
 	unlock()
