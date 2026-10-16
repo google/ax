@@ -122,7 +122,13 @@ resolve_substrate_dir() {
   [[ -e "${base_dir}/.git" ]] || { echo "SUBSTRATE_DIR=${base_dir} is not a git checkout" >&2; return 1; }
 
   local target_sha
-  if ! target_sha="$(resolve_commit "${base_dir}" "${SUBSTRATE_REF}")"; then
+  if [[ "${base_dir}" == "${TMP_DIR}/substrate" ]] &&
+    git -C "${base_dir}" show-ref --verify --quiet "refs/remotes/origin/${SUBSTRATE_REF}"; then
+    # Refresh branches in the managed clone without moving its HEAD or a user checkout.
+    log "Fetching branch ${SUBSTRATE_REF} in ${base_dir}..."
+    git -C "${base_dir}" fetch --quiet origin "+refs/heads/${SUBSTRATE_REF}:refs/remotes/origin/${SUBSTRATE_REF}" >&2 || return 1
+    target_sha="$(git -C "${base_dir}" rev-parse "refs/remotes/origin/${SUBSTRATE_REF}^{commit}")"
+  elif ! target_sha="$(resolve_commit "${base_dir}" "${SUBSTRATE_REF}")"; then
     log "Fetching ${SUBSTRATE_REF} in ${base_dir}..."
     git -C "${base_dir}" fetch --quiet --tags origin "${SUBSTRATE_REF}" >&2 ||
       git -C "${base_dir}" fetch --quiet --all --tags >&2

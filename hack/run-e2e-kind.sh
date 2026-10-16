@@ -28,6 +28,7 @@ if [[ "${CLEANUP_KIND:-false}" == "true" ]]; then
 fi
 
 if [[ "${SKIP_SETUP:-false}" != "true" ]]; then
+  export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-ax-e2e}"
   "${SCRIPT_DIR}/setup-e2e-kind.sh"
 fi
 

@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TMP_DIR="${REPO_ROOT}/.tmp"
 
-if [[ -f "${TMP_DIR}/e2e.env" ]]; then
+if [[ -z "${KIND_CLUSTER_NAME:-}" && -f "${TMP_DIR}/e2e.env" ]]; then
   # shellcheck disable=SC1091
   source "${TMP_DIR}/e2e.env"
 fi

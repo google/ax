@@ -350,10 +350,10 @@ func (s *suiteEnv) axCommand(axHome string, args ...string) (*exec.Cmd, context.
 	return cmd, cancel
 }
 
-// runAX runs `ax --server <url> [-a atespace] args...` and returns its
+// runAX runs `ax --server <url> --context <context> [-a atespace] args...` and returns its
 // combined output.
 func (s *suiteEnv) runAX(atespace string, args ...string) (string, error) {
-	fullArgs := []string{"--server", s.AXServerURL}
+	fullArgs := []string{"--server", s.AXServerURL, "--context", s.KubeContext}
 	if atespace != "" {
 		fullArgs = append(fullArgs, "-a", atespace)
 	}
