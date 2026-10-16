@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"sync"
 
 	"github.com/google/ax/internal/store"
@@ -124,6 +125,15 @@ func (s *MemoryStore) ListTasks(ctx context.Context, atespace string, limit, off
 			result = append(result, cp)
 		}
 	}
+	// Map iteration order changes every call. Pages are taken from that slice,
+	// so offset/limit would otherwise repeat tasks and drop others.
+	sort.Slice(result, func(i, j int) bool {
+		left, right := result[i].GetMetadata(), result[j].GetMetadata()
+		if left.GetAtespace() != right.GetAtespace() {
+			return left.GetAtespace() < right.GetAtespace()
+		}
+		return left.GetName() < right.GetName()
+	})
 
 	if offset >= int64(len(result)) {
 		return []*v1alpha1.Task{}, nil
