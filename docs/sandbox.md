@@ -7,7 +7,9 @@ Every task container starts with `ax-task-runner` as PID 1. On boot it:
 3. On the first run, prepares each workspace at its own path, in binding order: clones Git repos, sets up the skills path, and, if the binding has a goal, hands that goal to an Antigravity agent to finish environment setup. The agent needs `GEMINI_API_KEY` in the container and gets 10 minutes by default; set `AX_BOOTSTRAP_TIMEOUT` to a Go duration to change that. The task reports not-ready until every workspace, including any agent run, has finished.
 4. Starts `spec.command` as a child process, with the first workspace as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
 
-The runner stays up as PID 1 whether or not the command is still running, so the metadata server keeps answering and `ax ssh` still works after the command has exited. Its exit code is logged. When the sandbox is stopped or suspended, the runner sends the command's process group `SIGTERM`, waits ten seconds, and then kills whatever is left.
+The runner stays up as PID 1 whether or not the command is still running, so the metadata server keeps answering and `ax ssh` still works after the command has exited. Its exit code is logged. When the runner receives `SIGTERM`, it sends the command's process group `SIGTERM`, waits ten seconds, and then kills whatever is left.
+
+Suspend does not send `SIGTERM`: AX asks Agent Substrate to checkpoint the durable `/workspace` volume using a DATA snapshot. Process memory and files outside `/workspace` are not preserved by that snapshot. Resume restores the volume using the golden boot snapshot as its baseline. `spec.command` can run during the golden boot and may start again on resume, so commands should tolerate repeated starts and persist resumable state to `/workspace` during normal operation.
 
 ## Probes
 
