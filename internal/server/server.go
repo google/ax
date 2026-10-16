@@ -173,6 +173,20 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
+	var workspaces []*v1alpha1.Workspace
+	if task.Spec != nil {
+		for _, ref := range task.Spec.WorkspaceRefs() {
+			workspace, err := s.store.GetWorkspace(ctx, atespace, ref.Name)
+			if err != nil {
+				if errors.Is(err, store.ErrNotFound) {
+					return nil, status.Errorf(codes.FailedPrecondition, "workspace %q not found in atespace %q", ref.Name, atespace)
+				}
+				return nil, status.Errorf(codes.Internal, "getting workspace %q in atespace %q: %v", ref.Name, atespace, err)
+			}
+			workspaces = append(workspaces, workspace)
+		}
+	}
+
 	if task.Metadata.CreationTimestamp == nil {
 		task.Metadata.CreationTimestamp = timestamppb.Now()
 	}
@@ -186,7 +200,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	// Directly reconcile with Substrate
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
 		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
 		if err != nil {
 			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)

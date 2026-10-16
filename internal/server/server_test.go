@@ -297,6 +297,14 @@ func TestCreateTask_ValidatesWorkspaceBindings(t *testing.T) {
 		t.Fatalf("expected InvalidArgument for colliding workspace paths, got %v", err)
 	}
 
+	for _, name := range []string{"a", "b"} {
+		if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: name},
+		}}); err != nil {
+			t.Fatalf("UpdateWorkspace(%s): %v", name, err)
+		}
+	}
+
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},
 		Spec: &v1alpha1.TaskSpec{
