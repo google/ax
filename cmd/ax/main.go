@@ -107,7 +107,11 @@ func main() {
 
 	switch cmd {
 	case "apply":
-		err = runApply(serverURL, cleanArgs)
+		var atespaceFlag *string
+		if opts.atespaceExplicit {
+			atespaceFlag = &atespace
+		}
+		err = runApply(serverURL, atespaceFlag, cleanArgs)
 	case "get":
 		err = runGet(serverURL, atespace, cleanArgs)
 	case "describe":
@@ -137,12 +141,13 @@ func main() {
 // globalArgs holds the command name, the flags shared by every command, and the
 // remaining arguments for the command itself.
 type globalArgs struct {
-	cmd         string
-	args        []string
-	atespace    string
-	server      string
-	kubeContext string
-	namespace   string
+	cmd              string
+	args             []string
+	atespace         string
+	atespaceExplicit bool
+	server           string
+	kubeContext      string
+	namespace        string
 }
 
 // parseGlobalArgs extracts the command name and the global flags from args. It
@@ -158,10 +163,12 @@ func parseGlobalArgs(args []string) globalArgs {
 		} else if arg == "-a" || arg == "--atespace" {
 			if i+1 < len(args) {
 				g.atespace = args[i+1]
+				g.atespaceExplicit = true
 				i++
 			}
 		} else if strings.HasPrefix(arg, "--atespace=") {
 			g.atespace = strings.TrimPrefix(arg, "--atespace=")
+			g.atespaceExplicit = true
 		} else if arg == "--server" {
 			if i+1 < len(args) {
 				g.server = args[i+1]
@@ -238,7 +245,8 @@ func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) 
 	return v1alpha1.NewAXClient(conn), conn, nil
 }
 
-func runApply(serverURL string, args []string) error {
+// A nil atespace leaves manifest atespaces unchanged and lets the server default missing ones.
+func runApply(serverURL string, atespace *string, args []string) error {
 	data, ok, err := manifestFromArgs(args)
 	if err != nil {
 		return err
@@ -278,7 +286,7 @@ func runApply(serverURL string, args []string) error {
 			}
 		}
 
-		kind, name, outcome, err := applyDocument(ctx, client, &doc)
+		kind, name, outcome, err := applyDocument(ctx, client, &doc, atespace)
 		if err != nil {
 			return fmt.Errorf("applying document %d: %w", docIndex, err)
 		}
@@ -287,9 +295,9 @@ func runApply(serverURL string, args []string) error {
 }
 
 // applyDocument decodes one manifest by its kind and submits it with the matching
-// Update RPC. It reports the kind, the resource name, and whether the resource was
+// RPC. It reports the kind, the resource name, and whether the resource was
 // created, configured (spec changed), or unchanged, in the style of kubectl apply.
-func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node) (kind, name, outcome string, err error) {
+func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node, atespace *string) (kind, name, outcome string, err error) {
 	var head struct {
 		Kind string `yaml:"kind"`
 	}
@@ -303,6 +311,9 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err := doc.Decode(&task); err != nil {
 			return "", "", "", err
 		}
+		if err := setApplyAtespace(task.Metadata, atespace); err != nil {
+			return "", "", "", err
+		}
 		res, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &task})
 		if err != nil {
 			return "", "", "", err
@@ -312,6 +323,9 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 	case v1alpha1.KindWorkspace:
 		var ws v1alpha1.Workspace
 		if err := doc.Decode(&ws); err != nil {
+			return "", "", "", err
+		}
+		if err := setApplyAtespace(ws.Metadata, atespace); err != nil {
 			return "", "", "", err
 		}
 		existing, err := client.GetWorkspace(ctx, &v1alpha1.GetWorkspaceRequest{Atespace: ws.GetMetadata().GetAtespace(), Name: ws.GetMetadata().GetName()})
@@ -327,6 +341,9 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err := doc.Decode(&m); err != nil {
 			return "", "", "", err
 		}
+		if err := setApplyAtespace(m.Metadata, atespace); err != nil {
+			return "", "", "", err
+		}
 		existing, err := client.GetModel(ctx, &v1alpha1.GetModelRequest{Atespace: m.GetMetadata().GetAtespace(), Name: m.GetMetadata().GetName()})
 		outcome, err := applyOutcome(err, existing.GetSpec(), m.GetSpec())
 		if err != nil {
@@ -340,6 +357,18 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 	default:
 		return "", "", "", fmt.Errorf("unsupported kind %q (expected Task, Workspace, or Model)", head.Kind)
 	}
+}
+
+// setApplyAtespace fills a missing atespace or rejects a mismatch with an explicit flag.
+func setApplyAtespace(meta *v1alpha1.ObjectMeta, atespace *string) error {
+	if meta == nil || atespace == nil {
+		return nil
+	}
+	if meta.Atespace != "" && meta.Atespace != *atespace {
+		return fmt.Errorf("metadata.atespace %q does not match --atespace %q", meta.Atespace, *atespace)
+	}
+	meta.Atespace = *atespace
+	return nil
 }
 
 // applyOutcome classifies an apply from the result of looking up the existing
@@ -433,7 +462,6 @@ func runGet(serverURL, atespace string, args []string) error {
 
 		return yaml.NewEncoder(os.Stdout).Encode(task)
 	}
-
 
 	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
 		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
@@ -640,7 +668,6 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		}
 		return nil
 	}
-
 
 	task, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: atespace, Name: name})
 	if err != nil {
