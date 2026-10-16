@@ -13,31 +13,6 @@
 # limitations under the License.
 
 apiVersion: ax.io/v1alpha1
-kind: Task
-metadata:
-  name: task123
-  atespace: default
-spec:
-  env:
-    - name: ENVIRONMENT
-      value: "test"
-  image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
-
-  resources:
-    requests:
-      cpu: "500m"
-      memory: "1Gi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
-
-  workspaces:
-    - name: default-workspace
-      path: "/workspace"
-
-  debug: true # serve guest services so `ax ssh` works; off by default
----
-apiVersion: ax.io/v1alpha1
 kind: Workspace
 metadata:
   name: default-workspace
@@ -71,3 +46,28 @@ spec:
   secretKey:
     name: gemini-api-secret
     key: GEMINI_API_KEY
+---
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: task123
+  atespace: default
+spec:
+  env:
+    - name: ENVIRONMENT
+      value: "test"
+  image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  workspaces:
+    - name: default-workspace
+      path: "/workspace"
+
+  debug: true # serve guest services so `ax ssh` works; off by default
