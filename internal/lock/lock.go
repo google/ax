@@ -195,11 +195,14 @@ func ChannelKey(kind, atespace, name string) string {
 	return fmt.Sprintf("lock:chan:%s:%s:%s", kind, atespace, name)
 }
 
+// DefaultTTL is the default lease duration for a distributed Redis lock.
+const DefaultTTL = 30 * time.Second
+
 // NewRedisLocker creates a distributed Redis locker with Pub/Sub notification.
 func NewRedisLocker(client *redis.Client, opts RedisLockerOptions) *RedisLocker {
 	ttl := opts.TTL
 	if ttl <= 0 {
-		ttl = 30 * time.Second
+		ttl = DefaultTTL
 	}
 	fallback := opts.FallbackInterval
 	if fallback <= 0 {

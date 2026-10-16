@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
@@ -314,6 +315,7 @@ type fakeReconciler struct {
 	reconcilePhase      string
 	reconcileConditions []*v1alpha1.Condition
 	observedTask        *v1alpha1.Task
+	onReconcile         func(ctx context.Context, task *v1alpha1.Task) (*v1alpha1.Task, error)
 	deleteCount         int
 	deleteErr           error
 	onDelete            func(ctx context.Context, atespace, taskName string) error
@@ -322,6 +324,9 @@ type fakeReconciler struct {
 func (f *fakeReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	f.reconcileCount++
 	f.observedTask = proto.Clone(task).(*v1alpha1.Task)
+	if f.onReconcile != nil {
+		return f.onReconcile(ctx, task)
+	}
 	if f.reconcileErr != nil {
 		if task.Status == nil {
 			task.Status = &v1alpha1.TaskStatus{}
@@ -781,5 +786,108 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	}
 	if storedAfterResumeErr.GetStatus().GetPhase() != "Pending" {
 		t.Errorf("expected stored phase 'Pending' after transient ResumeTask error, got %q", storedAfterResumeErr.GetStatus().GetPhase())
+	}
+}
+
+func TestServer_ReconcileTimeoutBoundedUnderLockTTL(t *testing.T) {
+	if server.DefaultReconcileTimeout <= 0 || server.DefaultReconcileTimeout >= lock.DefaultTTL {
+		t.Fatalf("DefaultReconcileTimeout (%v) must be positive and strictly less than lock.DefaultTTL (%v)", server.DefaultReconcileTimeout, lock.DefaultTTL)
+	}
+
+	st := memory.NewStore()
+	rec := &fakeReconciler{
+		onReconcile: func(ctx context.Context, task *v1alpha1.Task) (*v1alpha1.Task, error) {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("expected Reconcile context to carry a deadline")
+			}
+			<-ctx.Done()
+			return task, ctx.Err()
+		},
+		onDelete: func(ctx context.Context, atespace, taskName string) error {
+			if _, ok := ctx.Deadline(); !ok {
+				t.Error("expected ReconcileDelete context to carry a deadline")
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	srv := server.NewServer(st, server.Options{
+		Reconciler:       rec,
+		ReconcileTimeout: 30 * time.Millisecond,
+	})
+	// Caller context has no deadline; Server must enforce its own per-reconcile deadline.
+	ctx := context.Background()
+
+	// 1. CreateTask aborts when ReconcileTimeout fires, marks the task Pending in the store,
+	// and returns codes.Unavailable.
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "timeout-task"},
+			Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+		},
+	})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("expected Unavailable when CreateTask reconcile times out, got %v", err)
+	}
+	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "timeout-task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if stored.GetStatus().GetPhase() != "Pending" {
+		t.Errorf("stored phase = %q, want Pending after CreateTask reconcile timeout", stored.GetStatus().GetPhase())
+	}
+
+	// 2. ResumeTask aborts when ReconcileTimeout fires, keeps the task Pending in the store,
+	// and returns codes.Unavailable.
+	_, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "timeout-task"})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("expected Unavailable when ResumeTask reconcile times out, got %v", err)
+	}
+	stored, err = srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "timeout-task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if stored.GetStatus().GetPhase() != "Pending" {
+		t.Errorf("stored phase = %q, want Pending after ResumeTask reconcile timeout", stored.GetStatus().GetPhase())
+	}
+
+	// 3. SuspendTask aborts when ReconcileTimeout fires, retains Running state in the store,
+	// and returns codes.Unavailable.
+	if err := st.SaveTask(ctx, &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "running-task", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+		Status: &v1alpha1.TaskStatus{
+			Phase:      "Running",
+			Actor:      "running-task",
+			WorkerIp:   "10.244.1.42",
+			Conditions: []*v1alpha1.Condition{{Type: "Ready", Status: "True", Reason: "TaskRunning"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	_, err = srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "running-task"})
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("expected Unavailable when SuspendTask reconcile times out, got %v", err)
+	}
+	storedRunning, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "running-task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if storedRunning.GetStatus().GetPhase() != "Running" {
+		t.Errorf("stored phase = %q, want Running after SuspendTask reconcile timeout", storedRunning.GetStatus().GetPhase())
+	}
+
+	// 4. DeleteTask aborts when ReconcileTimeout fires, retains Terminating state in the store,
+	// and returns codes.DeadlineExceeded.
+	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "running-task"})
+	if status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("expected DeadlineExceeded when DeleteTask reconcile times out, got %v", err)
+	}
+	storedTerminating, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "running-task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if storedTerminating.GetStatus().GetPhase() != v1alpha1.PhaseTerminating {
+		t.Errorf("stored phase = %q, want %q after DeleteTask reconcile timeout", storedTerminating.GetStatus().GetPhase(), v1alpha1.PhaseTerminating)
 	}
 }

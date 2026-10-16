@@ -792,4 +792,31 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		t.Errorf("expected Phase='Failed' on permanent error, got %q", reconciled4.GetStatus().GetPhase())
 	}
 	mockSrv.createActorErr = nil
+
+	// 5. A per-reconcile context deadline cuts short Unavailable retry loops during initial
+	// task creation (including SuspendActor) and leaves the task Pending with SubstrateUnavailable.
+	mockSrv.suspendErr = status.Error(codes.Unavailable, "substrate flapping")
+	defer func() { mockSrv.suspendErr = nil }()
+	deadlineCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	task5 := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "deadline-bounded-task"},
+		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+	}
+	start := time.Now()
+	reconciled5, err := reconciler.Reconcile(deadlineCtx, task5)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected error when per-reconcile deadline expires during Unavailable retries")
+	}
+	if !substrate.IsTransientError(err) {
+		t.Errorf("expected transient error on reconcile deadline expiration, got %v", err)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("expected per-reconcile deadline to bound retry loop, took %v", elapsed)
+	}
+	if reconciled5.GetStatus().GetPhase() != "Pending" {
+		t.Errorf("expected Phase='Pending' when initial SuspendActor times out, got %q", reconciled5.GetStatus().GetPhase())
+	}
+	assertCondition(t, reconciled5, "Ready", "False", "SubstrateUnavailable")
 }

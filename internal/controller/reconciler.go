@@ -204,6 +204,10 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 	if task.Status.Phase == "Suspended" || task.Status.Phase == "" {
 		slog.Info("suspending actor on Substrate", "actor", actorName)
 		if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
+			if substrate.IsTransientError(err) && task.Status.WorkerIp == "" && !r.conditionTrue(task, condReady) {
+				r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
+				task.Status.Phase = "Pending"
+			}
 			return task, fmt.Errorf("suspending actor: %w", err)
 		}
 		task.Status.WorkerIp = ""
@@ -443,10 +447,12 @@ func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, task
 				delErr = nil
 				break
 			}
+			if ctx.Err() != nil {
+				return errors.Join(append(errs, ctx.Err())...)
+			}
 			select {
 			case <-ctx.Done():
-				delErr = ctx.Err()
-				break
+				return errors.Join(append(errs, ctx.Err())...)
 			case <-time.After(500 * time.Millisecond):
 			}
 		}

@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
@@ -32,6 +33,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// DefaultReconcileTimeout bounds how long a single task reconciliation may run
+// while holding the per-task lock (lock.DefaultTTL = 30s), leaving headroom to
+// persist the resulting task status before the lock expires.
+const DefaultReconcileTimeout = lock.DefaultTTL - 5*time.Second
+
 // Reconciler coordinates sandbox/actor lifecycles on Agent Substrate directly.
 type Reconciler interface {
 	Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error)
@@ -40,17 +46,19 @@ type Reconciler interface {
 
 // Options configures the AX API Server.
 type Options struct {
-	Locker     lock.Locker
-	Reconciler Reconciler
+	Locker           lock.Locker
+	Reconciler       Reconciler
+	ReconcileTimeout time.Duration
 }
 
 // Server provides the gRPC API for AX.
 type Server struct {
 	v1alpha1.UnimplementedAXServer
-	store      store.Store
-	locker     lock.Locker
-	reconciler Reconciler
-	grpcServer *grpc.Server
+	store            store.Store
+	locker           lock.Locker
+	reconciler       Reconciler
+	reconcileTimeout time.Duration
+	grpcServer       *grpc.Server
 }
 
 // NewServer creates a new AX API server.
@@ -63,12 +71,17 @@ func NewServer(s store.Store, opts ...Options) *Server {
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
+	reconcileTimeout := opt.ReconcileTimeout
+	if reconcileTimeout <= 0 {
+		reconcileTimeout = DefaultReconcileTimeout
+	}
 
 	srv := &Server{
-		store:      s,
-		locker:     locker,
-		reconciler: opt.Reconciler,
-		grpcServer: grpc.NewServer(),
+		store:            s,
+		locker:           locker,
+		reconciler:       opt.Reconciler,
+		reconcileTimeout: reconcileTimeout,
+		grpcServer:       grpc.NewServer(),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
 	return srv
@@ -186,8 +199,10 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	// Directly reconcile with Substrate
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconcileCtx, cancel := context.WithTimeout(ctx, s.reconcileTimeout)
+		defer cancel()
+		workspaces := s.fetchWorkspaces(reconcileCtx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(reconcileCtx, task, workspaces...)
 		if err != nil {
 			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
 			if reconciled != nil && reconciled.Status != nil {
@@ -249,7 +264,9 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 
 	// Directly clean up Substrate actor and templates
 	if s.reconciler != nil {
-		if err := s.reconciler.ReconcileDelete(ctx, atespace, taskName); err != nil {
+		reconcileCtx, cancel := context.WithTimeout(ctx, s.reconcileTimeout)
+		defer cancel()
+		if err := s.reconciler.ReconcileDelete(reconcileCtx, atespace, taskName); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil, status.Error(codes.Canceled, err.Error())
 			}
@@ -299,8 +316,10 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	task.Status.Phase = "Suspended"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconcileCtx, cancel := context.WithTimeout(ctx, s.reconcileTimeout)
+		defer cancel()
+		workspaces := s.fetchWorkspaces(reconcileCtx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(reconcileCtx, task, workspaces...)
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
@@ -350,8 +369,10 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	task.Status.Phase = "Running"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconcileCtx, cancel := context.WithTimeout(ctx, s.reconcileTimeout)
+		defer cancel()
+		workspaces := s.fetchWorkspaces(reconcileCtx, atespace, task)
+		reconciled, err := s.reconciler.Reconcile(reconcileCtx, task, workspaces...)
 		if err != nil {
 			if reconciled != nil && reconciled.Status != nil {
 				task.Status = reconciled.Status
