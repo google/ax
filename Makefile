@@ -19,7 +19,7 @@ AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
 TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
 CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
 
-.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test clean
+.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
 
 all: build
 
@@ -87,6 +87,28 @@ test:
 	@echo "==> Running tests..."
 	go test -v ./...
 
+# Provision Kind + Substrate + AX, then run the E2E suite. Substrate defaults to
+# the version in go.mod; override with SUBSTRATE_REF=<branch|tag|commit>.
+# Pass extra `go test` flags via E2E_ARGS, e.g. E2E_ARGS='-test.run TestE2E_ModelCRUD'.
+test-e2e:
+	./hack/run-e2e-kind.sh $(E2E_ARGS)
+
+# Run the E2E suite against Substrate main.
+test-e2e-head:
+	SUBSTRATE_REF=main ./hack/run-e2e-kind.sh $(E2E_ARGS)
+
+# Provision Kind + Substrate + AX without running tests (accepts SUBSTRATE_REF).
+e2e-setup:
+	./hack/setup-e2e-kind.sh
+
+# Run the E2E suite against a cluster provisioned by e2e-setup.
+e2e-run:
+	./hack/run-e2e.sh $(E2E_ARGS)
+
+# Delete the Kind E2E cluster.
+e2e-cleanup:
+	./hack/cleanup-e2e-kind.sh
+
 clean:
 	@echo "==> Cleaning build artifacts..."
-	rm -rf bin/
+	rm -rf bin/ .tmp/
