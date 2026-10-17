@@ -90,6 +90,9 @@ make push-task-runner TASK_RUNNER_REPO=gcr.io/<your-project>/ax-task-runner
 
 ### Deploying to Kubernetes
 
+For a new installation, follow the [version-pinned installation guide](docs/installation.md)
+to configure cluster-specific settings before deploying.
+
 Deploy Redis and server components to your cluster in the `ax-system` namespace:
 
 ```bash

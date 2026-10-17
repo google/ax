@@ -11,11 +11,15 @@ whether that deployment works.
 - Git, Make, Go **1.27.1**, `kubectl`, [ko](https://ko.build/install/), and Docker
   with a builder capable of producing `linux/amd64` images.
 - A Linux/amd64 Kubernetes cluster configured for the pinned Substrate version.
-  Select its kube context before proceeding.
+  It must support ClusterTrustBundle projection. Select its kube context before
+  proceeding.
 - Substrate's Control API and atenet router, a `gvisor-default` SandboxConfig,
-  and ready gVisor worker capacity accessible to the `default` atespace. Follow
-  the pinned Substrate checkout's README and sandbox/WorkerPool documentation
-  for provisioning, cluster API requirements, and authentication.
+  and at least one gVisor WorkerPool with ready worker capacity. Follow the
+  pinned Substrate checkout's README and sandbox/WorkerPool documentation for
+  provisioning, cluster API requirements, and authentication.
+- Kubernetes permissions to deploy AX, inspect services/pods and logs, and
+  create `pods/portforward` connections in both `ax-system` and `ate-system`.
+  The CLI connects to ax-server and guest exec uses the atenet router.
 - A snapshot storage location writable by Substrate, and a container registry
   you can push to and the cluster can pull from. Configure credentials on both
   sides if the registry is private.
@@ -47,6 +51,16 @@ and its local instructions, then return to the AX checkout. Keep its source ref
 fixed when building or deploying Substrate components. AX's `env` module is also
 pinned by `go.mod`; no separate checkout is needed.
 
+Create a WorkerPool using the pinned [WorkerPool guide](https://github.com/agent-substrate/substrate/blob/f6a1dc72a35d9875302e2998b2aa23b67dbc732a/docs/api-guide.md#1-workerpool-the-physical-capacity),
+with `spec.sandboxClasses: [{name: gvisor}]`, and wait for its worker pods to be
+ready. Installing the Substrate control plane alone does not create this pool.
+AX sets no `workerSelector`, so any pool matching the gVisor class is eligible;
+pool selection is not scoped by the task's atespace. Inspect the pools with:
+
+```bash
+kubectl get workerpools -A
+```
+
 For a historical AX release, use its own deployment files and instructions;
 the remaining steps describe only the development baseline above.
 
@@ -59,8 +73,9 @@ PATH cannot be selected accidentally:
 GOBIN="$PWD/bin" make install
 AX_BIN="$PWD/bin/ax"
 export PATH="$PWD/bin:$PATH"
-AX_INSTALL_DIR="$PWD/bin/install"
+AX_INSTALL_DIR="$PWD/../ax-install-records"
 mkdir -p "$AX_INSTALL_DIR"
+go version -m "$AX_BIN" > "$AX_INSTALL_DIR/cli-build-info.txt"
 AX_CONTEXT="$(kubectl config current-context)"
 unset AX_SERVER
 ```
@@ -114,6 +129,13 @@ ko resolve --platform=linux/amd64 -f deploy/ax-server.yaml \
   `servicedns.podcert.ate.dev/identity` and label `podcert.ate.dev/canarying=live`.
   Keep TLS verification and the projected service-account token configured.
 
+Inspect the trust bundles and their signer names:
+
+```bash
+kubectl --context "$AX_CONTEXT" get clustertrustbundles \
+  -l podcert.ate.dev/canarying=live -o yaml
+```
+
 Then deploy Redis and your edited server manifest into `ax-system`:
 
 ```bash
@@ -124,11 +146,11 @@ kubectl --context "$AX_CONTEXT" -n ax-system rollout status deployment/ax-server
 ```
 
 Use the edited file rather than `make deploy`, which applies the committed
-defaults. Redis still uses the upstream `redis:7-alpine` tag. AX source pins and
-image digests do not pin OS/Python build dependencies or make rebuilds
-bit-for-bit reproducible. Retain the resolved manifest, source refs, module
-versions, and runner digest with your deployment records; `ax version` does not
-report an AX commit.
+defaults. The `redis:7-alpine` tag and OS/Python build dependencies remain mutable.
+Retain the resolved manifest, source refs, module versions, and runner digest
+with your deployment records. The saved `cli-build-info.txt` includes
+`vcs.revision`; `ax version` does not report an AX commit. The records directory
+is outside the checkout so `make clean` does not remove it.
 
 ## 4. Check a task
 
@@ -156,11 +178,12 @@ A newly created task should be `Suspended`. Inspect its conditions and the
 ax-server log before proceeding, even if `apply` succeeded:
 
 ```bash
-kubectl --context "$AX_CONTEXT" -n ax-system logs deployment/ax-server --tail=100
+kubectl --context "$AX_CONTEXT" -n ax-system logs deployment/ax-server --since=10m
 ```
 
 Require `using custom ActorTemplate for actor` with a `templateName` beginning
-with your `${AX_CHECK_TASK}-tmpl-`. In this baseline, a custom template creation
+with your `${AX_CHECK_TASK}-tmpl-`; widen the log window if needed to include
+creation. In this baseline, a custom template creation
 error can fall back to `default-template` while still returning a `Suspended`
 task. If the log reports `falling back to default template` for this creation,
 or you cannot confirm its custom template, stop here and diagnose the failure.

@@ -82,6 +82,8 @@ targets. For another AX ref, inspect its `go.mod` rather than substituting the
 latest Substrate release. Update this table and the installation guide when
 changing the documented baseline or publishing an AX release.
 
+<a id="2-deploy-the-control-plane"></a>
+
 ## Quick start
 
 Follow the [version-pinned installation guide](docs/installation.md) to build
