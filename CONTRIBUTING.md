@@ -84,6 +84,9 @@ make images
 
 ### Deploying to Kubernetes
 
+For a new installation, follow the [version-pinned installation guide](docs/installation.md)
+to configure cluster-specific settings before deploying.
+
 Deploy PostgreSQL and server components to your cluster in the `ax-system` namespace:
 
 ```bash
