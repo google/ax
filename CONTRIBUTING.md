@@ -87,7 +87,9 @@ make images
 For a new installation, follow the [version-pinned installation guide](docs/installation.md)
 to configure cluster-specific settings before deploying.
 
-Deploy PostgreSQL and server components to your cluster in the `ax-system` namespace:
+If your cluster uses the checked-in deployment defaults, the Make target below
+deploys PostgreSQL and server components into `ax-system`. Otherwise, apply the
+guide's edited manifest; `make deploy` reapplies the checked-in defaults.
 
 ```bash
 make deploy
