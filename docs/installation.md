@@ -13,6 +13,12 @@ whether that deployment works.
 - A Linux/amd64 Kubernetes cluster configured for the pinned Substrate version.
   It must support ClusterTrustBundle projection. Select its kube context before
   proceeding.
+- Worker kernels with OverlayFS `lowerdir+` support through `fsconfig`, as used
+  by the pinned [Substrate image cache](https://github.com/agent-substrate/substrate/blob/f6a1dc72a35d9875302e2998b2aa23b67dbc732a/internal/imagecache/bundle_linux.go#L159-L176).
+  This feature is available in
+  [upstream Linux 6.8 and newer](https://docs.kernel.org/filesystems/overlayfs.html#multiple-lower-layers);
+  vendor kernels may backport it. For kind, check the kernel of the Docker host
+  or provider VM: changing the kind node image does not change that kernel.
 - Substrate's Control API and atenet router, a `gvisor-default` SandboxConfig,
   and at least one gVisor WorkerPool with ready worker capacity. Follow the
   pinned Substrate checkout's README and sandbox/WorkerPool documentation for
@@ -203,7 +209,10 @@ up to 15 seconds during `resume`; `describe` only reads the stored status. If th
 task remains `Running` with `Ready=False` / `WorkspaceInitializing`, check worker
 capacity, image pulls, snapshot storage, and the reported conditions. Once the
 guest has initialized, run the `resume` and `describe` commands again to refresh
-readiness. Then verify guest exec and remove the check task:
+readiness. If `resume` fails while creating an overlay superblock, inspect the
+worker's kernel log: `unrecognized mount option "lowerdir+=..."` indicates
+missing `lowerdir+` support; use a worker kernel that meets the prerequisites.
+Then verify guest exec and remove the check task:
 
 ```bash
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system ssh "$AX_CHECK_TASK" -- echo installation-ok
