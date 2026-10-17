@@ -290,8 +290,28 @@ func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code)
 	return err
 }
 
+// ResourceLimits translates a Task's resource limits into the Substrate
+// ActorTemplate resources block. Substrate sizes a sandbox by limits alone
+// (requests are rejected by v1alpha1.ValidateResources). It returns nil when no
+// limit is set so the template inherits the worker defaults.
+func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.Resources {
+	limits := reqs.GetLimits()
+	var out []*ateapipb.Limits
+	if cpu := limits.GetCpu(); cpu != "" {
+		out = append(out, &ateapipb.Limits{Name: "cpu", Quantity: cpu})
+	}
+	if memory := limits.GetMemory(); memory != "" {
+		out = append(out, &ateapipb.Limits{Name: "memory", Quantity: memory})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return &ateapipb.Resources{Limits: out}
+}
+
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
-func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string) *ateapipb.ActorTemplate {
+// A nil resources leaves the sandbox sized by the worker defaults.
+func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.Resources) *ateapipb.ActorTemplate {
 	if atespace == "" {
 		atespace = "default"
 	}
@@ -350,11 +370,13 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR,
 			ConfigName:   "gvisor-default",
 		},
+		Resources: resources,
 	}
 }
 
-// EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image and optional environment variables.
-func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
+// EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
+// resource limits (nil for worker defaults), and optional environment variables.
+func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.Resources, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
 	if err == nil && existing != nil {
 		return existing, nil
@@ -367,7 +389,7 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
 		}
 	}
 
-	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "")
+	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "", resources)
 	req := &ateapipb.CreateActorTemplateRequest{
 		ActorTemplate: tmpl,
 	}

@@ -340,5 +340,5 @@ func ValidateTask(t *Task) error {
 		}
 		seen[p] = r.GetName()
 	}
-	return nil
+	return ValidateResources(spec.GetResources())
 }

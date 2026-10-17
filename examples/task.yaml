@@ -24,9 +24,6 @@ spec:
   image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
 
   resources:
-    requests:
-      cpu: "500m"
-      memory: "1Gi"
     limits:
       cpu: "2"
       memory: "4Gi"

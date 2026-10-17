@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type mockControlClient struct {
@@ -203,7 +204,7 @@ func TestClient_DeleteActor_PropagatesRPCError(t *testing.T) {
 func TestBuildActorTemplate(t *testing.T) {
 	t.Setenv("AX_SNAPSHOTS_BUCKET", "gs://ate-snapshots/ax/")
 
-	tmpl := BuildActorTemplate("", "test-tmpl", "", map[string]string{"FOO": "BAR"}, nil, "")
+	tmpl := BuildActorTemplate("", "test-tmpl", "", map[string]string{"FOO": "BAR"}, nil, "", nil)
 	if tmpl.GetMetadata().GetAtespace() != "default" {
 		t.Errorf("expected default atespace, got %q", tmpl.GetMetadata().GetAtespace())
 	}
@@ -312,6 +313,7 @@ func TestClient_EnsureActorTemplateWithImage_Success(t *testing.T) {
 		"default",
 		"task-1-tmpl-abcd",
 		"custom-image:v1",
+		nil,
 		map[string]string{"FOO": "BAR"},
 	)
 	if err != nil {
@@ -346,6 +348,7 @@ func TestClient_EnsureActorTemplateWithImage_PropagatesError(t *testing.T) {
 		"default",
 		"task-1-tmpl-abcd",
 		"custom-image:v1",
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -444,5 +447,63 @@ func TestIsTransientError(t *testing.T) {
 	}
 	if IsTransientError(status.Error(codes.InvalidArgument, "bad spec")) {
 		t.Error("expected codes.InvalidArgument to be non-transient")
+	}
+}
+
+func TestResourceLimits(t *testing.T) {
+	tests := []struct {
+		name string
+		reqs *v1alpha1.ResourcesSpec
+		want *ateapipb.Resources
+	}{
+		{name: "nil"},
+		{name: "empty", reqs: &v1alpha1.ResourcesSpec{}},
+		{name: "empty limits", reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{}}},
+		{
+			name: "cpu limit",
+			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
+			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "cpu", Quantity: "2"}}},
+		},
+		{
+			name: "memory limit",
+			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "4Gi"}},
+			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "memory", Quantity: "4Gi"}}},
+		},
+		{
+			name: "cpu and memory limits",
+			reqs: &v1alpha1.ResourcesSpec{
+				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
+			},
+			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{
+				{Name: "cpu", Quantity: "2"},
+				{Name: "memory", Quantity: "4Gi"},
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ResourceLimits(tt.reqs)
+			if !proto.Equal(got, tt.want) {
+				t.Fatalf("ResourceLimits() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildActorTemplate_Resources(t *testing.T) {
+	limits := &ateapipb.Resources{Limits: []*ateapipb.Limits{
+		{Name: "cpu", Quantity: "2"},
+		{Name: "memory", Quantity: "4Gi"},
+	}}
+	tmpl := BuildActorTemplate("default", "task-tmpl-01234567", "ghcr.io/my-org/agent@sha256:abc", nil, nil, "", limits)
+	if !proto.Equal(tmpl.GetResources(), limits) {
+		t.Fatalf("template resources = %v, want %v", tmpl.GetResources(), limits)
+	}
+
+	// Without limits the template must not carry a resources block, so the
+	// worker defaults keep applying.
+	tmpl = BuildActorTemplate("default", "task-tmpl-01234567", "ghcr.io/my-org/agent@sha256:abc", nil, nil, "", nil)
+	if tmpl.GetResources() != nil {
+		t.Fatalf("template without limits has resources %v, want none", tmpl.GetResources())
 	}
 }
