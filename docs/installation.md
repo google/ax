@@ -25,7 +25,8 @@ whether that deployment works.
   provisioning, cluster API requirements, and authentication.
 - Kubernetes permissions to deploy AX, inspect services/pods and logs, and
   create `pods/portforward` connections in both `ax-system` and `ate-system`.
-  The CLI connects to ax-server and guest exec uses the atenet router.
+  The CLI connects to ax-server; guest exec can also port-forward to the atenet
+  router when its TCP connection to the worker IP fails.
 - A snapshot storage location writable by Substrate, and a container registry
   you can push to and the cluster can pull from. Configure credentials on both
   sides if the registry is private.
@@ -212,10 +213,23 @@ guest has initialized, run the `resume` and `describe` commands again to refresh
 readiness. If `resume` fails while creating an overlay superblock, inspect the
 worker's kernel log: `unrecognized mount option "lowerdir+=..."` indicates
 missing `lowerdir+` support; use a worker kernel that meets the prerequisites.
-Then verify guest exec and remove the check task:
+Then verify guest exec:
 
 ```bash
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system ssh "$AX_CHECK_TASK" -- echo installation-ok
+```
+
+Require `installation-ok` and exit status 0. If guest exec on a `Ready` task
+fails with a gRPC transport error such as `error reading server preface`, check
+the route from the CLI host to the worker IP, including Pod CIDR overlap or
+proxies. At this baseline, `ax ssh` first probes the worker IP over TCP (port 80
+by default) and port-forwards to the atenet router only if that connection
+fails. A successful TCP probe does not verify guest RPC connectivity, and a
+later RPC failure does not trigger the router fallback.
+
+After the check succeeds, remove the task and stop the tunnel:
+
+```bash
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system delete task "$AX_CHECK_TASK"
 "$AX_BIN" tunnel stop "$AX_CONTEXT"
 ```
