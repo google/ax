@@ -545,7 +545,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		},
 		Spec: &v1alpha1.TaskSpec{
 			Image: "ghrc.io/my-org/my-image",
-			Resources: &v1alpha1.ResourceReqs{
+			Resources: &v1alpha1.ResourcesSpec{
 				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 			},
 		},
@@ -604,7 +604,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 	ctx := context.Background()
 
-	newTask := func(name string, resources *v1alpha1.ResourceReqs) *v1alpha1.Task {
+	newTask := func(name string, resources *v1alpha1.ResourcesSpec) *v1alpha1.Task {
 		return &v1alpha1.Task{
 			ApiVersion: v1alpha1.APIVersion,
 			Kind:       v1alpha1.KindTask,
@@ -639,7 +639,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		mockSrv := &mockControlServer{}
 		reconciler := setup(t, mockSrv)
 
-		for _, reqs := range []*v1alpha1.ResourceReqs{
+		for _, reqs := range []*v1alpha1.ResourcesSpec{
 			{Limits: &v1alpha1.ResourceList{Cpu: "two"}},
 			{Limits: &v1alpha1.ResourceList{Cpu: "0"}},
 			{Limits: &v1alpha1.ResourceList{Cpu: "1000"}},
@@ -667,7 +667,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		}
 		reconciler := setup(t, mockSrv)
 
-		reconciled, err := reconciler.Reconcile(ctx, newTask("rejected-limits", &v1alpha1.ResourceReqs{
+		reconciled, err := reconciler.Reconcile(ctx, newTask("rejected-limits", &v1alpha1.ResourcesSpec{
 			Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 		}))
 		if err == nil {

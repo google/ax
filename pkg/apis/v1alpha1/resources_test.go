@@ -22,16 +22,16 @@ import (
 )
 
 func TestValidateResources(t *testing.T) {
-	limits := func(cpu, memory string) *v1alpha1.ResourceReqs {
-		return &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{Cpu: cpu, Memory: memory}}
+	limits := func(cpu, memory string) *v1alpha1.ResourcesSpec {
+		return &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: cpu, Memory: memory}}
 	}
 	tests := []struct {
 		name    string
-		reqs    *v1alpha1.ResourceReqs
+		reqs    *v1alpha1.ResourcesSpec
 		wantErr string
 	}{
 		{name: "nil"},
-		{name: "empty", reqs: &v1alpha1.ResourceReqs{}},
+		{name: "empty", reqs: &v1alpha1.ResourcesSpec{}},
 		{name: "empty limits", reqs: limits("", "")},
 		{name: "docs example", reqs: limits("2", "4Gi")},
 		{name: "millicores", reqs: limits("500m", "")},
@@ -44,12 +44,12 @@ func TestValidateResources(t *testing.T) {
 		{name: "small units", reqs: limits("1n", "1u")},
 		{
 			name:    "requests are not supported",
-			reqs:    &v1alpha1.ResourceReqs{Requests: &v1alpha1.ResourceList{Cpu: "500m"}, Limits: &v1alpha1.ResourceList{Cpu: "2"}},
+			reqs:    &v1alpha1.ResourcesSpec{Requests: &v1alpha1.ResourceList{Cpu: "500m"}, Limits: &v1alpha1.ResourceList{Cpu: "2"}},
 			wantErr: "spec.resources.requests: not supported",
 		},
 		{
 			name:    "memory request alone",
-			reqs:    &v1alpha1.ResourceReqs{Requests: &v1alpha1.ResourceList{Memory: "1Gi"}},
+			reqs:    &v1alpha1.ResourcesSpec{Requests: &v1alpha1.ResourceList{Memory: "1Gi"}},
 			wantErr: "spec.resources.requests: not supported",
 		},
 		{name: "cpu zero", reqs: limits("0", ""), wantErr: `spec.resources.limits.cpu: "0" must be greater than zero`},

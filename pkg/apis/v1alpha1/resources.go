@@ -37,7 +37,7 @@ const MaxCPULimitCores = 1000
 // ValidateResources reports the first problem with a task's resource
 // requirements. A nil or empty value is valid: the sandbox is then sized by its
 // worker's defaults.
-func ValidateResources(reqs *ResourceReqs) error {
+func ValidateResources(reqs *ResourcesSpec) error {
 	if req := reqs.GetRequests(); req.GetCpu() != "" || req.GetMemory() != "" {
 		return errors.New("spec.resources.requests: not supported, only spec.resources.limits is applied to the sandbox")
 	}

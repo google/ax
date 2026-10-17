@@ -453,25 +453,25 @@ func TestIsTransientError(t *testing.T) {
 func TestResourceLimits(t *testing.T) {
 	tests := []struct {
 		name string
-		reqs *v1alpha1.ResourceReqs
+		reqs *v1alpha1.ResourcesSpec
 		want *ateapipb.Resources
 	}{
 		{name: "nil"},
-		{name: "empty", reqs: &v1alpha1.ResourceReqs{}},
-		{name: "empty limits", reqs: &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{}}},
+		{name: "empty", reqs: &v1alpha1.ResourcesSpec{}},
+		{name: "empty limits", reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{}}},
 		{
 			name: "cpu limit",
-			reqs: &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
+			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
 			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "cpu", Quantity: "2"}}},
 		},
 		{
 			name: "memory limit",
-			reqs: &v1alpha1.ResourceReqs{Limits: &v1alpha1.ResourceList{Memory: "4Gi"}},
+			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "4Gi"}},
 			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "memory", Quantity: "4Gi"}}},
 		},
 		{
 			name: "cpu and memory limits",
-			reqs: &v1alpha1.ResourceReqs{
+			reqs: &v1alpha1.ResourcesSpec{
 				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 			},
 			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{

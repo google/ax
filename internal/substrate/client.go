@@ -294,7 +294,7 @@ func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code)
 // ActorTemplate resources block. Substrate sizes a sandbox by limits alone
 // (requests are rejected by v1alpha1.ValidateResources). It returns nil when no
 // limit is set so the template inherits the worker defaults.
-func ResourceLimits(reqs *v1alpha1.ResourceReqs) *ateapipb.Resources {
+func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.Resources {
 	limits := reqs.GetLimits()
 	var out []*ateapipb.Limits
 	if cpu := limits.GetCpu(); cpu != "" {
