@@ -93,7 +93,9 @@ make push-task-runner TASK_RUNNER_REPO=gcr.io/<your-project>/ax-task-runner
 For a new installation, follow the [version-pinned installation guide](docs/installation.md)
 to configure cluster-specific settings before deploying.
 
-Deploy Redis and server components to your cluster in the `ax-system` namespace:
+If your cluster uses the checked-in deployment defaults, the Make target below
+deploys Redis and server components into `ax-system`. Otherwise, apply the
+guide's edited manifest; `make deploy` reapplies the checked-in defaults.
 
 ```bash
 make deploy AX_IMAGE_REPO=gcr.io/<your-project>/ax-images
