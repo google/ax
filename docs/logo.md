@@ -9,3 +9,5 @@ The name is a natural fit: **ax**olotl starts with **AX**. The round pink face, 
 ## Logo file
 
 [axel.svg](../assets/axel.svg) is the mascot, used in the README and documentation. Preserve its proportions when resizing and leave room around the gills.
+
+The logo is designed by Nan Hockin.
