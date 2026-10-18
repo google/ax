@@ -1,5 +1,5 @@
 <h1>
-  <img src="assets/axolotl.svg" width="70" align="absmiddle" alt="AX axolotl">
+  <img src="assets/axel.svg" width="70" align="absmiddle" alt="AX axolotl">
   AX
 </h1>
 
