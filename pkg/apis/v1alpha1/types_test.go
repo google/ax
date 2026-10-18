@@ -44,8 +44,8 @@ func fullTask() *v1alpha1.Task {
 			Resources: &v1alpha1.ResourcesSpec{
 				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
 			},
-			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "ws", Path: "/workspace", Goal: "build"}},
-			Debug:      true,
+			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace", Goal: "build"},
+			Debug:     true,
 		},
 		Status: &v1alpha1.TaskStatus{
 			Phase:    "Running",
@@ -225,25 +225,6 @@ spec:
 	}
 }
 
-// The original schema bound a single workspace under spec.workspace. That field
-// is gone, so manifests still using it are rejected like any unknown field.
-func TestTask_SingularWorkspace_Rejected(t *testing.T) {
-	taskYAML := `
-apiVersion: ax.io/v1alpha1
-kind: Task
-metadata:
-  name: test-task
-spec:
-  workspace:
-    name: default-workspace
-`
-	var task v1alpha1.Task
-	err := yaml.Unmarshal([]byte(taskYAML), &task)
-	if err == nil || !strings.Contains(err.Error(), "workspace") {
-		t.Fatalf("expected spec.workspace to be rejected as unknown, got %v", err)
-	}
-}
-
 func TestModel_SecretKey_UnmarshalYAML(t *testing.T) {
 	cases := map[string]string{
 		"structured": `
@@ -336,34 +317,23 @@ func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
 	return s
 }
 
-func TestTaskSpec_WorkspaceRefs(t *testing.T) {
-	single := &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "one"}}}
-	if refs := single.WorkspaceRefs(); len(refs) != 1 || refs[0].Name != "one" {
-		t.Errorf("single: refs = %v", refs)
+func TestTaskSpec_WorkspacePath(t *testing.T) {
+	tests := []struct {
+		name string
+		spec *v1alpha1.TaskSpec
+		want string
+	}{
+		{name: "nil spec", want: v1alpha1.DefaultWorkspacePath},
+		{name: "no workspace", spec: &v1alpha1.TaskSpec{}, want: v1alpha1.DefaultWorkspacePath},
+		{name: "default path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "one"}}, want: v1alpha1.DefaultWorkspacePath},
+		{name: "explicit path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "one", Path: "/opt/code"}}, want: "/opt/code"},
 	}
-	if paths := single.WorkspacePaths(); len(paths) != 1 || paths[0] != v1alpha1.DefaultWorkspacePath+"/one" {
-		t.Errorf("single: paths = %v, want [%s/one]", paths, v1alpha1.DefaultWorkspacePath)
-	}
-
-	multi := &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{
-		{Name: "code"},
-		nil,
-		{Name: "tools", Path: "/opt/tools"},
-	}}
-	refs := multi.WorkspaceRefs()
-	if len(refs) != 2 || refs[0].Name != "code" || refs[1].Name != "tools" {
-		t.Errorf("multi: refs = %v", refs)
-	}
-	if paths := multi.WorkspacePaths(); len(paths) != 2 || paths[0] != "/workspace/code" || paths[1] != "/opt/tools" {
-		t.Errorf("multi: paths = %v", paths)
-	}
-
-	var nilSpec *v1alpha1.TaskSpec
-	if refs := nilSpec.WorkspaceRefs(); len(refs) != 0 {
-		t.Errorf("nil spec: refs = %v", refs)
-	}
-	if paths := (&v1alpha1.TaskSpec{}).WorkspacePaths(); len(paths) != 0 {
-		t.Errorf("empty spec: paths = %v", paths)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.spec.WorkspacePath(); got != tt.want {
+				t.Errorf("WorkspacePath() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -453,39 +423,18 @@ func TestValidateTask(t *testing.T) {
 		wantErr string
 	}{
 		{name: "nil spec"},
-		{name: "no workspaces", spec: &v1alpha1.TaskSpec{}},
-		{name: "list of one", spec: &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}}}},
+		{name: "no workspace", spec: &v1alpha1.TaskSpec{}},
+		{name: "default path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}},
+		{name: "explicit path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "/x"}}},
 		{
-			name:    "nameless entry with path",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Path: "/w"}}},
-			wantErr: "spec.workspaces[0]: name is required",
-		},
-		{name: "list default paths", spec: &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}, {Name: "b"}}}},
-		{name: "list explicit paths", spec: &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "/x"}, {Name: "b", Path: "/y"}}}},
-		{
-			name:    "nameless entry in list",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}, {Path: "/b"}}},
-			wantErr: "spec.workspaces[1]: name is required",
-		},
-		{
-			name:    "duplicate name",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "/x"}, {Name: "a", Path: "/y"}}},
-			wantErr: `workspace "a" is bound more than once`,
-		},
-		{
-			name:    "duplicate path",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "/same"}, {Name: "b", Path: "/same/"}}},
-			wantErr: `path "/same/" is already used by workspace "a"`,
-		},
-		{
-			name:    "default path collides with explicit",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}, {Name: "b", Path: "/workspace/a"}}},
-			wantErr: "already used",
+			name:    "nameless binding",
+			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Path: "/w"}},
+			wantErr: "spec.workspace: name is required",
 		},
 		{
 			name:    "relative path",
-			spec:    &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "rel"}}},
-			wantErr: "spec.workspaces[0]: path \"rel\" must be absolute",
+			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "rel"}},
+			wantErr: "spec.workspace: path \"rel\" must be absolute",
 		},
 	}
 	for _, tt := range tests {
@@ -504,33 +453,32 @@ func TestValidateTask(t *testing.T) {
 	}
 }
 
-func TestTask_Workspaces_YAML(t *testing.T) {
+func TestTask_Workspace_YAML(t *testing.T) {
 	taskYAML := `
 apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
-  name: multi
+  name: single
 spec:
-  workspaces:
-    - name: code
-      goal: "build it"
-    - name: tools
-      path: /opt/tools
+  workspace:
+    name: code
+    path: /opt/code
+    goal: "build it"
 `
 	var task v1alpha1.Task
 	if err := yaml.Unmarshal([]byte(taskYAML), &task); err != nil {
 		t.Fatalf("unmarshaling task: %v", err)
 	}
-	refs := task.Spec.WorkspaceRefs()
-	if len(refs) != 2 || refs[0].Name != "code" || refs[0].Goal != "build it" || refs[1].Path != "/opt/tools" {
-		t.Fatalf("unexpected refs: %v", refs)
+	ref := task.Spec.GetWorkspace()
+	if ref == nil || ref.Name != "code" || ref.Path != "/opt/code" || ref.Goal != "build it" {
+		t.Fatalf("unexpected workspace binding: %v", ref)
 	}
 	out, err := yaml.Marshal(&task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "workspaces:") || strings.Contains(string(out), "\n  workspace:") {
-		t.Errorf("expected workspaces list and no singular workspace in output:\n%s", out)
+	if !strings.Contains(string(out), "workspace:") || strings.Contains(string(out), "workspaces:") {
+		t.Errorf("expected a singular workspace mapping in output:\n%s", out)
 	}
 	var back v1alpha1.Task
 	if err := yaml.Unmarshal(out, &back); err != nil {
@@ -538,6 +486,22 @@ spec:
 	}
 	if !proto.Equal(&task, &back) {
 		t.Errorf("round trip changed the task:\n%s", out)
+	}
+
+	// The earlier spec.workspaces list is no longer part of the schema, so
+	// manifests still using it are rejected like any unknown field.
+	listYAML := `
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: multi
+spec:
+  workspaces:
+    - name: code
+`
+	var rejected v1alpha1.Task
+	if err := yaml.Unmarshal([]byte(listYAML), &rejected); err == nil {
+		t.Error("expected spec.workspaces list to be rejected")
 	}
 }
 

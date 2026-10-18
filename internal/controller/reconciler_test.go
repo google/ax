@@ -258,7 +258,7 @@ func TestTaskReconciler(t *testing.T) {
 		Status: &v1alpha1.TaskStatus{Actor: "not-the-task", Phase: "Running"},
 	}
 
-	reconciled, err := reconciler.Reconcile(ctx, task)
+	reconciled, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		},
 	}
 
-	if _, err := reconciler.Reconcile(ctx, task); err != nil {
+	if _, err := reconciler.Reconcile(ctx, task, nil); err != nil {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 1 {
@@ -568,7 +568,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	// Raising a limit is a launch configuration change and must provision a new
 	// template, under a new name, carrying the new value.
 	task.Spec.Resources.Limits.Memory = "8Gi"
-	if _, err := reconciler.Reconcile(ctx, task); err != nil {
+	if _, err := reconciler.Reconcile(ctx, task, nil); err != nil {
 		t.Fatalf("Reconcile with changed limits failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 2 {
@@ -590,7 +590,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		Metadata:   &v1alpha1.ObjectMeta{Name: "plain-task", Atespace: "default"},
 		Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if _, err := reconciler.Reconcile(ctx, plain); err != nil {
+	if _, err := reconciler.Reconcile(ctx, plain, nil); err != nil {
 		t.Fatalf("Reconcile of task without limits failed: %v", err)
 	}
 	if got := mockSrv.createdTemplates[len(mockSrv.createdTemplates)-1].GetResources(); got != nil {
@@ -646,7 +646,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			{Limits: &v1alpha1.ResourceList{Memory: "-4Gi"}},
 			{Requests: &v1alpha1.ResourceList{Cpu: "500m"}, Limits: &v1alpha1.ResourceList{Cpu: "2"}},
 		} {
-			reconciled, err := reconciler.Reconcile(ctx, newTask("bad-limits", reqs))
+			reconciled, err := reconciler.Reconcile(ctx, newTask("bad-limits", reqs), nil)
 			if err == nil {
 				t.Errorf("Reconcile(%v) succeeded, want error", reqs)
 			}
@@ -669,7 +669,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 
 		reconciled, err := reconciler.Reconcile(ctx, newTask("rejected-limits", &v1alpha1.ResourcesSpec{
 			Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
-		}))
+		}), nil)
 		if err == nil {
 			t.Fatal("Reconcile succeeded although the template with limits was rejected")
 		}
@@ -688,7 +688,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		}
 		reconciler := setup(t, mockSrv)
 
-		reconciled, err := reconciler.Reconcile(ctx, newTask("no-limits", nil))
+		reconciled, err := reconciler.Reconcile(ctx, newTask("no-limits", nil), nil)
 		if err != nil {
 			t.Fatalf("Reconcile without limits failed: %v", err)
 		}
@@ -925,7 +925,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-atespace"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	reconciled, err := reconciler.Reconcile(ctx, task)
+	reconciled, err := reconciler.Reconcile(ctx, task, nil)
 	if err == nil {
 		t.Fatal("expected error from Reconcile when EnsureAtespace fails, got nil")
 	}
@@ -941,7 +941,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-actor"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	reconciled2, err := reconciler.Reconcile(ctx, task2)
+	reconciled2, err := reconciler.Reconcile(ctx, task2, nil)
 	if err == nil {
 		t.Fatal("expected error from Reconcile when EnsureActor fails, got nil")
 	}
@@ -959,7 +959,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 		Status:   &v1alpha1.TaskStatus{Phase: "Running"},
 	}
-	reconciled3, err := reconciler.Reconcile(ctx, task3)
+	reconciled3, err := reconciler.Reconcile(ctx, task3, nil)
 	if err == nil {
 		t.Fatal("expected error from Reconcile when ResumeActor fails, got nil")
 	}
@@ -971,7 +971,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	// Recovery on retry:
 	mockSrv.resumeActorErr = nil
 	reconciled3.Status.Phase = "Running"
-	recovered, err := reconciler.Reconcile(ctx, reconciled3)
+	recovered, err := reconciler.Reconcile(ctx, reconciled3, nil)
 	if err != nil {
 		t.Fatalf("expected Reconcile to succeed after Substrate recovers, got %v", err)
 	}
@@ -985,7 +985,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "permanent-actor-err"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	reconciled4, err := reconciler.Reconcile(ctx, task4)
+	reconciled4, err := reconciler.Reconcile(ctx, task4, nil)
 	if err == nil {
 		t.Fatal("expected error on InvalidArgument, got nil")
 	}

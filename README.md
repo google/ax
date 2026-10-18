@@ -28,9 +28,9 @@ kind: Task
 metadata:
   name: test
 spec:
-  workspaces:
-    - name: golang
-      goal: "Ensure that Go tool chain is available and is built from source"
+  workspace:
+    name: golang
+    goal: "Ensure that Go tool chain is available and is built from source"
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 

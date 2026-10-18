@@ -283,28 +283,28 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 	}
 }
 
-func TestCreateTask_ValidatesWorkspaceBindings(t *testing.T) {
+func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	srv := server.NewServer(memory.NewStore())
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "bad"},
 		Spec: &v1alpha1.TaskSpec{
-			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a", Path: "/same"}, {Name: "b", Path: "/same"}},
+			Workspace: &v1alpha1.WorkspaceRef{Path: "/w"},
 		},
 	}})
 	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("expected InvalidArgument for colliding workspace paths, got %v", err)
+		t.Fatalf("expected InvalidArgument for a nameless workspace binding, got %v", err)
 	}
 
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},
 		Spec: &v1alpha1.TaskSpec{
-			Workspaces: []*v1alpha1.WorkspaceRef{{Name: "a"}, {Name: "b"}},
+			Workspace: &v1alpha1.WorkspaceRef{Name: "a"},
 		},
 	}})
 	if err != nil {
-		t.Fatalf("expected a valid multi-workspace task to be accepted, got %v", err)
+		t.Fatalf("expected a valid workspace binding to be accepted, got %v", err)
 	}
 }
 
@@ -319,7 +319,7 @@ type fakeReconciler struct {
 	onDelete            func(ctx context.Context, atespace, taskName string) error
 }
 
-func (f *fakeReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+func (f *fakeReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	f.reconcileCount++
 	f.observedTask = proto.Clone(task).(*v1alpha1.Task)
 	if f.reconcileErr != nil {

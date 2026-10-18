@@ -43,8 +43,8 @@ const (
 	// DefaultMetadataPort is the loopback port for the metadata endpoints when
 	// Config.MetadataPort is zero.
 	DefaultMetadataPort = 8099
-	// DefaultWorkspacePath is the command's working directory when the task
-	// binds no workspaces.
+	// DefaultWorkspacePath is the command's working directory unless the task's
+	// workspace binding sets a path.
 	DefaultWorkspacePath = v1alpha1.DefaultWorkspacePath
 
 	// stopGracePeriod is how long a running task command gets to exit after
@@ -61,42 +61,13 @@ type Config struct {
 	// command reads through AX_METADATA_URL. Zero means DefaultMetadataPort.
 	MetadataPort int
 	// Task is the task to run. It supplies the command, its environment, and
-	// the workspace bindings. Nil runs with no command and default settings.
+	// the workspace binding. Nil runs with no command and default settings.
 	Task *v1alpha1.Task
-	// Workspaces are the Workspace resources the task binds. Each is matched to
-	// an entry of the task's spec.workspaces by name.
-	Workspaces []*v1alpha1.Workspace
+	// Workspace is the Workspace resource the task's spec.workspace refers to.
+	// Nil sets up an empty working directory instead.
+	Workspace *v1alpha1.Workspace
 	// OnCommandExit, when set, is called once the task command has exited.
 	OnCommandExit func(CommandExit)
-}
-
-// mount pairs one workspace binding from the task spec with the Workspace
-// resource that satisfies it and the path it is set up at.
-type mount struct {
-	ref  *v1alpha1.WorkspaceRef
-	ws   *v1alpha1.Workspace
-	path string
-}
-
-// resolveMounts lines up the task's workspace bindings with the Workspace
-// resources in cfg. Bindings are matched by name; a binding whose Workspace was
-// not supplied is set up as an empty directory.
-func resolveMounts(cfg Config) []mount {
-	byName := make(map[string]*v1alpha1.Workspace, len(cfg.Workspaces))
-	for _, ws := range cfg.Workspaces {
-		if ws != nil {
-			byName[ws.GetMetadata().GetName()] = ws
-		}
-	}
-
-	spec := cfg.Task.GetSpec()
-	refs := spec.WorkspaceRefs()
-	paths := spec.WorkspacePaths()
-	mounts := make([]mount, len(refs))
-	for i, ref := range refs {
-		mounts[i] = mount{ref: ref, ws: byName[ref.GetName()], path: paths[i]}
-	}
-	return mounts
 }
 
 // CommandExit describes how the task command finished.
@@ -111,10 +82,10 @@ type CommandExit struct {
 
 // Run executes the task-runner lifecycle and blocks until ctx is cancelled.
 //
-// Every workspace the task binds is set up in declaration order, each at its
-// own path. The task's spec.command, if any, is then started as a child process
-// in its own process group with the first workspace as its working directory
-// and AX_METADATA_URL plus spec.env in its environment. The metadata and guest
+// The task's workspace is set up at its path, /workspace unless the binding
+// says otherwise. The task's spec.command, if any, is then started as a child
+// process in its own process group with that path as its working directory and
+// AX_METADATA_URL plus spec.env in its environment. The metadata and guest
 // server keeps serving whether or not the command is still running. When ctx is
 // cancelled a running command is sent SIGTERM, given a grace period, and then
 // killed.
@@ -131,23 +102,11 @@ func Run(ctx context.Context, cfg Config) error {
 	if metadataPort <= 0 {
 		metadataPort = DefaultMetadataPort
 	}
-	mounts := resolveMounts(cfg)
-	if len(mounts) == 0 {
-		// Nothing bound: still provide an empty working directory at the default path.
-		mounts = []mount{{ref: &v1alpha1.WorkspaceRef{}, path: DefaultWorkspacePath}}
-	}
-	wsPath := mounts[0].path
-	workspaces := make([]*v1alpha1.Workspace, 0, len(mounts))
-	paths := make([]string, len(mounts))
-	for i, m := range mounts {
-		paths[i] = m.path
-		if m.ws != nil {
-			workspaces = append(workspaces, m.ws)
-		}
-	}
-	slog.Info("initializing AX task runner", "port", port, "wsPath", wsPath, "workspaces", paths)
+	ref := cfg.Task.GetSpec().GetWorkspace()
+	wsPath := cfg.Task.GetSpec().WorkspacePath()
+	slog.Info("initializing AX task runner", "port", port, "workspace", ref.GetName(), "wsPath", wsPath)
 
-	metaServer := metadata.NewServer(port, cfg.Task, workspaces, metadata.ServerOptions{
+	metaServer := metadata.NewServer(port, cfg.Task, cfg.Workspace, metadata.ServerOptions{
 		WorkspacePath: wsPath,
 		MetadataPort:  metadataPort,
 	})
@@ -164,16 +123,11 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = metaServer.Stop(context.Background())
 	}()
 
-	ready := true
-	for _, m := range mounts {
-		if _, err := workspace.SetupWorkspace(ctx, m.ws, m.path, m.ref.GetGoal()); err != nil {
-			slog.Error("workspace maiden run setup failed", "workspace", m.ref.GetName(), "path", m.path, "error", err)
-			ready = false
-		}
-	}
-	if ready {
+	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath, ref.GetGoal()); err != nil {
+		slog.Error("workspace maiden run setup failed", "workspace", ref.GetName(), "path", wsPath, "error", err)
+	} else {
 		metaServer.SetWorkspaceReady(true)
-		slog.Info("workspace maiden run setup marked ready", "count", len(mounts))
+		slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 	}
 
 	cmdArgs := cfg.Task.GetSpec().GetCommand()

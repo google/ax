@@ -72,9 +72,11 @@ message TaskSpec {
   repeated string command = 2;
   repeated EnvVar env = 3;
   ResourcesSpec resources = 4;
-  // workspaces binds one or more Workspaces, each mounted at its own path
-  // under /workspace. The first entry is the task command's working directory.
-  repeated WorkspaceRef workspaces = 5;
+  // workspace binds the Workspace the task works in. It is mounted at
+  // /workspace unless the binding sets a path, and that path is the task
+  // command's working directory. A task without a workspace gets an empty
+  // working directory at /workspace.
+  WorkspaceRef workspace = 5;
   // debug enables the in-container guest services (process execution and file
   // access) that back `ax ssh`. Off by default.
   bool debug = 6;

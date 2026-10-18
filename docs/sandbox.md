@@ -25,7 +25,7 @@ Your agent can introspect its own configuration without any SDK. The metadata en
 | Endpoint | Method | Returns | Description |
 |---|---|---|---|
 | `/metadata/v1alpha1/ax/task` | `GET` | `application/yaml` | Task launch configuration, excluding status. |
-| `/metadata/v1alpha1/ax/workspaces` | `GET` | `application/yaml` | Every bound `Workspace`, as a multi-document stream in binding order. |
+| `/metadata/v1alpha1/ax/workspace` | `GET` | `application/yaml` | The bound `Workspace`. `404` when the task binds none. |
 
 ```bash
 # From inside a task:

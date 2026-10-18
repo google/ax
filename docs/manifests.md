@@ -26,28 +26,19 @@ spec:
       cpu: "2"
       memory: "4Gi"
 
-  workspaces:
-    - name: default-workspace
-      path: "/workspace"
-      goal: "Install dependencies and run the test suite"   # Antigravity prepares the workspace to this goal on first run
+  workspace:
+    name: default-workspace
+    path: "/workspace"   # optional; this is the default
+    goal: "Install dependencies and run the test suite"   # Antigravity prepares the workspace to this goal on first run
 
   debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
 
-### Binding several workspaces
+### Binding a workspace
 
-`spec.workspaces` takes as many entries as you like, so a task can compose reusable `Workspace` resources, for example the code to work on plus a shared set of tools:
+A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.command`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`.
 
-```yaml
-spec:
-  workspaces:
-    - name: my-service          # mounted at /workspace/my-service, the command's working directory
-      goal: "Install dependencies and run the test suite"
-    - name: team-tools
-      path: "/workspace/tools"  # explicit mount path
-```
-
-Each entry is set up independently at its own path, in order. Every entry needs a `name`; without a `path` it lands at `/workspace/<name>`, and paths must be unique. The first entry is the working directory of `spec.command`, and the task reports `WorkspaceReady` only once all of them are prepared. See [`examples/multi-workspace.yaml`](../examples/multi-workspace.yaml) for a complete set.
+To work on content from several sources, put it all in one `Workspace`, for example by listing several repositories under `spec.git` or adding files through `spec.files`.
 
 ### Sizing the sandbox
 

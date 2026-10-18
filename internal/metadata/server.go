@@ -44,7 +44,7 @@ type Server struct {
 	grpcCleanup    func()
 	mu             sync.RWMutex
 	task           *v1alpha1.Task
-	workspaces     []*v1alpha1.Workspace
+	workspace      *v1alpha1.Workspace
 	workspaceReady bool
 }
 
@@ -58,18 +58,17 @@ type ServerOptions struct {
 }
 
 // NewServer creates a new metadata and guest server serving the task and its
-// bound workspaces, in the task's declaration order. Nil workspaces are dropped.
-// port is the probe and guest port; the metadata endpoints use
-// ServerOptions.MetadataPort on loopback. A zero port picks a free one; read
-// the result from ProbeAddr or MetadataURL after Start.
-func NewServer(port int, task *v1alpha1.Task, workspaces []*v1alpha1.Workspace, opts ...ServerOptions) *Server {
+// bound workspace, which may be nil. port is the probe and guest port; the
+// metadata endpoints use ServerOptions.MetadataPort on loopback. A zero port
+// picks a free one; read the result from ProbeAddr or MetadataURL after Start.
+func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...ServerOptions) *Server {
 	var opt ServerOptions
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
 	s := &Server{
-		task:       task,
-		workspaces: compactWorkspaces(workspaces),
+		task:      task,
+		workspace: ws,
 	}
 
 	// Guest services expose process execution and file access inside the container,
@@ -118,10 +117,10 @@ func NewServer(port int, task *v1alpha1.Task, workspaces []*v1alpha1.Workspace, 
 
 	// Metadata endpoints, for the task command only:
 	// /metadata/v1alpha1/ax/task        the Task
-	// /metadata/v1alpha1/ax/workspaces  every bound Workspace, as a YAML stream
+	// /metadata/v1alpha1/ax/workspace   the bound Workspace, as YAML
 	metadataMux := http.NewServeMux()
 	metadataMux.HandleFunc("/metadata/v1alpha1/ax/task", s.handleTask)
-	metadataMux.HandleFunc("/metadata/v1alpha1/ax/workspaces", s.handleWorkspaces)
+	metadataMux.HandleFunc("/metadata/v1alpha1/ax/workspace", s.handleWorkspace)
 
 	s.metadataServer = &http.Server{
 		Addr:    net.JoinHostPort("127.0.0.1", fmt.Sprint(opt.MetadataPort)),
@@ -192,23 +191,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	return errors.Join(probeErr, metadataErr)
 }
 
-// UpdateState allows dynamic updates to the current Task and Workspaces.
-func (s *Server) UpdateState(task *v1alpha1.Task, workspaces []*v1alpha1.Workspace) {
+// UpdateState allows dynamic updates to the current Task and Workspace.
+func (s *Server) UpdateState(task *v1alpha1.Task, ws *v1alpha1.Workspace) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.task = task
-	s.workspaces = compactWorkspaces(workspaces)
-}
-
-// compactWorkspaces returns a copy of workspaces without nil entries.
-func compactWorkspaces(workspaces []*v1alpha1.Workspace) []*v1alpha1.Workspace {
-	out := make([]*v1alpha1.Workspace, 0, len(workspaces))
-	for _, ws := range workspaces {
-		if ws != nil {
-			out = append(out, ws)
-		}
-	}
-	return out
+	s.workspace = ws
 }
 
 // SetWorkspaceReady updates whether the maiden run workspace setup has completed.
@@ -260,27 +248,20 @@ func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWorkspaces serves every bound workspace as a multi-document YAML stream
-// in the task's declaration order.
-func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
+// handleWorkspace serves the bound workspace as YAML, or 404 when the task
+// binds none.
+func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	workspaces := s.workspaces
+	ws := s.workspace
 	s.mu.RUnlock()
 
-	if len(workspaces) == 0 {
+	if ws == nil {
 		http.Error(w, "workspace metadata not available", http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/yaml")
-	enc := yaml.NewEncoder(w)
-	for _, ws := range workspaces {
-		if err := enc.Encode(ws); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	if err := enc.Close(); err != nil {
+	if err := yaml.NewEncoder(w).Encode(ws); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

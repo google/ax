@@ -314,7 +314,7 @@ type fakeMainReconciler struct {
 	deleted chan struct{}
 }
 
-func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	return task, nil
 }
 

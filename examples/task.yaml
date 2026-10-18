@@ -28,9 +28,8 @@ spec:
       cpu: "2"
       memory: "4Gi"
 
-  workspaces:
-    - name: default-workspace
-      path: "/workspace"
+  workspace:
+    name: default-workspace
 
   debug: true # serve guest services so `ax ssh` works; off by default
 ---

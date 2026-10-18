@@ -92,7 +92,7 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 }
 
 // Reconcile handles the reconciliation loop for a single Task.
-func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -167,9 +167,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
 		extraEnv["AX_TASK_YAML"] = string(taskYAML)
 	}
 
-	// Inject the bound Workspace specs as a multi-document YAML stream.
-	if wsYAML, err := marshalWorkspaces(workspaces); err == nil && wsYAML != "" {
-		extraEnv["AX_WORKSPACES_YAML"] = wsYAML
+	// Inject the bound Workspace spec, if any.
+	if ws != nil {
+		if wsYAML, err := yaml.Marshal(ws); err == nil {
+			extraEnv["AX_WORKSPACE_YAML"] = string(wsYAML)
+		}
 	}
 
 	// Resource limits are enforced by the per-task template, so they are checked
@@ -473,23 +475,4 @@ func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, task
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// marshalWorkspaces renders the workspaces as a multi-document YAML stream in
-// order, skipping nil entries. It returns "" when there is nothing to render.
-func marshalWorkspaces(workspaces []*v1alpha1.Workspace) (string, error) {
-	var sb strings.Builder
-	enc := yaml.NewEncoder(&sb)
-	for _, ws := range workspaces {
-		if ws == nil {
-			continue
-		}
-		if err := enc.Encode(ws); err != nil {
-			return "", err
-		}
-	}
-	if err := enc.Close(); err != nil {
-		return "", err
-	}
-	return sb.String(), nil
 }
