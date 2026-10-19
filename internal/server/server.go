@@ -145,6 +145,9 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := v1alpha1.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if err := rejectUnimplemented(task.GetSpec()); err != nil {
+		return nil, err
+	}
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -605,6 +608,21 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 		return nil, status.Errorf(codes.Internal, "deleting model: %v", err)
 	}
 	return &v1alpha1.DeleteModelResponse{}, nil
+}
+
+// rejectUnimplemented refuses TaskSpec fields that are in the API but not yet
+// acted on, so a task never runs without the network access or credentials it
+// asked for.
+func rejectUnimplemented(spec *v1alpha1.TaskSpec) error {
+	if len(spec.GetEgress().GetHosts()) > 0 {
+		return status.Error(codes.Unimplemented, "spec.egress is not supported yet")
+	}
+	for i, e := range spec.GetEnv() {
+		if e.GetSecretRef() != nil {
+			return status.Errorf(codes.Unimplemented, "spec.env[%d].secretRef is not supported yet", i)
+		}
+	}
+	return nil
 }
 
 func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name string) *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {

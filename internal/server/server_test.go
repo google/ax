@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -781,5 +782,33 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	}
 	if storedAfterResumeErr.GetStatus().GetPhase() != "Pending" {
 		t.Errorf("expected stored phase 'Pending' after transient ResumeTask error, got %q", storedAfterResumeErr.GetStatus().GetPhase())
+	}
+}
+
+func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
+	srv := server.NewServer(memory.NewStore())
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		spec *v1alpha1.TaskSpec
+	}{
+		{name: "egress", spec: &v1alpha1.TaskSpec{Egress: &v1alpha1.EgressSpec{Hosts: []string{"pypi.org"}}}},
+		{name: "secretRef", spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{{
+			Name: "K",
+			SecretRef: &v1alpha1.SecretEnvSource{
+				Name: "s", Key: "k",
+				Inject: &v1alpha1.CredentialInjection{Host: "api.example.com", Header: "Authorization"},
+			},
+		}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "t-" + strings.ToLower(tc.name)},
+				Spec:     tc.spec,
+			}})
+			if status.Code(err) != codes.Unimplemented {
+				t.Fatalf("expected Unimplemented, got %v", err)
+			}
+		})
 	}
 }

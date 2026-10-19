@@ -185,7 +185,11 @@ type TaskSpec struct {
 	Workspaces []*WorkspaceRef `protobuf:"bytes,5,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
 	// debug enables the in-container guest services (process execution and file
 	// access) that back `ax ssh`. Off by default.
-	Debug         bool `protobuf:"varint,6,opt,name=debug,proto3" json:"debug,omitempty"`
+	Debug bool `protobuf:"varint,6,opt,name=debug,proto3" json:"debug,omitempty"`
+	// egress lists the outbound destinations the task may reach. Agent Substrate
+	// denies all actor egress by default, so a task without egress has no network
+	// access. Hosts named by an env secret_ref are allowed automatically.
+	Egress        *EgressSpec `protobuf:"bytes,7,opt,name=egress,proto3" json:"egress,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -262,17 +266,76 @@ func (x *TaskSpec) GetDebug() bool {
 	return false
 }
 
+func (x *TaskSpec) GetEgress() *EgressSpec {
+	if x != nil {
+		return x.Egress
+	}
+	return nil
+}
+
+type EgressSpec struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// hosts are DNS names the task may reach over TLS on port 443, or a DNS name
+	// with "*" as its leftmost label, such as "*.googleapis.com".
+	Hosts         []string `protobuf:"bytes,1,rep,name=hosts,proto3" json:"hosts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EgressSpec) Reset() {
+	*x = EgressSpec{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EgressSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EgressSpec) ProtoMessage() {}
+
+func (x *EgressSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EgressSpec.ProtoReflect.Descriptor instead.
+func (*EgressSpec) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *EgressSpec) GetHosts() []string {
+	if x != nil {
+		return x.Hosts
+	}
+	return nil
+}
+
 type EnvVar struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// value is a literal value. Exactly one of value and secret_ref is set.
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// secret_ref injects a secret into the task's outbound requests instead of
+	// exposing it to the task. The variable is set to a placeholder, and Agent
+	// Substrate's egress gateway replaces the named request header with the
+	// secret on requests to the given host.
+	SecretRef     *SecretEnvSource `protobuf:"bytes,3,opt,name=secret_ref,json=secretRef,proto3" json:"secret_ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnvVar) Reset() {
 	*x = EnvVar{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[3]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -284,7 +347,7 @@ func (x *EnvVar) String() string {
 func (*EnvVar) ProtoMessage() {}
 
 func (x *EnvVar) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[3]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -297,7 +360,7 @@ func (x *EnvVar) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvVar.ProtoReflect.Descriptor instead.
 func (*EnvVar) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{3}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EnvVar) GetName() string {
@@ -314,6 +377,149 @@ func (x *EnvVar) GetValue() string {
 	return ""
 }
 
+func (x *EnvVar) GetSecretRef() *SecretEnvSource {
+	if x != nil {
+		return x.SecretRef
+	}
+	return nil
+}
+
+// SecretEnvSource names a secret in one of the atespace's SecretStores, and how
+// the egress gateway injects it.
+type SecretEnvSource struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// store is the SecretStore holding the secret. Empty means "default".
+	Store         string               `protobuf:"bytes,4,opt,name=store,proto3" json:"store,omitempty"`
+	Name          string               `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Key           string               `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Inject        *CredentialInjection `protobuf:"bytes,3,opt,name=inject,proto3" json:"inject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SecretEnvSource) Reset() {
+	*x = SecretEnvSource{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SecretEnvSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecretEnvSource) ProtoMessage() {}
+
+func (x *SecretEnvSource) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecretEnvSource.ProtoReflect.Descriptor instead.
+func (*SecretEnvSource) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SecretEnvSource) GetStore() string {
+	if x != nil {
+		return x.Store
+	}
+	return ""
+}
+
+func (x *SecretEnvSource) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SecretEnvSource) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *SecretEnvSource) GetInject() *CredentialInjection {
+	if x != nil {
+		return x.Inject
+	}
+	return nil
+}
+
+// CredentialInjection tells the egress gateway where to put a secret: in the
+// given request header, on HTTPS requests to host.
+type CredentialInjection struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host is the DNS name requests are sent to, such as "api.stripe.com".
+	Host string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	// header is the request header the gateway replaces, such as "Authorization".
+	Header string `protobuf:"bytes,2,opt,name=header,proto3" json:"header,omitempty"`
+	// prefix is prepended to the secret, such as "Bearer " (including the space).
+	Prefix        string `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CredentialInjection) Reset() {
+	*x = CredentialInjection{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CredentialInjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CredentialInjection) ProtoMessage() {}
+
+func (x *CredentialInjection) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CredentialInjection.ProtoReflect.Descriptor instead.
+func (*CredentialInjection) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CredentialInjection) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *CredentialInjection) GetHeader() string {
+	if x != nil {
+		return x.Header
+	}
+	return ""
+}
+
+func (x *CredentialInjection) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
 type ResourcesSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Requests      *ResourceList          `protobuf:"bytes,1,opt,name=requests,proto3" json:"requests,omitempty"`
@@ -324,7 +530,7 @@ type ResourcesSpec struct {
 
 func (x *ResourcesSpec) Reset() {
 	*x = ResourcesSpec{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -336,7 +542,7 @@ func (x *ResourcesSpec) String() string {
 func (*ResourcesSpec) ProtoMessage() {}
 
 func (x *ResourcesSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -349,7 +555,7 @@ func (x *ResourcesSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourcesSpec.ProtoReflect.Descriptor instead.
 func (*ResourcesSpec) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{4}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ResourcesSpec) GetRequests() *ResourceList {
@@ -376,7 +582,7 @@ type ResourceList struct {
 
 func (x *ResourceList) Reset() {
 	*x = ResourceList{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -388,7 +594,7 @@ func (x *ResourceList) String() string {
 func (*ResourceList) ProtoMessage() {}
 
 func (x *ResourceList) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -401,7 +607,7 @@ func (x *ResourceList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceList.ProtoReflect.Descriptor instead.
 func (*ResourceList) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{5}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResourceList) GetCpu() string {
@@ -430,7 +636,7 @@ type WorkspaceRef struct {
 
 func (x *WorkspaceRef) Reset() {
 	*x = WorkspaceRef{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -442,7 +648,7 @@ func (x *WorkspaceRef) String() string {
 func (*WorkspaceRef) ProtoMessage() {}
 
 func (x *WorkspaceRef) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -455,7 +661,7 @@ func (x *WorkspaceRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceRef.ProtoReflect.Descriptor instead.
 func (*WorkspaceRef) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{6}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *WorkspaceRef) GetName() string {
@@ -493,7 +699,7 @@ type TaskStatus struct {
 
 func (x *TaskStatus) Reset() {
 	*x = TaskStatus{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -505,7 +711,7 @@ func (x *TaskStatus) String() string {
 func (*TaskStatus) ProtoMessage() {}
 
 func (x *TaskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -518,7 +724,7 @@ func (x *TaskStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStatus.ProtoReflect.Descriptor instead.
 func (*TaskStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{7}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TaskStatus) GetPhase() string {
@@ -569,7 +775,7 @@ type Condition struct {
 
 func (x *Condition) Reset() {
 	*x = Condition{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -581,7 +787,7 @@ func (x *Condition) String() string {
 func (*Condition) ProtoMessage() {}
 
 func (x *Condition) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -594,7 +800,7 @@ func (x *Condition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Condition.ProtoReflect.Descriptor instead.
 func (*Condition) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{8}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Condition) GetType() string {
@@ -644,7 +850,7 @@ type Workspace struct {
 
 func (x *Workspace) Reset() {
 	*x = Workspace{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +862,7 @@ func (x *Workspace) String() string {
 func (*Workspace) ProtoMessage() {}
 
 func (x *Workspace) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +875,7 @@ func (x *Workspace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Workspace.ProtoReflect.Descriptor instead.
 func (*Workspace) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{9}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Workspace) GetApiVersion() string {
@@ -712,7 +918,7 @@ type WorkspaceSpec struct {
 
 func (x *WorkspaceSpec) Reset() {
 	*x = WorkspaceSpec{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +930,7 @@ func (x *WorkspaceSpec) String() string {
 func (*WorkspaceSpec) ProtoMessage() {}
 
 func (x *WorkspaceSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +943,7 @@ func (x *WorkspaceSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkspaceSpec.ProtoReflect.Descriptor instead.
 func (*WorkspaceSpec) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{10}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WorkspaceSpec) GetGit() []*GitRepo {
@@ -781,7 +987,7 @@ type GitRepo struct {
 
 func (x *GitRepo) Reset() {
 	*x = GitRepo{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -793,7 +999,7 @@ func (x *GitRepo) String() string {
 func (*GitRepo) ProtoMessage() {}
 
 func (x *GitRepo) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -806,7 +1012,7 @@ func (x *GitRepo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitRepo.ProtoReflect.Descriptor instead.
 func (*GitRepo) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{11}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GitRepo) GetName() string {
@@ -854,7 +1060,7 @@ type File struct {
 
 func (x *File) Reset() {
 	*x = File{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +1072,7 @@ func (x *File) String() string {
 func (*File) ProtoMessage() {}
 
 func (x *File) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +1085,7 @@ func (x *File) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use File.ProtoReflect.Descriptor instead.
 func (*File) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{12}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *File) GetPath() string {
@@ -906,7 +1112,7 @@ type MCPConfig struct {
 
 func (x *MCPConfig) Reset() {
 	*x = MCPConfig{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[13]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -918,7 +1124,7 @@ func (x *MCPConfig) String() string {
 func (*MCPConfig) ProtoMessage() {}
 
 func (x *MCPConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[13]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -931,7 +1137,7 @@ func (x *MCPConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPConfig.ProtoReflect.Descriptor instead.
 func (*MCPConfig) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{13}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MCPConfig) GetRegistries() []*MCPRegistry {
@@ -960,7 +1166,7 @@ type MCPRegistry struct {
 
 func (x *MCPRegistry) Reset() {
 	*x = MCPRegistry{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -972,7 +1178,7 @@ func (x *MCPRegistry) String() string {
 func (*MCPRegistry) ProtoMessage() {}
 
 func (x *MCPRegistry) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -985,7 +1191,7 @@ func (x *MCPRegistry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPRegistry.ProtoReflect.Descriptor instead.
 func (*MCPRegistry) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{14}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MCPRegistry) GetProvider() string {
@@ -1028,7 +1234,7 @@ type MCPServer struct {
 
 func (x *MCPServer) Reset() {
 	*x = MCPServer{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1040,7 +1246,7 @@ func (x *MCPServer) String() string {
 func (*MCPServer) ProtoMessage() {}
 
 func (x *MCPServer) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1053,7 +1259,7 @@ func (x *MCPServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPServer.ProtoReflect.Descriptor instead.
 func (*MCPServer) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{15}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *MCPServer) GetName() string {
@@ -1094,7 +1300,7 @@ type SkillsConfig struct {
 
 func (x *SkillsConfig) Reset() {
 	*x = SkillsConfig{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[16]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1106,7 +1312,7 @@ func (x *SkillsConfig) String() string {
 func (*SkillsConfig) ProtoMessage() {}
 
 func (x *SkillsConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[16]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1119,7 +1325,7 @@ func (x *SkillsConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillsConfig.ProtoReflect.Descriptor instead.
 func (*SkillsConfig) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{16}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SkillsConfig) GetRegistries() []*SkillRegistry {
@@ -1147,7 +1353,7 @@ type SkillRegistry struct {
 
 func (x *SkillRegistry) Reset() {
 	*x = SkillRegistry{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[17]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1159,7 +1365,7 @@ func (x *SkillRegistry) String() string {
 func (*SkillRegistry) ProtoMessage() {}
 
 func (x *SkillRegistry) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[17]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1172,7 +1378,7 @@ func (x *SkillRegistry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillRegistry.ProtoReflect.Descriptor instead.
 func (*SkillRegistry) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{17}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SkillRegistry) GetProvider() string {
@@ -1208,7 +1414,7 @@ type Model struct {
 
 func (x *Model) Reset() {
 	*x = Model{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[18]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1220,7 +1426,7 @@ func (x *Model) String() string {
 func (*Model) ProtoMessage() {}
 
 func (x *Model) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[18]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1233,7 +1439,7 @@ func (x *Model) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Model.ProtoReflect.Descriptor instead.
 func (*Model) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{18}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Model) GetApiVersion() string {
@@ -1278,7 +1484,7 @@ type ModelSpec struct {
 
 func (x *ModelSpec) Reset() {
 	*x = ModelSpec{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[19]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1290,7 +1496,7 @@ func (x *ModelSpec) String() string {
 func (*ModelSpec) ProtoMessage() {}
 
 func (x *ModelSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[19]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1303,7 +1509,7 @@ func (x *ModelSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ModelSpec.ProtoReflect.Descriptor instead.
 func (*ModelSpec) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{19}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ModelSpec) GetProvider() string {
@@ -1344,7 +1550,7 @@ type SecretKeyRef struct {
 
 func (x *SecretKeyRef) Reset() {
 	*x = SecretKeyRef{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[20]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1356,7 +1562,7 @@ func (x *SecretKeyRef) String() string {
 func (*SecretKeyRef) ProtoMessage() {}
 
 func (x *SecretKeyRef) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[20]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1369,7 +1575,7 @@ func (x *SecretKeyRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretKeyRef.ProtoReflect.Descriptor instead.
 func (*SecretKeyRef) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{20}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SecretKeyRef) GetName() string {
@@ -1397,7 +1603,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[21]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1615,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[21]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1628,7 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{21}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetTaskRequest) GetAtespace() string {
@@ -1450,7 +1656,7 @@ type ListTasksRequest struct {
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[22]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1462,7 +1668,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[22]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1475,7 +1681,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{22}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListTasksRequest) GetAtespace() string {
@@ -1508,7 +1714,7 @@ type ListTasksResponse struct {
 
 func (x *ListTasksResponse) Reset() {
 	*x = ListTasksResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[23]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1520,7 +1726,7 @@ func (x *ListTasksResponse) String() string {
 func (*ListTasksResponse) ProtoMessage() {}
 
 func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[23]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1533,7 +1739,7 @@ func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListTasksResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{23}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListTasksResponse) GetTasks() []*Task {
@@ -1552,7 +1758,7 @@ type CreateTaskRequest struct {
 
 func (x *CreateTaskRequest) Reset() {
 	*x = CreateTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[24]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1564,7 +1770,7 @@ func (x *CreateTaskRequest) String() string {
 func (*CreateTaskRequest) ProtoMessage() {}
 
 func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[24]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1577,7 +1783,7 @@ func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{24}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateTaskRequest) GetTask() *Task {
@@ -1597,7 +1803,7 @@ type DeleteTaskRequest struct {
 
 func (x *DeleteTaskRequest) Reset() {
 	*x = DeleteTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1609,7 +1815,7 @@ func (x *DeleteTaskRequest) String() string {
 func (*DeleteTaskRequest) ProtoMessage() {}
 
 func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[25]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1622,7 +1828,7 @@ func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{25}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DeleteTaskRequest) GetAtespace() string {
@@ -1647,7 +1853,7 @@ type DeleteTaskResponse struct {
 
 func (x *DeleteTaskResponse) Reset() {
 	*x = DeleteTaskResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[26]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1659,7 +1865,7 @@ func (x *DeleteTaskResponse) String() string {
 func (*DeleteTaskResponse) ProtoMessage() {}
 
 func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[26]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1672,7 +1878,7 @@ func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{26}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{29}
 }
 
 type SuspendTaskRequest struct {
@@ -1685,7 +1891,7 @@ type SuspendTaskRequest struct {
 
 func (x *SuspendTaskRequest) Reset() {
 	*x = SuspendTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[27]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1697,7 +1903,7 @@ func (x *SuspendTaskRequest) String() string {
 func (*SuspendTaskRequest) ProtoMessage() {}
 
 func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[27]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1710,7 +1916,7 @@ func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuspendTaskRequest.ProtoReflect.Descriptor instead.
 func (*SuspendTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{27}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SuspendTaskRequest) GetAtespace() string {
@@ -1737,7 +1943,7 @@ type ResumeTaskRequest struct {
 
 func (x *ResumeTaskRequest) Reset() {
 	*x = ResumeTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[28]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1749,7 +1955,7 @@ func (x *ResumeTaskRequest) String() string {
 func (*ResumeTaskRequest) ProtoMessage() {}
 
 func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[28]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1762,7 +1968,7 @@ func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskRequest.ProtoReflect.Descriptor instead.
 func (*ResumeTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{28}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ResumeTaskRequest) GetAtespace() string {
@@ -1789,7 +1995,7 @@ type WatchTaskRequest struct {
 
 func (x *WatchTaskRequest) Reset() {
 	*x = WatchTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[29]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1801,7 +2007,7 @@ func (x *WatchTaskRequest) String() string {
 func (*WatchTaskRequest) ProtoMessage() {}
 
 func (x *WatchTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[29]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1814,7 +2020,7 @@ func (x *WatchTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTaskRequest.ProtoReflect.Descriptor instead.
 func (*WatchTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{29}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *WatchTaskRequest) GetAtespace() string {
@@ -1841,7 +2047,7 @@ type WatchTaskResponse struct {
 
 func (x *WatchTaskResponse) Reset() {
 	*x = WatchTaskResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[30]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1853,7 +2059,7 @@ func (x *WatchTaskResponse) String() string {
 func (*WatchTaskResponse) ProtoMessage() {}
 
 func (x *WatchTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[30]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1866,7 +2072,7 @@ func (x *WatchTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTaskResponse.ProtoReflect.Descriptor instead.
 func (*WatchTaskResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{30}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WatchTaskResponse) GetTask() *Task {
@@ -1894,7 +2100,7 @@ type GetWorkspaceRequest struct {
 
 func (x *GetWorkspaceRequest) Reset() {
 	*x = GetWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[31]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +2112,7 @@ func (x *GetWorkspaceRequest) String() string {
 func (*GetWorkspaceRequest) ProtoMessage() {}
 
 func (x *GetWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[31]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +2125,7 @@ func (x *GetWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{31}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetWorkspaceRequest) GetAtespace() string {
@@ -1945,7 +2151,7 @@ type ListWorkspacesRequest struct {
 
 func (x *ListWorkspacesRequest) Reset() {
 	*x = ListWorkspacesRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[32]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1957,7 +2163,7 @@ func (x *ListWorkspacesRequest) String() string {
 func (*ListWorkspacesRequest) ProtoMessage() {}
 
 func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[32]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1970,7 +2176,7 @@ func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkspacesRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{32}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListWorkspacesRequest) GetAtespace() string {
@@ -1989,7 +2195,7 @@ type ListWorkspacesResponse struct {
 
 func (x *ListWorkspacesResponse) Reset() {
 	*x = ListWorkspacesResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[33]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2001,7 +2207,7 @@ func (x *ListWorkspacesResponse) String() string {
 func (*ListWorkspacesResponse) ProtoMessage() {}
 
 func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[33]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2014,7 +2220,7 @@ func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{33}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListWorkspacesResponse) GetWorkspaces() []*Workspace {
@@ -2033,7 +2239,7 @@ type UpdateWorkspaceRequest struct {
 
 func (x *UpdateWorkspaceRequest) Reset() {
 	*x = UpdateWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[34]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2045,7 +2251,7 @@ func (x *UpdateWorkspaceRequest) String() string {
 func (*UpdateWorkspaceRequest) ProtoMessage() {}
 
 func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[34]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2058,7 +2264,7 @@ func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{34}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *UpdateWorkspaceRequest) GetWorkspace() *Workspace {
@@ -2078,7 +2284,7 @@ type DeleteWorkspaceRequest struct {
 
 func (x *DeleteWorkspaceRequest) Reset() {
 	*x = DeleteWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[35]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2090,7 +2296,7 @@ func (x *DeleteWorkspaceRequest) String() string {
 func (*DeleteWorkspaceRequest) ProtoMessage() {}
 
 func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[35]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2103,7 +2309,7 @@ func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{35}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DeleteWorkspaceRequest) GetAtespace() string {
@@ -2128,7 +2334,7 @@ type DeleteWorkspaceResponse struct {
 
 func (x *DeleteWorkspaceResponse) Reset() {
 	*x = DeleteWorkspaceResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[36]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2140,7 +2346,7 @@ func (x *DeleteWorkspaceResponse) String() string {
 func (*DeleteWorkspaceResponse) ProtoMessage() {}
 
 func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[36]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2153,7 +2359,172 @@ func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{36}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{39}
+}
+
+// SecretStore tells AX where an atespace's secrets live. Tasks reference
+// secrets by store, name, and key, and AX turns that into a credential
+// reference that Agent Substrate's egress gateway resolves, so tasks never
+// hold the secret itself.
+type SecretStore struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec          *SecretStoreSpec       `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SecretStore) Reset() {
+	*x = SecretStore{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SecretStore) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecretStore) ProtoMessage() {}
+
+func (x *SecretStore) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecretStore.ProtoReflect.Descriptor instead.
+func (*SecretStore) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *SecretStore) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *SecretStore) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SecretStore) GetMetadata() *ObjectMeta {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *SecretStore) GetSpec() *SecretStoreSpec {
+	if x != nil {
+		return x.Spec
+	}
+	return nil
+}
+
+type SecretStoreSpec struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// kubernetes reads secrets from Kubernetes Secrets through Substrate's
+	// k8s.io credential provider. Exactly one backend is set.
+	Kubernetes    *KubernetesSecretStore `protobuf:"bytes,1,opt,name=kubernetes,proto3" json:"kubernetes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SecretStoreSpec) Reset() {
+	*x = SecretStoreSpec{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SecretStoreSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SecretStoreSpec) ProtoMessage() {}
+
+func (x *SecretStoreSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SecretStoreSpec.ProtoReflect.Descriptor instead.
+func (*SecretStoreSpec) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *SecretStoreSpec) GetKubernetes() *KubernetesSecretStore {
+	if x != nil {
+		return x.Kubernetes
+	}
+	return nil
+}
+
+type KubernetesSecretStore struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// namespace holds the Secrets. Empty means the namespace named after the
+	// store's atespace. Substrate's credential provider must grant the atespace
+	// access to this namespace.
+	Namespace     string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KubernetesSecretStore) Reset() {
+	*x = KubernetesSecretStore{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KubernetesSecretStore) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KubernetesSecretStore) ProtoMessage() {}
+
+func (x *KubernetesSecretStore) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KubernetesSecretStore.ProtoReflect.Descriptor instead.
+func (*KubernetesSecretStore) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *KubernetesSecretStore) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
 }
 
 // Models
@@ -2167,7 +2538,7 @@ type GetModelRequest struct {
 
 func (x *GetModelRequest) Reset() {
 	*x = GetModelRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[37]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2179,7 +2550,7 @@ func (x *GetModelRequest) String() string {
 func (*GetModelRequest) ProtoMessage() {}
 
 func (x *GetModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[37]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2192,7 +2563,7 @@ func (x *GetModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetModelRequest.ProtoReflect.Descriptor instead.
 func (*GetModelRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{37}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetModelRequest) GetAtespace() string {
@@ -2218,7 +2589,7 @@ type ListModelsRequest struct {
 
 func (x *ListModelsRequest) Reset() {
 	*x = ListModelsRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[38]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2230,7 +2601,7 @@ func (x *ListModelsRequest) String() string {
 func (*ListModelsRequest) ProtoMessage() {}
 
 func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[38]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2243,7 +2614,7 @@ func (x *ListModelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsRequest.ProtoReflect.Descriptor instead.
 func (*ListModelsRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{38}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ListModelsRequest) GetAtespace() string {
@@ -2262,7 +2633,7 @@ type ListModelsResponse struct {
 
 func (x *ListModelsResponse) Reset() {
 	*x = ListModelsResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[39]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2274,7 +2645,7 @@ func (x *ListModelsResponse) String() string {
 func (*ListModelsResponse) ProtoMessage() {}
 
 func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[39]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2287,7 +2658,7 @@ func (x *ListModelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListModelsResponse.ProtoReflect.Descriptor instead.
 func (*ListModelsResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{39}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ListModelsResponse) GetModels() []*Model {
@@ -2306,7 +2677,7 @@ type UpdateModelRequest struct {
 
 func (x *UpdateModelRequest) Reset() {
 	*x = UpdateModelRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[40]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2318,7 +2689,7 @@ func (x *UpdateModelRequest) String() string {
 func (*UpdateModelRequest) ProtoMessage() {}
 
 func (x *UpdateModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[40]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2331,7 +2702,7 @@ func (x *UpdateModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateModelRequest.ProtoReflect.Descriptor instead.
 func (*UpdateModelRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{40}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *UpdateModelRequest) GetModel() *Model {
@@ -2351,7 +2722,7 @@ type DeleteModelRequest struct {
 
 func (x *DeleteModelRequest) Reset() {
 	*x = DeleteModelRequest{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[41]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2363,7 +2734,7 @@ func (x *DeleteModelRequest) String() string {
 func (*DeleteModelRequest) ProtoMessage() {}
 
 func (x *DeleteModelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[41]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2376,7 +2747,7 @@ func (x *DeleteModelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteModelRequest.ProtoReflect.Descriptor instead.
 func (*DeleteModelRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{41}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *DeleteModelRequest) GetAtespace() string {
@@ -2401,7 +2772,7 @@ type DeleteModelResponse struct {
 
 func (x *DeleteModelResponse) Reset() {
 	*x = DeleteModelResponse{}
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[42]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2413,7 +2784,7 @@ func (x *DeleteModelResponse) String() string {
 func (*DeleteModelResponse) ProtoMessage() {}
 
 func (x *DeleteModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[42]
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2426,7 +2797,280 @@ func (x *DeleteModelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteModelResponse.ProtoReflect.Descriptor instead.
 func (*DeleteModelResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{42}
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{48}
+}
+
+// SecretStores
+type GetSecretStoreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSecretStoreRequest) Reset() {
+	*x = GetSecretStoreRequest{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSecretStoreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSecretStoreRequest) ProtoMessage() {}
+
+func (x *GetSecretStoreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSecretStoreRequest.ProtoReflect.Descriptor instead.
+func (*GetSecretStoreRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *GetSecretStoreRequest) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
+	}
+	return ""
+}
+
+func (x *GetSecretStoreRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ListSecretStoresRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSecretStoresRequest) Reset() {
+	*x = ListSecretStoresRequest{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSecretStoresRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSecretStoresRequest) ProtoMessage() {}
+
+func (x *ListSecretStoresRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSecretStoresRequest.ProtoReflect.Descriptor instead.
+func (*ListSecretStoresRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *ListSecretStoresRequest) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
+	}
+	return ""
+}
+
+type ListSecretStoresResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SecretStores  []*SecretStore         `protobuf:"bytes,1,rep,name=secret_stores,json=secretStores,proto3" json:"secret_stores,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSecretStoresResponse) Reset() {
+	*x = ListSecretStoresResponse{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSecretStoresResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSecretStoresResponse) ProtoMessage() {}
+
+func (x *ListSecretStoresResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSecretStoresResponse.ProtoReflect.Descriptor instead.
+func (*ListSecretStoresResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ListSecretStoresResponse) GetSecretStores() []*SecretStore {
+	if x != nil {
+		return x.SecretStores
+	}
+	return nil
+}
+
+type UpdateSecretStoreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SecretStore   *SecretStore           `protobuf:"bytes,1,opt,name=secret_store,json=secretStore,proto3" json:"secret_store,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSecretStoreRequest) Reset() {
+	*x = UpdateSecretStoreRequest{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSecretStoreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSecretStoreRequest) ProtoMessage() {}
+
+func (x *UpdateSecretStoreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSecretStoreRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSecretStoreRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *UpdateSecretStoreRequest) GetSecretStore() *SecretStore {
+	if x != nil {
+		return x.SecretStore
+	}
+	return nil
+}
+
+type DeleteSecretStoreRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSecretStoreRequest) Reset() {
+	*x = DeleteSecretStoreRequest{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSecretStoreRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSecretStoreRequest) ProtoMessage() {}
+
+func (x *DeleteSecretStoreRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSecretStoreRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSecretStoreRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *DeleteSecretStoreRequest) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
+	}
+	return ""
+}
+
+func (x *DeleteSecretStoreRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type DeleteSecretStoreResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteSecretStoreResponse) Reset() {
+	*x = DeleteSecretStoreResponse{}
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteSecretStoreResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteSecretStoreResponse) ProtoMessage() {}
+
+func (x *DeleteSecretStoreResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_ax_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteSecretStoreResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSecretStoreResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP(), []int{54}
 }
 
 var File_pkg_apis_v1alpha1_ax_proto protoreflect.FileDescriptor
@@ -2446,7 +3090,7 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x12)\n" +
 	"\x04spec\x18\x04 \x01(\v2\x15.ax.v1alpha1.TaskSpecR\x04spec\x12/\n" +
-	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xec\x01\n" +
+	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\x9d\x02\n" +
 	"\bTaskSpec\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12%\n" +
@@ -2455,10 +3099,25 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\n" +
 	"workspaces\x18\x05 \x03(\v2\x19.ax.v1alpha1.WorkspaceRefR\n" +
 	"workspaces\x12\x14\n" +
-	"\x05debug\x18\x06 \x01(\bR\x05debug\"2\n" +
+	"\x05debug\x18\x06 \x01(\bR\x05debug\x12/\n" +
+	"\x06egress\x18\a \x01(\v2\x17.ax.v1alpha1.EgressSpecR\x06egress\"\"\n" +
+	"\n" +
+	"EgressSpec\x12\x14\n" +
+	"\x05hosts\x18\x01 \x03(\tR\x05hosts\"o\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"y\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12;\n" +
+	"\n" +
+	"secret_ref\x18\x03 \x01(\v2\x1c.ax.v1alpha1.SecretEnvSourceR\tsecretRef\"\x87\x01\n" +
+	"\x0fSecretEnvSource\x12\x14\n" +
+	"\x05store\x18\x04 \x01(\tR\x05store\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x128\n" +
+	"\x06inject\x18\x03 \x01(\v2 .ax.v1alpha1.CredentialInjectionR\x06inject\"Y\n" +
+	"\x13CredentialInjection\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12\x16\n" +
+	"\x06header\x18\x02 \x01(\tR\x06header\x12\x16\n" +
+	"\x06prefix\x18\x03 \x01(\tR\x06prefix\"y\n" +
 	"\rResourcesSpec\x125\n" +
 	"\brequests\x18\x01 \x01(\v2\x19.ax.v1alpha1.ResourceListR\brequests\x121\n" +
 	"\x06limits\x18\x02 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
@@ -2587,7 +3246,19 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\x16DeleteWorkspaceRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x19\n" +
-	"\x17DeleteWorkspaceResponse\"A\n" +
+	"\x17DeleteWorkspaceResponse\"\xa9\x01\n" +
+	"\vSecretStore\x12\x1f\n" +
+	"\vapi_version\x18\x01 \x01(\tR\n" +
+	"apiVersion\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
+	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x120\n" +
+	"\x04spec\x18\x04 \x01(\v2\x1c.ax.v1alpha1.SecretStoreSpecR\x04spec\"U\n" +
+	"\x0fSecretStoreSpec\x12B\n" +
+	"\n" +
+	"kubernetes\x18\x01 \x01(\v2\".ax.v1alpha1.KubernetesSecretStoreR\n" +
+	"kubernetes\"5\n" +
+	"\x15KubernetesSecretStore\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"A\n" +
 	"\x0fGetModelRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"/\n" +
@@ -2600,7 +3271,20 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\x12DeleteModelRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x15\n" +
-	"\x13DeleteModelResponse2\xe3\b\n" +
+	"\x13DeleteModelResponse\"G\n" +
+	"\x15GetSecretStoreRequest\x12\x1a\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"5\n" +
+	"\x17ListSecretStoresRequest\x12\x1a\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\"Y\n" +
+	"\x18ListSecretStoresResponse\x12=\n" +
+	"\rsecret_stores\x18\x01 \x03(\v2\x18.ax.v1alpha1.SecretStoreR\fsecretStores\"W\n" +
+	"\x18UpdateSecretStoreRequest\x12;\n" +
+	"\fsecret_store\x18\x01 \x01(\v2\x18.ax.v1alpha1.SecretStoreR\vsecretStore\"J\n" +
+	"\x18DeleteSecretStoreRequest\x12\x1a\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x1b\n" +
+	"\x19DeleteSecretStoreResponse2\xce\v\n" +
 	"\x02AX\x129\n" +
 	"\aGetTask\x12\x1b.ax.v1alpha1.GetTaskRequest\x1a\x11.ax.v1alpha1.Task\x12J\n" +
 	"\tListTasks\x12\x1d.ax.v1alpha1.ListTasksRequest\x1a\x1e.ax.v1alpha1.ListTasksResponse\x12?\n" +
@@ -2620,7 +3304,11 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\n" +
 	"ListModels\x12\x1e.ax.v1alpha1.ListModelsRequest\x1a\x1f.ax.v1alpha1.ListModelsResponse\x12B\n" +
 	"\vUpdateModel\x12\x1f.ax.v1alpha1.UpdateModelRequest\x1a\x12.ax.v1alpha1.Model\x12P\n" +
-	"\vDeleteModel\x12\x1f.ax.v1alpha1.DeleteModelRequest\x1a .ax.v1alpha1.DeleteModelResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\vDeleteModel\x12\x1f.ax.v1alpha1.DeleteModelRequest\x1a .ax.v1alpha1.DeleteModelResponse\x12N\n" +
+	"\x0eGetSecretStore\x12\".ax.v1alpha1.GetSecretStoreRequest\x1a\x18.ax.v1alpha1.SecretStore\x12_\n" +
+	"\x10ListSecretStores\x12$.ax.v1alpha1.ListSecretStoresRequest\x1a%.ax.v1alpha1.ListSecretStoresResponse\x12T\n" +
+	"\x11UpdateSecretStore\x12%.ax.v1alpha1.UpdateSecretStoreRequest\x1a\x18.ax.v1alpha1.SecretStore\x12b\n" +
+	"\x11DeleteSecretStore\x12%.ax.v1alpha1.DeleteSecretStoreRequest\x1a&.ax.v1alpha1.DeleteSecretStoreResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_ax_proto_rawDescOnce sync.Once
@@ -2634,122 +3322,150 @@ func file_pkg_apis_v1alpha1_ax_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_ax_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_pkg_apis_v1alpha1_ax_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_pkg_apis_v1alpha1_ax_proto_goTypes = []any{
-	(*ObjectMeta)(nil),              // 0: ax.v1alpha1.ObjectMeta
-	(*Task)(nil),                    // 1: ax.v1alpha1.Task
-	(*TaskSpec)(nil),                // 2: ax.v1alpha1.TaskSpec
-	(*EnvVar)(nil),                  // 3: ax.v1alpha1.EnvVar
-	(*ResourcesSpec)(nil),           // 4: ax.v1alpha1.ResourcesSpec
-	(*ResourceList)(nil),            // 5: ax.v1alpha1.ResourceList
-	(*WorkspaceRef)(nil),            // 6: ax.v1alpha1.WorkspaceRef
-	(*TaskStatus)(nil),              // 7: ax.v1alpha1.TaskStatus
-	(*Condition)(nil),               // 8: ax.v1alpha1.Condition
-	(*Workspace)(nil),               // 9: ax.v1alpha1.Workspace
-	(*WorkspaceSpec)(nil),           // 10: ax.v1alpha1.WorkspaceSpec
-	(*GitRepo)(nil),                 // 11: ax.v1alpha1.GitRepo
-	(*File)(nil),                    // 12: ax.v1alpha1.File
-	(*MCPConfig)(nil),               // 13: ax.v1alpha1.MCPConfig
-	(*MCPRegistry)(nil),             // 14: ax.v1alpha1.MCPRegistry
-	(*MCPServer)(nil),               // 15: ax.v1alpha1.MCPServer
-	(*SkillsConfig)(nil),            // 16: ax.v1alpha1.SkillsConfig
-	(*SkillRegistry)(nil),           // 17: ax.v1alpha1.SkillRegistry
-	(*Model)(nil),                   // 18: ax.v1alpha1.Model
-	(*ModelSpec)(nil),               // 19: ax.v1alpha1.ModelSpec
-	(*SecretKeyRef)(nil),            // 20: ax.v1alpha1.SecretKeyRef
-	(*GetTaskRequest)(nil),          // 21: ax.v1alpha1.GetTaskRequest
-	(*ListTasksRequest)(nil),        // 22: ax.v1alpha1.ListTasksRequest
-	(*ListTasksResponse)(nil),       // 23: ax.v1alpha1.ListTasksResponse
-	(*CreateTaskRequest)(nil),       // 24: ax.v1alpha1.CreateTaskRequest
-	(*DeleteTaskRequest)(nil),       // 25: ax.v1alpha1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),      // 26: ax.v1alpha1.DeleteTaskResponse
-	(*SuspendTaskRequest)(nil),      // 27: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),       // 28: ax.v1alpha1.ResumeTaskRequest
-	(*WatchTaskRequest)(nil),        // 29: ax.v1alpha1.WatchTaskRequest
-	(*WatchTaskResponse)(nil),       // 30: ax.v1alpha1.WatchTaskResponse
-	(*GetWorkspaceRequest)(nil),     // 31: ax.v1alpha1.GetWorkspaceRequest
-	(*ListWorkspacesRequest)(nil),   // 32: ax.v1alpha1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),  // 33: ax.v1alpha1.ListWorkspacesResponse
-	(*UpdateWorkspaceRequest)(nil),  // 34: ax.v1alpha1.UpdateWorkspaceRequest
-	(*DeleteWorkspaceRequest)(nil),  // 35: ax.v1alpha1.DeleteWorkspaceRequest
-	(*DeleteWorkspaceResponse)(nil), // 36: ax.v1alpha1.DeleteWorkspaceResponse
-	(*GetModelRequest)(nil),         // 37: ax.v1alpha1.GetModelRequest
-	(*ListModelsRequest)(nil),       // 38: ax.v1alpha1.ListModelsRequest
-	(*ListModelsResponse)(nil),      // 39: ax.v1alpha1.ListModelsResponse
-	(*UpdateModelRequest)(nil),      // 40: ax.v1alpha1.UpdateModelRequest
-	(*DeleteModelRequest)(nil),      // 41: ax.v1alpha1.DeleteModelRequest
-	(*DeleteModelResponse)(nil),     // 42: ax.v1alpha1.DeleteModelResponse
-	(*timestamppb.Timestamp)(nil),   // 43: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),         // 44: google.protobuf.Struct
+	(*ObjectMeta)(nil),                // 0: ax.v1alpha1.ObjectMeta
+	(*Task)(nil),                      // 1: ax.v1alpha1.Task
+	(*TaskSpec)(nil),                  // 2: ax.v1alpha1.TaskSpec
+	(*EgressSpec)(nil),                // 3: ax.v1alpha1.EgressSpec
+	(*EnvVar)(nil),                    // 4: ax.v1alpha1.EnvVar
+	(*SecretEnvSource)(nil),           // 5: ax.v1alpha1.SecretEnvSource
+	(*CredentialInjection)(nil),       // 6: ax.v1alpha1.CredentialInjection
+	(*ResourcesSpec)(nil),             // 7: ax.v1alpha1.ResourcesSpec
+	(*ResourceList)(nil),              // 8: ax.v1alpha1.ResourceList
+	(*WorkspaceRef)(nil),              // 9: ax.v1alpha1.WorkspaceRef
+	(*TaskStatus)(nil),                // 10: ax.v1alpha1.TaskStatus
+	(*Condition)(nil),                 // 11: ax.v1alpha1.Condition
+	(*Workspace)(nil),                 // 12: ax.v1alpha1.Workspace
+	(*WorkspaceSpec)(nil),             // 13: ax.v1alpha1.WorkspaceSpec
+	(*GitRepo)(nil),                   // 14: ax.v1alpha1.GitRepo
+	(*File)(nil),                      // 15: ax.v1alpha1.File
+	(*MCPConfig)(nil),                 // 16: ax.v1alpha1.MCPConfig
+	(*MCPRegistry)(nil),               // 17: ax.v1alpha1.MCPRegistry
+	(*MCPServer)(nil),                 // 18: ax.v1alpha1.MCPServer
+	(*SkillsConfig)(nil),              // 19: ax.v1alpha1.SkillsConfig
+	(*SkillRegistry)(nil),             // 20: ax.v1alpha1.SkillRegistry
+	(*Model)(nil),                     // 21: ax.v1alpha1.Model
+	(*ModelSpec)(nil),                 // 22: ax.v1alpha1.ModelSpec
+	(*SecretKeyRef)(nil),              // 23: ax.v1alpha1.SecretKeyRef
+	(*GetTaskRequest)(nil),            // 24: ax.v1alpha1.GetTaskRequest
+	(*ListTasksRequest)(nil),          // 25: ax.v1alpha1.ListTasksRequest
+	(*ListTasksResponse)(nil),         // 26: ax.v1alpha1.ListTasksResponse
+	(*CreateTaskRequest)(nil),         // 27: ax.v1alpha1.CreateTaskRequest
+	(*DeleteTaskRequest)(nil),         // 28: ax.v1alpha1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),        // 29: ax.v1alpha1.DeleteTaskResponse
+	(*SuspendTaskRequest)(nil),        // 30: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),         // 31: ax.v1alpha1.ResumeTaskRequest
+	(*WatchTaskRequest)(nil),          // 32: ax.v1alpha1.WatchTaskRequest
+	(*WatchTaskResponse)(nil),         // 33: ax.v1alpha1.WatchTaskResponse
+	(*GetWorkspaceRequest)(nil),       // 34: ax.v1alpha1.GetWorkspaceRequest
+	(*ListWorkspacesRequest)(nil),     // 35: ax.v1alpha1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil),    // 36: ax.v1alpha1.ListWorkspacesResponse
+	(*UpdateWorkspaceRequest)(nil),    // 37: ax.v1alpha1.UpdateWorkspaceRequest
+	(*DeleteWorkspaceRequest)(nil),    // 38: ax.v1alpha1.DeleteWorkspaceRequest
+	(*DeleteWorkspaceResponse)(nil),   // 39: ax.v1alpha1.DeleteWorkspaceResponse
+	(*SecretStore)(nil),               // 40: ax.v1alpha1.SecretStore
+	(*SecretStoreSpec)(nil),           // 41: ax.v1alpha1.SecretStoreSpec
+	(*KubernetesSecretStore)(nil),     // 42: ax.v1alpha1.KubernetesSecretStore
+	(*GetModelRequest)(nil),           // 43: ax.v1alpha1.GetModelRequest
+	(*ListModelsRequest)(nil),         // 44: ax.v1alpha1.ListModelsRequest
+	(*ListModelsResponse)(nil),        // 45: ax.v1alpha1.ListModelsResponse
+	(*UpdateModelRequest)(nil),        // 46: ax.v1alpha1.UpdateModelRequest
+	(*DeleteModelRequest)(nil),        // 47: ax.v1alpha1.DeleteModelRequest
+	(*DeleteModelResponse)(nil),       // 48: ax.v1alpha1.DeleteModelResponse
+	(*GetSecretStoreRequest)(nil),     // 49: ax.v1alpha1.GetSecretStoreRequest
+	(*ListSecretStoresRequest)(nil),   // 50: ax.v1alpha1.ListSecretStoresRequest
+	(*ListSecretStoresResponse)(nil),  // 51: ax.v1alpha1.ListSecretStoresResponse
+	(*UpdateSecretStoreRequest)(nil),  // 52: ax.v1alpha1.UpdateSecretStoreRequest
+	(*DeleteSecretStoreRequest)(nil),  // 53: ax.v1alpha1.DeleteSecretStoreRequest
+	(*DeleteSecretStoreResponse)(nil), // 54: ax.v1alpha1.DeleteSecretStoreResponse
+	(*timestamppb.Timestamp)(nil),     // 55: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),           // 56: google.protobuf.Struct
 }
 var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
-	43, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
+	55, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
 	0,  // 1: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	2,  // 2: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
-	7,  // 3: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	3,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	4,  // 5: ax.v1alpha1.TaskSpec.resources:type_name -> ax.v1alpha1.ResourcesSpec
-	6,  // 6: ax.v1alpha1.TaskSpec.workspaces:type_name -> ax.v1alpha1.WorkspaceRef
-	5,  // 7: ax.v1alpha1.ResourcesSpec.requests:type_name -> ax.v1alpha1.ResourceList
-	5,  // 8: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
-	8,  // 9: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	43, // 10: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
-	0,  // 11: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
-	10, // 12: ax.v1alpha1.Workspace.spec:type_name -> ax.v1alpha1.WorkspaceSpec
-	11, // 13: ax.v1alpha1.WorkspaceSpec.git:type_name -> ax.v1alpha1.GitRepo
-	12, // 14: ax.v1alpha1.WorkspaceSpec.files:type_name -> ax.v1alpha1.File
-	13, // 15: ax.v1alpha1.WorkspaceSpec.mcp:type_name -> ax.v1alpha1.MCPConfig
-	16, // 16: ax.v1alpha1.WorkspaceSpec.skills:type_name -> ax.v1alpha1.SkillsConfig
-	14, // 17: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
-	15, // 18: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
-	15, // 19: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
-	17, // 20: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
-	0,  // 21: ax.v1alpha1.Model.metadata:type_name -> ax.v1alpha1.ObjectMeta
-	19, // 22: ax.v1alpha1.Model.spec:type_name -> ax.v1alpha1.ModelSpec
-	20, // 23: ax.v1alpha1.ModelSpec.secret_key:type_name -> ax.v1alpha1.SecretKeyRef
-	44, // 24: ax.v1alpha1.ModelSpec.parameters:type_name -> google.protobuf.Struct
-	1,  // 25: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	1,  // 26: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	1,  // 27: ax.v1alpha1.WatchTaskResponse.task:type_name -> ax.v1alpha1.Task
-	9,  // 28: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
-	9,  // 29: ax.v1alpha1.UpdateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
-	18, // 30: ax.v1alpha1.ListModelsResponse.models:type_name -> ax.v1alpha1.Model
-	18, // 31: ax.v1alpha1.UpdateModelRequest.model:type_name -> ax.v1alpha1.Model
-	21, // 32: ax.v1alpha1.AX.GetTask:input_type -> ax.v1alpha1.GetTaskRequest
-	22, // 33: ax.v1alpha1.AX.ListTasks:input_type -> ax.v1alpha1.ListTasksRequest
-	24, // 34: ax.v1alpha1.AX.CreateTask:input_type -> ax.v1alpha1.CreateTaskRequest
-	25, // 35: ax.v1alpha1.AX.DeleteTask:input_type -> ax.v1alpha1.DeleteTaskRequest
-	27, // 36: ax.v1alpha1.AX.SuspendTask:input_type -> ax.v1alpha1.SuspendTaskRequest
-	28, // 37: ax.v1alpha1.AX.ResumeTask:input_type -> ax.v1alpha1.ResumeTaskRequest
-	29, // 38: ax.v1alpha1.AX.WatchTask:input_type -> ax.v1alpha1.WatchTaskRequest
-	31, // 39: ax.v1alpha1.AX.GetWorkspace:input_type -> ax.v1alpha1.GetWorkspaceRequest
-	32, // 40: ax.v1alpha1.AX.ListWorkspaces:input_type -> ax.v1alpha1.ListWorkspacesRequest
-	34, // 41: ax.v1alpha1.AX.UpdateWorkspace:input_type -> ax.v1alpha1.UpdateWorkspaceRequest
-	35, // 42: ax.v1alpha1.AX.DeleteWorkspace:input_type -> ax.v1alpha1.DeleteWorkspaceRequest
-	37, // 43: ax.v1alpha1.AX.GetModel:input_type -> ax.v1alpha1.GetModelRequest
-	38, // 44: ax.v1alpha1.AX.ListModels:input_type -> ax.v1alpha1.ListModelsRequest
-	40, // 45: ax.v1alpha1.AX.UpdateModel:input_type -> ax.v1alpha1.UpdateModelRequest
-	41, // 46: ax.v1alpha1.AX.DeleteModel:input_type -> ax.v1alpha1.DeleteModelRequest
-	1,  // 47: ax.v1alpha1.AX.GetTask:output_type -> ax.v1alpha1.Task
-	23, // 48: ax.v1alpha1.AX.ListTasks:output_type -> ax.v1alpha1.ListTasksResponse
-	1,  // 49: ax.v1alpha1.AX.CreateTask:output_type -> ax.v1alpha1.Task
-	26, // 50: ax.v1alpha1.AX.DeleteTask:output_type -> ax.v1alpha1.DeleteTaskResponse
-	1,  // 51: ax.v1alpha1.AX.SuspendTask:output_type -> ax.v1alpha1.Task
-	1,  // 52: ax.v1alpha1.AX.ResumeTask:output_type -> ax.v1alpha1.Task
-	30, // 53: ax.v1alpha1.AX.WatchTask:output_type -> ax.v1alpha1.WatchTaskResponse
-	9,  // 54: ax.v1alpha1.AX.GetWorkspace:output_type -> ax.v1alpha1.Workspace
-	33, // 55: ax.v1alpha1.AX.ListWorkspaces:output_type -> ax.v1alpha1.ListWorkspacesResponse
-	9,  // 56: ax.v1alpha1.AX.UpdateWorkspace:output_type -> ax.v1alpha1.Workspace
-	36, // 57: ax.v1alpha1.AX.DeleteWorkspace:output_type -> ax.v1alpha1.DeleteWorkspaceResponse
-	18, // 58: ax.v1alpha1.AX.GetModel:output_type -> ax.v1alpha1.Model
-	39, // 59: ax.v1alpha1.AX.ListModels:output_type -> ax.v1alpha1.ListModelsResponse
-	18, // 60: ax.v1alpha1.AX.UpdateModel:output_type -> ax.v1alpha1.Model
-	42, // 61: ax.v1alpha1.AX.DeleteModel:output_type -> ax.v1alpha1.DeleteModelResponse
-	47, // [47:62] is the sub-list for method output_type
-	32, // [32:47] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	10, // 3: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
+	4,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
+	7,  // 5: ax.v1alpha1.TaskSpec.resources:type_name -> ax.v1alpha1.ResourcesSpec
+	9,  // 6: ax.v1alpha1.TaskSpec.workspaces:type_name -> ax.v1alpha1.WorkspaceRef
+	3,  // 7: ax.v1alpha1.TaskSpec.egress:type_name -> ax.v1alpha1.EgressSpec
+	5,  // 8: ax.v1alpha1.EnvVar.secret_ref:type_name -> ax.v1alpha1.SecretEnvSource
+	6,  // 9: ax.v1alpha1.SecretEnvSource.inject:type_name -> ax.v1alpha1.CredentialInjection
+	8,  // 10: ax.v1alpha1.ResourcesSpec.requests:type_name -> ax.v1alpha1.ResourceList
+	8,  // 11: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
+	11, // 12: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	55, // 13: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
+	0,  // 14: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	13, // 15: ax.v1alpha1.Workspace.spec:type_name -> ax.v1alpha1.WorkspaceSpec
+	14, // 16: ax.v1alpha1.WorkspaceSpec.git:type_name -> ax.v1alpha1.GitRepo
+	15, // 17: ax.v1alpha1.WorkspaceSpec.files:type_name -> ax.v1alpha1.File
+	16, // 18: ax.v1alpha1.WorkspaceSpec.mcp:type_name -> ax.v1alpha1.MCPConfig
+	19, // 19: ax.v1alpha1.WorkspaceSpec.skills:type_name -> ax.v1alpha1.SkillsConfig
+	17, // 20: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
+	18, // 21: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
+	18, // 22: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
+	20, // 23: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
+	0,  // 24: ax.v1alpha1.Model.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	22, // 25: ax.v1alpha1.Model.spec:type_name -> ax.v1alpha1.ModelSpec
+	23, // 26: ax.v1alpha1.ModelSpec.secret_key:type_name -> ax.v1alpha1.SecretKeyRef
+	56, // 27: ax.v1alpha1.ModelSpec.parameters:type_name -> google.protobuf.Struct
+	1,  // 28: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	1,  // 29: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	1,  // 30: ax.v1alpha1.WatchTaskResponse.task:type_name -> ax.v1alpha1.Task
+	12, // 31: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
+	12, // 32: ax.v1alpha1.UpdateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
+	0,  // 33: ax.v1alpha1.SecretStore.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	41, // 34: ax.v1alpha1.SecretStore.spec:type_name -> ax.v1alpha1.SecretStoreSpec
+	42, // 35: ax.v1alpha1.SecretStoreSpec.kubernetes:type_name -> ax.v1alpha1.KubernetesSecretStore
+	21, // 36: ax.v1alpha1.ListModelsResponse.models:type_name -> ax.v1alpha1.Model
+	21, // 37: ax.v1alpha1.UpdateModelRequest.model:type_name -> ax.v1alpha1.Model
+	40, // 38: ax.v1alpha1.ListSecretStoresResponse.secret_stores:type_name -> ax.v1alpha1.SecretStore
+	40, // 39: ax.v1alpha1.UpdateSecretStoreRequest.secret_store:type_name -> ax.v1alpha1.SecretStore
+	24, // 40: ax.v1alpha1.AX.GetTask:input_type -> ax.v1alpha1.GetTaskRequest
+	25, // 41: ax.v1alpha1.AX.ListTasks:input_type -> ax.v1alpha1.ListTasksRequest
+	27, // 42: ax.v1alpha1.AX.CreateTask:input_type -> ax.v1alpha1.CreateTaskRequest
+	28, // 43: ax.v1alpha1.AX.DeleteTask:input_type -> ax.v1alpha1.DeleteTaskRequest
+	30, // 44: ax.v1alpha1.AX.SuspendTask:input_type -> ax.v1alpha1.SuspendTaskRequest
+	31, // 45: ax.v1alpha1.AX.ResumeTask:input_type -> ax.v1alpha1.ResumeTaskRequest
+	32, // 46: ax.v1alpha1.AX.WatchTask:input_type -> ax.v1alpha1.WatchTaskRequest
+	34, // 47: ax.v1alpha1.AX.GetWorkspace:input_type -> ax.v1alpha1.GetWorkspaceRequest
+	35, // 48: ax.v1alpha1.AX.ListWorkspaces:input_type -> ax.v1alpha1.ListWorkspacesRequest
+	37, // 49: ax.v1alpha1.AX.UpdateWorkspace:input_type -> ax.v1alpha1.UpdateWorkspaceRequest
+	38, // 50: ax.v1alpha1.AX.DeleteWorkspace:input_type -> ax.v1alpha1.DeleteWorkspaceRequest
+	43, // 51: ax.v1alpha1.AX.GetModel:input_type -> ax.v1alpha1.GetModelRequest
+	44, // 52: ax.v1alpha1.AX.ListModels:input_type -> ax.v1alpha1.ListModelsRequest
+	46, // 53: ax.v1alpha1.AX.UpdateModel:input_type -> ax.v1alpha1.UpdateModelRequest
+	47, // 54: ax.v1alpha1.AX.DeleteModel:input_type -> ax.v1alpha1.DeleteModelRequest
+	49, // 55: ax.v1alpha1.AX.GetSecretStore:input_type -> ax.v1alpha1.GetSecretStoreRequest
+	50, // 56: ax.v1alpha1.AX.ListSecretStores:input_type -> ax.v1alpha1.ListSecretStoresRequest
+	52, // 57: ax.v1alpha1.AX.UpdateSecretStore:input_type -> ax.v1alpha1.UpdateSecretStoreRequest
+	53, // 58: ax.v1alpha1.AX.DeleteSecretStore:input_type -> ax.v1alpha1.DeleteSecretStoreRequest
+	1,  // 59: ax.v1alpha1.AX.GetTask:output_type -> ax.v1alpha1.Task
+	26, // 60: ax.v1alpha1.AX.ListTasks:output_type -> ax.v1alpha1.ListTasksResponse
+	1,  // 61: ax.v1alpha1.AX.CreateTask:output_type -> ax.v1alpha1.Task
+	29, // 62: ax.v1alpha1.AX.DeleteTask:output_type -> ax.v1alpha1.DeleteTaskResponse
+	1,  // 63: ax.v1alpha1.AX.SuspendTask:output_type -> ax.v1alpha1.Task
+	1,  // 64: ax.v1alpha1.AX.ResumeTask:output_type -> ax.v1alpha1.Task
+	33, // 65: ax.v1alpha1.AX.WatchTask:output_type -> ax.v1alpha1.WatchTaskResponse
+	12, // 66: ax.v1alpha1.AX.GetWorkspace:output_type -> ax.v1alpha1.Workspace
+	36, // 67: ax.v1alpha1.AX.ListWorkspaces:output_type -> ax.v1alpha1.ListWorkspacesResponse
+	12, // 68: ax.v1alpha1.AX.UpdateWorkspace:output_type -> ax.v1alpha1.Workspace
+	39, // 69: ax.v1alpha1.AX.DeleteWorkspace:output_type -> ax.v1alpha1.DeleteWorkspaceResponse
+	21, // 70: ax.v1alpha1.AX.GetModel:output_type -> ax.v1alpha1.Model
+	45, // 71: ax.v1alpha1.AX.ListModels:output_type -> ax.v1alpha1.ListModelsResponse
+	21, // 72: ax.v1alpha1.AX.UpdateModel:output_type -> ax.v1alpha1.Model
+	48, // 73: ax.v1alpha1.AX.DeleteModel:output_type -> ax.v1alpha1.DeleteModelResponse
+	40, // 74: ax.v1alpha1.AX.GetSecretStore:output_type -> ax.v1alpha1.SecretStore
+	51, // 75: ax.v1alpha1.AX.ListSecretStores:output_type -> ax.v1alpha1.ListSecretStoresResponse
+	40, // 76: ax.v1alpha1.AX.UpdateSecretStore:output_type -> ax.v1alpha1.SecretStore
+	54, // 77: ax.v1alpha1.AX.DeleteSecretStore:output_type -> ax.v1alpha1.DeleteSecretStoreResponse
+	59, // [59:78] is the sub-list for method output_type
+	40, // [40:59] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_ax_proto_init() }
@@ -2763,7 +3479,7 @@ func file_pkg_apis_v1alpha1_ax_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_ax_proto_rawDesc), len(file_pkg_apis_v1alpha1_ax_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
