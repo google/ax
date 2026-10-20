@@ -294,8 +294,8 @@ metadata:
   atespace: {{.Atespace}}
 spec:
   debug: true
-  workspaces:
-  - name: {{.Workspace}}
+  workspace:
+    name: {{.Workspace}}
     path: /workspace
   env:
   - name: CUSTOM_E2E_VAR
@@ -353,7 +353,7 @@ func TestE2E_MetadataServerAndGuestExec(t *testing.T) {
 		}
 	}
 	assertContains(t, "task metadata", curl(metadataURL+"/metadata/v1alpha1/ax/task"), task, "custom-val-123")
-	assertContains(t, "workspace metadata", curl(metadataURL+"/metadata/v1alpha1/ax/workspaces"), ws, "hello from workspace")
+	assertContains(t, "workspace metadata", curl(metadataURL+"/metadata/v1alpha1/ax/workspace"), ws, "hello from workspace")
 
 	// 3. `ax ssh` propagates a non-zero guest exit code.
 	if _, err := env.runAX(ns, "ssh", task, "--", "sh", "-c", "exit 17"); err == nil {
@@ -374,7 +374,7 @@ func TestE2E_MetadataServerAndGuestExec(t *testing.T) {
 	}
 }
 
-const multiWorkspaceManifest = `apiVersion: ax.io/v1alpha1
+const workspaceSetupManifest = `apiVersion: ax.io/v1alpha1
 kind: Workspace
 metadata:
   name: {{.GitWorkspace}}
@@ -392,66 +392,49 @@ spec:
     path: /workspace/primary/.agents/skills
 ---
 apiVersion: ax.io/v1alpha1
-kind: Workspace
-metadata:
-  name: {{.SecondaryWorkspace}}
-  atespace: {{.Atespace}}
-spec:
-  files:
-  - path: notes/todo.md
-    content: "secondary workspace file"
----
-apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
   debug: true
-  workspaces:
-  - name: {{.GitWorkspace}}
+  workspace:
+    name: {{.GitWorkspace}}
     path: /workspace/primary
-  - name: {{.SecondaryWorkspace}}
 `
 
-// TestE2E_WorkspaceSetup_FilesMultiWorkspaceAndGit verifies workspace setup
-// for a task with multiple workspaces: explicit and default (/workspace/<name>)
-// mount paths, the default working directory, spec.git checkout at a tag,
-// overlay spec.files, spec.skills.path, and per-workspace /ax/initialized-*
-// markers.
-func TestE2E_WorkspaceSetup_FilesMultiWorkspaceAndGit(t *testing.T) {
+// TestE2E_WorkspaceSetup_FilesAndGit verifies workspace setup for a task:
+// custom mount path (/workspace/primary), working directory set to the mount
+// path, spec.git checkout at a tag, overlay spec.files, spec.skills.path, and
+// the /ax/initialized-* maiden-run marker.
+func TestE2E_WorkspaceSetup_FilesAndGit(t *testing.T) {
 	ns := defaultAtespace
 	wsGit := uniqueName("ws-git")
-	wsSecondary := uniqueName("ws-sec")
-	task := uniqueName("task-multiws")
+	task := uniqueName("task-ws")
 	env.deleteOnCleanup(t, ns, "workspace", wsGit)
-	env.deleteOnCleanup(t, ns, "workspace", wsSecondary)
 	env.deleteOnCleanup(t, ns, "task", task)
 
-	env.apply(t, ns, renderYAML(t, multiWorkspaceManifest, map[string]string{
-		"GitWorkspace": wsGit, "SecondaryWorkspace": wsSecondary, "Task": task, "Atespace": ns, "Repo": sampleRepo,
+	env.apply(t, ns, renderYAML(t, workspaceSetupManifest, map[string]string{
+		"GitWorkspace": wsGit, "Task": task, "Atespace": ns, "Repo": sampleRepo,
 	}))
 	env.mustRunAX(t, ns, "resume", "task", task)
 
-	// - The working directory defaults to the first workspace's mount path.
-	// - The primary workspace has the repo checked out at v1.0.0, the overlay
-	//   file, and the skills directory.
-	// - The secondary workspace is mounted at the default /workspace/<name>.
-	// - A maiden-run marker is written for each workspace mount path.
-	out := env.ssh(t, ns, task, fmt.Sprintf(`set -e
+	// - The working directory is the workspace's mount path.
+	// - The workspace has the repo checked out at v1.0.0, the overlay file, and
+	//   the skills directory.
+	// - A maiden-run marker is written for the workspace mount path.
+	out := env.ssh(t, ns, task, `set -e
 pwd
 cat /workspace/primary/app.py
 cat /workspace/primary/overlay/config.yaml
 test -d /workspace/primary/.agents/skills && echo SKILLS_DIR_OK
-cat /workspace/%[1]s/notes/todo.md
-test -f /ax/initialized-workspace-primary && test -f /ax/initialized-workspace-%[1]s && echo MARKERS_OK
-`, wsSecondary))
-	assertContains(t, "multi-workspace check", out,
+test -f /ax/initialized-workspace-primary && echo MARKERS_OK
+`)
+	assertContains(t, "workspace setup check", out,
 		"/workspace/primary",
 		"hello from git repo v1",
 		"mode: git-plus-overlay",
 		"SKILLS_DIR_OK",
-		"secondary workspace file",
 		"MARKERS_OK",
 	)
 }
@@ -473,8 +456,8 @@ metadata:
   atespace: {{.Atespace}}
 spec:
   debug: true
-  workspaces:
-  - name: {{.Workspace}}
+  workspace:
+    name: {{.Workspace}}
     path: /workspace
 `
 
@@ -503,10 +486,8 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 		t.Fatalf("expected empty WorkerIp when suspended, got %q", ip)
 	}
 	actor := env.getActor(t, ns, task, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
-	// Substrate v0.4 reports the snapshot in ExternalSnapshot; newer versions
-	// track snapshot generations elsewhere, so only check it when present.
-	if snap := actor.GetStatus().GetExternalSnapshot(); snap != nil && snap.GetSnapshotUri() == "" {
-		t.Fatal("expected non-empty ExternalSnapshot.SnapshotUri on suspended actor")
+	if len(actor.GetStatus().GetSnapshots()) == 0 && len(actor.GetStatus().ProtoReflect().GetUnknown()) == 0 {
+		t.Fatal("expected non-empty Snapshots on suspended actor")
 	}
 
 	// 3. Resume: VOLUMES-fidelity snapshots restore /workspace but cold-boot the rootfs.
