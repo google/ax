@@ -16,22 +16,18 @@
 // loads the Task and Workspace specs and hands them to the runner package,
 // which does everything else.
 //
-// AX delivers the Task as YAML in AX_TASK_YAML and the bound
-// Workspaces as a multi-document YAML stream in AX_WORKSPACES_YAML. For local
-// runs the specs can be read from files instead with --task-file and one or
-// more --workspace-file flags.
+// AX delivers the Task as YAML in AX_TASK_YAML and the bound Workspace, if
+// any, as YAML in AX_WORKSPACE_YAML. For local runs the specs can be read from
+// files instead with --task-file and --workspace-file.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -39,22 +35,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// stringList collects a repeatable flag.
-type stringList []string
-
-func (l *stringList) String() string     { return strings.Join(*l, ",") }
-func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
-
 func main() {
 	var (
 		cfg      runner.Config
 		taskFile string
-		wsFiles  stringList
+		wsFile   string
 	)
 	flag.IntVar(&cfg.Port, "port", runner.DefaultPort, "Port for the probe and guest server")
 	flag.IntVar(&cfg.MetadataPort, "metadata-port", runner.DefaultMetadataPort, "Loopback-only port for the metadata endpoints")
 	flag.StringVar(&taskFile, "task-file", "", "Read the Task YAML from this file instead of AX_TASK_YAML")
-	flag.Var(&wsFiles, "workspace-file", "Read Workspace YAML from this file instead of the environment; repeatable, and each file may hold several documents")
+	flag.StringVar(&wsFile, "workspace-file", "", "Read the Workspace YAML from this file instead of AX_WORKSPACE_YAML")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -67,11 +57,12 @@ func main() {
 		cfg.Task = &task
 	}
 
-	workspaces, err := loadWorkspaces(wsFiles)
-	if err != nil {
+	var ws v1alpha1.Workspace
+	if err := loadSpec(wsFile, "AX_WORKSPACE_YAML", &ws); err != nil {
 		fatal(err)
+	} else if ws.GetMetadata() != nil {
+		cfg.Workspace = &ws
 	}
-	cfg.Workspaces = workspaces
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -101,44 +92,6 @@ func loadSpec(file, envVar string, out any) error {
 		return fmt.Errorf("parsing %T: %w", out, err)
 	}
 	return nil
-}
-
-// loadWorkspaces reads Workspace documents from the given files, or when none
-// are given from AX_WORKSPACES_YAML. Empty documents are skipped. It is not an
-// error for no source to be present.
-func loadWorkspaces(files []string) ([]*v1alpha1.Workspace, error) {
-	var sources [][]byte
-	switch {
-	case len(files) > 0:
-		for _, f := range files {
-			data, err := os.ReadFile(f)
-			if err != nil {
-				return nil, fmt.Errorf("reading %s: %w", f, err)
-			}
-			sources = append(sources, data)
-		}
-	case os.Getenv("AX_WORKSPACES_YAML") != "":
-		sources = append(sources, []byte(os.Getenv("AX_WORKSPACES_YAML")))
-	}
-
-	var workspaces []*v1alpha1.Workspace
-	for _, src := range sources {
-		dec := yaml.NewDecoder(strings.NewReader(string(src)))
-		for {
-			var ws v1alpha1.Workspace
-			err := dec.Decode(&ws)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				return nil, fmt.Errorf("parsing workspace yaml: %w", err)
-			}
-			if ws.GetMetadata() != nil {
-				workspaces = append(workspaces, &ws)
-			}
-		}
-	}
-	return workspaces, nil
 }
 
 func fatal(err error) {

@@ -34,7 +34,7 @@ import (
 
 // Reconciler coordinates sandbox/actor lifecycles on Agent Substrate directly.
 type Reconciler interface {
-	Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error)
+	Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error)
 	ReconcileDelete(ctx context.Context, atespace, taskName string) error
 }
 
@@ -186,8 +186,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	// Directly reconcile with Substrate
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
 			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
 			if reconciled != nil && reconciled.Status != nil {
@@ -299,8 +298,7 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	task.Status.Phase = "Suspended"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
@@ -350,8 +348,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	task.Status.Phase = "Running"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
 			if reconciled != nil && reconciled.Status != nil {
 				task.Status = reconciled.Status
@@ -380,20 +377,18 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	return task, nil
 }
 
-func (s *Server) fetchWorkspaces(ctx context.Context, atespace string, task *v1alpha1.Task) []*v1alpha1.Workspace {
-	var workspaces []*v1alpha1.Workspace
-	if task.Spec == nil {
-		return workspaces
+// fetchWorkspace loads the Workspace the task binds, or nil when the task
+// binds none or the Workspace does not exist.
+func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Workspace {
+	name := task.GetSpec().GetWorkspace().GetName()
+	if name == "" {
+		return nil
 	}
-	for _, ref := range task.Spec.WorkspaceRefs() {
-		if ref.Name == "" {
-			continue
-		}
-		if wsp, err := s.store.GetWorkspace(ctx, atespace, ref.Name); err == nil {
-			workspaces = append(workspaces, wsp)
-		}
+	ws, err := s.store.GetWorkspace(ctx, atespace, name)
+	if err != nil {
+		return nil
 	}
-	return workspaces
+	return ws
 }
 
 func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStreamingServer[v1alpha1.WatchTaskResponse]) error {

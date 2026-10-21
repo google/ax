@@ -15,7 +15,7 @@ The control plane does not run `spec.command` as the container entrypoint. It al
 | Container image | `spec.image`, or the default `ax-task-runner` image when unset |
 | Container command | `/usr/local/bin/ax-task-runner`, always |
 | `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
-| `AX_WORKSPACES_YAML` | Every bound `Workspace` resource as a multi-document YAML stream, in the task's binding order |
+| `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
 | `spec.env` entries | Each one set directly in the container environment |
 | `GEMINI_API_KEY` | Set when the atespace has a Gemini credential configured |
 | Volume | A durable directory mounted at `/workspace` |
@@ -39,11 +39,11 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | Path | Behavior |
 |---|---|
 | `/metadata/v1alpha1/ax/task` | Return the `Task` as `application/yaml`. Optional, but your command and `ax` tooling may expect it. |
-| `/metadata/v1alpha1/ax/workspaces` | Return every bound `Workspace` as a multi-document YAML stream. Optional, as above. |
+| `/metadata/v1alpha1/ax/workspace` | Return the bound `Workspace` as `application/yaml`, or `404` when there is none. Optional, as above. |
 
-**Prepare each workspace once.** A task binds workspaces through `spec.workspaces`. For each binding, at its path, clone the Git repos from `spec.git`, create the skills path, write any MCP configuration, and run any environment bootstrap the binding asks for through its `goal`. A binding without a path lands at `/workspace/<name>`. Record that setup happened somewhere on the durable volume or in a known location, per workspace, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `/ax` for each workspace path.
+**Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, clone the Git repos from `spec.git`, create the skills path, write any MCP configuration, and run any environment bootstrap the binding asks for through its `goal`. A task with no binding gets an empty `/workspace`. Record that setup happened somewhere on the durable volume or in a known location, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `/ax`.
 
-**Run the command and supervise it.** Start `spec.command` as a child process with the first workspace as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
+**Run the command and supervise it.** Start `spec.command` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
 **Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
 
@@ -68,11 +68,13 @@ There are three levels of customization. Pick the shallowest one that solves you
 
 If the runner behavior is fine and you only need different tools in the sandbox, build on top of the default image and keep its entrypoint:
 
-The image below is private. Build and push your own matching runner using the
-[installation guide](installation.md), then replace `FROM` with its digest reference.
+The image below is private. Build and push your own runner from the same AX
+checkout as the CLI and control plane, then replace `FROM` with its digest
+reference. The [installation guide](installation.md) shows the build steps for
+its pinned baseline.
 
 ```dockerfile
-# Pin the same digest the examples use so the runner behavior is reproducible.
+# Replace this with the digest of the runner built from the same AX checkout.
 FROM gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:69b764607ec7f1e433d83d2eca17dccfa04f663b43f071fd376e2dd716a57f8c
 
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
@@ -94,7 +96,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -106,23 +107,19 @@ func main() {
 	var task v1alpha1.Task
 	_ = yaml.Unmarshal([]byte(os.Getenv("AX_TASK_YAML")), &task)
 
-	// AX_WORKSPACES_YAML is a multi-document stream, one Workspace per document.
-	var workspaces []*v1alpha1.Workspace
-	dec := yaml.NewDecoder(strings.NewReader(os.Getenv("AX_WORKSPACES_YAML")))
-	for {
-		var ws v1alpha1.Workspace
-		if err := dec.Decode(&ws); err != nil {
-			break
-		}
-		workspaces = append(workspaces, &ws)
+	// AX_WORKSPACE_YAML is unset when the task binds no workspace.
+	var ws *v1alpha1.Workspace
+	if raw := os.Getenv("AX_WORKSPACE_YAML"); raw != "" {
+		ws = &v1alpha1.Workspace{}
+		_ = yaml.Unmarshal([]byte(raw), ws)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	err := runner.Run(ctx, runner.Config{
-		Task:       &task,
-		Workspaces: workspaces,
+		Task:      &task,
+		Workspace: ws,
 		OnCommandExit: func(exit runner.CommandExit) {
 			slog.Info("agent finished", "exitCode", exit.ExitCode)
 			// Upload artifacts, notify a webhook, and so on.
@@ -139,7 +136,7 @@ Cross-compile it for `linux/amd64` with `CGO_ENABLED=0` and copy it into your im
 
 ### 3. Write a runner from scratch
 
-If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACES_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-task-runner`. The `ax.io/v1alpha1` schema is defined in `pkg/apis/v1alpha1/ax.proto`, and [Manifests](manifests.md) walks through every field.
+If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-task-runner`. The `ax.io/v1alpha1` schema is defined in `pkg/apis/v1alpha1/ax.proto`, and [Manifests](manifests.md) walks through every field.
 
 ### Ship it
 
@@ -163,7 +160,7 @@ AX provisions a dedicated Agent Substrate actor template for each distinct image
 The default runner accepts its specs from files as well as the environment, which makes it easy to run outside a cluster. Your own runner should offer something similar:
 
 ```bash
-ax-task-runner --task-file task.yaml --workspace-file code.yaml --workspace-file tools.yaml --port 8080 --metadata-port 8099
+ax-task-runner --task-file task.yaml --workspace-file code.yaml --port 8080 --metadata-port 8099
 
 # In another shell:
 curl -i http://127.0.0.1:8080/readyz
@@ -175,11 +172,11 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 ## Checklist
 
 - Executable present at `/usr/local/bin/ax-task-runner`
-- Reads `AX_TASK_YAML` and `AX_WORKSPACES_YAML`
-- Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until every workspace is ready
+- Reads `AX_TASK_YAML` and `AX_WORKSPACE_YAML`
+- Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until the workspace is ready
 - Serves the metadata endpoints on loopback only, at `AX_METADATA_URL`
-- Prepares each workspace exactly once across restarts and resumes, at its own path
-- Starts `spec.command` in the first workspace with `AX_METADATA_URL` and `spec.env`
+- Prepares the workspace exactly once across restarts and resumes, at its path
+- Starts `spec.command` in the workspace with `AX_METADATA_URL` and `spec.env`
 - Keeps running after the command exits
 - Forwards `SIGTERM` to the command's process group and exits after a grace period
 - Serves guest gRPC services on port 80 only when `spec.debug` is true

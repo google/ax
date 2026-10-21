@@ -1,5 +1,5 @@
 <h1>
-  <img src="assets/axolotl.svg" width="70" align="absmiddle" alt="AX axolotl">
+  <img src="assets/axel.svg" width="70" align="absmiddle" alt="AX axolotl">
   AX
 </h1>
 
@@ -29,14 +29,16 @@ metadata:
   name: test
 spec:
   image: "YOUR_RUNNER_REPOSITORY@sha256:YOUR_DIGEST"
-  workspaces:
-    - name: golang
-      goal: "Ensure that Go tool chain is available and is built from source"
+  workspace:
+    name: golang
+    goal: "Ensure that Go tool chain is available and is built from source"
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 
-After [installing AX](docs/installation.md), replace the image with your runner's
-digest reference, then apply it and look over the agent's shoulder:
+With the CLI, server, and runner built from this checkout, replace the image
+with your runner's digest reference, then apply it and look over the agent's
+shoulder. For the version-pinned baseline, use the task in the
+[installation guide](docs/installation.md).
 
 ```bash
 ax apply -f task.yaml
@@ -111,8 +113,8 @@ being addressed in [#487](https://github.com/google/ax/issues/487).
 
 ### Everyday commands
 
-Before applying `examples/task.yaml`, replace its image with your runner digest
-from the [installation guide](docs/installation.md).
+Before applying `examples/task.yaml`, replace its image with a runner digest
+built from the same AX ref as the CLI and control plane.
 
 ```bash
 # Apply anything (multi-document YAML, file or stdin)

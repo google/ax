@@ -174,7 +174,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h.task = &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "lib-task", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Workspaces: []*v1alpha1.WorkspaceRef{{Name: "ws", Path: h.wsPath}}},
+		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: h.wsPath}},
 	}
 	h.cfg = runner.Config{
 		Port:          freePort(t),
@@ -244,21 +244,14 @@ func freePort(t *testing.T) int {
 	return lis.Addr().(*net.TCPAddr).Port
 }
 
-func TestRun_SetsUpEveryWorkspace(t *testing.T) {
+func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 	h := newHarness(t)
 	root := t.TempDir()
 	codePath := filepath.Join(root, "code")
-	toolsPath := filepath.Join(root, "tools")
 	outFile := filepath.Join(root, "out.txt")
 
-	h.task.Spec.Workspaces = []*v1alpha1.WorkspaceRef{
-		{Name: "code", Path: codePath},
-		{Name: "tools", Path: toolsPath},
-	}
-	h.cfg.Workspaces = []*v1alpha1.Workspace{
-		{Metadata: &v1alpha1.ObjectMeta{Name: "tools"}, Spec: &v1alpha1.WorkspaceSpec{}},
-		{Metadata: &v1alpha1.ObjectMeta{Name: "code"}, Spec: &v1alpha1.WorkspaceSpec{}},
-	}
+	h.task.Spec.Workspace = &v1alpha1.WorkspaceRef{Name: "code", Path: codePath}
+	h.cfg.Workspace = &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "code"}, Spec: &v1alpha1.WorkspaceSpec{}}
 	h.task.Spec.Command = []string{"sh", "-c", "pwd > " + outFile}
 
 	exit := h.runUntilCommandExits(t)
@@ -266,25 +259,23 @@ func TestRun_SetsUpEveryWorkspace(t *testing.T) {
 		t.Fatalf("unexpected exit: %+v", exit)
 	}
 
-	// Both workspace directories exist and each has its own maiden-run marker.
-	for _, p := range []string{codePath, toolsPath} {
-		if st, err := os.Stat(p); err != nil || !st.IsDir() {
-			t.Errorf("workspace dir %s missing: %v", p, err)
-		}
-		marker := filepath.Join(workspace.AXDir, workspace.MarkerName(p))
-		if _, err := os.Stat(marker); err != nil {
-			t.Errorf("marker %s missing: %v", marker, err)
-		}
+	// The workspace directory exists and has its maiden-run marker.
+	if st, err := os.Stat(codePath); err != nil || !st.IsDir() {
+		t.Errorf("workspace dir %s missing: %v", codePath, err)
+	}
+	marker := filepath.Join(workspace.AXDir, workspace.MarkerName(codePath))
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker %s missing: %v", marker, err)
 	}
 
-	// The command ran in the first workspace.
+	// The command ran in the workspace.
 	out, _ := os.ReadFile(outFile)
 	wantDir, _ := filepath.EvalSymlinks(codePath)
 	if gotDir, _ := filepath.EvalSymlinks(strings.TrimSpace(string(out))); gotDir != wantDir {
-		t.Errorf("command cwd = %q, want first workspace %q", strings.TrimSpace(string(out)), codePath)
+		t.Errorf("command cwd = %q, want workspace %q", strings.TrimSpace(string(out)), codePath)
 	}
 
-	// Readiness reflects all workspaces, and the metadata server lists them in binding order.
+	// Readiness reflects the workspace, and the metadata server serves it.
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/readyz", h.cfg.Port))
 	if err != nil {
 		t.Fatal(err)
@@ -293,13 +284,13 @@ func TestRun_SetsUpEveryWorkspace(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("readyz = %d, want 200", resp.StatusCode)
 	}
-	resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metadata/v1alpha1/ax/workspaces", h.cfg.MetadataPort))
+	resp, err = http.Get(fmt.Sprintf("http://127.0.0.1:%d/metadata/v1alpha1/ax/workspace", h.cfg.MetadataPort))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "name: code") || !strings.Contains(string(body), "name: tools") || strings.Index(string(body), "name: code") > strings.Index(string(body), "name: tools") {
-		t.Errorf("workspaces endpoint should list code then tools:\n%s", body)
+	if !strings.Contains(string(body), "name: code") {
+		t.Errorf("workspace endpoint should serve the bound workspace:\n%s", body)
 	}
 }
