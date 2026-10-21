@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A Task that composes two Workspaces: the repository to work on (the first
-# entry, which becomes the command's working directory) and a set of inlined
-# files mounted at an explicit path.
-#
-# `examples/task.yaml` binds a single Workspace; this file demonstrates the
-# multi-workspace binding described in `docs/manifests.md`.
+# A Task bound to a single Workspace: the git repository that is cloned into
+# the sandbox and becomes the command's working directory. A Task binds one
+# workspace; `docs/manifests.md` describes the binding and links here for a
+# complete set. The filename keeps the link in `docs/manifests.md` resolving.
 #
 #   ax apply -f examples/multi-workspace.yaml
-#   ax resume task multi-task
-#   ax ssh multi-task -- ls -la /workspace /workspace/tools
+#   ax resume task repo-task
+#   ax ssh repo-task -- ls -la /workspace
 ---
 apiVersion: ax.io/v1alpha1
 kind: Workspace
@@ -35,27 +33,12 @@ spec:
       branch: "main"
 ---
 apiVersion: ax.io/v1alpha1
-kind: Workspace
-metadata:
-  name: team-tools
-  atespace: default
-spec:
-  files:
-    - path: "AGENTS.md"
-      content: |
-        # Project Guidelines
-        - Run `go test ./...` before submitting changes.
-        - Keep dependencies minimal.
----
-apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
-  name: multi-task
+  name: repo-task
   atespace: default
 spec:
   image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
   workspaces:
-    - name: my-service          # first entry: the command's working directory
-    - name: team-tools
-      path: "/workspace/tools"  # explicit mount path; defaults to /workspace/<name>
+    - name: my-service          # the command's working directory
   debug: true # serve guest services so `ax ssh` works; off by default
