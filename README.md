@@ -1,5 +1,5 @@
 <h1>
-  <img src="assets/axolotl.svg" width="70" align="absmiddle" alt="AX axolotl">
+  <img src="assets/axel.svg" width="70" align="absmiddle" alt="AX axolotl">
   AX
 </h1>
 
@@ -28,9 +28,9 @@ kind: Task
 metadata:
   name: test
 spec:
-  workspaces:
-    - name: golang
-      goal: "Ensure that Go tool chain is available and is built from source"
+  workspace:
+    name: golang
+    goal: "Ensure that Go tool chain is available and is built from source"
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 

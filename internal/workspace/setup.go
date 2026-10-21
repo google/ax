@@ -331,8 +331,8 @@ func bootstrapTimeout() time.Duration {
 }
 
 // MarkerName returns the maiden-run marker file name for a workspace mounted at
-// path. The name is derived from the path so several workspaces in one
-// container track their setup independently.
+// path. The name is derived from the path so a workspace mounted somewhere
+// other than the default tracks its setup independently.
 func MarkerName(path string) string {
 	if path == "" {
 		path = defaultWorkspacePath

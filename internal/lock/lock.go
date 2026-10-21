@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -117,6 +118,37 @@ func (m *MemoryLocker) Lock(ctx context.Context, kind, atespace, name string) (f
 
 // RedisLocker implements distributed locking in Redis using SET NX PX with token validation
 // and Redis Pub/Sub notification for instant contended lock hand-off.
+//
+// # Lease renewal
+//
+// A held lock is kept alive by a background goroutine that extends its TTL
+// every TTL/3 (only while the key still holds this holder's token) until the
+// unlock function is called. The TTL therefore does not bound how long a lock
+// may be held; it only bounds how long a lock can be orphaned after its holder
+// crashes or loses connectivity to Redis.
+//
+// We deliberately renew a short lease instead of using a single long TTL:
+//
+//   - The server does not control how long a critical section runs. Handlers
+//     hold the lock across Substrate calls (e.g. snapshot/restore of a microVM
+//     during SuspendTask/ResumeTask) that run under the caller's request
+//     context, so their duration is set by the client's deadline, not by
+//     ax-server. A fixed TTL would have to exceed the longest deadline any
+//     client might use, and would silently allow concurrent holders whenever
+//     an operation ran past it.
+//   - The TTL is the recovery time after a crash. A long TTL (minutes) would
+//     wedge the affected task/workspace/model for that long if ax-server died
+//     mid-operation; a short renewed lease (30s by default) keeps recovery
+//     fast.
+//   - One locker guards every resource kind and operation, so renewal avoids
+//     having to retune the TTL whenever a slower operation is added.
+//
+// Limitation: renewal is best-effort and there is no fencing token. If renewals
+// keep failing for longer than the TTL (e.g. a prolonged Redis outage), the
+// lease can expire while the holder is still working, and the holder is not
+// interrupted; the loss is only logged. The alternative considered was a long
+// TTL combined with a server-side deadline shorter than it on every locked
+// operation, which avoids the goroutine but trades away fast crash recovery.
 type RedisLocker struct {
 	client           *redis.Client
 	ttl              time.Duration
@@ -124,7 +156,15 @@ type RedisLocker struct {
 }
 
 type RedisLockerOptions struct {
-	TTL              time.Duration
+	// TTL is the lease duration of a lock key in Redis (default 30s). Held
+	// locks are renewed every TTL/3, so this does not limit how long a lock
+	// may be held; it bounds how long a lock survives a crashed holder. See
+	// the RedisLocker doc for why a short renewed lease is preferred over a
+	// long TTL.
+	TTL time.Duration
+	// FallbackInterval is how often waiters retry acquisition in case a
+	// release notification is missed or a lease expires without a publish
+	// (default 1s).
 	FallbackInterval time.Duration
 }
 
@@ -133,6 +173,15 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
     local res = redis.call("del", KEYS[1])
     redis.call("publish", KEYS[2], "1")
     return res
+else
+    return 0
+end
+`)
+
+// renewScript extends the lock TTL only if it is still held by the caller's token.
+var renewScript = redis.NewScript(`
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("pexpire", KEYS[1], ARGV[2])
 else
     return 0
 end
@@ -173,10 +222,22 @@ func (r *RedisLocker) Lock(ctx context.Context, kind, atespace, name string) (fu
 	}
 	token := hex.EncodeToString(tokenBytes)
 
+	// makeUnlock is called once the lock is acquired. It starts the lease
+	// renewal goroutine (see "Lease renewal" on RedisLocker) and returns an
+	// unlock function that stops renewal before releasing the key.
 	makeUnlock := func() func() {
+		renewCtx, cancelRenew := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			r.renew(renewCtx, key, token)
+		}()
+
 		var once sync.Once
 		return func() {
 			once.Do(func() {
+				cancelRenew()
+				<-done
 				releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				_ = releaseAndNotifyScript.Run(releaseCtx, r.client, []string{key, chanKey}, token).Err()
@@ -232,6 +293,48 @@ func (r *RedisLocker) Lock(ctx context.Context, kind, atespace, name string) (fu
 		}
 		if ok {
 			return makeUnlock(), nil
+		}
+	}
+}
+
+// renew periodically extends the TTL of the lock identified by key/token until
+// ctx is canceled or the lock is found to be no longer held by token.
+func (r *RedisLocker) renew(ctx context.Context, key, token string) {
+	interval := r.ttl / 3
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	ttlMillis := r.ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		ttlMillis = 1
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		renewCtx, cancel := context.WithTimeout(ctx, interval)
+		res, err := renewScript.Run(renewCtx, r.client, []string{key}, token, ttlMillis).Int()
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			// Transient Redis error: keep trying on the next tick while the
+			// remaining TTL still covers us.
+			slog.Warn("renewing lock lease", "key", key, "error", err)
+			continue
+		}
+		if res == 0 {
+			// The lock expired or was taken over; there is nothing left to renew.
+			slog.Error("lock lease lost before release", "key", key)
+			return
 		}
 	}
 }

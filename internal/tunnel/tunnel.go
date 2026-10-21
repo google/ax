@@ -27,6 +27,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
 var portForwardRegex = regexp.MustCompile(`Forwarding from .*:(\d+)\s+->`)
@@ -196,7 +198,7 @@ func EnsureServerURL(opts Options) (string, error) {
 		if envNs := os.Getenv("AX_SYSTEM_NAMESPACE"); envNs != "" {
 			opts.Namespace = envNs
 		} else {
-			opts.Namespace = "ax-system"
+			opts.Namespace = v1alpha1.DefaultSystemNamespace
 		}
 	}
 	if opts.Service == "" {
@@ -208,7 +210,11 @@ func EnsureServerURL(opts Options) (string, error) {
 
 	// Check for existing active tunnel
 	if existing, err := GetTunnel(ctxName); err == nil && existing != nil {
-		if IsTunnelHealthy(existing.Port) {
+		// Empty Namespace/Service means the tunnel was recorded before these fields
+		// existed; treat it as matching for backward compatibility.
+		sameTarget := (existing.Namespace == "" || existing.Namespace == opts.Namespace) &&
+			(existing.Service == "" || existing.Service == opts.Service)
+		if sameTarget && IsTunnelHealthy(existing.Port) {
 			return fmt.Sprintf("http://127.0.0.1:%d", existing.Port), nil
 		}
 		// Existing tunnel is unhealthy or stale, clean it up

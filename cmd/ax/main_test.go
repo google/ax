@@ -17,9 +17,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +35,103 @@ import (
 	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
+
+func TestApplyAtespace(t *testing.T) {
+	// Exercise flag parsing and dispatch as well as the resource RPCs.
+	binary := filepath.Join(t.TempDir(), "ax")
+	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("building CLI: %v\n%s", err, output)
+	}
+	for _, kind := range []string{"Task", "Workspace", "Model"} {
+		for _, tc := range []struct {
+			name             string
+			manifestAtespace string
+			flags            []string
+			wantAtespace     string
+			wantErr          string
+		}{
+			{name: "default", wantAtespace: "default"},
+			{name: "flag only", flags: []string{"-a", "team-a"}, wantAtespace: "team-a"},
+			{name: "manifest only", manifestAtespace: "team-a", wantAtespace: "team-a"},
+			{name: "matching", manifestAtespace: "team-a", flags: []string{"--atespace", "team-a"}, wantAtespace: "team-a"},
+			{name: "conflicting", manifestAtespace: "team-a", flags: []string{"--atespace=team-b"}, wantErr: `metadata.atespace "team-a" does not match --atespace "team-b"`},
+			{name: "explicit default", manifestAtespace: "team-a", flags: []string{"-a", "default"}, wantErr: `metadata.atespace "team-a" does not match --atespace "default"`},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				s := memory.NewStore()
+				listener, err := net.Listen("tcp", "127.0.0.1:0")
+				if err != nil {
+					t.Fatal(err)
+				}
+				srv := server.NewServer(s).GRPCServer()
+				t.Cleanup(srv.Stop)
+				go func() { _ = srv.Serve(listener) }()
+
+				path := filepath.Join(t.TempDir(), "resource.yaml")
+				manifest := fmt.Sprintf("apiVersion: ax.io/v1alpha1\nkind: %s\nmetadata:\n  name: example\n", kind)
+				if tc.manifestAtespace != "" {
+					manifest += fmt.Sprintf("  atespace: %q\n", tc.manifestAtespace)
+				}
+				manifest += "spec: {}\n"
+				if err := os.WriteFile(path, []byte(manifest), 0600); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				args := append([]string{"--server", listener.Addr().String(), "apply", "-f", path}, tc.flags...)
+				output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+				if tc.wantErr != "" {
+					var exitErr *exec.ExitError
+					if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(string(output), tc.wantErr) {
+						t.Fatalf("expected exit 1 with %q, got %v\n%s", tc.wantErr, err, output)
+					}
+				} else {
+					wantOutput := strings.ToLower(kind) + ".ax.io/example created\n"
+					if err != nil || string(output) != wantOutput {
+						t.Fatalf("expected %q, got %v\n%s", wantOutput, err, output)
+					}
+					// Tasks are immutable; other resources remain unchanged on reapply.
+					output, err = exec.CommandContext(ctx, binary, args...).CombinedOutput()
+					if kind == "Task" {
+						var exitErr *exec.ExitError
+						wantErr := fmt.Sprintf("code = FailedPrecondition desc = task %s/example already exists and is immutable", tc.wantAtespace)
+						if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(string(output), wantErr) {
+							t.Fatalf("expected exit 1 with %q on reapply, got %v\n%s", wantErr, err, output)
+						}
+					} else {
+						wantOutput = strings.ToLower(kind) + ".ax.io/example unchanged\n"
+						if err != nil || string(output) != wantOutput {
+							t.Fatalf("expected %q on reapply, got %v\n%s", wantOutput, err, output)
+						}
+					}
+				}
+
+				for _, atespace := range []string{"default", "team-a", "team-b"} {
+					var meta *v1alpha1.ObjectMeta
+					var getErr error
+					switch kind {
+					case "Task":
+						resource, err := s.GetTask(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					case "Workspace":
+						resource, err := s.GetWorkspace(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					case "Model":
+						resource, err := s.GetModel(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					}
+					if atespace == tc.wantAtespace {
+						if getErr != nil || meta.GetAtespace() != atespace {
+							t.Errorf("expected resource in %q, got metadata %v, error %v", atespace, meta, getErr)
+						}
+					} else if !errors.Is(getErr, store.ErrNotFound) {
+						t.Errorf("expected no resource in %q, got metadata %v, error %v", atespace, meta, getErr)
+					}
+				}
+			})
+		}
+	}
+}
 
 func TestRunApplyEmptyDocuments(t *testing.T) {
 	const first = "apiVersion: ax.io/v1alpha1\nkind: Workspace\nmetadata:\n  name: first\nspec: {}\n"
@@ -80,7 +180,7 @@ func TestRunApplyEmptyDocuments(t *testing.T) {
 				_ = output.Close()
 			})
 
-			runErr := runApply(listener.Addr().String(), []string{"-f", path})
+			runErr := runApply(listener.Addr().String(), nil, []string{"-f", path})
 			if tc.wantErr == "" {
 				if runErr != nil {
 					t.Fatal(runErr)
@@ -214,7 +314,7 @@ type fakeMainReconciler struct {
 	deleted chan struct{}
 }
 
-func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error) {
+func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	return task, nil
 }
 
@@ -276,5 +376,137 @@ func TestRunDeleteTask(t *testing.T) {
 	_, err = s.GetTask(context.Background(), "default", "task-to-delete")
 	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("expected task to be NotFound after deletion, got %v", err)
+	}
+}
+
+func TestParseGlobalArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want globalArgs
+	}{
+		{
+			name: "flags before and after the command",
+			args: []string{"-a", "team", "get", "tasks", "--namespace=ax"},
+			want: globalArgs{cmd: "get", args: []string{"tasks"}, atespace: "team", atespaceExplicit: true, namespace: "ax"},
+		},
+		{
+			name: "omitted atespace is not explicit",
+			args: []string{"apply", "-f", "resource.yaml"},
+			want: globalArgs{cmd: "apply", args: []string{"-f", "resource.yaml"}, atespace: "default", namespace: "ax-system"},
+		},
+		{
+			name: "explicit default atespace",
+			args: []string{"apply", "-a", "default"},
+			want: globalArgs{cmd: "apply", atespace: "default", atespaceExplicit: true, namespace: "ax-system"},
+		},
+		{
+			name: "long atespace flag",
+			args: []string{"apply", "--atespace", "team"},
+			want: globalArgs{cmd: "apply", atespace: "team", atespaceExplicit: true, namespace: "ax-system"},
+		},
+		{
+			name: "atespace with equals",
+			args: []string{"apply", "--atespace=team"},
+			want: globalArgs{cmd: "apply", atespace: "team", atespaceExplicit: true, namespace: "ax-system"},
+		},
+		{
+			name: "explicit default with equals",
+			args: []string{"apply", "--atespace=default"},
+			want: globalArgs{cmd: "apply", atespace: "default", atespaceExplicit: true, namespace: "ax-system"},
+		},
+		{
+			name: "last atespace flag wins",
+			args: []string{"-a", "team", "apply", "--atespace=default"},
+			want: globalArgs{cmd: "apply", atespace: "default", atespaceExplicit: true, namespace: "ax-system"},
+		},
+		{
+			name: "flags after -- belong to the remote command",
+			args: []string{"ssh", "task123", "--", "cmd", "-n", "foo", "-a", "file", "--atespace", "remote", "--atespace=remote"},
+			want: globalArgs{
+				cmd:       "ssh",
+				args:      []string{"task123", "--", "cmd", "-n", "foo", "-a", "file", "--atespace", "remote", "--atespace=remote"},
+				atespace:  "default",
+				namespace: "ax-system",
+			},
+		},
+		{
+			name: "global flags before -- still apply",
+			args: []string{"ssh", "-a", "team", "task123", "--", "cmd", "--context=x", "--atespace=remote"},
+			want: globalArgs{
+				cmd:              "ssh",
+				args:             []string{"task123", "--", "cmd", "--context=x", "--atespace=remote"},
+				atespace:         "team",
+				atespaceExplicit: true,
+				namespace:        "ax-system",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseGlobalArgs(tt.args); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseGlobalArgs(%q) = %+v, want %+v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSSHArgs(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		wantTask    string
+		wantCommand []string
+		wantHelp    bool
+		wantErr     bool
+	}{
+		{name: "long help", args: []string{"--help"}, wantHelp: true},
+		{name: "short help", args: []string{"-h"}, wantHelp: true},
+		{name: "no args", args: nil, wantErr: true},
+		{name: "no task before --", args: []string{"--", "ls"}, wantErr: true},
+		{name: "unknown flag", args: []string{"--verbose", "task123"}, wantErr: true},
+		{name: "default shell", args: []string{"task123"}, wantTask: "task123", wantCommand: []string{"/bin/sh"}},
+		{
+			name:        "command after --",
+			args:        []string{"task123", "--", "ls", "-la", "/workspace"},
+			wantTask:    "task123",
+			wantCommand: []string{"ls", "-la", "/workspace"},
+		},
+		{
+			name:        "command without --",
+			args:        []string{"task123", "python3", "main.py"},
+			wantTask:    "task123",
+			wantCommand: []string{"python3", "main.py"},
+		},
+		{
+			name:        "later -- is kept with leading --",
+			args:        []string{"task123", "--", "git", "log", "--", "file"},
+			wantTask:    "task123",
+			wantCommand: []string{"git", "log", "--", "file"},
+		},
+		{
+			name:        "later -- is kept without leading --",
+			args:        []string{"task123", "git", "log", "--", "file"},
+			wantTask:    "task123",
+			wantCommand: []string{"git", "log", "--", "file"},
+		},
+		{
+			name:        "help after the task name goes to the remote command",
+			args:        []string{"task123", "--", "git", "--help"},
+			wantTask:    "task123",
+			wantCommand: []string{"git", "--help"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task, command, help, err := parseSSHArgs(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseSSHArgs(%q) error = %v, wantErr %v", tt.args, err, tt.wantErr)
+			}
+			if task != tt.wantTask || help != tt.wantHelp || !reflect.DeepEqual(command, tt.wantCommand) {
+				t.Errorf("parseSSHArgs(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.args, task, command, help, tt.wantTask, tt.wantCommand, tt.wantHelp)
+			}
+		})
 	}
 }

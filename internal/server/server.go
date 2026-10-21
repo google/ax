@@ -23,16 +23,18 @@ import (
 
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
+	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Reconciler coordinates sandbox/actor lifecycles on Agent Substrate directly.
 type Reconciler interface {
-	Reconcile(ctx context.Context, task *v1alpha1.Task, workspaces ...*v1alpha1.Workspace) (*v1alpha1.Task, error)
+	Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error)
 	ReconcileDelete(ctx context.Context, atespace, taskName string) error
 }
 
@@ -160,16 +162,19 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	defer unlock()
 
-	_, err = s.store.GetTask(ctx, atespace, taskName)
+	existing, err := s.store.GetTask(ctx, atespace, taskName)
 	if err == nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
+		if existing.GetStatus().GetPhase() != "Pending" || !proto.Equal(existing.GetSpec(), task.GetSpec()) {
+			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
+		}
+		task = existing
 	}
-	if !errors.Is(err, store.ErrNotFound) {
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
-	if task.Metadata.CreationTimestamp == nil {
-		task.Metadata.CreationTimestamp = timestamppb.Now()
+	if task.Metadata.CreateTime == nil {
+		task.Metadata.CreateTime = timestamppb.Now()
 	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -181,12 +186,21 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	// Directly reconcile with Substrate
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
 			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
-			task.Status.Phase = "Failed"
+			if reconciled != nil && reconciled.Status != nil {
+				task.Status = reconciled.Status
+			}
+			if substrate.IsTransientError(err) {
+				task.Status.Phase = "Pending"
+			} else if task.Status.Phase != "Pending" {
+				task.Status.Phase = "Failed"
+			}
 			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			if substrate.IsTransientError(err) {
+				return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
+			}
 			return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
@@ -284,9 +298,11 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	task.Status.Phase = "Suspended"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
+			if substrate.IsTransientError(err) {
+				return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
+			}
 			return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
@@ -332,11 +348,20 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	task.Status.Phase = "Running"
 
 	if s.reconciler != nil {
-		workspaces := s.fetchWorkspaces(ctx, atespace, task)
-		reconciled, err := s.reconciler.Reconcile(ctx, task, workspaces...)
+		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
-			task.Status.Phase = "Failed"
+			if reconciled != nil && reconciled.Status != nil {
+				task.Status = reconciled.Status
+			}
+			if substrate.IsTransientError(err) {
+				task.Status.Phase = "Pending"
+			} else if task.Status.Phase != "Pending" {
+				task.Status.Phase = "Failed"
+			}
 			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			if substrate.IsTransientError(err) {
+				return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
+			}
 			return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
@@ -352,20 +377,18 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	return task, nil
 }
 
-func (s *Server) fetchWorkspaces(ctx context.Context, atespace string, task *v1alpha1.Task) []*v1alpha1.Workspace {
-	var workspaces []*v1alpha1.Workspace
-	if task.Spec == nil {
-		return workspaces
+// fetchWorkspace loads the Workspace the task binds, or nil when the task
+// binds none or the Workspace does not exist.
+func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Workspace {
+	name := task.GetSpec().GetWorkspace().GetName()
+	if name == "" {
+		return nil
 	}
-	for _, ref := range task.Spec.WorkspaceRefs() {
-		if ref.Name == "" {
-			continue
-		}
-		if wsp, err := s.store.GetWorkspace(ctx, atespace, ref.Name); err == nil {
-			workspaces = append(workspaces, wsp)
-		}
+	ws, err := s.store.GetWorkspace(ctx, atespace, name)
+	if err != nil {
+		return nil
 	}
-	return workspaces
+	return ws
 }
 
 func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStreamingServer[v1alpha1.WatchTaskResponse]) error {
@@ -586,17 +609,16 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	if meta.Atespace == "" {
 		meta.Atespace = "default"
 	}
-	if meta.CreationTimestamp == nil {
+	if meta.CreateTime == nil {
 		var prev *v1alpha1.ObjectMeta
 		if existing != nil {
 			prev = existing(meta.Atespace, meta.Name)
 		}
-		if prev.GetCreationTimestamp() != nil {
-			meta.CreationTimestamp = prev.GetCreationTimestamp()
+		if prev.GetCreateTime() != nil {
+			meta.CreateTime = prev.GetCreateTime()
 		} else {
-			meta.CreationTimestamp = timestamppb.Now()
+			meta.CreateTime = timestamppb.Now()
 		}
 	}
 	return meta
 }
-

@@ -20,6 +20,15 @@ This project follows [Google's Open Source Community Guidelines](https://opensou
 
 All submissions, including submissions by project members, require review. We use GitHub pull requests for this purpose. Consult [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more information on using pull requests.
 
+Every pull request to `main` needs one approving review and a passing `build-and-test` check before it can be merged. A push after an approval needs a fresh approval.
+
+When you start on an issue or pull request, assign yourself to it, so others know it is being worked on.
+
+### Merging
+
+- **Pull requests from project members:** The author merges once the pull request is approved and CI is green. The author knows when a change is ready, and is the one who rebases when pull requests have to land in order.
+- **Pull requests from external contributors:** The reviewer who approves also merges, since external contributors cannot merge.
+
 ---
 
 ## Development Workflow

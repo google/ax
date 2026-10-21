@@ -10,7 +10,7 @@ Use the Service DNS name and add the header. This is exactly how AX polls a task
 
 ```bash
 curl -H "ate-target-actor: default/task123" \
-  http://atenet-router.ate-system.svc.cluster.local/metadata/v1alpha1/ax/task
+  http://atenet-router.ate-system.svc.cluster.local/readyz
 ```
 
 ## From your machine

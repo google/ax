@@ -29,6 +29,7 @@ import (
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store/redis"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/pkg/apis/v1alpha1"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -57,7 +58,7 @@ func main() {
 	flag.BoolVar(&substrateInsecureTLS, "substrate-insecure-tls", false, "Skip Substrate TLS verification")
 	flag.BoolVar(&substratePlaintext, "substrate-plaintext", false, "Use insecure plaintext gRPC connection to Substrate")
 	flag.StringVar(&defaultTemplate, "template", "default-template", "Default Substrate ActorTemplate name")
-	flag.StringVar(&defaultTemplateAtespace, "template-atespace", "ax-system", "Default Substrate ActorTemplate atespace")
+	flag.StringVar(&defaultTemplateAtespace, "template-atespace", v1alpha1.DefaultSystemNamespace, "Default Substrate ActorTemplate atespace")
 	flag.Parse()
 
 	if envAddr := os.Getenv("ADDR"); envAddr != "" {

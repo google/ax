@@ -35,7 +35,8 @@ const (
 	KindWorkspace = "Workspace"
 	KindModel     = "Model"
 
-	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
+	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
+	DefaultSystemNamespace = "ax-system"
 
 	// PhaseTerminating marks a task whose deletion has been requested and whose
 	// actor is being torn down. The record disappears once cleanup completes.
@@ -202,45 +203,22 @@ func (w *Workspace) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, 
 func (m *Model) MarshalYAML() (any, error)        { return marshalYAML(m) }
 func (m *Model) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, m, normalizeModel) }
 
-// Workspace bindings.
+// Workspace binding.
 //
-// A task binds one or more workspaces through spec.workspaces. Every entry is
-// treated the same way regardless of how many there are.
+// A task binds at most one workspace through spec.workspace.
 
-// DefaultWorkspacePath is the durable volume every workspace lives under. A
-// binding without a path is mounted at DefaultWorkspacePath/<name>, and a task
-// with no bindings gets an empty working directory at DefaultWorkspacePath.
+// DefaultWorkspacePath is where the task's workspace is mounted unless the
+// binding sets a path. It is the task command's working directory, and a task
+// with no workspace gets an empty directory there.
 const DefaultWorkspacePath = "/workspace"
 
-// WorkspaceRefs returns the workspaces the task binds, in declaration order,
-// with nil entries dropped.
-func (s *TaskSpec) WorkspaceRefs() []*WorkspaceRef {
-	if s == nil {
-		return nil
+// WorkspacePath returns the task command's working directory: the bound
+// workspace's path when set, otherwise DefaultWorkspacePath.
+func (s *TaskSpec) WorkspacePath() string {
+	if p := s.GetWorkspace().GetPath(); p != "" {
+		return p
 	}
-	out := make([]*WorkspaceRef, 0, len(s.GetWorkspaces()))
-	for _, r := range s.GetWorkspaces() {
-		if r != nil {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// WorkspacePaths returns the mount path of each workspace in WorkspaceRefs, in
-// the same order. An explicit path wins; otherwise the workspace lands at
-// DefaultWorkspacePath/<name>.
-func (s *TaskSpec) WorkspacePaths() []string {
-	refs := s.WorkspaceRefs()
-	paths := make([]string, len(refs))
-	for i, r := range refs {
-		if r.GetPath() != "" {
-			paths[i] = r.GetPath()
-		} else {
-			paths[i] = DefaultWorkspacePath + "/" + r.GetName()
-		}
-	}
-	return paths
+	return DefaultWorkspacePath
 }
 
 // Resource names.
@@ -311,33 +289,13 @@ func ValidateTask(t *Task) error {
 		return err
 	}
 	spec := t.GetSpec()
-	if spec == nil {
-		return nil
+	if ref := spec.GetWorkspace(); ref != nil {
+		if ref.GetName() == "" {
+			return errors.New("spec.workspace: name is required")
+		}
+		if p := ref.GetPath(); p != "" && !strings.HasPrefix(p, "/") {
+			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
+		}
 	}
-	refs := spec.WorkspaceRefs()
-	paths := spec.WorkspacePaths()
-	names := make(map[string]bool, len(refs))
-	seen := make(map[string]string, len(refs))
-	for i, r := range refs {
-		field := fmt.Sprintf("spec.workspaces[%d]", i)
-		if r.GetName() == "" {
-			return fmt.Errorf("%s: name is required", field)
-		}
-		if names[r.GetName()] {
-			return fmt.Errorf("%s: workspace %q is bound more than once", field, r.GetName())
-		}
-		names[r.GetName()] = true
-		if r.GetPath() != "" && !strings.HasPrefix(r.GetPath(), "/") {
-			return fmt.Errorf("%s: path %q must be absolute", field, r.GetPath())
-		}
-		p := strings.TrimRight(paths[i], "/")
-		if p == "" {
-			p = "/"
-		}
-		if other, dup := seen[p]; dup {
-			return fmt.Errorf("%s: path %q is already used by workspace %q", field, paths[i], other)
-		}
-		seen[p] = r.GetName()
-	}
-	return nil
+	return ValidateResources(spec.GetResources())
 }

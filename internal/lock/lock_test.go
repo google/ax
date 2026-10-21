@@ -16,12 +16,16 @@ package lock_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/ax/internal/lock"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestMemoryLocker_SerializesSameResource(t *testing.T) {
@@ -93,4 +97,52 @@ func TestMemoryLocker_Timeout(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected timeout error, got nil")
 	}
+}
+
+// newTestRedisClient returns a client for the Redis at $REDIS_ADDR, skipping the
+// test when it is unset.
+func newTestRedisClient(t *testing.T) *redis.Client {
+	t.Helper()
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		t.Skip("REDIS_ADDR not set; skipping Redis-backed lock test")
+	}
+	client := redis.NewClient(&redis.Options{Addr: addr})
+	t.Cleanup(func() { _ = client.Close() })
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		t.Skipf("redis at %s unreachable: %v", addr, err)
+	}
+	return client
+}
+
+// TestRedisLocker_RenewsLeaseWhileHeld verifies that a held lock outlives its
+// TTL (because it is renewed) and that waiters acquire it only after release.
+func TestRedisLocker_RenewsLeaseWhileHeld(t *testing.T) {
+	client := newTestRedisClient(t)
+	ttl := 300 * time.Millisecond
+	locker := lock.NewRedisLocker(client, lock.RedisLockerOptions{TTL: ttl, FallbackInterval: 20 * time.Millisecond})
+	ctx := context.Background()
+	name := fmt.Sprintf("renew-%d", time.Now().UnixNano())
+
+	unlock, err := locker.Lock(ctx, "task", "default", name)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+
+	// Hold the lock for several TTLs; a contender must not get it meanwhile.
+	waitCtx, cancel := context.WithTimeout(ctx, 4*ttl)
+	defer cancel()
+	if _, err := locker.Lock(waitCtx, "task", "default", name); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected contender deadline while lease was held, got %v", err)
+	}
+
+	unlock()
+
+	acquireCtx, cancel2 := context.WithTimeout(ctx, ttl)
+	defer cancel2()
+	unlock2, err := locker.Lock(acquireCtx, "task", "default", name)
+	if err != nil {
+		t.Fatalf("lock after release: %v", err)
+	}
+	unlock2()
 }
