@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -30,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/guest"
+	"github.com/google/ax/internal/local"
 	"github.com/google/ax/internal/tunnel"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
@@ -48,12 +50,11 @@ func main() {
 
 	opts := parseGlobalArgs(os.Args[1:])
 	var (
-		cmd            = opts.cmd
-		cleanArgs      = opts.args
-		atespace       = opts.atespace
-		explicitServer = opts.server
-		kubeContext    = opts.kubeContext
-		axNamespace    = opts.namespace
+		cmd         = opts.cmd
+		cleanArgs   = opts.args
+		atespace    = opts.atespace
+		kubeContext = opts.kubeContext
+		axNamespace = opts.namespace
 	)
 
 	if cmd == "" {
@@ -70,7 +71,13 @@ func main() {
 		printUsage()
 		return
 	case "ctx", "context":
-		if err := runContext(kubeContext); err != nil {
+		if err := runContext(opts, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "config":
+		if err := runConfig(opts, cleanArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -94,15 +101,37 @@ func main() {
 		}
 	}
 
-	// Resolve the AX server URL (auto-tunneling to active kube context if not explicitly set)
-	serverURL, err := tunnel.EnsureServerURL(tunnel.Options{
-		ServerURL: explicitServer,
-		Context:   kubeContext,
-		Namespace: axNamespace,
-	})
+	// Pick the control plane: the in-process local one by default, or AX in
+	// a Kubernetes cluster (auto-tunneled) or at an explicit server.
+	tgt, err := resolveTarget(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+	var serverURL string
+	cleanup := func() {}
+	if tgt.local {
+		configureLocalLogging()
+		env, err := local.Open(local.Options{Progress: os.Stderr})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: starting local AX: %v\n", err)
+			os.Exit(1)
+		}
+		cleanup = func() { _ = env.Close() }
+		dialAX = func(string) (*grpc.ClientConn, error) { return env.Dial() }
+		// Creating a task may pull its image first.
+		applyTimeout = localApplyTimeout
+	} else {
+		kubeContext = tgt.kubeContext
+		serverURL, err = tunnel.EnsureServerURL(tunnel.Options{
+			ServerURL: tgt.serverURL,
+			Context:   kubeContext,
+			Namespace: axNamespace,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	switch cmd {
@@ -127,15 +156,28 @@ func main() {
 	case "ssh":
 		err = runSSH(serverURL, atespace, kubeContext, cleanArgs)
 	default:
+		cleanup()
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		printUsage()
 		os.Exit(1)
 	}
 
+	cleanup()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// configureLocalLogging quiets the embedded server's logs, which are written
+// for a server log rather than a terminal; failures reach the user as command
+// errors anyway. AX_DEBUG=1 shows everything.
+func configureLocalLogging() {
+	level := slog.LevelError + 4 // above every level the server uses
+	if os.Getenv("AX_DEBUG") != "" {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 }
 
 // globalArgs holds the command name, the flags shared by every command, and the
@@ -224,26 +266,49 @@ Available Commands:
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace
   delete model <name>     Delete a model
-  ctx, context            Show active Kubernetes context and AX connection
+  ctx, context            Show where commands are sent (local, a Kubernetes context, or a server)
+  config use-context <name> Choose where commands go: local, kube (follow kubectx), or a kube context
+  config current-context  Print the context in use
+  config get-contexts     List available contexts
   tunnel <list|stop>      Manage background tunnels to Kubernetes clusters
   version                 Print AX version
+
+By default ax runs everything locally: state is kept in ~/.ax/db.sqlite and
+tasks run as containers via Podman (or Docker; set $AX_CONTAINER_RUNTIME).
 
 Flags:
   -a, --atespace string       Task atespace scope (default: "default")
   -n, --namespace string      Kubernetes namespace where AX is installed (default: "ax-system")
-  --context string            Kubernetes context (defaults to active kubectx / current-context)
-  --server string             AX API server address (default: auto-detected from kube context or $AX_SERVER)`)
+  --context string            "local" or a Kubernetes context with AX installed
+                              (default: $AX_CONTEXT, then 'ax config use-context', then local)
+  --server string             AX API server address (default: $AX_SERVER)`)
 }
 
-func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {
+// dialAX connects to the AX API at serverURL. In local mode main replaces it
+// with a connection to the in-process server.
+var dialAX = func(serverURL string) (*grpc.ClientConn, error) {
 	target := strings.TrimPrefix(serverURL, "http://")
 	target = strings.TrimPrefix(target, "https://")
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to %s: %w", target, err)
+		return nil, fmt.Errorf("connecting to %s: %w", target, err)
+	}
+	return conn, nil
+}
+
+func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {
+	conn, err := dialAX(serverURL)
+	if err != nil {
+		return nil, nil, err
 	}
 	return v1alpha1.NewAXClient(conn), conn, nil
 }
+
+// applyTimeout bounds `ax apply`. Local mode raises it to localApplyTimeout
+// because creating a task may first pull its image.
+var applyTimeout = 30 * time.Second
+
+const localApplyTimeout = 15 * time.Minute
 
 // A nil atespace leaves manifest atespaces unchanged and lets the server default missing ones.
 func runApply(serverURL string, atespace *string, args []string) error {
@@ -261,7 +326,7 @@ func runApply(serverURL string, atespace *string, args []string) error {
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), applyTimeout)
 	defer cancel()
 
 	// Manifests are parsed here and submitted one resource at a time through the
@@ -949,28 +1014,6 @@ func formatAge(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
-}
-
-func runContext(kubeContext string) error {
-	ctxName, err := tunnel.CurrentContext(kubeContext)
-	if err != nil || ctxName == "" {
-		fmt.Println("No active Kubernetes context detected.")
-		fmt.Println("Fallback server: http://localhost:8080 (or set $AX_SERVER / --server)")
-		return nil
-	}
-
-	fmt.Printf("Active Kubernetes Context: %s\n", ctxName)
-	if t, err := tunnel.GetTunnel(ctxName); err == nil && t != nil {
-		status := "Healthy"
-		if !tunnel.IsTunnelHealthy(t.Port) {
-			status = "Stale / Not responding"
-		}
-		fmt.Printf("AX Tunnel:                 http://127.0.0.1:%d -> %s/svc/%s:8080 (PID: %d, %s)\n",
-			t.Port, t.Namespace, t.Service, t.PID, status)
-	} else {
-		fmt.Println("AX Tunnel:                 No background tunnel running (will auto-connect on next command)")
-	}
-	return nil
 }
 
 func runTunnel(args []string) error {

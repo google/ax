@@ -89,6 +89,12 @@ var quantitySuffixes = map[string]*big.Rat{
 	"Ei": big.NewRat(1<<60, 1),
 }
 
+// ParseQuantity evaluates a Kubernetes quantity string such as "500m", "2" or
+// "4Gi" to its exact value in base units (cores for cpu, bytes for memory).
+func ParseQuantity(s string) (*big.Rat, error) {
+	return parseQuantity(s)
+}
+
 // parseQuantity evaluates a Kubernetes quantity string to its exact value in
 // base units (cores for cpu, bytes for memory).
 func parseQuantity(s string) (*big.Rat, error) {

@@ -199,9 +199,9 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 			}
 			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
 			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
+				return nil, status.Errorf(codes.Unavailable, "provisioning task: %v", err)
 			}
-			return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
+			return nil, status.Errorf(codes.Internal, "provisioning task: %v", err)
 		}
 		task.Status = reconciled.Status
 		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
@@ -301,9 +301,9 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
 		if err != nil {
 			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
+				return nil, status.Errorf(codes.Unavailable, "suspending task: %v", err)
 			}
-			return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
+			return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
 		}
 		task.Status = reconciled.Status
 		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
@@ -360,9 +360,9 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 			}
 			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
 			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
+				return nil, status.Errorf(codes.Unavailable, "resuming task: %v", err)
 			}
-			return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
+			return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
 		}
 		task.Status = reconciled.Status
 		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {

@@ -25,9 +25,24 @@ Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its co
 
 | Binary | Role |
 |---|---|
-| `ax` | Developer CLI. Applies manifests, inspects and watches resources, tunnels to the cluster. |
+| `ax` | Developer CLI. Applies manifests, inspects and watches resources, tunnels to the cluster. In local mode (the default) it embeds the control plane itself; see below. |
 | `ax-server` | Direct-execution gRPC API on port 8080. Validates manifests, manages distributed locks, reconciles directly with Agent Substrate, and persists state to Redis. |
 | `ax-task-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
+
+## Local mode
+
+For development, `ax` runs the same API server in-process, with three substitutions behind the server's existing interfaces. The store is SQLite (`~/.ax/db.sqlite`) instead of Redis, and locks are `flock` files instead of Redis leases. The reconciler drives local containers through Podman or Docker instead of Substrate actors. Every CLI invocation is short-lived and shares state through the database. Containers outlive it. See [Development](docs/development.md#local-mode).
+
+```
+                 ax apply -f task.yaml
+                          │
+          ┌───────────────┴────────────── ax process ──┐
+          │  AX API server (in-process, bufconn gRPC)  │
+          └───────┬─────────────────────────┬──────────┘
+                  ▼                         ▼
+         ~/.ax/db.sqlite          podman / docker CLI
+     (store, ~/.ax/locks)     (one container per task)
+```
 
 ## API reference
 

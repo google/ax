@@ -25,7 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --no-cache-dir google-antigravity
 
-COPY bin/linux_amd64/ax-task-runner /usr/local/bin/ax-task-runner
+# amd64 for cluster images; `make build-local-image` passes the host's arch.
+ARG TARGETARCH=amd64
+COPY bin/linux_${TARGETARCH}/ax-task-runner /usr/local/bin/ax-task-runner
 COPY cmd/ax-task-runner/antigravity_bootstrap.py /usr/local/bin/antigravity_bootstrap.py
 
 ENTRYPOINT ["/usr/local/bin/ax-task-runner"]

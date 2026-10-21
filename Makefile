@@ -19,7 +19,7 @@ AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
 TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
 CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
 
-.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test clean
+.PHONY: all build build-binaries build-task-runner build-local-image install push push-task-runner deploy deploy-server deploy-redis apply-example test clean
 
 all: build
 
@@ -48,6 +48,18 @@ build-task-runner:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_amd64/ax-task-runner ./cmd/ax-task-runner
 	@echo "==> Building container image $(TASK_RUNNER_REPO):latest using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/amd64 -t $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner .
+
+# Build the task runner image for this machine's architecture and tag it as the
+# default task image, so `ax` in local mode runs tasks without pulling from a
+# registry or emulating amd64.
+LOCAL_ARCH ?= $(shell go env GOARCH)
+DEFAULT_TASK_IMAGE ?= gcr.io/ax-substrate/ate-images/ax-task-runner
+build-local-image:
+	@echo "==> Cross-compiling ax-task-runner for linux/$(LOCAL_ARCH)..."
+	@mkdir -p bin/linux_$(LOCAL_ARCH)
+	GOOS=linux GOARCH=$(LOCAL_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(LOCAL_ARCH)/ax-task-runner ./cmd/ax-task-runner
+	@echo "==> Building $(DEFAULT_TASK_IMAGE):latest for linux/$(LOCAL_ARCH) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/$(LOCAL_ARCH) --build-arg TARGETARCH=$(LOCAL_ARCH) -t $(DEFAULT_TASK_IMAGE):latest -f Dockerfile.task-runner .
 
 # Push task-runner container image to registry
 push-task-runner: build-task-runner

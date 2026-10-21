@@ -12,6 +12,8 @@
 
 AX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
 
+You don't need a cluster to start. Out of the box, `ax` runs the whole control plane on your laptop: state lives in SQLite, and tasks run as [Podman](https://podman.io) or Docker containers. When you're ready, point the same CLI and manifests at a cluster.
+
 ```yaml
 # task.yaml
 apiVersion: ax.io/v1alpha1
@@ -34,10 +36,11 @@ spec:
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 
-Then apply it, watch it come up, and look over the agent's shoulder:
+Then apply it, start it, watch it come up, and look over the agent's shoulder:
 
 ```bash
 ax apply -f task.yaml
+ax resume task test
 ax watch task test
 ax ssh test -- ls -al /workspace
 ```
@@ -50,7 +53,7 @@ Agents are a new kind of workload. They are neither stateless microservices nor 
 |---|---|
 | Run untrusted agent code in an isolated sandbox with CPU/memory limits | **`Task`** |
 | Pre-wire Git repos, MCP servers, and skill packages so every agent starts warm | **`Workspace`** |
-| Configure which LLM the platform itself uses, with credentials from a Kubernetes secret | **`Model`** |
+| Configure which LLM the platform itself uses, with credentials from a Kubernetes secret (or your shell, locally) | **`Model`** |
 | Pause an idle agent and pick up exactly where it left off | `ax suspend` / `ax resume` |
 | Shell into a running agent to see what it is doing | `ax ssh` |
 
@@ -58,7 +61,47 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 
 ## Quick start
 
-### Prerequisites
+### Run locally (no cluster needed)
+
+`ax` ships with a local control plane. Out of the box, every command runs on your machine: state lives in `~/.ax/db.sqlite`, and tasks run as containers through [Podman](https://podman.io), an open-source, daemonless container engine. Docker works too.
+
+You need [Go](https://go.dev/doc/install) and a container runtime:
+
+```bash
+brew install podman && podman machine init && podman machine start   # once; on Linux just install podman
+```
+
+Then install the CLI and build the task image for your machine:
+
+```bash
+git clone https://github.com/google/ax.git && cd ax
+make install build-local-image   # ax CLI + native task-runner image, tagged as the default task image
+```
+
+Run a task:
+
+```bash
+ax apply -f examples/local.yaml   # a Workspace that clones a repo, and a Task bound to it
+ax resume task hello              # tasks are created suspended, as on a cluster
+ax describe task hello
+ax ssh hello -- ls /workspace
+ax delete task hello
+```
+
+There's no daemon to start. Each `ax` command serves the AX API in-process. Task containers are named `ax.<atespace>.<task>`, so `podman logs ax.default.hello` shows the runner's output. Other useful settings:
+
+| Variable | Effect |
+|---|---|
+| `AX_CONTAINER_RUNTIME` | Container CLI to use: `podman`, `docker` or `nerdctl`. Defaults to the first one found on `PATH`. |
+| `AX_HOME` | State directory. Defaults to `~/.ax`. |
+| `GEMINI_API_KEY` | Passed to task containers. Stands in for the Kubernetes secret used on clusters. |
+| `AX_DEBUG=1` | Show the embedded control plane's logs. |
+
+See [Development](docs/development.md#local-mode) for how local mode maps onto Agent Substrate and how it differs.
+
+### Run on a cluster
+
+#### Prerequisites
 
 AX schedules every task as a sandboxed actor on [Agent Substrate](https://github.com/agent-substrate/substrate), so Substrate must be running in your cluster before you deploy AX. You need:
 
@@ -72,7 +115,7 @@ To install Agent Substrate, follow the instructions in the [Substrate README](ht
 kubectl get svc api -n ate-system
 ```
 
-### 1. Install the CLI
+#### 1. Install the CLI
 
 ```bash
 go install github.com/google/ax/cmd/ax@latest
@@ -80,7 +123,7 @@ go install github.com/google/ax/cmd/ax@latest
 
 This puts the `ax` binary in `$(go env GOPATH)/bin`. Make sure that directory is on your `PATH`.
 
-### 2. Deploy the control plane
+#### 2. Deploy the control plane
 
 With the [prerequisites](#prerequisites) in place — most importantly a reachable Agent Substrate Control API — deploy the AX control plane:
 
@@ -90,7 +133,15 @@ make deploy AX_IMAGE_REPO=<your-registry>
 
 This deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
 
-### 3. Run your first task
+#### 3. Point `ax` at the cluster
+
+`ax` runs locally until told otherwise. Have it follow your active Kubernetes context:
+
+```bash
+ax config use-context kube
+```
+
+#### 4. Run your first task
 
 ```bash
 ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
@@ -116,12 +167,12 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 | [Runners](docs/runner.md) | Understand the contract between the control plane and the task container, and build your own runner image to replace the default. |
 | [Networking](docs/networking.md) | Reach a running task through the atenet router from the cluster, your laptop, or a gRPC client. |
 | [Architecture](DESIGN.md) | Understand how the control plane fits together, plus the [API reference](DESIGN.md#api-reference). |
-| [Development](docs/development.md) | Build, test, and ship changes to AX itself. |
+| [Development](docs/development.md) | Build, test, and ship changes to AX itself, and learn how [local mode](docs/development.md#local-mode) works. |
 | [Roadmap](docs/roadmap.md) | See planned milestones across core specs, actor architecture, agentic environments, and governance. |
 
 ## CLI usage
 
-`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs.
+`ax` talks to the control plane over gRPC. That's the in-process local one by default, or AX on a cluster (see [Choosing where `ax` runs](#choosing-where-ax-runs)). It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs. Every command works the same way locally and on a cluster.
 
 ### Everyday commands
 
@@ -159,26 +210,38 @@ ax describe model default-model
 ax delete model default-model
 
 # Connection plumbing
-ax ctx                                # active kube context and how ax is reaching the control plane
+ax ctx                                # where commands go: local, a kube context, or a server
+ax config get-contexts                # list contexts: local, kube, and your kubeconfig's
+ax config current-context             # print the context in use
+ax config use-context local           # run locally (the default)
+ax config use-context kube            # follow the active kube context
 ax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)
 ax tunnel stop
 ax version
 ```
 
-### Works with `kubectx`
+### Choosing where `ax` runs
 
-`ax` follows your active Kubernetes context. Switch clusters and `ax` resolves and tunnels to that cluster's control plane in the background.
+By default `ax` runs locally. To work with AX on a cluster, run `ax config use-context kube`. `ax` then follows your active Kubernetes context: switch clusters, and it resolves and tunnels to that cluster's control plane in the background.
 
 ```bash
+ax config use-context kube
+
 kubectx staging-cluster
 ax get tasks
 
 kubectx prod-cluster
 ax get tasks
 
-# Or target a context without switching
+# Or target a context for one command, without changing anything
 ax --context=dev-cluster get tasks
+ax --context=local get tasks
+
+# Or pin a context instead of following kubectx
+ax config use-context dev-cluster
 ```
+
+The choice is saved in `~/.ax/config.yaml`. `$AX_CONTEXT` overrides it for a single shell.
 
 ### Global flags
 
@@ -186,8 +249,8 @@ ax --context=dev-cluster get tasks
 |---|---|---|
 | `-a`, `--atespace` | Atespace scope for the command | `default` |
 | `-n`, `--namespace` | Kubernetes namespace where AX is installed | `ax-system` |
-| `--context` | Kubernetes context to target | active `kubectx` / `current-context` |
-| `--server` | Control plane address, bypassing auto-detection | derived from kube context, or `$AX_SERVER` |
+| `--context` | `local`, `kube`, or a Kubernetes context to target | `$AX_CONTEXT`, then `ax config use-context`, then `local` |
+| `--server` | Control plane address, bypassing context resolution | `$AX_SERVER` |
 
 ## License
 
