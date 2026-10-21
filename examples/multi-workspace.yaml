@@ -1,0 +1,44 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A Task bound to a single Workspace: the git repository that is cloned into
+# the sandbox and becomes the command's working directory. A Task binds one
+# workspace through spec.workspace ("Binding a workspace" in
+# `docs/manifests.md`); `examples/task.yaml` is the complete, linked example.
+#
+#   ax apply -f examples/multi-workspace.yaml
+#   ax resume task repo-task
+#   ax ssh repo-task -- ls -la /workspace
+---
+apiVersion: ax.io/v1alpha1
+kind: Workspace
+metadata:
+  name: my-service
+  atespace: default
+spec:
+  git:
+    - name: origin
+      repo: "https://github.com/chalk/chalk.git"
+      branch: "main"
+---
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: repo-task
+  atespace: default
+spec:
+  image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
+  workspace:
+    name: my-service          # the command's working directory
+  debug: true # serve guest services so `ax ssh` works; off by default

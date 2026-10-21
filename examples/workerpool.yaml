@@ -1,0 +1,52 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# A minimal WorkerPool for AX tasks.
+#
+# AX runs every task as a Substrate actor, and an actor needs a free worker
+# from a WorkerPool. Nothing creates one for you — not `make deploy`, and not
+# the Substrate installer — so without a pool the first `ax resume` fails
+# with `ResourceExhausted: no free workers available`.
+#
+# Worker selection is cluster-wide (matched by sandbox class and labels), so
+# the namespace below only decides where the worker pods are managed.
+#
+# The `ko://` worker image builds from Substrate sources, so apply this file
+# with `ko apply` from a Substrate checkout:
+#
+#   KO_DOCKER_REPO=<your-registry> ko apply -f <path-to-this-file>
+#
+# Before applying, set the nodeSelector value to the version label your
+# Substrate install put on your nodes — a pool whose selector matches no
+# node never schedules its workers:
+#
+#   kubectl get ds -n ate-system -l app=atelet -L ate.dev/substrate-version
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: ax-pool
+  namespace: default
+spec:
+  replicas: 2
+  workerImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
+  template:
+    nodeSelector:
+      ate.dev/substrate-version: "<installed version>" # e.g. v0.2.0, or v0.2.0-10-g1d7ca8ce from a source install
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "1Gi"
