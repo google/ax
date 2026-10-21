@@ -14,8 +14,8 @@
 
 # A Task bound to a single Workspace: the git repository that is cloned into
 # the sandbox and becomes the command's working directory. A Task binds one
-# workspace; `docs/manifests.md` describes the binding and links here for a
-# complete set. The filename keeps the link in `docs/manifests.md` resolving.
+# workspace through spec.workspace ("Binding a workspace" in
+# `docs/manifests.md`); `examples/task.yaml` is the complete, linked example.
 #
 #   ax apply -f examples/multi-workspace.yaml
 #   ax resume task repo-task
