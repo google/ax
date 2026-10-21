@@ -28,22 +28,17 @@ kind: Task
 metadata:
   name: test
 spec:
-  image: "YOUR_RUNNER_REPOSITORY@sha256:YOUR_DIGEST"
   workspace:
     name: golang
     goal: "Ensure that Go tool chain is available and is built from source"
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 
-With the CLI, server, and runner built from this checkout, replace the image
-with your runner's digest reference, then apply it and look over the agent's
-shoulder. For the version-pinned baseline, use the task in the
-[installation guide](docs/installation.md).
+Then apply it, watch it come up, and look over the agent's shoulder:
 
 ```bash
 ax apply -f task.yaml
-ax resume task test
-ax watch task test                  # Ctrl-C to stop watching
+ax watch task test
 ax ssh test -- ls -al /workspace
 ```
 
@@ -61,43 +56,60 @@ Agents are a new kind of workload. They are neither stateless microservices nor 
 
 Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single command.
 
-## Version compatibility
-
-Build the CLI, control plane, and task runner from the **same AX ref**. In
-particular, `go install ...@latest` selects a released CLI, which can use a
-different RPC API from a server built from `main`.
-
-These are the Substrate dependencies recorded in each AX ref's `go.mod`.
-They identify source pins; they do not certify an end-to-end deployment or
-compatibility with an entire Substrate release series. The pseudo-versions below
-refer to commits, not published Substrate release tags.
-
-| AX ref | Substrate module version | Substrate checkout |
-|---|---|---|
-| [v0.3.0](https://github.com/google/ax/blob/v0.3.0/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
-| [v0.3.1](https://github.com/google/ax/blob/v0.3.1/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
-| [Development baseline `8d2ccf36f194`](https://github.com/google/ax/blob/8d2ccf36f194f6f58c57b90753bd3986639b562f/go.mod) | `v0.4.1-0.20261009152331-f6a1dc72a35d` | [`f6a1dc72a35d`](https://github.com/agent-substrate/substrate/commit/f6a1dc72a35d9875302e2998b2aa23b67dbc732a) |
-
-The development baseline uses ax-server and Redis. v0.3.0 and v0.3.1 also
-deploy a separate ax-controller; use their own checkouts' manifests and build
-targets. For another AX ref, inspect its `go.mod` rather than substituting the
-latest Substrate release. Update this table and the installation guide when
-changing the documented baseline or publishing an AX release.
-
-<a id="2-deploy-the-control-plane"></a>
-
 ## Quick start
 
-Follow the [version-pinned installation guide](docs/installation.md) to build
-the matching CLI and images, configure Substrate, and run a minimal task. It
-uses your registry and digest-pinned AX images while public release images are
-being addressed in [#487](https://github.com/google/ax/issues/487).
+### Prerequisites
+
+AX schedules every task as a sandboxed actor on [Agent Substrate](https://github.com/agent-substrate/substrate), so Substrate must be running in your cluster before you deploy AX. You need:
+
+- A Kubernetes cluster with **Agent Substrate** installed (see below)
+- [Go](https://go.dev/doc/install) and `kubectl`
+- [`ko`](https://ko.build/) (`brew install ko`) and a container registry your cluster can pull from
+
+To install Agent Substrate, follow the instructions in the [Substrate README](https://github.com/agent-substrate/substrate#readme). Substrate lands in the `ate-system` namespace and exposes its Control API at `api.ate-system.svc.cluster.local:443`, which is where AX expects to find it. Verify it is up before moving on:
+
+```bash
+kubectl get svc api -n ate-system
+```
+
+### 1. Install the CLI
+
+```bash
+go install github.com/google/ax/cmd/ax@latest
+```
+
+This puts the `ax` binary in `$(go env GOPATH)/bin`. Make sure that directory is on your `PATH`.
+
+### 2. Deploy the control plane
+
+With the [prerequisites](#prerequisites) in place — most importantly a reachable Agent Substrate Control API — deploy the AX control plane:
+
+```bash
+make deploy AX_IMAGE_REPO=<your-registry>
+```
+
+This deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
+
+### 3. Run your first task
+
+```bash
+ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
+ax get tasks
+# NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
+# task123   default    Running   task123         10.20.3.67   1m
+
+ax watch task task123                # stream phase and condition changes live
+ax ssh task123 -- ls -la /workspace  # poke around inside the sandbox
+ax suspend task task123              # checkpoint and pause
+ax resume task task123               # pick up where it left off
+```
+
+Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.
 
 ## Documentation
 
 | Guide | Read it to... |
 |---|---|
-| [Installation](docs/installation.md) | Choose matching AX/Substrate sources and deploy your own digest-pinned AX images. |
 | [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, and `Model` each do, and how a task moves through phases and conditions. |
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
@@ -112,9 +124,6 @@ being addressed in [#487](https://github.com/google/ax/issues/487).
 `ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs.
 
 ### Everyday commands
-
-Before applying `examples/task.yaml`, replace its image with a runner digest
-built from the same AX ref as the CLI and control plane.
 
 ```bash
 # Apply anything (multi-document YAML, file or stdin)
