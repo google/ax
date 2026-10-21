@@ -1,10 +1,33 @@
 # Version-pinned installation
 
 This source-install recipe uses the development baseline in the
-[version table](../README.md#version-compatibility), not the v0.3.x deployment
+[version table](#version-compatibility), not the v0.3.x deployment
 layout. Build the CLI, server, and runner from the same checkout. The pins come
 from source dependencies; running the checks below on your cluster establishes
 whether that deployment works.
+
+## Version compatibility
+
+Build the CLI, control plane, and task runner from the **same AX ref**. In
+particular, `go install ...@latest` selects a released CLI, which can use a
+different RPC API from a server built from `main`.
+
+These are the Substrate dependencies recorded in each AX ref's `go.mod`.
+They identify source pins; they do not certify an end-to-end deployment or
+compatibility with an entire Substrate release series. The pseudo-versions below
+refer to commits, not published Substrate release tags.
+
+| AX ref | Substrate module version | Substrate checkout |
+|---|---|---|
+| [v0.3.0](https://github.com/google/ax/blob/v0.3.0/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
+| [v0.3.1](https://github.com/google/ax/blob/v0.3.1/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
+| [Development baseline `8d2ccf36f194`](https://github.com/google/ax/blob/8d2ccf36f194f6f58c57b90753bd3986639b562f/go.mod) | `v0.4.1-0.20261009152331-f6a1dc72a35d` | [`f6a1dc72a35d`](https://github.com/agent-substrate/substrate/commit/f6a1dc72a35d9875302e2998b2aa23b67dbc732a) |
+
+The development baseline uses ax-server and Redis. v0.3.0 and v0.3.1 also
+deploy a separate ax-controller; use their own checkouts' manifests and build
+targets. For another AX ref, inspect its `go.mod` rather than substituting the
+latest Substrate release. Update this table and the installation steps when
+changing the documented baseline or publishing an AX release.
 
 ## Prerequisites
 
