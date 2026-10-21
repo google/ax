@@ -3,10 +3,10 @@ package controller
 import (
 	"context"
 	"log/slog"
+	"math"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/ax/internal/store"
-	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
 // ActorLister lists every Substrate actor. *substrate.Client satisfies it.
@@ -26,20 +26,13 @@ func LogOrphanActors(ctx context.Context, client ActorLister, s store.Store) err
 		return err
 	}
 
-	// An empty atespace lists tasks across all atespaces. Keep paging until a
-	// page comes back empty: ListTasks skips index entries whose record is
-	// missing or unreadable, so a short page does not mean the end of the list.
-	var tasks []*v1alpha1.Task
-	const pageSize = 1000
-	for offset := int64(0); ; offset += pageSize {
-		page, err := s.ListTasks(ctx, "", pageSize, offset)
-		if err != nil {
-			return err
-		}
-		if len(page) == 0 {
-			break
-		}
-		tasks = append(tasks, page...)
+	// Read every task in one call. Paging by offset is unsafe here: a task
+	// deleted between pages shifts the list, so the scan can skip a task and
+	// log a live actor as an orphan. An empty atespace lists all atespaces.
+	const allTasks = math.MaxInt32
+	tasks, err := s.ListTasks(ctx, "", allTasks, 0)
+	if err != nil {
+		return err
 	}
 
 	orphans := FindOrphanActors(actors, tasks)

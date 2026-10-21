@@ -68,8 +68,8 @@ func TestLogOrphanActors(t *testing.T) {
 		}
 	})
 
-	t.Run("reads every page of tasks", func(t *testing.T) {
-		// 1,001 tasks needs two pages of 1,000: a full page, then a short one.
+	t.Run("reads every task in one call", func(t *testing.T) {
+		// 1,001 tasks: a paged read would need two calls; this one needs one.
 		var tasks []*v1alpha1.Task
 		for i := 0; i < 1001; i++ {
 			tasks = append(tasks, task("default", "t"))
@@ -79,39 +79,9 @@ func TestLogOrphanActors(t *testing.T) {
 		if err := LogOrphanActors(ctx, fakeLister{}, s); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		// Two full-or-short pages with tasks, then one empty page that ends the loop.
-		if calls != 3 {
-			t.Fatalf("ListTasks called %d times, want 3", calls)
+		// All tasks come back in a single read, so there is no paging to skip.
+		if calls != 1 {
+			t.Fatalf("ListTasks called %d times, want 1", calls)
 		}
 	})
-
-	t.Run("a short page in the middle does not end paging early", func(t *testing.T) {
-		// Page one returns only 2 tasks (dangling index entries were skipped),
-		// but page two still has data; the check must keep reading.
-		s := &gappyStore{pages: [][]*v1alpha1.Task{
-			{task("default", "a"), task("default", "b")},
-			{task("default", "c")},
-		}}
-		if err := LogOrphanActors(ctx, fakeLister{}, s); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if s.calls != 3 {
-			t.Fatalf("ListTasks called %d times, want 3", s.calls)
-		}
-	})
-}
-
-// gappyStore returns the given pages in order, then empty pages.
-type gappyStore struct {
-	store.Store
-	pages [][]*v1alpha1.Task
-	calls int
-}
-
-func (g *gappyStore) ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error) {
-	g.calls++
-	if g.calls-1 < len(g.pages) {
-		return g.pages[g.calls-1], nil
-	}
-	return nil, nil
 }
