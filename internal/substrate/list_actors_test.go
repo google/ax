@@ -20,7 +20,7 @@ type fakeControl struct {
 }
 
 func (f *fakeControl) ListActors(ctx context.Context, req *ateapipb.ListActorsRequest, _ ...grpc.CallOption) (*ateapipb.ListActorsResponse, error) {
-	f.tokens = append(f.tokens, req.GetPageToken())
+	f.tokens = append(f.tokens, req.GetOptions().GetPageToken())
 	if f.err != nil {
 		return nil, f.err
 	}

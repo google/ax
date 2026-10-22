@@ -17,8 +17,7 @@ func (c *Client) ListAllActors(ctx context.Context) ([]*ateapipb.Actor, error) {
 		err := retryOnCodes(ctx, func() error {
 			var err error
 			resp, err = c.control.ListActors(ctx, &ateapipb.ListActorsRequest{
-				PageSize:  1000,
-				PageToken: pageToken,
+				Options: &ateapipb.ListOptions{PageSize: 1000, PageToken: pageToken},
 			})
 			return err
 		}, codes.Unavailable)
