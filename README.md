@@ -64,7 +64,7 @@ AX schedules every task as a sandboxed actor on [Agent Substrate](https://github
 
 - A Kubernetes cluster with **Agent Substrate** installed (see below)
 - [Go](https://go.dev/doc/install) and `kubectl`
-- [`ko`](https://ko.build/) (`brew install ko`) and a container registry your cluster can pull from
+- [Podman](https://podman.io/) or [Docker](https://docs.docker.com/get-docker/), authenticated to a container registry your cluster can pull from
 
 To install Agent Substrate, follow the instructions in the [Substrate README](https://github.com/agent-substrate/substrate#readme). Substrate lands in the `ate-system` namespace and exposes its Control API at `api.ate-system.svc.cluster.local:443`, which is where AX expects to find it. Verify it is up before moving on:
 
@@ -80,17 +80,26 @@ go install github.com/google/ax/cmd/ax@latest
 
 This puts the `ax` binary in `$(go env GOPATH)/bin`. Make sure that directory is on your `PATH`.
 
-### 2. Deploy the control plane
+### 2. Build and push the images
+
+Point `AX_IMAGE_REPO` at your registry, then build the `ax-server` and `ax-task-runner` images and push them to it:
+
+```bash
+export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
+make images
+```
+
+### 3. Deploy the control plane
 
 With the [prerequisites](#prerequisites) in place — most importantly a reachable Agent Substrate Control API — deploy the AX control plane:
 
 ```bash
-make deploy AX_IMAGE_REPO=<your-registry>
+make deploy
 ```
 
-This deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
+This deploys Redis and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
 
-### 3. Run your first task
+### 4. Run your first task
 
 ```bash
 ax apply -f examples/task.yaml       # Task + Workspace + Model in one file

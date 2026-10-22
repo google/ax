@@ -15,22 +15,27 @@
 SHELL := /bin/bash
 
 # Configuration
-AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
-TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
-CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
+#
+# AX_IMAGE_REPO is required by `make images` and `make deploy`: it is the
+# registry the images are pushed to and pulled from, e.g.
+# AX_IMAGE_REPO=gcr.io/my-project.
+AX_IMAGE_REPO ?=
+IMAGE_TAG ?= latest
+IMAGE_ARCH ?= amd64
+AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
+AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
 
-.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
+# Prefer podman, fall back to docker.
+CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-all: build
+.PHONY: build install images check-image-repo deploy deploy-server deploy-redis apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
 ## --------------------------------------
 
 # Build all local binaries (ax CLI, server)
-build: build-binaries
-
-build-binaries:
+build:
 	@echo "==> Building local binaries (ax, ax-server)..."
 	@mkdir -p bin
 	go build -trimpath -ldflags="-s -w" -o bin/ax ./cmd/ax
@@ -41,38 +46,46 @@ install:
 	@echo "==> Installing ax CLI to $$(go env GOPATH)/bin..."
 	go install -trimpath -ldflags="-s -w" ./cmd/ax
 
-# Cross-compile ax-task-runner for Linux amd64 and build container image with Python, Antigravity, and git/curl
-build-task-runner:
-	@echo "==> Cross-compiling ax-task-runner for linux/amd64..."
-	@mkdir -p bin/linux_amd64
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_amd64/ax-task-runner ./cmd/ax-task-runner
-	@echo "==> Building container image $(TASK_RUNNER_REPO):latest using $(CONTAINER_CLI)..."
-	$(CONTAINER_CLI) build --platform linux/amd64 -t $(TASK_RUNNER_REPO):latest -f Dockerfile.task-runner .
+check-image-repo:
+	@if [ -z "$(AX_IMAGE_REPO)" ]; then \
+		echo "error: AX_IMAGE_REPO is not set (e.g. AX_IMAGE_REPO=gcr.io/my-project)"; exit 1; \
+	fi
 
-# Push task-runner container image to registry
-push-task-runner: build-task-runner
-	@echo "==> Pushing task runner image to $(TASK_RUNNER_REPO):latest..."
-	$(CONTAINER_CLI) push $(TASK_RUNNER_REPO):latest
-	@echo "==> Current pushed digest:"
-	@gcloud container images list-tags $(TASK_RUNNER_REPO) --filter="tags=latest" --format="get(digest)"
-
-# Build and push all images
-push: push-task-runner
+# Cross-compile ax-server and ax-task-runner for linux/$(IMAGE_ARCH), then build
+# and push their container images.
+images: check-image-repo
+	@if [ -z "$(CONTAINER_CLI)" ]; then \
+		echo "error: neither podman nor docker found in PATH (or set CONTAINER_CLI)"; exit 1; \
+	fi
+	@echo "==> Cross-compiling ax-server and ax-task-runner for linux/$(IMAGE_ARCH)..."
+	@mkdir -p bin/linux_$(IMAGE_ARCH)
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-server ./cmd/ax-server
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-task-runner ./cmd/ax-task-runner
+	@echo "==> Building $(AX_SERVER_IMAGE) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_SERVER_IMAGE) -f Dockerfile.server .
+	@echo "==> Building $(AX_TASK_RUNNER_IMAGE) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_TASK_RUNNER_IMAGE) -f Dockerfile.task-runner .
+	@echo "==> Pushing $(AX_SERVER_IMAGE)..."
+	$(CONTAINER_CLI) push $(AX_SERVER_IMAGE)
+	@echo "==> Pushing $(AX_TASK_RUNNER_IMAGE)..."
+	$(CONTAINER_CLI) push $(AX_TASK_RUNNER_IMAGE)
 
 ## --------------------------------------
 ## Deployment Targets
 ## --------------------------------------
 
-# Deploy all AX components to Kubernetes (Redis, ax-server)
+# Deploy all AX components to Kubernetes (Redis, ax-server). Run `make images` first.
 deploy: deploy-redis deploy-server
 
 deploy-redis:
 	@echo "==> Deploying Redis to ax-system namespace..."
 	kubectl apply -f deploy/redis.yaml
 
-deploy-server:
-	@echo "==> Building and deploying ax-server using ko..."
-	KO_DOCKER_REPO=$(AX_IMAGE_REPO) ko apply -f deploy/ax-server.yaml
+deploy-server: check-image-repo
+	@echo "==> Deploying ax-server ($(AX_SERVER_IMAGE))..."
+	sed -e 's|$${AX_SERVER_IMAGE}|$(AX_SERVER_IMAGE)|g' \
+		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_TASK_RUNNER_IMAGE)|g' \
+		deploy/ax-server.yaml | kubectl apply -f -
 
 # Apply example task and resources
 apply-example:
