@@ -406,10 +406,15 @@ func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStr
 	}
 	defer closer.Close()
 
-	if initial, err := s.store.GetTask(ctx, atespace, req.Name); err == nil {
-		if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: initial, Action: "INITIAL"}); err != nil {
-			return err
+	initial, err := s.store.GetTask(ctx, atespace, req.Name)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return status.Errorf(codes.NotFound, "task %q not found in atespace %q", req.Name, atespace)
 		}
+		return status.Errorf(codes.Internal, "getting task: %v", err)
+	}
+	if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: initial, Action: "INITIAL"}); err != nil {
+		return err
 	}
 
 	for {
