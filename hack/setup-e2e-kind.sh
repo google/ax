@@ -252,7 +252,7 @@ log "Building ax (host), ax-server and ax-task-runner (linux/${GOARCH})..."
 
 log "Building and pushing images to ${REGISTRY_ADDR}..."
 AX_SERVER_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-server:e2e" \
-  --build-arg TARGETARCH="${GOARCH}" -f "${E2E_DIR}/Dockerfile.server")"
+  --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.server")"
 # The E2E task-runner image extends the production image with test fixtures.
 docker build -q -t "${REGISTRY_ADDR}/ax-task-runner:base" \
   --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.task-runner" "${REPO_ROOT}" > /dev/null

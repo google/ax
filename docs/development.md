@@ -3,8 +3,7 @@
 ## Prerequisites
 
 - Go 1.27+
-- [`ko`](https://ko.build/) for building and deploying control plane images
-- Docker or Podman for the task runner image
+- Podman or Docker for building container images
 - A Kubernetes cluster and kubeconfig
 
 ## Build
@@ -12,8 +11,7 @@
 ```bash
 make build                 # bin/ax, bin/ax-server
 make install               # install the ax CLI into $(go env GOPATH)/bin
-make build-task-runner     # cross-compile the runner for linux/amd64 and build its image
-make push-task-runner      # ...and push it (set TASK_RUNNER_REPO)
+make images                # build and push the ax-server and ax-task-runner images to $AX_IMAGE_REPO
 ```
 
 ## Test

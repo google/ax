@@ -56,8 +56,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 `ax-task-runner` lives in `cmd/ax-task-runner` and is a thin wrapper over the `runner` Go package. It implements everything above and is documented from the inside in [Sandbox](sandbox.md). Its image, built from `Dockerfile.task-runner`, is Python 3.12 with `git`, `curl`, `openssh-client`, and the Antigravity agent installed, because the goal-based workspace bootstrap hands the goal to Antigravity.
 
 ```bash
-make build-task-runner     # cross-compile for linux/amd64 and build the image
-make push-task-runner      # push it; set TASK_RUNNER_REPO to choose the registry
+make images                # cross-compile for linux/amd64, build, and push to $AX_IMAGE_REPO
 ```
 
 ## Replacing the default runner

@@ -68,8 +68,8 @@ spec:
       serviceAccountName: ax-server
       containers:
         - name: ax-server
-          image: ko://github.com/google/ax/cmd/ax-server
-          imagePullPolicy: IfNotPresent
+          image: ${AX_SERVER_IMAGE}
+          imagePullPolicy: Always
           args:
             - "--addr=:8080"
             - "--redis-addr=ax-redis.ax-system.svc.cluster.local:6379"
@@ -82,6 +82,8 @@ spec:
           env:
             - name: ATENET_ROUTER_ADDR
               value: "atenet-router.ate-system.svc.cluster.local:80"
+            - name: AX_DEFAULT_TASK_IMAGE
+              value: "${AX_DEFAULT_TASK_IMAGE}"
             - name: AX_SNAPSHOTS_BUCKET
               value: "gs://dberkov-gke-dev3/ate-env/"
           ports:

@@ -13,7 +13,6 @@ the `ax` CLI, against a configurable Substrate branch, tag, or commit.
 | `harness_test.go` | `TestMain`, cluster connection setup, and shared helpers |
 | `e2e_test.go` | The test cases |
 | `manifests/` | Namespace, WorkerPool, Redis, and ax-server manifests (rendered with `envsubst`) |
-| `Dockerfile.server` | ax-server image |
 | `Dockerfile.task-runner.e2e` | Extends `Dockerfile.task-runner` with test fixtures (a sample Git repo) |
 
 ## Quick Start
