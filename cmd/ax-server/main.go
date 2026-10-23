@@ -128,6 +128,15 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// Log-only check, run before the server starts serving requests.
+	if subClient != nil {
+		checkCtx, cancelCheck := context.WithTimeout(ctx, 30*time.Second)
+		if err := controller.LogOrphanActors(checkCtx, subClient, rStore); err != nil {
+			slog.Warn("orphan check failed", "error", err)
+		}
+		cancelCheck()
+	}
+
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server failed", "error", err)
