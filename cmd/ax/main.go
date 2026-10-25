@@ -64,7 +64,7 @@ func main() {
 	// Commands that don't require an AX server connection
 	switch cmd {
 	case "version":
-		fmt.Println("ax version v1alpha1 (standalone redis engine)")
+		fmt.Println("ax version v1alpha1")
 		return
 	case "help", "-h", "--help":
 		printUsage()
@@ -769,7 +769,7 @@ func runWatch(serverURL, atespace string, args []string) error {
 				actor,
 				workerIP,
 			)
-			if phase == "Completed" || phase == v1alpha1.PhaseFailed {
+			if phase == v1alpha1.PhaseFailed {
 				fmt.Printf("Task reached terminal phase %q.\n", phase)
 				break
 			}
@@ -871,9 +871,9 @@ func manifestFromArgs(args []string) (data []byte, ok bool, err error) {
 // lifecycleRPCTimeout bounds suspend/resume RPCs, which wait for Substrate to
 // snapshot or restore the task's sandbox. MicroVM-backed sandboxes can take
 // well over a minute to snapshot/restore, so this is deliberately generous.
-// The server renews its per-task Redis lock for as long as the RPC is in
+// The server renews its per-task lock lease for as long as the RPC is in
 // flight, so this deadline is not constrained by the lock TTL (see
-// lock.RedisLocker).
+// postgres.Store.Lock).
 const lifecycleRPCTimeout = 5 * time.Minute
 
 func runSuspend(serverURL, atespace string, args []string) error {
@@ -1091,7 +1091,7 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 		return fmt.Errorf("task %q has no status available", taskName)
 	}
 
-	if task.Status.Phase != "Running" {
+	if task.Status.Phase != v1alpha1.PhaseRunning {
 		return fmt.Errorf("task %q is in phase %q (must be Running to ssh)", taskName, task.Status.Phase)
 	}
 

@@ -19,7 +19,7 @@ AX_IMAGE_REPO ?= gcr.io/ax-substrate/ate-images
 TASK_RUNNER_REPO ?= $(AX_IMAGE_REPO)/ax-task-runner
 CONTAINER_CLI ?= $(shell which podman 2>/dev/null || which docker 2>/dev/null)
 
-.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-redis apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
+.PHONY: all build build-binaries build-task-runner install push push-task-runner deploy deploy-server deploy-postgres apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
 
 all: build
 
@@ -63,15 +63,19 @@ push: push-task-runner
 ## Deployment Targets
 ## --------------------------------------
 
-# Deploy all AX components to Kubernetes (Redis, ax-server)
-deploy: deploy-redis deploy-server
+# Deploy all AX components to Kubernetes (Postgres, ax-server)
+deploy: deploy-postgres deploy-server
 
-deploy-redis:
-	@echo "==> Deploying Redis to ax-system namespace..."
-	@# Redis used to run as a Deployment without storage. Its pods share the
-	@# StatefulSet's labels, so remove it or the Service would route to both.
-	kubectl -n ax-system delete deployment ax-redis --ignore-not-found
-	kubectl apply -f deploy/redis.yaml
+deploy-postgres:
+	@echo "==> Deploying Postgres to ax-system namespace..."
+	kubectl create namespace ax-system --dry-run=client -o yaml | kubectl apply -f -
+	@# Create the password once. Postgres only reads it when initializing an
+	@# empty volume, so it must not change on later deploys.
+	@kubectl -n ax-system get secret ax-postgres > /dev/null 2>&1 || \
+		kubectl -n ax-system create secret generic ax-postgres \
+			--from-literal=password="$$(openssl rand -hex 24)"
+	kubectl apply -f deploy/postgres.yaml
+	kubectl -n ax-system rollout status statefulset/ax-postgres --timeout=180s
 
 deploy-server:
 	@echo "==> Building and deploying ax-server using ko..."

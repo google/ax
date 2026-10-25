@@ -12,91 +12,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ax-system
----
+# PostgreSQL for the E2E suite. hack/setup-e2e-kind.sh creates the
+# ax-postgres Secret and wipes the volume before every run.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: ax-redis
-  namespace: ax-system
+  name: ax-postgres
+  namespace: ${AX_SYSTEM_NAMESPACE}
   labels:
-    app.kubernetes.io/name: ax-redis
+    app.kubernetes.io/name: ax-postgres
     app.kubernetes.io/part-of: ax
 spec:
   replicas: 1
-  serviceName: ax-redis
+  serviceName: ax-postgres
   selector:
     matchLabels:
-      app.kubernetes.io/name: ax-redis
+      app.kubernetes.io/name: ax-postgres
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: ax-redis
+        app.kubernetes.io/name: ax-postgres
     spec:
-      # Give Redis time to flush the append-only file on shutdown.
+      # Give Postgres time for a clean shutdown checkpoint.
       terminationGracePeriodSeconds: 60
       containers:
-        - name: redis
-          image: redis:7-alpine
-          # Redis is AX's only store, so it persists to disk: every write is
-          # appended to an AOF that is fsynced once a second, with periodic RDB
-          # snapshots on top for faster restarts. noeviction makes a full
-          # instance reject writes instead of silently dropping records.
-          args:
-            - --dir
-            - /data
-            - --appendonly
-            - "yes"
-            - --appendfsync
-            - everysec
-            - --save
-            - "900 1 300 10 60 10000"
-            - --maxmemory-policy
-            - noeviction
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_USER
+              value: ax
+            - name: POSTGRES_DB
+              value: ax
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ax-postgres
+                  key: password
+            # A subdirectory, because the volume root may contain lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
-            - containerPort: 6379
-              name: redis
+            - containerPort: 5432
+              name: postgres
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["pg_isready", "-U", "ax", "-d", "ax"]
             periodSeconds: 5
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 1000m
               memory: 1Gi
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /var/lib/postgresql/data
   volumeClaimTemplates:
     - metadata:
         name: data
         labels:
-          app.kubernetes.io/name: ax-redis
+          app.kubernetes.io/name: ax-postgres
           app.kubernetes.io/part-of: ax
       spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 10Gi
+            storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: ax-redis
-  namespace: ax-system
+  name: ax-postgres
+  namespace: ${AX_SYSTEM_NAMESPACE}
   labels:
-    app.kubernetes.io/name: ax-redis
+    app.kubernetes.io/name: ax-postgres
     app.kubernetes.io/part-of: ax
 spec:
   ports:
-    - port: 6379
-      targetPort: 6379
-      name: redis
+    - port: 5432
+      targetPort: 5432
+      name: postgres
   selector:
-    app.kubernetes.io/name: ax-redis
+    app.kubernetes.io/name: ax-postgres

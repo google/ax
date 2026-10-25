@@ -16,7 +16,7 @@ package server
 
 import "time"
 
-// SetWatchPollInterval overrides how often WatchTask polls Substrate and
+// SetWatchPollInterval overrides how often WatchTask re-reads a task and
 // returns a function that restores the previous value.
 func SetWatchPollInterval(d time.Duration) func() {
 	prev := watchPollInterval

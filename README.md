@@ -88,7 +88,7 @@ With the [prerequisites](#prerequisites) in place — most importantly a reachab
 make deploy AX_IMAGE_REPO=<your-registry>
 ```
 
-This deploys Redis, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
+This deploys PostgreSQL, then builds and deploys the control plane images with `ko`. Everything lands in the `ax-system` namespace.
 
 ### 3. Run your first task
 

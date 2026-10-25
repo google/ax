@@ -51,7 +51,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - "--addr=:8080"
-            - "--redis-addr=ax-redis.${AX_SYSTEM_NAMESPACE}.svc.cluster.local:6379"
+            - "--store=postgres://ax@ax-postgres.${AX_SYSTEM_NAMESPACE}.svc.cluster.local:5432/ax?sslmode=disable"
             - "--substrate-endpoint=api.ate-system.svc.cluster.local:443"
             - "--substrate-authority=api.ate-system.svc"
             - "--substrate-token-file=/var/run/secrets/ateapi/token"
@@ -59,6 +59,11 @@ spec:
             - "--template=default-template"
             - "--template-atespace=${AX_SYSTEM_NAMESPACE}"
           env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ax-postgres
+                  key: password
             - name: ATENET_ROUTER_ADDR
               value: "atenet-router.ate-system.svc.cluster.local:80"
             - name: AX_SNAPSHOTS_BUCKET

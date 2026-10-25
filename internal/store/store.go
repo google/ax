@@ -17,7 +17,6 @@ package store
 import (
 	"context"
 	"errors"
-	"io"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
@@ -25,6 +24,8 @@ import (
 var (
 	ErrNotFound = errors.New("resource not found")
 )
+
+// TODO(jbd): Better pagination.
 
 // Store defines the storage interface for AX resources.
 type Store interface {
@@ -44,6 +45,5 @@ type Store interface {
 	ListModels(ctx context.Context, atespace string) ([]*v1alpha1.Model, error)
 	DeleteModel(ctx context.Context, atespace, name string) error
 
-	WatchTask(ctx context.Context, atespace, name string) (<-chan *v1alpha1.Task, io.Closer, error)
 	Close() error
 }

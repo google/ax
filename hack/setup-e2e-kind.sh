@@ -261,15 +261,17 @@ AX_DEFAULT_TASK_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-task-runner:e2e" \
 export AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE
 printf '  AX_SERVER_IMAGE=%s\n  AX_DEFAULT_TASK_IMAGE=%s\n' "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}"
 
-# 5. Deploy Redis and ax-server. Delete existing workloads and Redis's volume
-#    first so every run starts from empty Redis state.
-log "Deploying ax-redis and ax-server in namespace '${AX_SYSTEM_NAMESPACE}'..."
-k -n "${AX_SYSTEM_NAMESPACE}" delete deployment ax-redis ax-server --ignore-not-found
-k -n "${AX_SYSTEM_NAMESPACE}" delete statefulset ax-redis --ignore-not-found --wait
-k -n "${AX_SYSTEM_NAMESPACE}" delete pvc -l app.kubernetes.io/name=ax-redis --ignore-not-found --wait
-render_manifest redis.yaml | k apply -f -
+# 5. Deploy Postgres and ax-server. Delete existing workloads and Postgres's
+#    volume first so every run starts from an empty database.
+log "Deploying ax-postgres and ax-server in namespace '${AX_SYSTEM_NAMESPACE}'..."
+k -n "${AX_SYSTEM_NAMESPACE}" delete deployment ax-server --ignore-not-found
+k -n "${AX_SYSTEM_NAMESPACE}" delete statefulset ax-postgres --ignore-not-found --wait
+k -n "${AX_SYSTEM_NAMESPACE}" delete pvc -l app.kubernetes.io/name=ax-postgres --ignore-not-found --wait
+k -n "${AX_SYSTEM_NAMESPACE}" create secret generic ax-postgres \
+  --from-literal=password="$(openssl rand -hex 24)" --dry-run=client -o yaml | k apply -f -
+render_manifest postgres.yaml | k apply -f -
+k -n "${AX_SYSTEM_NAMESPACE}" rollout status statefulset/ax-postgres --timeout=180s
 render_manifest ax-server.yaml | k apply -f -
-k -n "${AX_SYSTEM_NAMESPACE}" rollout status statefulset/ax-redis --timeout=120s
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-server --timeout=120s
 
 # 6. Persist the environment for hack/run-e2e.sh and the Go test harness.

@@ -5,14 +5,14 @@ This directory contains the end-to-end test suite for **AX** running on
 the manifests and Dockerfiles used to deploy AX for the tests.
 
 The suite exercises real gVisor sandboxes, Substrate's `ate-api-server`,
-in-cluster RustFS snapshot storage, Redis, `ax-server`, `ax-task-runner`, and
+in-cluster RustFS snapshot storage, PostgreSQL, `ax-server`, `ax-task-runner`, and
 the `ax` CLI, against a configurable Substrate branch, tag, or commit.
 
 | Path | Purpose |
 |---|---|
 | `harness_test.go` | `TestMain`, cluster connection setup, and shared helpers |
 | `e2e_test.go` | The test cases |
-| `manifests/` | Namespace, WorkerPool, Redis, and ax-server manifests (rendered with `envsubst`) |
+| `manifests/` | Namespace, WorkerPool, PostgreSQL, and ax-server manifests (rendered with `envsubst`) |
 | `Dockerfile.server` | ax-server image |
 | `Dockerfile.task-runner.e2e` | Extends `Dockerfile.task-runner` with test fixtures (a sample Git repo) |
 
@@ -59,7 +59,7 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `SUBSTRATE_REPO` | `https://github.com/agent-substrate/substrate.git` | Cloned into `.tmp/substrate` when no local checkout exists |
 | `KIND_CLUSTER_NAME` | `ax-e2e` | Kind cluster name |
 | `KUBECONFIG` | `.tmp/kubeconfig-${KIND_CLUSTER_NAME}` | Kubeconfig for the Kind cluster |
-| `AX_SYSTEM_NAMESPACE` | `ax-system` | Namespace for `ax-redis`, `ax-server`, and the `ax-workers` WorkerPool |
+| `AX_SYSTEM_NAMESPACE` | `ax-system` | Namespace for `ax-postgres`, `ax-server`, and the `ax-workers` WorkerPool |
 | `AX_WORKER_REPLICAS` | `4` | gVisor worker replicas |
 | `AX_SNAPSHOTS_BUCKET` | `gs://ate-snapshots/ax/` | Snapshot location in Substrate's in-cluster RustFS |
 | `RECREATE_KIND` | `false` | Delete and recreate the Kind cluster |

@@ -18,17 +18,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"sort"
 	"sync"
 
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/proto"
 )
-
-type closerFunc func() error
-
-func (f closerFunc) Close() error { return f() }
 
 // clone returns a deep copy of a protobuf message so stored resources are never
 // shared with callers. Copying the struct by value is unsafe: generated messages
@@ -43,7 +39,6 @@ type MemoryStore struct {
 	tasks      map[string]*v1alpha1.Task
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
-	watchers   map[string][]chan *v1alpha1.Task
 }
 
 // NewStore creates a new in-memory Store.
@@ -52,8 +47,19 @@ func NewStore() *MemoryStore {
 		tasks:      make(map[string]*v1alpha1.Task),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
-		watchers:   make(map[string][]chan *v1alpha1.Task),
 	}
+}
+
+// sortByKey orders resources by atespace and name, so that lists, and pages
+// of them, come back in a stable order.
+func sortByKey[T interface{ GetMetadata() *v1alpha1.ObjectMeta }](items []T) {
+	sort.Slice(items, func(i, j int) bool {
+		return metaKey(items[i].GetMetadata()) < metaKey(items[j].GetMetadata())
+	})
+}
+
+func metaKey(m *v1alpha1.ObjectMeta) string {
+	return taskKey(m.GetAtespace(), m.GetName())
 }
 
 func taskKey(atespace, name string) string {
@@ -73,6 +79,12 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Metadata.Atespace == "" {
 		task.Metadata.Atespace = "default"
 	}
+	if task.ApiVersion == "" {
+		task.ApiVersion = v1alpha1.APIVersion
+	}
+	if task.Kind == "" {
+		task.Kind = v1alpha1.KindTask
+	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
@@ -83,18 +95,7 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	key := taskKey(task.Metadata.Atespace, task.Metadata.Name)
 
 	s.mu.Lock()
-	cp := clone(task)
-	s.tasks[key] = cp
-
-	// Notify watchers
-	if chs, ok := s.watchers[key]; ok {
-		for _, ch := range chs {
-			select {
-			case ch <- cp:
-			default:
-			}
-		}
-	}
+	s.tasks[key] = clone(task)
 	s.mu.Unlock()
 
 	return nil
@@ -124,12 +125,16 @@ func (s *MemoryStore) ListTasks(ctx context.Context, atespace string, limit, off
 			result = append(result, cp)
 		}
 	}
+	sortByKey(result)
 
 	if offset >= int64(len(result)) {
 		return []*v1alpha1.Task{}, nil
 	}
 	end := offset + limit
-	if limit <= 0 || end > int64(len(result)) {
+	if limit <= 0 {
+		end = offset + 50
+	}
+	if end > int64(len(result)) {
 		end = int64(len(result))
 	}
 	return result[offset:end], nil
@@ -146,16 +151,6 @@ func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name strin
 		return store.ErrNotFound
 	}
 	t.Status = status
-	cp := clone(t)
-
-	if chs, ok := s.watchers[key]; ok {
-		for _, ch := range chs {
-			select {
-			case ch <- cp:
-			default:
-			}
-		}
-	}
 	return nil
 }
 
@@ -167,16 +162,25 @@ func (s *MemoryStore) DeleteTask(ctx context.Context, atespace, name string) err
 }
 
 func (s *MemoryStore) SaveModel(ctx context.Context, model *v1alpha1.Model) error {
+	if model.Metadata == nil {
+		model.Metadata = &v1alpha1.ObjectMeta{}
+	}
 	if model.Metadata.Name == "" {
 		return errors.New("model name is required")
 	}
 	if model.Metadata.Atespace == "" {
 		model.Metadata.Atespace = "default"
 	}
+	if model.ApiVersion == "" {
+		model.ApiVersion = v1alpha1.APIVersion
+	}
+	if model.Kind == "" {
+		model.Kind = v1alpha1.KindModel
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := clone(model)
-	s.models[taskKey(model.Metadata.Atespace, model.Metadata.Name)] = cp
+	s.models[metaKey(model.Metadata)] = cp
 	return nil
 }
 
@@ -203,6 +207,7 @@ func (s *MemoryStore) ListModels(ctx context.Context, atespace string) ([]*v1alp
 			result = append(result, cp)
 		}
 	}
+	sortByKey(result)
 	return result, nil
 }
 
@@ -215,16 +220,25 @@ func (s *MemoryStore) DeleteModel(ctx context.Context, atespace, name string) er
 }
 
 func (s *MemoryStore) SaveWorkspace(ctx context.Context, ws *v1alpha1.Workspace) error {
+	if ws.Metadata == nil {
+		ws.Metadata = &v1alpha1.ObjectMeta{}
+	}
 	if ws.Metadata.Name == "" {
 		return errors.New("workspace name is required")
 	}
 	if ws.Metadata.Atespace == "" {
 		ws.Metadata.Atespace = "default"
 	}
+	if ws.ApiVersion == "" {
+		ws.ApiVersion = v1alpha1.APIVersion
+	}
+	if ws.Kind == "" {
+		ws.Kind = v1alpha1.KindWorkspace
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := clone(ws)
-	s.workspaces[taskKey(ws.Metadata.Atespace, ws.Metadata.Name)] = cp
+	s.workspaces[metaKey(ws.Metadata)] = cp
 	return nil
 }
 
@@ -251,6 +265,7 @@ func (s *MemoryStore) ListWorkspaces(ctx context.Context, atespace string) ([]*v
 			result = append(result, cp)
 		}
 	}
+	sortByKey(result)
 	return result, nil
 }
 
@@ -260,31 +275,6 @@ func (s *MemoryStore) DeleteWorkspace(ctx context.Context, atespace, name string
 
 	delete(s.workspaces, taskKey(atespace, name))
 	return nil
-}
-
-func (s *MemoryStore) WatchTask(ctx context.Context, atespace, name string) (<-chan *v1alpha1.Task, io.Closer, error) {
-	key := taskKey(atespace, name)
-	ch := make(chan *v1alpha1.Task, 10)
-
-	s.mu.Lock()
-	s.watchers[key] = append(s.watchers[key], ch)
-	s.mu.Unlock()
-
-	closer := closerFunc(func() error {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		chs := s.watchers[key]
-		for i, c := range chs {
-			if c == ch {
-				s.watchers[key] = append(chs[:i], chs[i+1:]...)
-				close(ch)
-				break
-			}
-		}
-		return nil
-	})
-
-	return ch, closer, nil
 }
 
 func (s *MemoryStore) Close() error {

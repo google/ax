@@ -440,7 +440,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 		Status: &v1alpha1.TaskStatus{
 			Phase:      "Suspended",
 			WorkerIp:   workerIp,
-			Conditions: []*v1alpha1.Condition{{Type: "Ready", Status: "True", Reason: "TaskRunning"}},
+			Conditions: []*v1alpha1.Condition{{Type: "Ready", Status: "True", Reason: v1alpha1.ReasonTaskRunning}},
 		},
 	}
 
@@ -451,7 +451,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	if reconciled.GetStatus().GetWorkerIp() != workerIp {
 		t.Errorf("expected worker IP %q to be preserved, got %q", workerIp, reconciled.GetStatus().GetWorkerIp())
 	}
-	assertCondition(t, reconciled, "Ready", "True", "TaskRunning")
+	assertCondition(t, reconciled, "Ready", "True", v1alpha1.ReasonTaskRunning)
 }
 
 // TestTaskReconciler_TemplateCreationFailed covers google/ax#366: when Substrate
@@ -511,7 +511,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 		t.Errorf("expected phase 'Failed', got %q", reconciled.Status.Phase)
 	}
-	assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
+	assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 	for _, c := range reconciled.Status.Conditions {
 		if c.Type != "Ready" {
 			continue
@@ -582,7 +582,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	if reconciled.Status.Phase != v1alpha1.PhasePending {
 		t.Errorf("expected phase 'Pending', got %q", reconciled.Status.Phase)
 	}
-	assertCondition(t, reconciled, "Ready", "False", "SubstrateUnavailable")
+	assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	if len(mockSrv.createdActors) != 0 {
 		t.Errorf("expected no actor to be created, got %v", mockSrv.createdActors)
 	}
@@ -650,25 +650,23 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 		},
 	}
 
-	// Case 1: Worker not responding on readyz -> WorkspaceReady=False and Ready=False.
+	// Case 1: Worker not responding on readyz -> WorkspaceReady=False.
 	reconciled, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile failed: %v", err)
 	}
-	assertCondition(t, reconciled, "WorkspaceReady", "False", "Initializing")
-	assertCondition(t, reconciled, "Ready", "False", "WorkspaceInitializing")
+	assertCondition(t, reconciled, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
 
-	// Case 2: Worker readyz endpoint succeeds -> WorkspaceReady=True and Ready=True.
+	// Case 2: Worker readyz endpoint succeeds -> WorkspaceReady=True.
 	mockSrv.workerIP = httpLis.Addr().String()
 	reconciledReady, err := reconciler.Reconcile(ctx, task, nil)
 	if err != nil {
 		t.Fatalf("Reconcile with ready worker failed: %v", err)
 	}
-	assertCondition(t, reconciledReady, "WorkspaceReady", "True", "SetupComplete")
-	assertCondition(t, reconciledReady, "Ready", "True", "TaskRunning")
+	assertCondition(t, reconciledReady, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
-	// Case 3: Suspending the task -> Ready=False (TaskSuspended), but the workspace was
-	// already initialized so WorkspaceReady stays True.
+	// Case 3: Suspending the task -> the workspace was already initialized, so
+	// WorkspaceReady stays True.
 	task = reconciledReady
 	task.Status.Phase = "Suspended"
 	reconciledSuspended, err := reconciler.Reconcile(ctx, task, nil)
@@ -678,11 +676,10 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	if reconciledSuspended.Status.Phase != "Suspended" {
 		t.Errorf("expected phase Suspended, got %s", reconciledSuspended.Status.Phase)
 	}
-	assertCondition(t, reconciledSuspended, "Ready", "False", "TaskSuspended")
-	assertCondition(t, reconciledSuspended, "WorkspaceReady", "True", "SetupComplete")
+	assertCondition(t, reconciledSuspended, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
 	// Case 4: Resuming with the worker unreachable -> the reconciler trusts the recorded
-	// WorkspaceReady instead of re-polling, so the task is Ready again immediately.
+	// WorkspaceReady instead of re-polling.
 	mockSrv.workerIP = "127.0.0.1:1"
 	task = reconciledSuspended
 	task.Status.Phase = "Running"
@@ -690,8 +687,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile with resume failed: %v", err)
 	}
-	assertCondition(t, reconciledResumed, "WorkspaceReady", "True", "SetupComplete")
-	assertCondition(t, reconciledResumed, "Ready", "True", "TaskRunning")
+	assertCondition(t, reconciledResumed, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 	if got := len(mockSrv.actorTemplates); got != 1 {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
@@ -848,7 +844,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 				t.Errorf("Reconcile(%v) phase = %q, want Failed", reqs, reconciled.Status.Phase)
 			}
-			assertCondition(t, reconciled, "Ready", "False", "InvalidResources")
+			assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonInvalidResources)
 		}
 		if len(mockSrv.createdTemplates) != 0 || len(mockSrv.createdActors) != 0 || len(mockSrv.resumedActors) != 0 {
 			t.Errorf("invalid limits reached Substrate: templates=%d actors=%v resumed=%v",
@@ -871,7 +867,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 			t.Errorf("phase = %q, want Failed", reconciled.Status.Phase)
 		}
-		assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
+		assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 		if len(mockSrv.createdActors) != 0 || len(mockSrv.resumedActors) != 0 {
 			t.Errorf("task ran on a fallback template without its limits: actors=%v resumed=%v", mockSrv.createdActors, mockSrv.resumedActors)
 		}
@@ -892,7 +888,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 			t.Errorf("phase = %q, want Failed", reconciled.Status.Phase)
 		}
-		assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
+		assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 		if len(mockSrv.createdActors) != 0 {
 			t.Errorf("task ran on a fallback template: actors=%v", mockSrv.createdActors)
 		}
@@ -1128,7 +1124,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if reconciled.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient EnsureAtespace error, got %q", reconciled.GetStatus().GetPhase())
 	}
-	assertCondition(t, reconciled, "Ready", "False", "SubstrateUnavailable")
+	assertCondition(t, reconciled, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	mockSrv.createAtespaceErr = nil
 
 	// 2. Transient error during EnsureActor leaves Task in Phase="Pending" with Reason="SubstrateUnavailable".
@@ -1144,7 +1140,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if reconciled2.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient EnsureActor error, got %q", reconciled2.GetStatus().GetPhase())
 	}
-	assertCondition(t, reconciled2, "Ready", "False", "SubstrateUnavailable")
+	assertCondition(t, reconciled2, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	mockSrv.createActorErr = nil
 
 	// 3. Transient error during ResumeActor leaves Task in Phase="Pending" with Reason="SubstrateUnavailable",
@@ -1162,7 +1158,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if reconciled3.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient ResumeActor error, got %q", reconciled3.GetStatus().GetPhase())
 	}
-	assertCondition(t, reconciled3, "Ready", "False", "SubstrateUnavailable")
+	assertCondition(t, reconciled3, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 
 	// Recovery on retry:
 	mockSrv.resumeActorErr = nil

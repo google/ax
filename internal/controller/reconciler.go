@@ -127,11 +127,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	// 1. Ensure the Atespace exists in Substrate
 	if err := r.client.EnsureAtespace(ctx, atespace); err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("ensuring atespace: %w", err)
 		}
-		setCondition(task, "Ready", "False", "AtespaceCreationFailed", err.Error(), now)
+		r.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
 		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("ensuring atespace: %w", err)
 	}
@@ -185,7 +185,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	// Resource limits are enforced by the per-task template, so they are checked
 	// here as well as at apply time: a task must never run without limits it asked for.
 	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
-		r.setNotReady(task, "InvalidResources", err.Error(), now)
+		r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("validating resources: %w", err)
 	}
@@ -201,7 +201,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, task.Spec.Image, resources, extraEnv)
 		if err != nil {
 			if substrate.IsTransientError(err) {
-				r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
+				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 				task.Status.Phase = v1alpha1.PhasePending
 				return task, fmt.Errorf("ensuring actor template: %w", err)
 			}
@@ -209,7 +209,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 			// the user asked for, without the limits it asked for, or fail later with
 			// a misleading "actor template not found". Surface the real error on the
 			// task and stop here.
-			r.setNotReady(task, "TemplateCreationFailed", substrateErrorMessage(err), now)
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
 			task.Status.Phase = v1alpha1.PhaseFailed
 			return task, fmt.Errorf("ensuring actor template: %w", err)
 		}
@@ -223,25 +223,24 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("ensuring actor: %w", err)
 		}
-		r.setNotReady(task, "ActorCreationFailed", err.Error(), now)
+		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
 		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("ensuring actor: %w", err)
 	}
 
 	// 4. Suspend or Resume the Actor
-	// Tasks are suspended by default upon creation until explicitly resumed to "Running".
-	if task.Status.Phase == "Suspended" || task.Status.Phase == "" {
+	// Tasks are suspended by default upon creation until explicitly resumed.
+	if task.Status.Phase == v1alpha1.PhaseSuspended || task.Status.Phase == "" {
 		slog.Info("suspending actor on Substrate", "actor", actorName)
 		if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
 			return task, fmt.Errorf("suspending actor: %w", err)
 		}
 		task.Status.WorkerIp = ""
-		task.Status.Phase = "Suspended"
-		setCondition(task, condReady, "False", "TaskSuspended", "Task is suspended", now)
+		task.Status.Phase = v1alpha1.PhaseSuspended
 		slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
 		return task, nil
 	}
@@ -251,17 +250,17 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	_, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("resuming actor: %w", err)
 		}
-		r.setNotReady(task, "ActorResumeFailed", err.Error(), now)
+		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
 		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("resuming actor: %w", err)
 	}
 
 	task.Status.WorkerIp = workerIP
-	task.Status.Phase = "Running"
+	task.Status.Phase = v1alpha1.PhaseRunning
 
 	// Check if workspace setup inside the actor has completed
 	host := workerIP
@@ -273,7 +272,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	readyURL := fmt.Sprintf("http://%s/readyz?check=workspace", net.JoinHostPort(host, port))
 	// Workspace setup happens once per task. After it has completed, WorkspaceReady stays
 	// True across suspend/resume cycles, so only poll while it is still initializing.
-	workspaceReady := conditionTrue(task, condWorkspaceReady)
+	workspaceReady := conditionTrue(task, v1alpha1.ConditionWorkspaceReady)
 	if workerIP != "" && !workspaceReady {
 		// Poll briefly for workspace setup completion
 		pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
@@ -325,15 +324,13 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	}
 DonePolling:
 
-	// The task is Ready only once its actor is running and the workspace inside it is set up.
+	// The server derives Ready from the actor's state and WorkspaceReady.
 	if workspaceReady {
-		if !conditionTrue(task, condWorkspaceReady) {
-			setCondition(task, condWorkspaceReady, "True", "SetupComplete", fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
+		if !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
+			setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
 		}
-		setCondition(task, condReady, "True", "TaskRunning", "Task is running and its workspace is ready", time.Now())
 	} else {
-		setCondition(task, condWorkspaceReady, "False", "Initializing", fmt.Sprintf("Workspace is initializing at %s", workerIP), time.Now())
-		setCondition(task, condReady, "False", "WorkspaceInitializing", "Waiting for workspace setup to complete", time.Now())
+		setCondition(task, v1alpha1.ConditionWorkspaceReady, "False", v1alpha1.ReasonInitializing, fmt.Sprintf("Workspace is initializing at %s", workerIP), time.Now())
 	}
 
 	slog.Info("task successfully reconciled and running",
@@ -347,19 +344,10 @@ DonePolling:
 	return task, nil
 }
 
-// Condition types reported on Task status.
-const (
-	// condReady reports whether the task as a whole is ready to do work: its actor is
-	// running and the workspace inside it has finished setting up.
-	condReady = "Ready"
-	// condWorkspaceReady reports whether the workspace inside the actor has finished setting up.
-	condWorkspaceReady = "WorkspaceReady"
-)
-
 // setNotReady marks the task's Ready condition False. WorkspaceReady is left untouched:
 // workspace setup is a one-time step whose result outlives actor failures and suspends.
 func (r *TaskReconciler) setNotReady(task *v1alpha1.Task, reason, message string, t time.Time) {
-	setCondition(task, condReady, "False", reason, message, t)
+	setCondition(task, v1alpha1.ConditionReady, "False", reason, message, t)
 }
 
 // conditionTrue reports whether the task currently has the given condition with status True.

@@ -17,7 +17,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 | `WorkspaceReady` | The workspace has finished setting up. Stays True afterwards. |
 | `Ready` | The task is running and `WorkspaceReady` is True. This is the one to wait on. |
 
-Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `TaskSuspended`; resuming sets it back. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
+Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `Suspended`; resuming sets it back. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
 
 ## Workspace
 

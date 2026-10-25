@@ -253,8 +253,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	assertContains(t, "'ax resume task'", env.mustRunAX(t, ns, "resume", "task", name), "resumed")
 	task = env.getTask(t, ns, name)
 	assertPhase(t, task, phaseRunning)
-	assertCondition(t, task, "WorkspaceReady", "True", "SetupComplete")
-	assertCondition(t, task, "Ready", "True", "TaskRunning")
+	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
+	assertCondition(t, task, "Ready", "True", v1alpha1.ReasonTaskRunning)
 	workerIP := task.GetStatus().GetWorkerIp()
 	if workerIP == "" {
 		t.Fatal("expected non-empty WorkerIp on running task")
@@ -481,7 +481,7 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 	assertContains(t, "'ax suspend task'", env.mustRunAX(t, ns, "suspend", "task", task), "suspended")
 	got := env.getTask(t, ns, task)
 	assertPhase(t, got, phaseSuspended)
-	assertCondition(t, got, "Ready", "False", "TaskSuspended")
+	assertCondition(t, got, "Ready", "False", v1alpha1.PhaseSuspended)
 	if ip := got.GetStatus().GetWorkerIp(); ip != "" {
 		t.Fatalf("expected empty WorkerIp when suspended, got %q", ip)
 	}
@@ -560,5 +560,5 @@ func TestE2E_WatchDescribeAndAtespaceIsolation(t *testing.T) {
 
 	// 3. `ax describe task` reflects the running task and its conditions.
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", task),
-		task, ns, phaseRunning, "WorkspaceReady", "TaskRunning")
+		task, ns, phaseRunning, "WorkspaceReady", v1alpha1.ReasonTaskRunning)
 }
