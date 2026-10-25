@@ -508,7 +508,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 		t.Errorf("expected error to carry the Substrate message, got %v", err)
 	}
 
-	if reconciled.Status.Phase != "Failed" {
+	if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 		t.Errorf("expected phase 'Failed', got %q", reconciled.Status.Phase)
 	}
 	assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
@@ -579,7 +579,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected Reconcile to return an error on transient template failure")
 	}
-	if reconciled.Status.Phase != "Pending" {
+	if reconciled.Status.Phase != v1alpha1.PhasePending {
 		t.Errorf("expected phase 'Pending', got %q", reconciled.Status.Phase)
 	}
 	assertCondition(t, reconciled, "Ready", "False", "SubstrateUnavailable")
@@ -845,7 +845,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			if err == nil {
 				t.Errorf("Reconcile(%v) succeeded, want error", reqs)
 			}
-			if reconciled.Status.Phase != "Failed" {
+			if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 				t.Errorf("Reconcile(%v) phase = %q, want Failed", reqs, reconciled.Status.Phase)
 			}
 			assertCondition(t, reconciled, "Ready", "False", "InvalidResources")
@@ -868,7 +868,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		if err == nil {
 			t.Fatal("Reconcile succeeded although the template with limits was rejected")
 		}
-		if reconciled.Status.Phase != "Failed" {
+		if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 			t.Errorf("phase = %q, want Failed", reconciled.Status.Phase)
 		}
 		assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
@@ -889,7 +889,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		}
 		// Falling back would run a different image than the task asked for, so the
 		// template error is terminal regardless of whether limits are set (#366).
-		if reconciled.Status.Phase != "Failed" {
+		if reconciled.Status.Phase != v1alpha1.PhaseFailed {
 			t.Errorf("phase = %q, want Failed", reconciled.Status.Phase)
 		}
 		assertCondition(t, reconciled, "Ready", "False", "TemplateCreationFailed")
@@ -1125,7 +1125,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from Reconcile when EnsureAtespace fails, got nil")
 	}
-	if reconciled.GetStatus().GetPhase() != "Pending" {
+	if reconciled.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient EnsureAtespace error, got %q", reconciled.GetStatus().GetPhase())
 	}
 	assertCondition(t, reconciled, "Ready", "False", "SubstrateUnavailable")
@@ -1141,7 +1141,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from Reconcile when EnsureActor fails, got nil")
 	}
-	if reconciled2.GetStatus().GetPhase() != "Pending" {
+	if reconciled2.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient EnsureActor error, got %q", reconciled2.GetStatus().GetPhase())
 	}
 	assertCondition(t, reconciled2, "Ready", "False", "SubstrateUnavailable")
@@ -1159,7 +1159,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from Reconcile when ResumeActor fails, got nil")
 	}
-	if reconciled3.GetStatus().GetPhase() != "Pending" {
+	if reconciled3.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected Phase='Pending' on transient ResumeActor error, got %q", reconciled3.GetStatus().GetPhase())
 	}
 	assertCondition(t, reconciled3, "Ready", "False", "SubstrateUnavailable")
@@ -1185,7 +1185,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on InvalidArgument, got nil")
 	}
-	if reconciled4.GetStatus().GetPhase() != "Failed" {
+	if reconciled4.GetStatus().GetPhase() != v1alpha1.PhaseFailed {
 		t.Errorf("expected Phase='Failed' on permanent error, got %q", reconciled4.GetStatus().GetPhase())
 	}
 	mockSrv.createActorErr = nil

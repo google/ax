@@ -18,7 +18,7 @@ metadata:
   name: ax-system
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: ax-redis
   namespace: ax-system
@@ -27,6 +27,7 @@ metadata:
     app.kubernetes.io/part-of: ax
 spec:
   replicas: 1
+  serviceName: ax-redis
   selector:
     matchLabels:
       app.kubernetes.io/name: ax-redis
@@ -35,12 +36,33 @@ spec:
       labels:
         app.kubernetes.io/name: ax-redis
     spec:
+      # Give Redis time to flush the append-only file on shutdown.
+      terminationGracePeriodSeconds: 60
       containers:
         - name: redis
           image: redis:7-alpine
+          # Redis is AX's only store, so it persists to disk: every write is
+          # appended to an AOF that is fsynced once a second, with periodic RDB
+          # snapshots on top for faster restarts. noeviction makes a full
+          # instance reject writes instead of silently dropping records.
+          args:
+            - --dir
+            - /data
+            - --appendonly
+            - "yes"
+            - --appendfsync
+            - everysec
+            - --save
+            - "900 1 300 10 60 10000"
+            - --maxmemory-policy
+            - noeviction
           ports:
             - containerPort: 6379
               name: redis
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
           resources:
             requests:
               cpu: 100m
@@ -48,6 +70,20 @@ spec:
             limits:
               cpu: 1000m
               memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: ax-redis
+          app.kubernetes.io/part-of: ax
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: v1
 kind: Service

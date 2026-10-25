@@ -417,7 +417,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		for _, t := range tasks {
 			workerIP := ""
 			actor := ""
-			phase := "Pending"
+			phase := v1alpha1.PhasePending
 			if t.Status != nil {
 				workerIP = t.Status.WorkerIp
 				actor = t.Status.Actor
@@ -769,7 +769,7 @@ func runWatch(serverURL, atespace string, args []string) error {
 				actor,
 				workerIP,
 			)
-			if phase == "Completed" || phase == "Failed" {
+			if phase == "Completed" || phase == v1alpha1.PhaseFailed {
 				fmt.Printf("Task reached terminal phase %q.\n", phase)
 				break
 			}

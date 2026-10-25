@@ -97,6 +97,7 @@ func main() {
 	rLocker := lock.NewRedisLocker(rClient, lock.RedisLockerOptions{})
 
 	var reconciler server.Reconciler
+	var observer server.Observer
 	subClient, err := substrate.NewClientWithOptions(substrate.ClientOptions{
 		Target:      substrateEndpoint,
 		Authority:   substrateAuthority,
@@ -109,12 +110,14 @@ func main() {
 		slog.Warn("could not initialize substrate client; running without substrate reconciliation", "error", err)
 	} else {
 		defer subClient.Close()
-		reconciler = controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+		r := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+		reconciler, observer = r, r
 	}
 
 	srv := server.NewServer(rStore, server.Options{
 		Locker:     rLocker,
 		Reconciler: reconciler,
+		Observer:   observer,
 	})
 
 	httpServer := &http.Server{

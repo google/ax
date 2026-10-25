@@ -4,6 +4,8 @@
 
 Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its comfort zone (single-digit GB storage limits, write-rate bottlenecks, control plane degradation). AX stores its state in Redis and reconciles directly with Agent Substrate under fine-grained distributed locks.
 
+Redis runs as a StatefulSet with a persistent volume and append-only file, so resources survive restarts. It holds only what AX owns: specs, metadata, and the parts of a task's status that describe AX's own work (`Pending`, `Failed`, `Terminating`, the task ID, workspace setup). Everything that belongs to the task's actor (its phase while provisioned, `actor`, `workerIP`, and the `Ready` condition) is read from Agent Substrate whenever a task is fetched, listed, or watched, so AX never keeps a copy that can drift from the actor.
+
 ```
                       ax apply -f task.yaml
                                 │

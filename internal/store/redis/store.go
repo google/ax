@@ -118,7 +118,7 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	if task.Status.Phase == "" {
-		task.Status.Phase = "Pending"
+		task.Status.Phase = v1alpha1.PhasePending
 	}
 
 	data, err := protojson.Marshal(task)

@@ -38,10 +38,29 @@ const (
 	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 	DefaultSystemNamespace = "ax-system"
 
+	// PhasePending marks a task whose actor has not been provisioned yet, for
+	// example because Substrate was unavailable. Retrying the operation can
+	// still succeed.
+	PhasePending = "Pending"
+	// PhaseFailed marks a task that AX could not provision or operate, or whose
+	// actor crashed or disappeared.
+	PhaseFailed = "Failed"
 	// PhaseTerminating marks a task whose deletion has been requested and whose
 	// actor is being torn down. The record disappears once cleanup completes.
 	PhaseTerminating = "Terminating"
 )
+
+// IsAXPhase reports whether phase describes the control plane's own work on a
+// task (provisioning it, failing to, or tearing it down) rather than the state
+// of the task's actor. Only these phases are stored; every other phase is read
+// from the actor on Agent Substrate when the task is fetched.
+func IsAXPhase(phase string) bool {
+	switch phase {
+	case PhasePending, PhaseFailed, PhaseTerminating:
+		return true
+	}
+	return false
+}
 
 // YAML encoding.
 //

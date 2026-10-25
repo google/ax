@@ -511,11 +511,16 @@ func (c *Client) ResumeActor(ctx context.Context, atespace, actorName string) (*
 	if resp.GetActor() == nil {
 		return nil, "", fmt.Errorf("nil actor returned when resuming %s/%s", atespace, actorName)
 	}
-	var workerIP string
-	if ips := resp.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) > 0 {
-		workerIP = ips[0]
+	return resp.GetActor(), WorkerIP(resp.GetActor()), nil
+}
+
+// WorkerIP returns the pod IP of the worker hosting the actor, or "" when the
+// actor has no worker (for example while it is suspended).
+func WorkerIP(actor *ateapipb.Actor) string {
+	if ips := actor.GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) > 0 {
+		return ips[0]
 	}
-	return resp.GetActor(), workerIP, nil
+	return ""
 }
 
 // SuspendActor suspends the specified actor, triggering state checkpointing.
@@ -551,6 +556,29 @@ func (c *Client) GetActor(ctx context.Context, atespace, actorName string) (*ate
 		return err
 	}, codes.Unavailable)
 	return actor, err
+}
+
+// ListActors returns every Actor in the given atespace, or in all atespaces
+// when atespace is empty.
+func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.Actor, error) {
+	var actors []*ateapipb.Actor
+	req := &ateapipb.ListActorsRequest{Atespace: atespace, Options: &ateapipb.ListOptions{}}
+	for {
+		var resp *ateapipb.ListActorsResponse
+		err := retryOnCodes(ctx, func() error {
+			var err error
+			resp, err = c.control.ListActors(ctx, req)
+			return err
+		}, codes.Unavailable)
+		if err != nil {
+			return nil, fmt.Errorf("listing actors in %q: %w", atespace, err)
+		}
+		actors = append(actors, resp.GetActors()...)
+		if resp.GetNextPageToken() == "" {
+			return actors, nil
+		}
+		req.Options.PageToken = resp.GetNextPageToken()
+	}
 }
 
 // DeleteActor deletes the specified actor from Substrate and blocks until the actor

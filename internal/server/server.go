@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
@@ -38,11 +39,23 @@ type Reconciler interface {
 	ReconcileDelete(ctx context.Context, atespace, taskName string) error
 }
 
+// Observer fills in the parts of a task's status that are owned by its actor
+// on Agent Substrate. The store never holds them, so every task the API returns
+// passes through the Observer first.
+type Observer interface {
+	Observe(ctx context.Context, tasks []*v1alpha1.Task)
+}
+
 // Options configures the AX API Server.
 type Options struct {
 	Locker     lock.Locker
 	Reconciler Reconciler
+	Observer   Observer
 }
+
+// watchPollInterval is how often WatchTask re-reads a task's actor, so changes
+// made on Substrate (for example a crash) reach watchers without an AX write.
+var watchPollInterval = 2 * time.Second
 
 // Server provides the gRPC API for AX.
 type Server struct {
@@ -50,6 +63,7 @@ type Server struct {
 	store      store.Store
 	locker     lock.Locker
 	reconciler Reconciler
+	observer   Observer
 	grpcServer *grpc.Server
 }
 
@@ -68,6 +82,7 @@ func NewServer(s store.Store, opts ...Options) *Server {
 		store:      s,
 		locker:     locker,
 		reconciler: opt.Reconciler,
+		observer:   opt.Observer,
 		grpcServer: grpc.NewServer(),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
@@ -114,6 +129,7 @@ func (s *Server) GetTask(ctx context.Context, req *v1alpha1.GetTaskRequest) (*v1
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
+	s.observe(ctx, task)
 	return task, nil
 }
 
@@ -134,6 +150,7 @@ func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) 
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing tasks: %v", err)
 	}
+	s.observe(ctx, tasks...)
 	return &v1alpha1.ListTasksResponse{Tasks: tasks}, nil
 }
 
@@ -164,7 +181,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	existing, err := s.store.GetTask(ctx, atespace, taskName)
 	if err == nil {
-		if existing.GetStatus().GetPhase() != "Pending" || !proto.Equal(existing.GetSpec(), task.GetSpec()) {
+		if existing.GetStatus().GetPhase() != v1alpha1.PhasePending || !proto.Equal(existing.GetSpec(), task.GetSpec()) {
 			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
 		}
 		task = existing
@@ -179,10 +196,12 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Status.Phase = "Suspended"
-	if err := s.store.SaveTask(ctx, task); err != nil {
+	// The task is Pending until its actor exists. New tasks start suspended.
+	task.Status.Phase = v1alpha1.PhasePending
+	if err := s.store.SaveTask(ctx, withStoredStatus(task)); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
+	task.Status.Phase = "Suspended"
 
 	// Directly reconcile with Substrate
 	if s.reconciler != nil {
@@ -193,20 +212,20 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 				task.Status = reconciled.Status
 			}
 			if substrate.IsTransientError(err) {
-				task.Status.Phase = "Pending"
-			} else if task.Status.Phase != "Pending" {
-				task.Status.Phase = "Failed"
+				task.Status.Phase = v1alpha1.PhasePending
+			} else if task.Status.Phase != v1alpha1.PhasePending {
+				task.Status.Phase = v1alpha1.PhaseFailed
 			}
-			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status))
 			if substrate.IsTransientError(err) {
 				return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
 			}
 			return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
-		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
-			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
-		}
+	}
+	if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 
 	return task, nil
@@ -242,7 +261,7 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.Phase = v1alpha1.PhaseTerminating
-	if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+	if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 
@@ -306,11 +325,11 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 			return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
-		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
 			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 		}
 	} else {
-		if err := s.store.SaveTask(ctx, task); err != nil {
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
 			return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
 		}
 	}
@@ -354,27 +373,66 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 				task.Status = reconciled.Status
 			}
 			if substrate.IsTransientError(err) {
-				task.Status.Phase = "Pending"
-			} else if task.Status.Phase != "Pending" {
-				task.Status.Phase = "Failed"
+				task.Status.Phase = v1alpha1.PhasePending
+			} else if task.Status.Phase != v1alpha1.PhasePending {
+				task.Status.Phase = v1alpha1.PhaseFailed
 			}
-			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status)
+			_ = s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status))
 			if substrate.IsTransientError(err) {
 				return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
 			}
 			return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
 		}
 		task.Status = reconciled.Status
-		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, task.Status); err != nil {
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
 			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 		}
 	} else {
-		if err := s.store.SaveTask(ctx, task); err != nil {
+		if err := s.store.UpdateTaskStatus(ctx, atespace, taskName, storedStatus(task.Status)); err != nil {
 			return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
 		}
 	}
 
 	return task, nil
+}
+
+// observe fills in the actor-owned parts of the tasks' status, when the server
+// is connected to Substrate.
+func (s *Server) observe(ctx context.Context, tasks ...*v1alpha1.Task) {
+	if s.observer != nil && len(tasks) > 0 {
+		s.observer.Observe(ctx, tasks)
+	}
+}
+
+// storedStatus returns the part of a task's status that AX owns and stores. The
+// actor, its worker, and the phase and Ready condition that follow from the
+// actor's state are dropped: they are read from Substrate instead, so the store
+// can never hold a stale copy of them.
+func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
+	out := &v1alpha1.TaskStatus{}
+	if st != nil {
+		out = proto.Clone(st).(*v1alpha1.TaskStatus)
+	}
+	out.Actor = ""
+	out.WorkerIp = ""
+	if !v1alpha1.IsAXPhase(out.Phase) {
+		out.Phase = ""
+		conds := out.Conditions[:0]
+		for _, c := range out.Conditions {
+			if c.GetType() != "Ready" {
+				conds = append(conds, c)
+			}
+		}
+		out.Conditions = conds
+	}
+	return out
+}
+
+// withStoredStatus returns a copy of task whose status is storedStatus.
+func withStoredStatus(task *v1alpha1.Task) *v1alpha1.Task {
+	out := proto.Clone(task).(*v1alpha1.Task)
+	out.Status = storedStatus(task.Status)
+	return out
 }
 
 // fetchWorkspace loads the Workspace the task binds, or nil when the task
@@ -406,26 +464,49 @@ func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStr
 	}
 	defer closer.Close()
 
+	var last *v1alpha1.Task
+	send := func(task *v1alpha1.Task, action string) (done bool, err error) {
+		s.observe(ctx, task)
+		if last != nil && proto.Equal(last, task) {
+			return false, nil
+		}
+		last = task
+		if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: task, Action: action}); err != nil {
+			return true, err
+		}
+		phase := task.GetStatus().GetPhase()
+		return phase == v1alpha1.PhaseFailed || phase == "Completed", nil
+	}
+
 	if initial, err := s.store.GetTask(ctx, atespace, req.Name); err == nil {
-		if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: initial, Action: "INITIAL"}); err != nil {
+		if done, err := send(initial, "INITIAL"); done || err != nil {
 			return err
 		}
 	}
 
+	// Store events cover AX's own writes. Polling picks up changes that happen
+	// on Substrate alone, such as an actor crashing or being suspended.
+	ticker := time.NewTicker(watchPollInterval)
+	defer ticker.Stop()
 	for {
+		var task *v1alpha1.Task
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case task, ok := <-ch:
+		case t, ok := <-ch:
 			if !ok {
 				return nil
 			}
-			if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: task, Action: "MODIFIED"}); err != nil {
-				return err
+			task = t
+		case <-ticker.C:
+			t, err := s.store.GetTask(ctx, atespace, req.Name)
+			if err != nil {
+				continue
 			}
-			if task.Status != nil && (task.Status.Phase == "Failed" || task.Status.Phase == "Completed") {
-				return nil
-			}
+			task = t
+		}
+		if done, err := send(task, "MODIFIED"); done || err != nil {
+			return err
 		}
 	}
 }

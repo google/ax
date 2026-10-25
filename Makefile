@@ -68,6 +68,9 @@ deploy: deploy-redis deploy-server
 
 deploy-redis:
 	@echo "==> Deploying Redis to ax-system namespace..."
+	@# Redis used to run as a Deployment without storage. Its pods share the
+	@# StatefulSet's labels, so remove it or the Service would route to both.
+	kubectl -n ax-system delete deployment ax-redis --ignore-not-found
 	kubectl apply -f deploy/redis.yaml
 
 deploy-server:
