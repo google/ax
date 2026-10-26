@@ -17,6 +17,8 @@ package controller
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,6 +47,10 @@ const (
 	// resumed actor to finish workspace setup.
 	defaultWorkspaceReadyTimeout = 15 * time.Second
 	workspaceReadyPollInterval   = 500 * time.Millisecond
+
+	defaultServiceDNSCAFile      = "/run/servicedns-ca/trust-bundle.pem"
+	defaultPodIdentityBundleFile = "/run/podidentity.podcert.ate.dev/credential-bundle.pem"
+	defaultRouterServerName      = "atenet-router.ate-system.svc"
 )
 
 // TaskReconciler reconciles Task resources by provisioning and orchestrating
@@ -77,11 +83,37 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 	}
 	return &TaskReconciler{
 		client:                  client,
-		httpClient:              &http.Client{Timeout: 2 * time.Second},
+		httpClient:              newProbeHTTPClient(),
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
 		defaultTaskImage:        defaultTaskImage,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
+	}
+}
+
+func newProbeHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: defaultRouterServerName,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(defaultPodIdentityBundleFile, defaultPodIdentityBundleFile)
+			if err != nil {
+				return &tls.Certificate{}, nil
+			}
+			return &cert, nil
+		},
+	}
+	if caBytes, err := os.ReadFile(defaultServiceDNSCAFile); err == nil {
+		pool := x509.NewCertPool()
+		if pool.AppendCertsFromPEM(caBytes) {
+			tlsCfg.RootCAs = pool
+		}
+	}
+	transport.TLSClientConfig = tlsCfg
+	return &http.Client{
+		Timeout:   2 * time.Second,
+		Transport: transport,
 	}
 }
 
@@ -275,7 +307,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 
 			// 2. Router-based readyz check (in-cluster via atenet-router)
 			if routerAddr := os.Getenv("ATENET_ROUTER_ADDR"); routerAddr != "" {
-				rReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, fmt.Sprintf("http://%s/readyz?check=workspace", routerAddr), nil)
+				routerURL := routerAddr
+				if !strings.HasPrefix(routerURL, "http://") && !strings.HasPrefix(routerURL, "https://") {
+					if strings.HasSuffix(routerURL, ":443") {
+						routerURL = "https://" + routerURL
+					} else {
+						routerURL = "http://" + routerURL
+					}
+				}
+				routerURL = strings.TrimRight(routerURL, "/") + "/readyz?check=workspace"
+				rReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, routerURL, nil)
 				if rReq != nil {
 					rReq.Header.Set("ate-target-actor", fmt.Sprintf("%s/%s", atespace, actorName))
 					if resp, err := r.httpClient.Do(rReq); err == nil {

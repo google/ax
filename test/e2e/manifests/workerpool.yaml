@@ -5,7 +5,7 @@ metadata:
   namespace: ${AX_SYSTEM_NAMESPACE}
 spec:
   replicas: ${AX_WORKER_REPLICAS}
-  workerImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
+  workerImage: ko://go.ate.dev/substrate/cmd/ateworker-gvisor
   sandboxClasses:
   - name: gvisor
     configRef:

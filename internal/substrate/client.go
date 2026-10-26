@@ -26,10 +26,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
-	"github.com/agent-substrate/substrate/pkg/sandboxclass"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"go.ate.dev/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -291,28 +290,46 @@ func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code)
 	return err
 }
 
+const (
+	// DefaultCPUMillicores is the default CPU limit (1 core) applied to an
+	// ActorTemplate when a Task omits spec.resources.limits.cpu.
+	DefaultCPUMillicores int64 = 1000
+	// DefaultMemoryBytes is the default memory limit (512 MiB) applied to an
+	// ActorTemplate when a Task omits spec.resources.limits.memory.
+	DefaultMemoryBytes int64 = 512 << 20
+)
+
 // ResourceLimits translates a Task's resource limits into the Substrate
 // ActorTemplate resources block. Substrate sizes a sandbox by limits alone
 // (requests are rejected by v1alpha1.ValidateResources). It returns nil when no
-// limit is set so the template inherits the worker defaults.
-func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.Resources {
+// limit is set so the template uses the default sandbox limits.
+func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements {
 	limits := reqs.GetLimits()
-	var out []*ateapipb.Limits
-	if cpu := limits.GetCpu(); cpu != "" {
-		out = append(out, &ateapipb.Limits{Name: "cpu", Quantity: cpu})
-	}
-	if memory := limits.GetMemory(); memory != "" {
-		out = append(out, &ateapipb.Limits{Name: "memory", Quantity: memory})
-	}
-	if len(out) == 0 {
+	cpuStr := limits.GetCpu()
+	memStr := limits.GetMemory()
+	if cpuStr == "" && memStr == "" {
 		return nil
 	}
-	return &ateapipb.Resources{Limits: out}
+	out := &ateapipb.Resources{
+		CpuMillicores: DefaultCPUMillicores,
+		MemoryBytes:   DefaultMemoryBytes,
+	}
+	if cpuStr != "" {
+		if cpu, err := v1alpha1.ParseCPUMillicores(cpuStr); err == nil {
+			out.CpuMillicores = cpu
+		}
+	}
+	if memStr != "" {
+		if mem, err := v1alpha1.ParseMemoryBytes(memStr); err == nil {
+			out.MemoryBytes = mem
+		}
+	}
+	return &ateapipb.ResourceRequirements{Limits: out}
 }
 
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
-// A nil resources leaves the sandbox sized by the worker defaults.
-func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.Resources) *ateapipb.ActorTemplate {
+// A nil resources applies DefaultCPUMillicores and DefaultMemoryBytes.
+func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.ResourceRequirements) *ateapipb.ActorTemplate {
 	if atespace == "" {
 		atespace = "default"
 	}
@@ -336,6 +353,17 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			Name:  k,
 			Value: v,
 		})
+	}
+
+	cpuMillicores := DefaultCPUMillicores
+	memoryBytes := DefaultMemoryBytes
+	if limits := resources.GetLimits(); limits != nil {
+		if limits.GetCpuMillicores() > 0 {
+			cpuMillicores = limits.GetCpuMillicores()
+		}
+		if limits.GetMemoryBytes() > 0 {
+			memoryBytes = limits.GetMemoryBytes()
+		}
 	}
 
 	return &ateapipb.ActorTemplate{
@@ -367,17 +395,18 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			StorageLocation:   snapshotsBucket,
 			PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES,
 		},
-		SandboxConfig: &ateapipb.SandboxConfig{
-			SandboxClass: sandboxclass.GVisor,
-			ConfigName:   "gvisor-default",
+		Resources: &ateapipb.ResourceRequirements{
+			Limits: &ateapipb.Resources{
+				CpuMillicores: cpuMillicores,
+				MemoryBytes:   memoryBytes,
+			},
 		},
-		Resources: resources,
 	}
 }
 
 // EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
-// resource limits (nil for worker defaults), and optional environment variables.
-func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.Resources, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
+// resource limits (nil for default limits), and optional environment variables.
+func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
 	if err == nil && existing != nil {
 		return existing, nil
@@ -589,7 +618,6 @@ func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) er
 			Atespace: atespace,
 			Name:     actorName,
 		},
-		AnyState: true,
 	}
 	err := retryOnCodes(ctx, func() error {
 		_, err := c.control.DeleteActor(ctx, req)

@@ -50,7 +50,7 @@ SUBSTRATE_REPO="${SUBSTRATE_REPO:-https://github.com/agent-substrate/substrate.g
 GOARCH="$(go env GOARCH)"
 
 # Default to the Substrate version AX is built against. Go pseudo-versions
-SUBSTRATE_REF="${SUBSTRATE_REF:-$(cd "${REPO_ROOT}" && go list -m -f '{{.Version}}' github.com/agent-substrate/substrate)}"
+SUBSTRATE_REF="${SUBSTRATE_REF:-$(cd "${REPO_ROOT}" && (go list -m -f '{{.Version}}' go.ate.dev/substrate 2> /dev/null || go list -m -f '{{.Version}}' github.com/agent-substrate/substrate))}"
 if [[ "${SUBSTRATE_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.*-([0-9a-f]{12})$ ]]; then
   SUBSTRATE_REF="${BASH_REMATCH[1]}"
 fi
@@ -200,6 +200,7 @@ else
   log "Reusing Kind cluster '${KIND_CLUSTER_NAME}' (set RECREATE_KIND=true to recreate)."
 fi
 kind export kubeconfig --name "${KIND_CLUSTER_NAME}" --kubeconfig "${KUBECONFIG}"
+docker exec "${KIND_CLUSTER_NAME}-control-plane" sysctl -w fs.inotify.max_user_instances=8192 > /dev/null 2>&1 || true
 
 # 2. Install Substrate unless the requested commit is already installed.
 INSTALLED_SUBSTRATE_COMMIT="$(k get namespace ate-system -o jsonpath='{.metadata.annotations.substrate-commit}' 2> /dev/null || true)"
@@ -211,10 +212,20 @@ if [[ "${FORCE_INSTALL_SUBSTRATE:-false}" == "true" ]] ||
     uninstall_substrate
   fi
 
-  install_args=(--deploy-ate-system --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}")
-  # Older Substrate versions do not have --credential-provider.
-  if grep -q -- "--credential-provider" "${SUBSTRATE_WORK_DIR}/hack/install-ate.sh" 2> /dev/null; then
-    install_args+=(--credential-provider='{"enabled":false}')
+  if [[ -d "${SUBSTRATE_WORK_DIR}/cmd/ate-setup" ]]; then
+    install_args=(
+      deploy ate-system
+      --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}"
+      --credential-provider='{"enabled":false}'
+      --ateapi-authz-bootstrap-owners="system:serviceaccount:ate-system:ate-client,system:serviceaccount:${AX_SYSTEM_NAMESPACE}:ax-server"
+      --ingress-allowed-spiffe-ids="spiffe://cluster.local/ns/${AX_SYSTEM_NAMESPACE}/sa/ax-server"
+    )
+  else
+    install_args=(--deploy-ate-system --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}")
+    # Older Substrate versions do not have --credential-provider.
+    if grep -q -- "--credential-provider" "${SUBSTRATE_WORK_DIR}/hack/install-ate.sh" 2> /dev/null; then
+      install_args+=(--credential-provider='{"enabled":false}')
+    fi
   fi
   (cd "${SUBSTRATE_WORK_DIR}" && ./hack/install-ate-kind.sh "${install_args[@]}")
   k annotate namespace ate-system "substrate-commit=${SUBSTRATE_COMMIT}" --overwrite > /dev/null

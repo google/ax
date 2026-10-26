@@ -1078,16 +1078,34 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 			return fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
 		}
 	} else {
-		// 2. Connect via the Substrate atenet-router service in ate-system (port 80)
-		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
-		if err != nil {
-			return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+		// 2. Connect via the Substrate atenet-router service in ate-system (mTLS on port 443, falling back to port 80)
+		axNamespace := os.Getenv("AX_SYSTEM_NAMESPACE")
+		if axNamespace == "" {
+			axNamespace = v1alpha1.DefaultSystemNamespace
 		}
-		cleanup = pfCleanup
-		routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-		guestClient, err = guest.DialTarget(routerEndpoint, targetActor)
-		if err != nil {
-			return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+		if tlsCfg, tlsErr := tunnel.RouterTLSConfig(context.Background(), kubeContext, axNamespace, "ax-server"); tlsErr == nil {
+			if localPort, pfCleanup, pfErr := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 443); pfErr == nil {
+				cleanup = pfCleanup
+				routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+				guestClient, err = guest.DialTargetTLS(routerEndpoint, targetActor, tlsCfg)
+				if err != nil {
+					pfCleanup()
+					return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+				}
+			}
+		}
+		if guestClient == nil {
+			localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
+			if err != nil {
+				return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+			}
+			cleanup = pfCleanup
+			routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+			guestClient, err = guest.DialTarget(routerEndpoint, targetActor)
+			if err != nil {
+				pfCleanup()
+				return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+			}
 		}
 	}
 

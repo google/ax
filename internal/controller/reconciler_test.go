@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"go.ate.dev/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -735,9 +735,9 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	if len(mockSrv.createdTemplates) != 1 {
 		t.Fatalf("created %d templates, want 1", len(mockSrv.createdTemplates))
 	}
-	want := &ateapipb.Resources{Limits: []*ateapipb.Limits{
-		{Name: "cpu", Quantity: "2"},
-		{Name: "memory", Quantity: "4Gi"},
+	want := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: 2000,
+		MemoryBytes:   4 << 30,
 	}}
 	if got := mockSrv.createdTemplates[0].GetResources(); !proto.Equal(got, want) {
 		t.Errorf("template resources = %v, want %v", got, want)
@@ -756,12 +756,12 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	if first == second {
 		t.Errorf("limits change reused template name %q, want a distinct name", first)
 	}
-	want.Limits[1].Quantity = "8Gi"
+	want.Limits.MemoryBytes = 8 << 30
 	if got := mockSrv.createdTemplates[1].GetResources(); !proto.Equal(got, want) {
 		t.Errorf("template resources after change = %v, want %v", got, want)
 	}
 
-	// A task without limits inherits the worker defaults: no resources block.
+	// A task without limits uses the default CPU and memory limits.
 	plain := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
 		Kind:       v1alpha1.KindTask,
@@ -771,8 +771,12 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	if _, err := reconciler.Reconcile(ctx, plain, nil); err != nil {
 		t.Fatalf("Reconcile of task without limits failed: %v", err)
 	}
-	if got := mockSrv.createdTemplates[len(mockSrv.createdTemplates)-1].GetResources(); got != nil {
-		t.Errorf("template for task without limits has resources %v, want none", got)
+	wantDefault := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: substrate.DefaultCPUMillicores,
+		MemoryBytes:   substrate.DefaultMemoryBytes,
+	}}
+	if got := mockSrv.createdTemplates[len(mockSrv.createdTemplates)-1].GetResources(); !proto.Equal(got, wantDefault) {
+		t.Errorf("template for task without limits has resources %v, want %v", got, wantDefault)
 	}
 }
 
