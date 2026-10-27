@@ -33,11 +33,11 @@ spec:
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 
-Then apply it, watch it come up, and look over the agent's shoulder:
+Then apply it, check on it, and look over the agent's shoulder:
 
 ```bash
 ax apply -f task.yaml
-ax watch task test
+ax describe task test
 ax ssh test -- ls -al /workspace
 ```
 
@@ -97,7 +97,6 @@ ax get tasks
 # NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
 # task123   default    Running   task123         10.20.3.67   1m
 
-ax watch task task123                # stream phase and condition changes live
 ax ssh task123 -- ls -la /workspace  # poke around inside the sandbox
 ax suspend task task123              # checkpoint and pause
 ax resume task task123               # pick up where it left off
@@ -120,7 +119,7 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 
 ## CLI usage
 
-`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs.
+`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `delete`, plus a few agent-specific verbs.
 
 ### Everyday commands
 
@@ -133,7 +132,6 @@ ax get tasks                          # list
 ax get tasks -a my-atespace           # list in another atespace
 ax get task task123                   # full spec + live status as YAML
 ax describe task task123              # human-readable detail
-ax watch task task123                 # stream status and condition transitions
 ax suspend task task123               # checkpoint actor state and pause
 ax resume task task123                # resume a suspended task
 ax delete task task123

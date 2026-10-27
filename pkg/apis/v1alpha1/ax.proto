@@ -33,7 +33,6 @@ service AX {
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
-  rpc WatchTask(WatchTaskRequest) returns (stream WatchTaskResponse);
 
 
   // Workspaces
@@ -238,16 +237,6 @@ message SuspendTaskRequest {
 message ResumeTaskRequest {
   string atespace = 1;
   string name = 2;
-}
-
-message WatchTaskRequest {
-  string atespace = 1;
-  string name = 2;
-}
-
-message WatchTaskResponse {
-  Task task = 1;
-  string action = 2;
 }
 
 // Workspaces

@@ -20,7 +20,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/ax/internal/lock"
@@ -50,10 +49,6 @@ type Options struct {
 	// which the store never holds. Without it, tasks are returned as stored.
 	Substrate *substrate.Client
 }
-
-// watchPollInterval is how often WatchTask re-reads a task, picking up both
-// AX's own writes and changes made on Substrate alone (for example a crash).
-var watchPollInterval = 2 * time.Second
 
 // Server provides the gRPC API for AX.
 type Server struct {
@@ -619,53 +614,6 @@ func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1al
 		return nil
 	}
 	return ws
-}
-
-func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStreamingServer[v1alpha1.WatchTaskResponse]) error {
-	if req == nil {
-		return status.Error(codes.InvalidArgument, "missing request")
-	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
-	ctx := stream.Context()
-
-	var last *v1alpha1.Task
-	send := func(task *v1alpha1.Task, action string) (done bool, err error) {
-		if last != nil && proto.Equal(last, task) {
-			return false, nil
-		}
-		last = task
-		if err := stream.Send(&v1alpha1.WatchTaskResponse{Task: task, Action: action}); err != nil {
-			return true, err
-		}
-		phase := task.GetStatus().GetPhase()
-		return phase == v1alpha1.PhaseFailed, nil
-	}
-
-	if initial, err := s.getTask(ctx, atespace, req.Name); err == nil {
-		if done, err := send(initial, "INITIAL"); done || err != nil {
-			return err
-		}
-	}
-
-	ticker := time.NewTicker(watchPollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-		task, err := s.getTask(ctx, atespace, req.Name)
-		if err != nil {
-			continue
-		}
-		if done, err := send(task, "MODIFIED"); done || err != nil {
-			return err
-		}
-	}
 }
 
 // --- Workspaces ---

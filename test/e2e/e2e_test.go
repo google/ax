@@ -16,9 +16,7 @@ package e2e_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -497,16 +495,15 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 	assertContains(t, "post-resume check", out, "DURABLE=durable-data-42", "TMP_GONE")
 }
 
-// TestE2E_WatchDescribeAndAtespaceIsolation verifies that a task in a custom
-// atespace is invisible from the default atespace, that WatchTask emits
-// INITIAL and then MODIFIED events as the task is resumed, and that
-// `ax describe task` reports the running task.
-func TestE2E_WatchDescribeAndAtespaceIsolation(t *testing.T) {
+// TestE2E_DescribeAndAtespaceIsolation verifies that a task in a custom
+// atespace is invisible from the default atespace and that
+// `ax describe task` reports the task once it is resumed.
+func TestE2E_DescribeAndAtespaceIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
 	ns := uniqueName("team-e2e")
-	task := uniqueName("task-watch")
+	task := uniqueName("task-describe")
 	env.deleteOnCleanup(t, ns, "task", task)
 
 	env.apply(t, ns, taskManifest(t, ns, task, true))
@@ -520,43 +517,8 @@ func TestE2E_WatchDescribeAndAtespaceIsolation(t *testing.T) {
 	}
 	assertContains(t, "'ax get tasks' in "+ns, env.mustRunAX(t, ns, "get", "tasks"), task)
 
-	// 2. WatchTask emits INITIAL (Suspended), then MODIFIED (Running) on resume.
-	stream, err := env.AXClient.WatchTask(ctx, &v1alpha1.WatchTaskRequest{Name: task, Atespace: ns})
-	if err != nil {
-		t.Fatalf("WatchTask: %v", err)
-	}
-	evt, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("receiving INITIAL event: %v", err)
-	}
-	if evt.GetAction() != "INITIAL" || evt.GetTask().GetStatus().GetPhase() != phaseSuspended {
-		t.Fatalf("first event: action=%q phase=%q, want INITIAL/%s", evt.GetAction(), evt.GetTask().GetStatus().GetPhase(), phaseSuspended)
-	}
-
-	resumeErr := make(chan error, 1)
-	go func() {
-		out, err := env.runAX(ns, "resume", "task", task)
-		if err != nil {
-			err = fmt.Errorf("%w: %s", err, out)
-		}
-		resumeErr <- err
-	}()
-
-	for {
-		evt, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			t.Fatal("WatchTask stream ended before a MODIFIED/Running event")
-		}
-		if err != nil {
-			t.Fatalf("receiving WatchTask event: %v", err)
-		}
-		if evt.GetAction() == "MODIFIED" && evt.GetTask().GetStatus().GetPhase() == phaseRunning {
-			break
-		}
-	}
-	if err := <-resumeErr; err != nil {
-		t.Fatalf("ax resume task: %v", err)
-	}
+	// 2. Resume the task.
+	env.mustRunAX(t, ns, "resume", "task", task)
 
 	// 3. `ax describe task` reflects the running task and its conditions.
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", task),

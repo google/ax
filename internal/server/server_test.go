@@ -207,22 +207,6 @@ func TestServerGRPC(t *testing.T) {
 		t.Fatalf("expected 1 model in list, got %d", len(listModelsResp.Models))
 	}
 
-	// 7b. WatchTask (should receive INITIAL state)
-	stream, err := client.WatchTask(ctx, &v1alpha1.WatchTaskRequest{Atespace: "default", Name: "grpc-task"})
-	if err != nil {
-		t.Fatalf("WatchTask failed: %v", err)
-	}
-	watchMsg, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("WatchTask Recv failed: %v", err)
-	}
-	if watchMsg.Action != "INITIAL" {
-		t.Errorf("expected INITIAL action, got %s", watchMsg.Action)
-	}
-	if watchMsg.Task == nil || watchMsg.Task.Metadata == nil || watchMsg.Task.Metadata.Name != "grpc-task" {
-		t.Errorf("expected task 'grpc-task' in watch, got %+v", watchMsg.Task)
-	}
-
 	// 8. Delete operations
 	if _, err := client.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Atespace: "default", Name: "grpc-task"}); err != nil {
 		t.Fatalf("DeleteTask failed: %v", err)
@@ -911,56 +895,5 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	}
 	if storedAfterResumeErr.GetStatus().GetPhase() != v1alpha1.PhasePending {
 		t.Errorf("expected stored phase 'Pending' after transient ResumeTask error, got %q", storedAfterResumeErr.GetStatus().GetPhase())
-	}
-}
-
-func TestServer_WatchTaskSeesSubstrateOnlyChanges(t *testing.T) {
-	defer server.SetWatchPollInterval(10 * time.Millisecond)()
-
-	st := memory.NewStore()
-	sub := &fakeSubstrate{names: []string{"watched"}, state: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
-	srv := server.NewServer(st, server.Options{Reconciler: &fakeReconciler{}, Substrate: sub.client(t)})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "watched"},
-		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
-	}}); err != nil {
-		t.Fatalf("CreateTask: %v", err)
-	}
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	go srv.GRPCServer().Serve(ln)
-	defer srv.GRPCServer().Stop()
-	conn, err := grpc.NewClient(ln.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer conn.Close()
-
-	stream, err := v1alpha1.NewAXClient(conn).WatchTask(ctx, &v1alpha1.WatchTaskRequest{Name: "watched"})
-	if err != nil {
-		t.Fatalf("WatchTask: %v", err)
-	}
-	evt, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("Recv: %v", err)
-	}
-	if evt.GetAction() != "INITIAL" || evt.GetTask().GetStatus().GetPhase() != "Suspended" {
-		t.Fatalf("first event = %s/%s, want INITIAL/Suspended", evt.GetAction(), evt.GetTask().GetStatus().GetPhase())
-	}
-
-	// The actor crashes on Substrate. AX writes nothing, but the watcher hears about it.
-	sub.setState(ateapipb.ActorState_ACTOR_STATE_CRASHED)
-	evt, err = stream.Recv()
-	if err != nil {
-		t.Fatalf("Recv: %v", err)
-	}
-	if evt.GetAction() != "MODIFIED" || evt.GetTask().GetStatus().GetPhase() != v1alpha1.PhaseFailed {
-		t.Fatalf("second event = %s/%s, want MODIFIED/Failed", evt.GetAction(), evt.GetTask().GetStatus().GetPhase())
 	}
 }

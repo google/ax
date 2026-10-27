@@ -4,7 +4,7 @@
 
 Storing millions of short-lived tasks as Kubernetes CRDs pushes etcd past its comfort zone (single-digit GB storage limits, write-rate bottlenecks, control plane degradation). AX stores its state in PostgreSQL and reconciles directly with Agent Substrate under fine-grained distributed locks.
 
-PostgreSQL holds resources as protojson documents alongside the leases that back AX's distributed locks. Watches and lock waiters poll; nothing depends on `LISTEN/NOTIFY`, so any connection pooler works. `ax-server` creates any missing tables when it starts; there are no versioned migrations yet. The bundled manifest runs a single-instance StatefulSet with a persistent volume; any reachable PostgreSQL works. Storage sits behind the `store.Store` and `lock.Locker` interfaces. The store holds only what AX owns: specs, metadata, and the parts of a task's status that describe AX's own work (`Pending`, `Failed`, `Terminating`, the task ID, workspace setup). Everything that belongs to the task's actor (its phase while provisioned, `actor`, `workerIP`, and the `Ready` condition) is read from Agent Substrate whenever a task is fetched, listed, or watched, so AX never keeps a copy that can drift from the actor. The split lives in a few helpers in `internal/server/server.go` (`getTask`, `listTasks`, `saveTask`, `updateTask`, `deleteTask`), so storage implementations never need to know about Substrate.
+PostgreSQL holds resources as protojson documents alongside the leases that back AX's distributed locks. Lock waiters poll; nothing depends on `LISTEN/NOTIFY`, so any connection pooler works. `ax-server` creates any missing tables when it starts; there are no versioned migrations yet. The bundled manifest runs a single-instance StatefulSet with a persistent volume; any reachable PostgreSQL works. Storage sits behind the `store.Store` and `lock.Locker` interfaces. The store holds only what AX owns: specs, metadata, and the parts of a task's status that describe AX's own work (`Pending`, `Failed`, `Terminating`, the task ID, workspace setup). Everything that belongs to the task's actor (its phase while provisioned, `actor`, `workerIP`, and the `Ready` condition) is read from Agent Substrate whenever a task is fetched or listed, so AX never keeps a copy that can drift from the actor. The split lives in a few helpers in `internal/server/server.go` (`getTask`, `listTasks`, `saveTask`, `updateTask`, `deleteTask`), so storage implementations never need to know about Substrate.
 
 ```
                       ax apply -f task.yaml
@@ -27,7 +27,7 @@ PostgreSQL holds resources as protojson documents alongside the leases that back
 
 | Binary | Role |
 |---|---|
-| `ax` | Developer CLI. Applies manifests, inspects and watches resources, tunnels to the cluster. |
+| `ax` | Developer CLI. Applies manifests, inspects resources, tunnels to the cluster. |
 | `ax-server` | Direct-execution gRPC API on port 8080. Validates manifests, manages distributed locks, reconciles directly with Agent Substrate, and persists state to PostgreSQL. |
 | `ax-task-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
 
@@ -45,7 +45,6 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 | `DeleteTask` | Delete a task. |
 | `SuspendTask` | Checkpoint actor state and pause the task. |
 | `ResumeTask` | Resume a suspended task. |
-| `WatchTask` | Server-streaming RPC that emits status and condition transitions as they happen. |
 
 **Workspaces**
 

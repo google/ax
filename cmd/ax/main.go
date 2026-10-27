@@ -116,8 +116,6 @@ func main() {
 		err = runGet(serverURL, atespace, cleanArgs)
 	case "describe":
 		err = runDescribe(serverURL, atespace, cleanArgs)
-	case "watch":
-		err = runWatch(serverURL, atespace, cleanArgs)
 	case "suspend":
 		err = runSuspend(serverURL, atespace, cleanArgs)
 	case "resume":
@@ -216,7 +214,6 @@ Available Commands:
   describe task <name>    Show detailed information about a task
   describe workspace <name> Show detailed information about a workspace
   describe model <name>   Show detailed information about a model
-  watch task <name>       Stream live status and condition updates for a task
   ssh <task-name> [-- cmd] Run a command or shell inside the running task container
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
   suspend task <name>     Suspend execution of a task and checkpoint state
@@ -718,59 +715,6 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		_ = w.Flush()
 	}
 
-	return nil
-}
-
-func runWatch(serverURL, atespace string, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: ax watch task <name>")
-	}
-	name := args[1]
-
-	client, conn, err := getAXClient(serverURL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	stream, err := client.WatchTask(context.Background(), &v1alpha1.WatchTaskRequest{Atespace: atespace, Name: name})
-	if err != nil {
-		return fmt.Errorf("watching task: %w", err)
-	}
-
-	fmt.Printf("Watching task %s/%s...\n", atespace, name)
-
-	for {
-		resp, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("receiving stream update: %w", err)
-		}
-
-		task := resp.Task
-		if task != nil {
-			phase := ""
-			actor := ""
-			workerIP := ""
-			if task.Status != nil {
-				phase = task.Status.Phase
-				actor = task.Status.Actor
-				workerIP = task.Status.WorkerIp
-			}
-			fmt.Printf("[%s] Phase: %-10s Actor: %-18s WorkerIP: %s\n",
-				time.Now().Format("15:04:05"),
-				phase,
-				actor,
-				workerIP,
-			)
-			if phase == v1alpha1.PhaseFailed {
-				fmt.Printf("Task reached terminal phase %q.\n", phase)
-				break
-			}
-		}
-	}
 	return nil
 }
 

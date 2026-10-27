@@ -10,7 +10,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 
 ### Lifecycle
 
-`status.phase` is a one-word summary of where the task is: `Running`, `Suspended`, `Failed`, `Terminating`, and so on. Conditions carry the detail. Watch them with `ax watch` or poll them with `ax describe`.
+`status.phase` is a one-word summary of where the task is: `Running`, `Suspended`, `Failed`, `Terminating`, and so on. Conditions carry the detail. Check them with `ax describe`.
 
 | Condition | True when |
 |---|---|

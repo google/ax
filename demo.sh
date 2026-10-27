@@ -16,7 +16,7 @@
 # AX demo: the full lifecycle of one task in about two minutes.
 #
 #   1. Declare a Workspace and a Task in YAML and apply them.
-#   2. Watch the task come up and the workspace get initialized.
+#   2. Resume the task and inspect its status.
 #   3. Look inside the task with `ax ssh`.
 #   4. Suspend the task, checkpointing its workspace.
 #
