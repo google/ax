@@ -63,6 +63,7 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `AX_SNAPSHOTS_BUCKET` | `gs://ate-snapshots/ax/` | Snapshot location in Substrate's in-cluster RustFS |
 | `RECREATE_KIND` | `false` | Delete and recreate the Kind cluster |
 | `FORCE_INSTALL_SUBSTRATE` | `false` | Reinstall Substrate even if the requested commit is already installed |
+| `SUBSTRATE_IMAGE_CACHE_DIR` | unset | Host directory for the local registry's storage. When set, Substrate's images are published there once per Substrate version (`git describe`) and installed pre-built afterwards, skipping the Substrate build. CI caches this directory |
 | `CLEANUP_KIND` | `false` | `hack/run-e2e-kind.sh` only: delete the cluster on exit |
 | `SKIP_SETUP` | `false` | `hack/run-e2e-kind.sh` only: skip provisioning |
 | `E2E_TIMEOUT` | `30m` | `go test` timeout |

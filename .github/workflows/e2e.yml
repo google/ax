@@ -53,6 +53,24 @@ jobs:
       with:
         install_only: true
 
+    # Substrate images for the go.mod version are built once and cached as the
+    # local registry's storage; later runs install them pre-built instead of
+    # compiling Substrate. The nightly and custom-ref runs build from source.
+    - name: Resolve Substrate image cache key
+      id: substrate
+      if: github.event_name != 'schedule' && inputs.substrate_ref == ''
+      run: |
+        echo "version=$(go list -m -f '{{.Version}}' go.ate.dev/substrate)" >> "${GITHUB_OUTPUT}"
+        echo "cache_dir=${GITHUB_WORKSPACE}/.tmp/substrate-registry" >> "${GITHUB_OUTPUT}"
+
+    - name: Restore Substrate image cache
+      id: substrate-cache
+      if: steps.substrate.outputs.version != ''
+      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: ${{ steps.substrate.outputs.cache_dir }}
+        key: substrate-images-${{ runner.os }}-${{ runner.arch }}-${{ steps.substrate.outputs.version }}
+
     # The runner is discarded after the job, so the cluster is left running for
     # the diagnostics step below rather than cleaned up.
     # PRs and pushes test the Substrate version in go.mod, so they are not
@@ -62,6 +80,7 @@ jobs:
       env:
         EVENT: ${{ github.event_name }}
         INPUT_REF: ${{ inputs.substrate_ref }}
+        SUBSTRATE_IMAGE_CACHE_DIR: ${{ steps.substrate.outputs.cache_dir }}
       run: |
         if [[ "${EVENT}" == "schedule" ]]; then
           make test-e2e-head
@@ -78,3 +97,22 @@ jobs:
         kubectl get pods -A -o wide || true
         kubectl -n ax-system logs deployment/ax-server --tail=200 || true
         kubectl -n ate-system logs deployment/ate-api-server --all-containers --tail=200 || true
+
+    # The registry also holds AX's own images, which are rebuilt every run.
+    # Drop them so the cache holds only the Substrate images.
+    - name: Prune Substrate image cache
+      if: success() && steps.substrate.outputs.version != '' && steps.substrate-cache.outputs.cache-hit != 'true'
+      env:
+        CACHE_DIR: ${{ steps.substrate.outputs.cache_dir }}
+      run: |
+        sudo rm -rf "${CACHE_DIR}"/docker/registry/v2/repositories/ax-*
+        docker exec kind-registry registry garbage-collect --delete-untagged /etc/distribution/config.yml > /dev/null
+        sudo chown -R "$(id -u):$(id -g)" "${CACHE_DIR}"
+        du -sh "${CACHE_DIR}"
+
+    - name: Upload Substrate image cache
+      if: success() && steps.substrate.outputs.version != '' && steps.substrate-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: ${{ steps.substrate.outputs.cache_dir }}
+        key: ${{ steps.substrate-cache.outputs.cache-primary-key }}
