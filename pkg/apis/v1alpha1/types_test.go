@@ -436,6 +436,15 @@ func TestValidateTask(t *testing.T) {
 			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "rel"}},
 			wantErr: "spec.workspace: path \"rel\" must be absolute",
 		},
+		{
+			name: "config",
+			spec: &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"suite": "swe", "shard": map[string]any{"index": 7}})},
+		},
+		{
+			name:    "oversized config",
+			spec:    &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", v1alpha1.MaxTaskConfigSize)})},
+			wantErr: "spec.config:",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -450,6 +459,95 @@ func TestValidateTask(t *testing.T) {
 				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+const configTaskYAML = `
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: swe-bench-shard-07
+spec:
+  image: us-docker.pkg.dev/acme/evals/harness:2026.10
+  command: ["python3", "-m", "harness.run"]
+  config:
+    suite: swe_bench_verified
+    shard: { index: 7, total: 32 }
+    models:
+      - provider: google
+        model: gemini-3.8-flash
+      - provider: google
+        model: gemini-3.8-pro
+    limits:
+      per_case_timeout: 15m
+      max_cost_usd: 25.5
+    report:
+      bucket: gs://acme-evals/results/
+      dry_run: true
+      since: "2026-10-01T00:00:00Z"
+      version: "1"
+      owner: null
+`
+
+func TestTask_Config_YAML(t *testing.T) {
+	var task v1alpha1.Task
+	if err := yaml.Unmarshal([]byte(configTaskYAML), &task); err != nil {
+		t.Fatal(err)
+	}
+	got := task.GetSpec().GetConfig().AsMap()
+	want := map[string]any{
+		"suite": "swe_bench_verified",
+		"shard": map[string]any{"index": 7.0, "total": 32.0},
+		"models": []any{
+			map[string]any{"provider": "google", "model": "gemini-3.8-flash"},
+			map[string]any{"provider": "google", "model": "gemini-3.8-pro"},
+		},
+		"limits": map[string]any{"per_case_timeout": "15m", "max_cost_usd": 25.5},
+		"report": map[string]any{
+			"bucket":  "gs://acme-evals/results/",
+			"dry_run": true,
+			"since":   "2026-10-01T00:00:00Z",
+			"version": "1",
+			"owner":   nil,
+		},
+	}
+	if !proto.Equal(task.GetSpec().GetConfig(), mustStruct(t, want)) {
+		t.Fatalf("config = %v, want %v", got, want)
+	}
+
+	// The config survives the YAML round trip the controller performs when it
+	// builds AX_TASK_YAML, and runners decoding it leniently see it unchanged.
+	out, err := yaml.Marshal(&task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var strict v1alpha1.Task
+	if err := yaml.Unmarshal(out, &strict); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, out)
+	}
+	if !proto.Equal(&task, &strict) {
+		t.Errorf("yaml round trip changed the task\n%s", out)
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(out, &node); err != nil {
+		t.Fatal(err)
+	}
+	var lenient v1alpha1.Task
+	if err := v1alpha1.UnmarshalYAMLLenient(&node, &lenient); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(&task, &lenient) {
+		t.Errorf("lenient decoding changed the task\n%s", out)
+	}
+}
+
+func TestTask_Config_MustBeObject(t *testing.T) {
+	for _, config := range []string{"[1, 2]", "hello", "3"} {
+		var task v1alpha1.Task
+		err := yaml.Unmarshal([]byte("kind: Task\nspec:\n  config: "+config+"\n"), &task)
+		if err == nil {
+			t.Errorf("config %s: expected an error, got none", config)
+		}
 	}
 }
 

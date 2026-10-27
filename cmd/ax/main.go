@@ -703,6 +703,14 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		if len(task.Spec.Command) > 0 {
 			fmt.Printf("Command:      %v\n", task.Spec.Command)
 		}
+		if config := task.Spec.GetConfig().AsMap(); len(config) > 0 {
+			if out, err := yaml.Marshal(config); err == nil {
+				fmt.Println("Config:")
+				for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+					fmt.Printf("  %s\n", line)
+				}
+			}
+		}
 	}
 
 	if len(conditions) > 0 {

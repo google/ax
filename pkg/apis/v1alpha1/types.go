@@ -405,5 +405,32 @@ func ValidateTask(t *Task) error {
 			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
 		}
 	}
+	if err := ValidateTaskConfig(spec); err != nil {
+		return err
+	}
 	return ValidateResources(spec.GetResources())
+}
+
+// MaxTaskConfigSize is the largest spec.config a task may have, measured as
+// its JSON encoding. The config is stored with the task and delivered to the
+// runner inside the AX_TASK_YAML environment variable, which Linux caps at
+// 128 KiB, so this leaves room for the rest of the spec.
+const MaxTaskConfigSize = 64 << 10
+
+// ValidateTaskConfig checks that spec.config fits within MaxTaskConfigSize.
+// The config is otherwise opaque: its schema belongs to the runner, and AX does
+// not interpret it.
+func ValidateTaskConfig(spec *TaskSpec) error {
+	config := spec.GetConfig()
+	if config == nil {
+		return nil
+	}
+	data, err := protoMarshal.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("spec.config: %w", err)
+	}
+	if len(data) > MaxTaskConfigSize {
+		return fmt.Errorf("spec.config: %d bytes exceeds the limit of %d bytes", len(data), MaxTaskConfigSize)
+	}
+	return nil
 }
