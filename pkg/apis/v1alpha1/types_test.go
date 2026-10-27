@@ -445,6 +445,25 @@ func TestValidateTask(t *testing.T) {
 			spec:    &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", v1alpha1.MaxTaskConfigSize)})},
 			wantErr: "spec.config:",
 		},
+		{
+			name: "config near the limit",
+			spec: &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", v1alpha1.MaxTaskConfigSize-100)})},
+		},
+		{
+			// Each value fits on its own, but together they do not fit in one
+			// Substrate environment variable.
+			name: "oversized task",
+			spec: &v1alpha1.TaskSpec{
+				Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", v1alpha1.MaxTaskConfigSize-100)}),
+				Env:    []*v1alpha1.EnvVar{{Name: "BIG", Value: strings.Repeat("y", 16<<10)}},
+			},
+			wantErr: "task: encoded launch configuration",
+		},
+		{
+			name:    "oversized command",
+			spec:    &v1alpha1.TaskSpec{Command: []string{"sh", "-c", strings.Repeat("z", v1alpha1.MaxEnvValueSize)}},
+			wantErr: "task: encoded launch configuration",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -408,14 +408,47 @@ func ValidateTask(t *Task) error {
 	if err := ValidateTaskConfig(spec); err != nil {
 		return err
 	}
+	if err := ValidateTaskSize(t); err != nil {
+		return err
+	}
 	return ValidateResources(spec.GetResources())
 }
 
+// MaxEnvValueSize is the longest environment variable value Substrate accepts
+// (EnvVar.value in ateapi.proto caps it at 32,768 characters). It is applied
+// to the byte length, which is never less than the character count.
+const MaxEnvValueSize = 32 << 10
+
+// MaxTaskYAMLSize is the largest a task's launch configuration may be once
+// encoded as YAML, the form in which it reaches the runner through the
+// AX_TASK_YAML environment variable. It keeps 1 KiB of MaxEnvValueSize in
+// reserve for the fields the control plane fills in after validation, such as
+// metadata.atespace and metadata.createTime.
+const MaxTaskYAMLSize = MaxEnvValueSize - 1<<10
+
 // MaxTaskConfigSize is the largest spec.config a task may have, measured as
-// its JSON encoding. The config is stored with the task and delivered to the
-// runner inside the AX_TASK_YAML environment variable, which Linux caps at
-// 128 KiB, so this leaves room for the rest of the spec.
-const MaxTaskConfigSize = 64 << 10
+// its JSON encoding. The config travels inside AX_TASK_YAML, so it must fit
+// within MaxTaskYAMLSize together with the rest of the spec; this limit leaves
+// room for that and gives a more specific error than ValidateTaskSize. The
+// config's YAML encoding can be somewhat larger than its JSON encoding, so a
+// config near this limit can still be rejected by ValidateTaskSize.
+const MaxTaskConfigSize = 16 << 10
+
+// ValidateTaskSize checks that the task's launch configuration, encoded as the
+// control plane encodes it for AX_TASK_YAML, fits within MaxTaskYAMLSize.
+// Larger tasks would be rejected by Substrate when their template is created.
+func ValidateTaskSize(t *Task) error {
+	launch := proto.Clone(t).(*Task)
+	launch.Status = nil
+	data, err := yaml.Marshal(launch)
+	if err != nil {
+		return fmt.Errorf("encoding task: %w", err)
+	}
+	if len(data) > MaxTaskYAMLSize {
+		return fmt.Errorf("task: encoded launch configuration is %d bytes, which exceeds the limit of %d bytes", len(data), MaxTaskYAMLSize)
+	}
+	return nil
+}
 
 // ValidateTaskConfig checks that spec.config fits within MaxTaskConfigSize.
 // The config is otherwise opaque: its schema belongs to the runner, and AX does
