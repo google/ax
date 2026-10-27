@@ -29,10 +29,8 @@ A `Workspace` populates the filesystem and tool landscape. Declare it once, bind
 - **MCP servers and registries** (Model Context Protocol) that the agent can call.
 - **Skill registries** and the path where skills are materialized.
 
-A binding can also carry a `goal`, a plain-language description of the environment the task needs. On first boot the runner hands that goal to an agent that finishes the setup, for example installing a toolchain or dependencies, so the task's own command starts in a ready environment.
-
 ## Model
 
 A configuration for a model provider and its parameters: which provider to call, the model identifier, provider-specific generation parameters such as max_tokens, and references to the Kubernetes secret holding the credentials.
 
-Declaring models as cluster resources makes them manageable and reusable across tasks. The configuration lives in one place instead of in every agent's environment, so rotating a key, pinning a new model version, or tuning parameters is a single `ax apply` rather than a hunt through task definitions. AX's own components read `Model` resources as well, for example when planning a workspace from a goal.
+Declaring models as cluster resources makes them manageable and reusable across tasks. The configuration lives in one place instead of in every agent's environment, so rotating a key, pinning a new model version, or tuning parameters is a single `ax apply` rather than a hunt through task definitions. AX's own components read `Model` resources as well.

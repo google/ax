@@ -100,8 +100,6 @@ message ResourceList {
 message WorkspaceRef {
   string name = 1;
   string path = 2;
-  // TODO(jbd): Consider removing goal.
-  string goal = 3;
 }
 
 message TaskStatus {

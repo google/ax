@@ -44,7 +44,7 @@ func fullTask() *v1alpha1.Task {
 			Resources: &v1alpha1.ResourcesSpec{
 				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
 			},
-			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace", Goal: "build"},
+			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace"},
 			Debug:     true,
 		},
 		Status: &v1alpha1.TaskStatus{
@@ -463,14 +463,13 @@ spec:
   workspace:
     name: code
     path: /opt/code
-    goal: "build it"
 `
 	var task v1alpha1.Task
 	if err := yaml.Unmarshal([]byte(taskYAML), &task); err != nil {
 		t.Fatalf("unmarshaling task: %v", err)
 	}
 	ref := task.Spec.GetWorkspace()
-	if ref == nil || ref.Name != "code" || ref.Path != "/opt/code" || ref.Goal != "build it" {
+	if ref == nil || ref.Name != "code" || ref.Path != "/opt/code" {
 		t.Fatalf("unexpected workspace binding: %v", ref)
 	}
 	out, err := yaml.Marshal(&task)

@@ -30,7 +30,6 @@ metadata:
 spec:
   workspace:
     name: golang
-    goal: "Ensure that Go tool chain is available and is built from source"
   debug: true   # lets you `ax ssh` into the sandbox
 ```
 

@@ -29,7 +29,6 @@ spec:
   workspace:
     name: default-workspace
     path: "/workspace"   # optional; this is the default
-    goal: "Install dependencies and run the test suite"   # Antigravity prepares the workspace to this goal on first run
 
   debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```

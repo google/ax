@@ -23,10 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-antigravity
-
 ARG TARGETARCH=amd64
 COPY bin/linux_${TARGETARCH}/ax-task-runner /usr/local/bin/ax-task-runner
-COPY cmd/ax-task-runner/antigravity_bootstrap.py /usr/local/bin/antigravity_bootstrap.py
 
 ENTRYPOINT ["/usr/local/bin/ax-task-runner"]

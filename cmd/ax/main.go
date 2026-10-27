@@ -698,11 +698,7 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	fmt.Printf("Worker IP:    %s\n", workerIP)
 	if task.Spec != nil {
 		if ref := task.Spec.GetWorkspace(); ref != nil {
-			fmt.Printf("Workspace:    %s  path=%s", ref.Name, task.Spec.WorkspacePath())
-			if ref.Goal != "" {
-				fmt.Printf("  goal=%q", ref.Goal)
-			}
-			fmt.Println()
+			fmt.Printf("Workspace:    %s  path=%s\n", ref.Name, task.Spec.WorkspacePath())
 		}
 		if task.Spec.Image != "" {
 			fmt.Printf("Image:        %s\n", task.Spec.Image)

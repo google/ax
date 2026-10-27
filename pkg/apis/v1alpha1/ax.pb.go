@@ -421,11 +421,9 @@ func (x *ResourceList) GetMemory() string {
 }
 
 type WorkspaceRef struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Path  string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	// TODO(jbd): Consider removing goal.
-	Goal          string `protobuf:"bytes,3,opt,name=goal,proto3" json:"goal,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -470,13 +468,6 @@ func (x *WorkspaceRef) GetName() string {
 func (x *WorkspaceRef) GetPath() string {
 	if x != nil {
 		return x.Path
-	}
-	return ""
-}
-
-func (x *WorkspaceRef) GetGoal() string {
-	if x != nil {
-		return x.Goal
 	}
 	return ""
 }
@@ -2464,11 +2455,10 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\x06limits\x18\x02 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
 	"\fResourceList\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
-	"\x06memory\x18\x02 \x01(\tR\x06memory\"J\n" +
+	"\x06memory\x18\x02 \x01(\tR\x06memory\"6\n" +
 	"\fWorkspaceRef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
-	"\x04goal\x18\x03 \x01(\tR\x04goal\"\x9d\x01\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\x9d\x01\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x0e\n" +
