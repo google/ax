@@ -17,11 +17,13 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func main() {
@@ -78,7 +81,7 @@ func main() {
 
 	slog.Info("starting ax-server",
 		"listenAddr", listenAddr,
-		"store", redactURL(storeURL),
+		"store", describeStore(storeURL),
 		"substrateEndpoint", substrateEndpoint,
 		"template", defaultTemplate,
 		"defaultTaskImage", defaultTaskImage,
@@ -88,7 +91,7 @@ func main() {
 	backend, err := postgres.Open(openCtx, storeURL, postgres.Options{})
 	openCancel()
 	if err != nil {
-		slog.Error("opening store", "store", redactURL(storeURL), "error", err)
+		slog.Error("opening store", "store", describeStore(storeURL), "error", err)
 		os.Exit(1)
 	}
 	defer backend.Close()
@@ -141,11 +144,14 @@ func main() {
 	_ = httpServer.Shutdown(shutdownCtx)
 }
 
-// redactURL hides any password in a store URL so that it can be logged.
-func redactURL(raw string) string {
-	u, err := url.Parse(raw)
+// describeStore summarizes a store connection string for logs. It parses the
+// string the way the store does, so URLs, query parameters and keyword/value
+// DSNs are all handled, and reports only the user, host, port and database.
+// Passwords and other connection parameters are never included.
+func describeStore(connString string) string {
+	cfg, err := pgconn.ParseConfig(connString)
 	if err != nil {
 		return "<unparseable>"
 	}
-	return u.Redacted()
+	return fmt.Sprintf("%s@%s/%s", cfg.User, net.JoinHostPort(cfg.Host, strconv.Itoa(int(cfg.Port))), cfg.Database)
 }
