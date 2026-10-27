@@ -22,12 +22,21 @@ spec:
   git:
     - repo: https://github.com/golang/go.git
       branch: "my-fix"
+  files:
+    - path: "AGENTS.md"
+      content: |
+        - Run `go test` to ensure that tests are passing.
+        - Do not modify the public API.
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
   name: test
 spec:
+  image: "ghcr.io/my-org/my-coding-agent@sha256:..."
+  command: ["my-coding-agent"]
+  config:
+    goal: "Fix what's broken please."
   workspace:
     name: golang
   debug: true   # lets you `ax ssh` into the sandbox
