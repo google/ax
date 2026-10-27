@@ -10,7 +10,7 @@
 
 **Declare an agentic task with workspaces and model specifications. AX sandboxes it, wires up its workspace, and helps running it at scale.**
 
-AX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
+AX is a highly efficient, declarative orchestrator to run millions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run millions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
 
 ```yaml
 # task.yaml
