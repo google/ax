@@ -165,11 +165,15 @@ func TestLockTakesOverExpiredLease(t *testing.T) {
 	s := openTest(t, Options{LockTTL: ttl, LockRetryInterval: 20 * time.Millisecond})
 	ctx := context.Background()
 
-	if _, err := s.pool.Exec(ctx, `INSERT INTO locks (key, token, expires_at) VALUES ($1, 'crashed', clock_timestamp() + interval '200 milliseconds')`,
-		"lock:task:default:orphan"); err != nil {
+	// Start the clock before the INSERT. The lease expires ttl after the
+	// database evaluates clock_timestamp(), which happens somewhere during the
+	// INSERT's round trip, so timing from after it returns would undercount
+	// by however long the round trip and commit took.
+	start := time.Now()
+	if _, err := s.pool.Exec(ctx, `INSERT INTO locks (key, token, expires_at) VALUES ($1, 'crashed', clock_timestamp() + $2 * interval '1 millisecond')`,
+		"lock:task:default:orphan", ttl.Milliseconds()); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now()
 	acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	unlock, err := s.Lock(acquireCtx, "task", "default", "orphan")
@@ -177,7 +181,7 @@ func TestLockTakesOverExpiredLease(t *testing.T) {
 		t.Fatalf("Lock: %v", err)
 	}
 	defer unlock()
-	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
-		t.Fatalf("acquired orphaned lock after %v, before its lease expired", elapsed)
+	if elapsed := time.Since(start); elapsed < ttl {
+		t.Fatalf("acquired orphaned lock after %v, before its %v lease expired", elapsed, ttl)
 	}
 }
