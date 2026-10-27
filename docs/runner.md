@@ -17,7 +17,6 @@ The control plane does not run `spec.command` as the container entrypoint. It al
 | `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
 | `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
 | `spec.env` entries | Each one set directly in the container environment |
-| `GEMINI_API_KEY` | Set when the atespace has a Gemini credential configured |
 | Volume | A durable directory mounted at `/workspace` |
 | Readiness probe | `GET /readyz` on port 80 |
 

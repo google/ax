@@ -58,11 +58,6 @@ type mockControlServer struct {
 	createTemplateErr error
 }
 
-// noSecrets is a SecretResolver for tests: it never finds a key and never touches a cluster.
-func noSecrets(context.Context, string, string, string) (string, error) {
-	return "", nil
-}
-
 func (m *mockControlServer) GetActorTemplate(_ context.Context, req *ateapipb.GetActorTemplateRequest) (*ateapipb.ActorTemplate, error) {
 	ref := req.GetActorTemplate()
 	if !m.actorTemplates[ref.GetName()] {
@@ -243,7 +238,6 @@ func TestTaskReconciler(t *testing.T) {
 
 	// 3. Reconcile Task
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -323,7 +317,6 @@ func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
 			defer client.Close()
 
 			reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, tc.override)
-			reconciler.SecretResolver = noSecrets
 			reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 			task := &v1alpha1.Task{
@@ -369,7 +362,6 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -424,7 +416,6 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
-	reconciler.SecretResolver = noSecrets
 
 	workerIp := "10.1.1.1"
 	task := &v1alpha1.Task{
@@ -483,7 +474,6 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -561,7 +551,6 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -634,7 +623,6 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -728,7 +716,6 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -825,7 +812,6 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			lis.Close()
 		})
 		reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
-		reconciler.SecretResolver = noSecrets
 		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 		return reconciler
 	}
@@ -943,7 +929,6 @@ func TestReconcileDelete_RemovesActorAndTemplates(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	if err := reconciler.ReconcileDelete(ctx, "default", "job"); err != nil {
@@ -1006,7 +991,6 @@ func TestReconcileDelete_BlocksUntilActorDeleted(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 
 	if err := reconciler.ReconcileDelete(ctx, "default", "slow-delete-task"); err != nil {
 		t.Fatalf("ReconcileDelete failed: %v", err)
@@ -1048,7 +1032,6 @@ func TestReconcileDelete_ActorDeletionTimeout(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 
 	err = reconciler.ReconcileDelete(ctx, "default", "stuck-task")
 	if err == nil {
@@ -1112,7 +1095,6 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	defer client.Close()
 
 	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
-	reconciler.SecretResolver = noSecrets
 	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	// 1. Transient error during EnsureAtespace leaves Task in Phase="Pending" with Reason="SubstrateUnavailable".

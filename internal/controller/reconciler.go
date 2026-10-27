@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/ax/internal/model"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
@@ -39,11 +38,6 @@ import (
 )
 
 const (
-	geminiSecretName = "gemini-api-secret"
-	geminiSecretKey  = "GEMINI_API_KEY"
-	// secretLookupTimeout bounds the Kubernetes secret lookup so a slow or
-	// unreachable cluster cannot stall reconciliation.
-	secretLookupTimeout = 2 * time.Second
 	// templateDigestBytes is how many bytes of the spec digest go into a
 	// per-task ActorTemplate name.
 	templateDigestBytes = 4
@@ -52,9 +46,6 @@ const (
 	defaultWorkspaceReadyTimeout = 15 * time.Second
 	workspaceReadyPollInterval   = 500 * time.Millisecond
 )
-
-// SecretResolver looks up a key from a Kubernetes secret in the given namespace.
-type SecretResolver func(ctx context.Context, namespace, secretName, key string) (string, error)
 
 // TaskReconciler reconciles Task resources by provisioning and orchestrating
 // sandboxed Actors on Agent Substrate.
@@ -65,10 +56,6 @@ type TaskReconciler struct {
 	defaultTemplateAtespace string
 	// defaultTaskImage is applied to spec.image for tasks that leave it empty.
 	defaultTaskImage string
-
-	// SecretResolver resolves the Gemini API key for task containers. It defaults
-	// to the Kubernetes secret lookup; tests replace it to avoid touching a cluster.
-	SecretResolver SecretResolver
 
 	// WorkspaceReadyTimeout bounds how long Reconcile waits for the actor's workspace
 	// to report ready before recording it as still initializing.
@@ -94,7 +81,6 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
 		defaultTaskImage:        defaultTaskImage,
-		SecretResolver:          model.GetKubernetesSecret,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
 	}
 }
@@ -153,7 +139,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 		templateName = parts[1]
 	}
 
-	// Prepare container environment variables (task env + credentials + specs)
+	// Prepare container environment variables (task env + specs)
 	extraEnv := make(map[string]string)
 	if task.Spec != nil {
 		for _, e := range task.Spec.Env {
@@ -161,10 +147,6 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 				extraEnv[e.Name] = e.Value
 			}
 		}
-	}
-
-	if geminiKey := r.lookupGeminiKey(ctx, atespace); geminiKey != "" {
-		extraEnv[geminiSecretKey] = geminiKey
 	}
 
 	// Only launch configuration belongs in the template; status changes
@@ -410,25 +392,6 @@ func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, rea
 		Message:    message,
 		UpdateTime: ts,
 	})
-}
-
-// lookupGeminiKey resolves the Gemini API key for the task container, preferring the
-// Kubernetes secret in the task's atespace and falling back to the server's own
-// environment. It returns "" when neither source has a value.
-func (r *TaskReconciler) lookupGeminiKey(ctx context.Context, atespace string) string {
-	if r.SecretResolver != nil {
-		lookupCtx, cancel := context.WithTimeout(ctx, secretLookupTimeout)
-		defer cancel()
-		if key, err := r.SecretResolver(lookupCtx, atespace, geminiSecretName, geminiSecretKey); err == nil && key != "" {
-			slog.Info("resolved GEMINI_API_KEY from kubernetes secret for actor template", "atespace", atespace)
-			return key
-		}
-	}
-	if key := os.Getenv(geminiSecretKey); key != "" {
-		slog.Info("resolved GEMINI_API_KEY from server environment for actor template")
-		return key
-	}
-	return ""
 }
 
 // taskTemplateName derives the per-task ActorTemplate name from the task name and a
