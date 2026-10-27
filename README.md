@@ -34,12 +34,11 @@ metadata:
   name: test
 spec:
   image: "ghcr.io/my-org/my-coding-agent@sha256:..."
-  command: ["my-coding-agent"]
   config:
     goal: "Fix what's broken please."
   workspace:
     name: golang
-  debug: true   # lets you `ax ssh` into the sandbox
+  debug: true   # enables `ax ssh`
 ```
 
 Then apply it, check on it, and look over the agent's shoulder:
