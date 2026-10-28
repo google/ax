@@ -91,6 +91,11 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 	}
 }
 
+// Client returns the Substrate client used by the reconciler.
+func (r *TaskReconciler) Client() *substrate.Client {
+	return r.client
+}
+
 func newProbeHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	tlsCfg := &tls.Config{

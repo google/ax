@@ -27,9 +27,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
+	"github.com/google/ax/internal/substrate/substratetest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,7 +65,7 @@ func TestApplyAtespace(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				srv := server.NewServer(s).GRPCServer()
+				srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 				t.Cleanup(srv.Stop)
 				go func() { _ = srv.Serve(listener) }()
 
@@ -160,7 +162,7 @@ func TestRunApplyEmptyDocuments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv := server.NewServer(s).GRPCServer()
+			srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 			t.Cleanup(srv.Stop)
 			go func() { _ = srv.Serve(listener) }()
 
@@ -226,7 +228,7 @@ func TestRunGetResourceAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := server.NewServer(s).GRPCServer()
+	srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -310,18 +312,15 @@ func TestRunGetResourceAliases(t *testing.T) {
 	}
 }
 
-type fakeMainReconciler struct {
-	deleted chan struct{}
+// newTestReconciler returns a TaskReconciler that runs tasks on sub.
+func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
+	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
 }
 
-func (f *fakeMainReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
-	return task, nil
-}
-
-func (f *fakeMainReconciler) ReconcileDelete(ctx context.Context, atespace, taskName string) error {
-	time.Sleep(100 * time.Millisecond)
-	close(f.deleted)
-	return nil
+// newServer returns a server that keeps resources in st and runs tasks
+// through rec.
+func newServer(st store.Store, rec *controller.TaskReconciler) *server.Server {
+	return server.NewServer(st, server.Options{Reconciler: rec, Substrate: rec.Client()})
 }
 
 func TestRunDeleteTask(t *testing.T) {
@@ -335,8 +334,13 @@ func TestRunDeleteTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := &fakeMainReconciler{deleted: make(chan struct{})}
-	srv := server.NewServer(s, server.Options{Reconciler: rec}).GRPCServer()
+	deleted := make(chan struct{})
+	sub := substratetest.NewServer(t)
+	sub.SetOnDeleteActor(func() {
+		time.Sleep(100 * time.Millisecond)
+		close(deleted)
+	})
+	srv := newServer(s, newTestReconciler(sub)).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -358,7 +362,7 @@ func TestRunDeleteTask(t *testing.T) {
 
 	// Verify actor deletion finished before runDelete returned
 	select {
-	case <-rec.deleted:
+	case <-deleted:
 	default:
 		t.Fatal("expected actor deletion to complete before runDelete returned")
 	}
