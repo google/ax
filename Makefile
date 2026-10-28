@@ -24,8 +24,11 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= amd64
 AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
 AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
-# Image the server runs for tasks that do not set spec.image.
-AX_DEFAULT_TASK_IMAGE ?= $(AX_TASK_RUNNER_IMAGE)
+# Image the server runs for tasks that do not set spec.image. Substrate only
+# accepts images pinned by digest, so after `make images` this defaults to the
+# digest it recorded for the pushed ax-task-runner image.
+AX_TASK_RUNNER_DIGEST := $(strip $(shell cat bin/ax-task-runner.digest 2>/dev/null))
+AX_DEFAULT_TASK_IMAGE ?= $(if $(AX_TASK_RUNNER_DIGEST),$(AX_IMAGE_REPO)/ax-task-runner@$(AX_TASK_RUNNER_DIGEST),$(AX_TASK_RUNNER_IMAGE))
 
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
