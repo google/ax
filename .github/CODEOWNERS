@@ -1,0 +1,6 @@
+# Changes under these paths need a review from their owners.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+/internal/server/     @rakyll @mayawang
+/internal/store/      @rakyll @mayawang
+/internal/controller/ @rakyll @mayawang

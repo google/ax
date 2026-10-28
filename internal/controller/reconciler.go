@@ -17,6 +17,8 @@ package controller
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,7 +30,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/ax/internal/model"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
@@ -39,11 +40,6 @@ import (
 )
 
 const (
-	geminiSecretName = "gemini-api-secret"
-	geminiSecretKey  = "GEMINI_API_KEY"
-	// secretLookupTimeout bounds the Kubernetes secret lookup so a slow or
-	// unreachable cluster cannot stall reconciliation.
-	secretLookupTimeout = 2 * time.Second
 	// templateDigestBytes is how many bytes of the spec digest go into a
 	// per-task ActorTemplate name.
 	templateDigestBytes = 4
@@ -51,10 +47,11 @@ const (
 	// resumed actor to finish workspace setup.
 	defaultWorkspaceReadyTimeout = 15 * time.Second
 	workspaceReadyPollInterval   = 500 * time.Millisecond
-)
 
-// SecretResolver looks up a key from a Kubernetes secret in the given namespace.
-type SecretResolver func(ctx context.Context, namespace, secretName, key string) (string, error)
+	defaultServiceDNSCAFile      = "/run/servicedns-ca/trust-bundle.pem"
+	defaultPodIdentityBundleFile = "/run/podidentity.podcert.ate.dev/credential-bundle.pem"
+	defaultRouterServerName      = "atenet-router.ate-system.svc"
+)
 
 // TaskReconciler reconciles Task resources by provisioning and orchestrating
 // sandboxed Actors on Agent Substrate.
@@ -65,10 +62,6 @@ type TaskReconciler struct {
 	defaultTemplateAtespace string
 	// defaultTaskImage is applied to spec.image for tasks that leave it empty.
 	defaultTaskImage string
-
-	// SecretResolver resolves the Gemini API key for task containers. It defaults
-	// to the Kubernetes secret lookup; tests replace it to avoid touching a cluster.
-	SecretResolver SecretResolver
 
 	// WorkspaceReadyTimeout bounds how long Reconcile waits for the actor's workspace
 	// to report ready before recording it as still initializing.
@@ -90,12 +83,37 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 	}
 	return &TaskReconciler{
 		client:                  client,
-		httpClient:              &http.Client{Timeout: 2 * time.Second},
+		httpClient:              newProbeHTTPClient(),
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
 		defaultTaskImage:        defaultTaskImage,
-		SecretResolver:          model.GetKubernetesSecret,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
+	}
+}
+
+func newProbeHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: defaultRouterServerName,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(defaultPodIdentityBundleFile, defaultPodIdentityBundleFile)
+			if err != nil {
+				return &tls.Certificate{}, nil
+			}
+			return &cert, nil
+		},
+	}
+	if caBytes, err := os.ReadFile(defaultServiceDNSCAFile); err == nil {
+		pool := x509.NewCertPool()
+		if pool.AppendCertsFromPEM(caBytes) {
+			tlsCfg.RootCAs = pool
+		}
+	}
+	transport.TLSClientConfig = tlsCfg
+	return &http.Client{
+		Timeout:   2 * time.Second,
+		Transport: transport,
 	}
 }
 
@@ -127,12 +145,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	// 1. Ensure the Atespace exists in Substrate
 	if err := r.client.EnsureAtespace(ctx, atespace); err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
-			task.Status.Phase = "Pending"
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("ensuring atespace: %w", err)
 		}
-		r.setCondition(task, "Ready", "False", "AtespaceCreationFailed", err.Error(), now)
-		task.Status.Phase = "Failed"
+		r.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
+		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("ensuring atespace: %w", err)
 	}
 
@@ -153,7 +171,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 		templateName = parts[1]
 	}
 
-	// Prepare container environment variables (task env + credentials + specs)
+	// Prepare container environment variables (task env + specs)
 	extraEnv := make(map[string]string)
 	if task.Spec != nil {
 		for _, e := range task.Spec.Env {
@@ -161,10 +179,6 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 				extraEnv[e.Name] = e.Value
 			}
 		}
-	}
-
-	if geminiKey := r.lookupGeminiKey(ctx, atespace); geminiKey != "" {
-		extraEnv[geminiSecretKey] = geminiKey
 	}
 
 	// Only launch configuration belongs in the template; status changes
@@ -185,8 +199,8 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	// Resource limits are enforced by the per-task template, so they are checked
 	// here as well as at apply time: a task must never run without limits it asked for.
 	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
-		r.setNotReady(task, "InvalidResources", err.Error(), now)
-		task.Status.Phase = "Failed"
+		r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
+		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("validating resources: %w", err)
 	}
 	resources := substrate.ResourceLimits(task.Spec.Resources)
@@ -201,16 +215,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, task.Spec.Image, resources, extraEnv)
 		if err != nil {
 			if substrate.IsTransientError(err) {
-				r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
-				task.Status.Phase = "Pending"
+				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+				task.Status.Phase = v1alpha1.PhasePending
 				return task, fmt.Errorf("ensuring actor template: %w", err)
 			}
 			// Falling back to the default template would run a different image than
 			// the user asked for, without the limits it asked for, or fail later with
 			// a misleading "actor template not found". Surface the real error on the
 			// task and stop here.
-			r.setNotReady(task, "TemplateCreationFailed", substrateErrorMessage(err), now)
-			task.Status.Phase = "Failed"
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
+			task.Status.Phase = v1alpha1.PhaseFailed
 			return task, fmt.Errorf("ensuring actor template: %w", err)
 		}
 		if tmpl != nil && tmpl.Metadata != nil {
@@ -223,25 +237,24 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
-			task.Status.Phase = "Pending"
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("ensuring actor: %w", err)
 		}
-		r.setNotReady(task, "ActorCreationFailed", err.Error(), now)
-		task.Status.Phase = "Failed"
+		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
+		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("ensuring actor: %w", err)
 	}
 
 	// 4. Suspend or Resume the Actor
-	// Tasks are suspended by default upon creation until explicitly resumed to "Running".
-	if task.Status.Phase == "Suspended" || task.Status.Phase == "" {
+	// Tasks are suspended by default upon creation until explicitly resumed.
+	if task.Status.Phase == v1alpha1.PhaseSuspended || task.Status.Phase == "" {
 		slog.Info("suspending actor on Substrate", "actor", actorName)
 		if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
 			return task, fmt.Errorf("suspending actor: %w", err)
 		}
 		task.Status.WorkerIp = ""
-		task.Status.Phase = "Suspended"
-		r.setCondition(task, condReady, "False", "TaskSuspended", "Task is suspended", now)
+		task.Status.Phase = v1alpha1.PhaseSuspended
 		slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
 		return task, nil
 	}
@@ -251,17 +264,17 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	_, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
-			task.Status.Phase = "Pending"
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			task.Status.Phase = v1alpha1.PhasePending
 			return task, fmt.Errorf("resuming actor: %w", err)
 		}
-		r.setNotReady(task, "ActorResumeFailed", err.Error(), now)
-		task.Status.Phase = "Failed"
+		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
+		task.Status.Phase = v1alpha1.PhaseFailed
 		return task, fmt.Errorf("resuming actor: %w", err)
 	}
 
 	task.Status.WorkerIp = workerIP
-	task.Status.Phase = "Running"
+	task.Status.Phase = v1alpha1.PhaseRunning
 
 	// Check if workspace setup inside the actor has completed
 	host := workerIP
@@ -273,7 +286,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	readyURL := fmt.Sprintf("http://%s/readyz?check=workspace", net.JoinHostPort(host, port))
 	// Workspace setup happens once per task. After it has completed, WorkspaceReady stays
 	// True across suspend/resume cycles, so only poll while it is still initializing.
-	workspaceReady := r.conditionTrue(task, condWorkspaceReady)
+	workspaceReady := conditionTrue(task, v1alpha1.ConditionWorkspaceReady)
 	if workerIP != "" && !workspaceReady {
 		// Poll briefly for workspace setup completion
 		pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
@@ -294,7 +307,16 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 
 			// 2. Router-based readyz check (in-cluster via atenet-router)
 			if routerAddr := os.Getenv("ATENET_ROUTER_ADDR"); routerAddr != "" {
-				rReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, fmt.Sprintf("http://%s/readyz?check=workspace", routerAddr), nil)
+				routerURL := routerAddr
+				if !strings.HasPrefix(routerURL, "http://") && !strings.HasPrefix(routerURL, "https://") {
+					if strings.HasSuffix(routerURL, ":443") {
+						routerURL = "https://" + routerURL
+					} else {
+						routerURL = "http://" + routerURL
+					}
+				}
+				routerURL = strings.TrimRight(routerURL, "/") + "/readyz?check=workspace"
+				rReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, routerURL, nil)
 				if rReq != nil {
 					rReq.Header.Set("ate-target-actor", fmt.Sprintf("%s/%s", atespace, actorName))
 					if resp, err := r.httpClient.Do(rReq); err == nil {
@@ -325,15 +347,13 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 	}
 DonePolling:
 
-	// The task is Ready only once its actor is running and the workspace inside it is set up.
+	// The server derives Ready from the actor's state and WorkspaceReady.
 	if workspaceReady {
-		if !r.conditionTrue(task, condWorkspaceReady) {
-			r.setCondition(task, condWorkspaceReady, "True", "SetupComplete", fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
+		if !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
+			setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
 		}
-		r.setCondition(task, condReady, "True", "TaskRunning", "Task is running and its workspace is ready", time.Now())
 	} else {
-		r.setCondition(task, condWorkspaceReady, "False", "Initializing", fmt.Sprintf("Workspace is initializing at %s", workerIP), time.Now())
-		r.setCondition(task, condReady, "False", "WorkspaceInitializing", "Waiting for workspace setup to complete", time.Now())
+		setCondition(task, v1alpha1.ConditionWorkspaceReady, "False", v1alpha1.ReasonInitializing, fmt.Sprintf("Workspace is initializing at %s", workerIP), time.Now())
 	}
 
 	slog.Info("task successfully reconciled and running",
@@ -347,23 +367,14 @@ DonePolling:
 	return task, nil
 }
 
-// Condition types reported on Task status.
-const (
-	// condReady reports whether the task as a whole is ready to do work: its actor is
-	// running and the workspace inside it has finished setting up.
-	condReady = "Ready"
-	// condWorkspaceReady reports whether the workspace inside the actor has finished setting up.
-	condWorkspaceReady = "WorkspaceReady"
-)
-
 // setNotReady marks the task's Ready condition False. WorkspaceReady is left untouched:
 // workspace setup is a one-time step whose result outlives actor failures and suspends.
 func (r *TaskReconciler) setNotReady(task *v1alpha1.Task, reason, message string, t time.Time) {
-	r.setCondition(task, condReady, "False", reason, message, t)
+	setCondition(task, v1alpha1.ConditionReady, "False", reason, message, t)
 }
 
 // conditionTrue reports whether the task currently has the given condition with status True.
-func (r *TaskReconciler) conditionTrue(task *v1alpha1.Task, condType string) bool {
+func conditionTrue(task *v1alpha1.Task, condType string) bool {
 	if task.Status == nil {
 		return false
 	}
@@ -392,7 +403,7 @@ func substrateErrorMessage(err error) string {
 	return err.Error()
 }
 
-func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, reason, message string, t time.Time) {
+func setCondition(task *v1alpha1.Task, condType, status, reason, message string, t time.Time) {
 	ts := timestamppb.New(t)
 	for i, c := range task.Status.Conditions {
 		if c.Type == condType {
@@ -410,25 +421,6 @@ func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, rea
 		Message:    message,
 		UpdateTime: ts,
 	})
-}
-
-// lookupGeminiKey resolves the Gemini API key for the task container, preferring the
-// Kubernetes secret in the task's atespace and falling back to the server's own
-// environment. It returns "" when neither source has a value.
-func (r *TaskReconciler) lookupGeminiKey(ctx context.Context, atespace string) string {
-	if r.SecretResolver != nil {
-		lookupCtx, cancel := context.WithTimeout(ctx, secretLookupTimeout)
-		defer cancel()
-		if key, err := r.SecretResolver(lookupCtx, atespace, geminiSecretName, geminiSecretKey); err == nil && key != "" {
-			slog.Info("resolved GEMINI_API_KEY from kubernetes secret for actor template", "atespace", atespace)
-			return key
-		}
-	}
-	if key := os.Getenv(geminiSecretKey); key != "" {
-		slog.Info("resolved GEMINI_API_KEY from server environment for actor template")
-		return key
-	}
-	return ""
 }
 
 // taskTemplateName derives the per-task ActorTemplate name from the task name and a

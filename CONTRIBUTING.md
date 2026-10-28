@@ -84,7 +84,7 @@ make images
 
 ### Deploying to Kubernetes
 
-Deploy Redis and server components to your cluster in the `ax-system` namespace:
+Deploy PostgreSQL and server components to your cluster in the `ax-system` namespace:
 
 ```bash
 make deploy

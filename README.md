@@ -10,7 +10,7 @@
 
 **Declare an agentic task with workspaces and model specifications. AX sandboxes it, wires up its workspace, and helps running it at scale.**
 
-AX is a high-throughput, declarative orchestrator to run billions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run billions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
+AX is a highly efficient, declarative orchestrator to run millions of autonomous agent workloads in a cluster. It runs on top of [Agent Substrate](https://github.com/agent-substrate/substrate) for sandboxed execution and is built to run millions of tasks per cluster. If you have used Kubernetes, `ax` will feel similar.
 
 ```yaml
 # task.yaml
@@ -22,23 +22,30 @@ spec:
   git:
     - repo: https://github.com/golang/go.git
       branch: "my-fix"
+  files:
+    - path: "AGENTS.md"
+      content: |
+        - Run `go test` to ensure that tests are passing.
+        - Do not modify the public API.
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
   name: test
 spec:
+  image: "ghcr.io/my-org/my-coding-agent@sha256:..."
+  config:
+    goal: "Fix what's broken please."
   workspace:
     name: golang
-    goal: "Ensure that Go tool chain is available and is built from source"
-  debug: true   # lets you `ax ssh` into the sandbox
+  debug: true   # enables `ax ssh`
 ```
 
-Then apply it, watch it come up, and look over the agent's shoulder:
+Then apply it, check on it, and look over the agent's shoulder:
 
 ```bash
 ax apply -f task.yaml
-ax watch task test
+ax describe task test
 ax ssh test -- ls -al /workspace
 ```
 
@@ -97,7 +104,7 @@ With the [prerequisites](#prerequisites) in place — most importantly a reachab
 make deploy
 ```
 
-This deploys Redis and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
+This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
 
 ### 4. Run your first task
 
@@ -107,7 +114,6 @@ ax get tasks
 # NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
 # task123   default    Running   task123         10.20.3.67   1m
 
-ax watch task task123                # stream phase and condition changes live
 ax ssh task123 -- ls -la /workspace  # poke around inside the sandbox
 ax suspend task task123              # checkpoint and pause
 ax resume task task123               # pick up where it left off
@@ -130,7 +136,7 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 
 ## CLI usage
 
-`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `watch`, `delete`, plus a few agent-specific verbs.
+`ax` talks to the control plane over gRPC. It is deliberately `kubectl`-shaped: `apply`, `get`, `describe`, `delete`, plus a few agent-specific verbs.
 
 ### Everyday commands
 
@@ -143,7 +149,6 @@ ax get tasks                          # list
 ax get tasks -a my-atespace           # list in another atespace
 ax get task task123                   # full spec + live status as YAML
 ax describe task task123              # human-readable detail
-ax watch task task123                 # stream status and condition transitions
 ax suspend task task123               # checkpoint actor state and pause
 ax resume task task123                # resume a suspended task
 ax delete task task123

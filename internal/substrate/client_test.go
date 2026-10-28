@@ -21,9 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
-	"github.com/agent-substrate/substrate/pkg/sandboxclass"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"go.ate.dev/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -143,9 +142,6 @@ func TestClient_DeleteActor_AnyStateTrue(t *testing.T) {
 		t.Fatalf("expected 1 DeleteActor call, got %d", len(mock.deleteCalls))
 	}
 	req := mock.deleteCalls[0]
-	if !req.GetAnyState() {
-		t.Errorf("expected AnyState to be true, got %v", req.GetAnyState())
-	}
 	if req.GetActor().GetAtespace() != "test-ns" || req.GetActor().GetName() != "test-actor" {
 		t.Errorf("unexpected actor ref in request: %v", req.GetActor())
 	}
@@ -229,9 +225,6 @@ func TestBuildActorTemplate(t *testing.T) {
 	}
 	if snapCfg.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
 		t.Errorf("expected PreferredFidelity VOLUMES, got %v", snapCfg.GetPreferredFidelity())
-	}
-	if got := tmpl.GetSandboxConfig().GetSandboxClass(); got != sandboxclass.GVisor {
-		t.Errorf("expected SandboxClass %q, got %q", sandboxclass.GVisor, got)
 	}
 }
 
@@ -458,7 +451,7 @@ func TestResourceLimits(t *testing.T) {
 	tests := []struct {
 		name string
 		reqs *v1alpha1.ResourcesSpec
-		want *ateapipb.Resources
+		want *ateapipb.ResourceRequirements
 	}{
 		{name: "nil"},
 		{name: "empty", reqs: &v1alpha1.ResourcesSpec{}},
@@ -466,21 +459,21 @@ func TestResourceLimits(t *testing.T) {
 		{
 			name: "cpu limit",
 			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
-			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "cpu", Quantity: "2"}}},
+			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{CpuMillicores: 2000, MemoryBytes: DefaultMemoryBytes}},
 		},
 		{
 			name: "memory limit",
 			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "4Gi"}},
-			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{{Name: "memory", Quantity: "4Gi"}}},
+			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{CpuMillicores: DefaultCPUMillicores, MemoryBytes: 4 << 30}},
 		},
 		{
 			name: "cpu and memory limits",
 			reqs: &v1alpha1.ResourcesSpec{
 				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 			},
-			want: &ateapipb.Resources{Limits: []*ateapipb.Limits{
-				{Name: "cpu", Quantity: "2"},
-				{Name: "memory", Quantity: "4Gi"},
+			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+				CpuMillicores: 2000,
+				MemoryBytes:   4 << 30,
 			}},
 		},
 	}
@@ -495,19 +488,23 @@ func TestResourceLimits(t *testing.T) {
 }
 
 func TestBuildActorTemplate_Resources(t *testing.T) {
-	limits := &ateapipb.Resources{Limits: []*ateapipb.Limits{
-		{Name: "cpu", Quantity: "2"},
-		{Name: "memory", Quantity: "4Gi"},
+	limits := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: 2000,
+		MemoryBytes:   4 << 30,
 	}}
 	tmpl := BuildActorTemplate("default", "task-tmpl-01234567", "ghcr.io/my-org/agent@sha256:abc", nil, nil, "", limits)
 	if !proto.Equal(tmpl.GetResources(), limits) {
 		t.Fatalf("template resources = %v, want %v", tmpl.GetResources(), limits)
 	}
 
-	// Without limits the template must not carry a resources block, so the
-	// worker defaults keep applying.
+	// Without explicit limits the template carries the default CPU and memory
+	// limits required by Substrate.
+	wantDefault := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: DefaultCPUMillicores,
+		MemoryBytes:   DefaultMemoryBytes,
+	}}
 	tmpl = BuildActorTemplate("default", "task-tmpl-01234567", "ghcr.io/my-org/agent@sha256:abc", nil, nil, "", nil)
-	if tmpl.GetResources() != nil {
-		t.Fatalf("template without limits has resources %v, want none", tmpl.GetResources())
+	if !proto.Equal(tmpl.GetResources(), wantDefault) {
+		t.Fatalf("template without limits has resources %v, want %v", tmpl.GetResources(), wantDefault)
 	}
 }

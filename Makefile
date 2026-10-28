@@ -24,11 +24,13 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= amd64
 AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
 AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
+# Image the server runs for tasks that do not set spec.image.
+AX_DEFAULT_TASK_IMAGE ?= $(AX_TASK_RUNNER_IMAGE)
 
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-.PHONY: build install images check-image-repo deploy deploy-server deploy-redis apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images check-image-repo deploy deploy-server deploy-postgres apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -65,26 +67,52 @@ images: check-image-repo
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_SERVER_IMAGE) -f Dockerfile.server .
 	@echo "==> Building $(AX_TASK_RUNNER_IMAGE) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_TASK_RUNNER_IMAGE) -f Dockerfile.task-runner .
-	@echo "==> Pushing $(AX_SERVER_IMAGE)..."
-	$(CONTAINER_CLI) push $(AX_SERVER_IMAGE)
-	@echo "==> Pushing $(AX_TASK_RUNNER_IMAGE)..."
-	$(CONTAINER_CLI) push $(AX_TASK_RUNNER_IMAGE)
+	$(call push_image,$(AX_SERVER_IMAGE),ax-server)
+	$(call push_image,$(AX_TASK_RUNNER_IMAGE),ax-task-runner)
+	@echo ""
+	@echo "==> Pushed images. To deploy exactly these builds, run:"
+	@echo ""
+	@echo "    export AX_SERVER_IMAGE=$(AX_SERVER_IMAGE)@$$(cat bin/ax-server.digest)"
+	@echo "    export AX_DEFAULT_TASK_IMAGE=$(AX_TASK_RUNNER_IMAGE)@$$(cat bin/ax-task-runner.digest)"
+	@echo ""
+
+# push_image pushes image $(1) and writes its manifest digest to bin/$(2).digest.
+# podman reports the exact pushed digest via --digestfile; docker records it in
+# the image's RepoDigests after a push.
+define push_image
+	@echo "==> Pushing $(1)..."
+	@if $(CONTAINER_CLI) --version 2>/dev/null | grep -qi podman; then \
+		$(CONTAINER_CLI) push --digestfile bin/$(2).digest $(1); \
+	else \
+		$(CONTAINER_CLI) push $(1) && \
+		img="$(1)" && \
+		$(CONTAINER_CLI) image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' $(1) | \
+			grep "^$${img%:*}@" | head -n1 | sed 's/.*@//' > bin/$(2).digest; \
+	fi
+endef
 
 ## --------------------------------------
 ## Deployment Targets
 ## --------------------------------------
 
-# Deploy all AX components to Kubernetes (Redis, ax-server). Run `make images` first.
-deploy: deploy-redis deploy-server
+# Deploy all AX components to Kubernetes (Postgres, ax-server). Run `make images` first.
+deploy: deploy-postgres deploy-server
 
-deploy-redis:
-	@echo "==> Deploying Redis to ax-system namespace..."
-	kubectl apply -f deploy/redis.yaml
+deploy-postgres:
+	@echo "==> Deploying Postgres to ax-system namespace..."
+	kubectl create namespace ax-system --dry-run=client -o yaml | kubectl apply -f -
+	@# Create the password once. Postgres only reads it when initializing an
+	@# empty volume, so it must not change on later deploys.
+	@kubectl -n ax-system get secret ax-postgres > /dev/null 2>&1 || \
+		kubectl -n ax-system create secret generic ax-postgres \
+			--from-literal=password="$$(openssl rand -hex 24)"
+	kubectl apply -f deploy/postgres.yaml
+	kubectl -n ax-system rollout status statefulset/ax-postgres --timeout=180s
 
 deploy-server: check-image-repo
 	@echo "==> Deploying ax-server ($(AX_SERVER_IMAGE))..."
 	sed -e 's|$${AX_SERVER_IMAGE}|$(AX_SERVER_IMAGE)|g' \
-		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_TASK_RUNNER_IMAGE)|g' \
+		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_DEFAULT_TASK_IMAGE)|g' \
 		deploy/ax-server.yaml | kubectl apply -f -
 
 # Apply example task and resources

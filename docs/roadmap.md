@@ -7,7 +7,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 | Resource | Scope |
 |---|---|
 | **`Task`** | Lifecycle phases, status conditions, resource limits, token/timeout budgets, and approval policies. |
-| **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, mount paths, and goal overrides. |
+| **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, and mount paths. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
 | **`Sandbox` / `SandboxConfig`** | Runtime isolation backends, kernel/syscall constraints, filesystem mounts, and security profiles. |
 
@@ -17,7 +17,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 Evolve how AX maps tasks onto Agent Substrate actors to improve security boundaries, cluster utilization, and stateful workflows:
 
 - **Migration to the New Actor**: Migrate the Substrate integration layer (`internal/substrate`) to the new Agent Substrate Actor API and lifecycle model.
-- **Splitting Task Workspace Setup into a Separate Actor**: Decouple maiden workspace initialization (Git repository cloning, MCP and skill materialization, and goal-driven bootstrap) from the primary task runtime by executing setup in a dedicated setup actor before handing off the prepared workspace state to the task actor.
+- **Splitting Task Workspace Setup into a Separate Actor**: Decouple maiden workspace initialization (Git repository cloning and MCP and skill materialization) from the primary task runtime by executing setup in a dedicated setup actor before handing off the prepared workspace state to the task actor.
 - **Minimally Privileged Policies**: Apply strict least-privilege policies tailored independently to the workspace setup actor and the task execution actor—scoping repository/registry credentials and setup egress exclusively to the initialization phase while enforcing minimal runtime permissions, network egress, and capabilities on the task actor.
 - **Idleness Detection and Automatic Suspension for Density**: Continuously monitor actor activity (process execution, I/O, network traffic, and active gRPC/SSH sessions) to detect idle tasks and automatically trigger `SuspendActor` checkpointing, reclaiming worker CPU and memory to maximize cluster density.
 - **Stateful Task Branching**: Enable branching (forking) a running or suspended `Task`—including its checkpointed memory and workspace filesystem state—into multiple parallel tasks to explore speculative execution paths concurrently.
@@ -27,7 +27,6 @@ Evolve how AX maps tasks onto Agent Substrate actors to improve security boundar
 
 Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
-- **Dynamic Agentic Environment Curation**: Enhance goal-driven workspace preparation (`Workspace.spec.goal` and `Task.spec.workspace.goal`) to dynamically inspect repository contents, resolve toolchains, discover relevant MCP servers and skills from registries, and curate a verified working environment automatically.
 - **Allow Customization**: Decouple the built-in workspace bootstrap and coding agent harness so users can configure custom agent runtimes, system instructions, tool policies, and model configurations.
 
 

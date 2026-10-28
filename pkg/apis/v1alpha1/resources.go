@@ -43,27 +43,64 @@ func ValidateResources(reqs *ResourcesSpec) error {
 	}
 	limits := reqs.GetLimits()
 	if cpu := limits.GetCpu(); cpu != "" {
-		q, err := parseQuantity(cpu)
-		if err != nil {
-			return fmt.Errorf("spec.resources.limits.cpu: invalid quantity %q: %w", cpu, err)
-		}
-		if q.Sign() <= 0 {
-			return fmt.Errorf("spec.resources.limits.cpu: %q must be greater than zero", cpu)
-		}
-		if q.Cmp(big.NewRat(MaxCPULimitCores, 1)) >= 0 {
-			return fmt.Errorf("spec.resources.limits.cpu: %q must be less than %d cores", cpu, MaxCPULimitCores)
+		if _, err := ParseCPUMillicores(cpu); err != nil {
+			return fmt.Errorf("spec.resources.limits.cpu: %w", err)
 		}
 	}
 	if memory := limits.GetMemory(); memory != "" {
-		q, err := parseQuantity(memory)
-		if err != nil {
-			return fmt.Errorf("spec.resources.limits.memory: invalid quantity %q: %w", memory, err)
-		}
-		if q.Sign() <= 0 {
-			return fmt.Errorf("spec.resources.limits.memory: %q must be greater than zero", memory)
+		if _, err := ParseMemoryBytes(memory); err != nil {
+			return fmt.Errorf("spec.resources.limits.memory: %w", err)
 		}
 	}
 	return nil
+}
+
+// ParseCPUMillicores parses a Kubernetes CPU quantity string into millicores,
+// rounding up sub-millicore fractions.
+func ParseCPUMillicores(cpu string) (int64, error) {
+	q, err := parseQuantity(cpu)
+	if err != nil {
+		return 0, fmt.Errorf("invalid quantity %q: %w", cpu, err)
+	}
+	if q.Sign() <= 0 {
+		return 0, fmt.Errorf("%q must be greater than zero", cpu)
+	}
+	if q.Cmp(big.NewRat(MaxCPULimitCores, 1)) >= 0 {
+		return 0, fmt.Errorf("%q must be less than %d cores", cpu, MaxCPULimitCores)
+	}
+	milli := new(big.Rat).Mul(q, big.NewRat(1000, 1))
+	v, ok := ratCeilInt64(milli)
+	if !ok || v >= MaxCPULimitCores*1000 {
+		return 0, fmt.Errorf("%q must be less than %d cores", cpu, MaxCPULimitCores)
+	}
+	return v, nil
+}
+
+// ParseMemoryBytes parses a Kubernetes memory quantity string into bytes,
+// rounding up fractional bytes.
+func ParseMemoryBytes(memory string) (int64, error) {
+	q, err := parseQuantity(memory)
+	if err != nil {
+		return 0, fmt.Errorf("invalid quantity %q: %w", memory, err)
+	}
+	if q.Sign() <= 0 {
+		return 0, fmt.Errorf("%q must be greater than zero", memory)
+	}
+	v, ok := ratCeilInt64(q)
+	if !ok {
+		return 0, fmt.Errorf("invalid quantity %q: value overflows int64", memory)
+	}
+	return v, nil
+}
+
+func ratCeilInt64(q *big.Rat) (int64, bool) {
+	num := new(big.Int).Add(q.Num(), q.Denom())
+	num.Sub(num, big.NewInt(1))
+	quo := new(big.Int).Quo(num, q.Denom())
+	if !quo.IsInt64() {
+		return 0, false
+	}
+	return quo.Int64(), true
 }
 
 // quantityRegexp follows the Kubernetes resource.Quantity grammar: a decimal

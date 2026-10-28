@@ -94,3 +94,52 @@ func TestValidateResources(t *testing.T) {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
 	}
 }
+
+func TestParseCPUMillicores(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    int64
+		wantErr bool
+	}{
+		{"2", 2000, false},
+		{"500m", 500, false},
+		{"1.5", 1500, false},
+		{"1n", 1, false}, // ceiling to 1m
+		{"0", 0, true},
+		{"1000", 0, true},
+	}
+	for _, tt := range tests {
+		got, err := v1alpha1.ParseCPUMillicores(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ParseCPUMillicores(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr && got != tt.want {
+			t.Errorf("ParseCPUMillicores(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestParseMemoryBytes(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    int64
+		wantErr bool
+	}{
+		{"4Gi", 4 << 30, false},
+		{"512Mi", 512 << 20, false},
+		{"500M", 500_000_000, false},
+		{"1u", 1, false}, // ceiling to 1 byte
+		{"0Gi", 0, true},
+	}
+	for _, tt := range tests {
+		got, err := v1alpha1.ParseMemoryBytes(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ParseMemoryBytes(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr && got != tt.want {
+			t.Errorf("ParseMemoryBytes(%q) = %d, want %d", tt.input, got, tt.want)
+		}
+	}
+}

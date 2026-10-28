@@ -64,7 +64,7 @@ func main() {
 	// Commands that don't require an AX server connection
 	switch cmd {
 	case "version":
-		fmt.Println("ax version v1alpha1 (standalone redis engine)")
+		fmt.Println("ax version v1alpha1")
 		return
 	case "help", "-h", "--help":
 		printUsage()
@@ -116,8 +116,6 @@ func main() {
 		err = runGet(serverURL, atespace, cleanArgs)
 	case "describe":
 		err = runDescribe(serverURL, atespace, cleanArgs)
-	case "watch":
-		err = runWatch(serverURL, atespace, cleanArgs)
 	case "suspend":
 		err = runSuspend(serverURL, atespace, cleanArgs)
 	case "resume":
@@ -216,7 +214,6 @@ Available Commands:
   describe task <name>    Show detailed information about a task
   describe workspace <name> Show detailed information about a workspace
   describe model <name>   Show detailed information about a model
-  watch task <name>       Stream live status and condition updates for a task
   ssh <task-name> [-- cmd] Run a command or shell inside the running task container
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
   suspend task <name>     Suspend execution of a task and checkpoint state
@@ -417,7 +414,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		for _, t := range tasks {
 			workerIP := ""
 			actor := ""
-			phase := "Pending"
+			phase := v1alpha1.PhasePending
 			if t.Status != nil {
 				workerIP = t.Status.WorkerIp
 				actor = t.Status.Actor
@@ -698,17 +695,21 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	fmt.Printf("Worker IP:    %s\n", workerIP)
 	if task.Spec != nil {
 		if ref := task.Spec.GetWorkspace(); ref != nil {
-			fmt.Printf("Workspace:    %s  path=%s", ref.Name, task.Spec.WorkspacePath())
-			if ref.Goal != "" {
-				fmt.Printf("  goal=%q", ref.Goal)
-			}
-			fmt.Println()
+			fmt.Printf("Workspace:    %s  path=%s\n", ref.Name, task.Spec.WorkspacePath())
 		}
 		if task.Spec.Image != "" {
 			fmt.Printf("Image:        %s\n", task.Spec.Image)
 		}
 		if len(task.Spec.Command) > 0 {
 			fmt.Printf("Command:      %v\n", task.Spec.Command)
+		}
+		if config := task.Spec.GetConfig().AsMap(); len(config) > 0 {
+			if out, err := yaml.Marshal(config); err == nil {
+				fmt.Println("Config:")
+				for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+					fmt.Printf("  %s\n", line)
+				}
+			}
 		}
 	}
 
@@ -722,59 +723,6 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		_ = w.Flush()
 	}
 
-	return nil
-}
-
-func runWatch(serverURL, atespace string, args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: ax watch task <name>")
-	}
-	name := args[1]
-
-	client, conn, err := getAXClient(serverURL)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	stream, err := client.WatchTask(context.Background(), &v1alpha1.WatchTaskRequest{Atespace: atespace, Name: name})
-	if err != nil {
-		return fmt.Errorf("watching task: %w", err)
-	}
-
-	fmt.Printf("Watching task %s/%s...\n", atespace, name)
-
-	for {
-		resp, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return fmt.Errorf("receiving stream update: %w", err)
-		}
-
-		task := resp.Task
-		if task != nil {
-			phase := ""
-			actor := ""
-			workerIP := ""
-			if task.Status != nil {
-				phase = task.Status.Phase
-				actor = task.Status.Actor
-				workerIP = task.Status.WorkerIp
-			}
-			fmt.Printf("[%s] Phase: %-10s Actor: %-18s WorkerIP: %s\n",
-				time.Now().Format("15:04:05"),
-				phase,
-				actor,
-				workerIP,
-			)
-			if phase == "Completed" || phase == "Failed" {
-				fmt.Printf("Task reached terminal phase %q.\n", phase)
-				break
-			}
-		}
-	}
 	return nil
 }
 
@@ -871,9 +819,9 @@ func manifestFromArgs(args []string) (data []byte, ok bool, err error) {
 // lifecycleRPCTimeout bounds suspend/resume RPCs, which wait for Substrate to
 // snapshot or restore the task's sandbox. MicroVM-backed sandboxes can take
 // well over a minute to snapshot/restore, so this is deliberately generous.
-// The server renews its per-task Redis lock for as long as the RPC is in
+// The server renews its per-task lock lease for as long as the RPC is in
 // flight, so this deadline is not constrained by the lock TTL (see
-// lock.RedisLocker).
+// postgres.Store.Lock).
 const lifecycleRPCTimeout = 5 * time.Minute
 
 func runSuspend(serverURL, atespace string, args []string) error {
@@ -1091,7 +1039,7 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 		return fmt.Errorf("task %q has no status available", taskName)
 	}
 
-	if task.Status.Phase != "Running" {
+	if task.Status.Phase != v1alpha1.PhaseRunning {
 		return fmt.Errorf("task %q is in phase %q (must be Running to ssh)", taskName, task.Status.Phase)
 	}
 
@@ -1130,16 +1078,34 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 			return fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
 		}
 	} else {
-		// 2. Connect via the Substrate atenet-router service in ate-system (port 80)
-		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
-		if err != nil {
-			return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+		// 2. Connect via the Substrate atenet-router service in ate-system (mTLS on port 443, falling back to port 80)
+		axNamespace := os.Getenv("AX_SYSTEM_NAMESPACE")
+		if axNamespace == "" {
+			axNamespace = v1alpha1.DefaultSystemNamespace
 		}
-		cleanup = pfCleanup
-		routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-		guestClient, err = guest.DialTarget(routerEndpoint, targetActor)
-		if err != nil {
-			return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+		if tlsCfg, tlsErr := tunnel.RouterTLSConfig(context.Background(), kubeContext, axNamespace, "ax-server"); tlsErr == nil {
+			if localPort, pfCleanup, pfErr := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 443); pfErr == nil {
+				cleanup = pfCleanup
+				routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+				guestClient, err = guest.DialTargetTLS(routerEndpoint, targetActor, tlsCfg)
+				if err != nil {
+					pfCleanup()
+					return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+				}
+			}
+		}
+		if guestClient == nil {
+			localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
+			if err != nil {
+				return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+			}
+			cleanup = pfCleanup
+			routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+			guestClient, err = guest.DialTarget(routerEndpoint, targetActor)
+			if err != nil {
+				pfCleanup()
+				return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+			}
 		}
 	}
 

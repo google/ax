@@ -123,7 +123,7 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = metaServer.Stop(context.Background())
 	}()
 
-	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath, ref.GetGoal()); err != nil {
+	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath); err != nil {
 		slog.Error("workspace maiden run setup failed", "workspace", ref.GetName(), "path", wsPath, "error", err)
 	} else {
 		metaServer.SetWorkspaceReady(true)

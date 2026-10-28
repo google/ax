@@ -38,10 +38,96 @@ const (
 	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 	DefaultSystemNamespace = "ax-system"
 
+	// PhasePending marks a task whose actor has not been provisioned yet, for
+	// example because Substrate was unavailable. Retrying the operation can
+	// still succeed.
+	PhasePending = "Pending"
+	// PhaseFailed marks a task that AX could not provision or operate, or whose
+	// actor crashed or disappeared.
+	PhaseFailed = "Failed"
 	// PhaseTerminating marks a task whose deletion has been requested and whose
 	// actor is being torn down. The record disappears once cleanup completes.
 	PhaseTerminating = "Terminating"
+
+	// The phases below follow from the state of the task's actor on Agent
+	// Substrate. They are never stored.
+
+	// PhaseRunning marks a task whose actor is running.
+	PhaseRunning = "Running"
+	// PhaseResuming marks a task whose actor is being resumed.
+	PhaseResuming = "Resuming"
+	// PhaseSuspending marks a task whose actor is being suspended.
+	PhaseSuspending = "Suspending"
+	// PhaseSuspended marks a task whose actor is suspended.
+	PhaseSuspended = "Suspended"
+	// PhaseUnknown marks a task whose actor could not be read, or is in a state
+	// AX does not recognize.
+	PhaseUnknown = "Unknown"
 )
+
+// Condition types reported on Task status.
+const (
+	// ConditionReady reports whether the task as a whole is ready to do work:
+	// its actor is running and the workspace inside it has finished setting up.
+	ConditionReady = "Ready"
+	// ConditionWorkspaceReady reports whether the workspace inside the actor has
+	// finished setting up.
+	ConditionWorkspaceReady = "WorkspaceReady"
+)
+
+// TODO(jbd): ReasonAtespaceCreationFailed, ReasonSubstrateUnavailable,
+// ReasonActorNotFound, ReasonActorCreationFailed, ReasonActorResumeFailed
+// are invalid states. These should be returned as errors, shouldn't be
+// leaking as state.
+
+// Condition reasons. A Ready condition that is False because the actor is
+// not running (for example while it is suspended) uses the task's phase as its
+// reason instead.
+const (
+	// ReasonTaskRunning: Ready is True; the actor is running and the workspace
+	// is set up.
+	ReasonTaskRunning = "TaskRunning"
+	// ReasonWorkspaceInitializing: Ready is False; the actor is running but
+	// the workspace is still being set up.
+	ReasonWorkspaceInitializing = "WorkspaceInitializing"
+	// ReasonSubstrateUnavailable: Agent Substrate could not be reached. Ready
+	// is False with phase Pending while provisioning, or Unknown with phase
+	// Unknown while reading the actor.
+	ReasonSubstrateUnavailable = "SubstrateUnavailable"
+	// ReasonActorNotFound: Ready is False; the task's actor was removed
+	// outside AX.
+	ReasonActorNotFound = "ActorNotFound"
+	// ReasonAtespaceCreationFailed: Ready is False; the atespace could not be
+	// created on Agent Substrate.
+	ReasonAtespaceCreationFailed = "AtespaceCreationFailed"
+	// ReasonInvalidResources: Ready is False; spec.resources is invalid.
+	ReasonInvalidResources = "InvalidResources"
+	// ReasonTemplateCreationFailed: Ready is False; Agent Substrate rejected
+	// the task's ActorTemplate, for example because of its image.
+	ReasonTemplateCreationFailed = "TemplateCreationFailed"
+	// ReasonActorCreationFailed: Ready is False; the actor could not be
+	// created.
+	ReasonActorCreationFailed = "ActorCreationFailed"
+	// ReasonActorResumeFailed: Ready is False; the actor could not be resumed.
+	ReasonActorResumeFailed = "ActorResumeFailed"
+
+	// ReasonSetupComplete: WorkspaceReady is True.
+	ReasonSetupComplete = "SetupComplete"
+	// ReasonInitializing: WorkspaceReady is False; setup is still running.
+	ReasonInitializing = "Initializing"
+)
+
+// IsAXPhase reports whether phase describes the control plane's own work on a
+// task (provisioning it, failing to, or tearing it down) rather than the state
+// of the task's actor. Only these phases are stored; every other phase is read
+// from the actor on Agent Substrate when the task is fetched.
+func IsAXPhase(phase string) bool {
+	switch phase {
+	case PhasePending, PhaseFailed, PhaseTerminating:
+		return true
+	}
+	return false
+}
 
 // YAML encoding.
 //
@@ -319,5 +405,65 @@ func ValidateTask(t *Task) error {
 			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
 		}
 	}
+	if err := ValidateTaskConfig(spec); err != nil {
+		return err
+	}
+	if err := ValidateTaskSize(t); err != nil {
+		return err
+	}
 	return ValidateResources(spec.GetResources())
+}
+
+// MaxEnvValueSize is the longest environment variable value Substrate accepts
+// (EnvVar.value in ateapi.proto caps it at 32,768 characters). It is applied
+// to the byte length, which is never less than the character count.
+const MaxEnvValueSize = 32 << 10
+
+// MaxTaskYAMLSize is the largest a task's launch configuration may be once
+// encoded as YAML, the form in which it reaches the runner through the
+// AX_TASK_YAML environment variable. It keeps 1 KiB of MaxEnvValueSize in
+// reserve for the fields the control plane fills in after validation, such as
+// metadata.atespace and metadata.createTime.
+const MaxTaskYAMLSize = MaxEnvValueSize - 1<<10
+
+// MaxTaskConfigSize is the largest spec.config a task may have, measured as
+// its JSON encoding. The config travels inside AX_TASK_YAML, so it must fit
+// within MaxTaskYAMLSize together with the rest of the spec; this limit leaves
+// room for that and gives a more specific error than ValidateTaskSize. The
+// config's YAML encoding can be somewhat larger than its JSON encoding, so a
+// config near this limit can still be rejected by ValidateTaskSize.
+const MaxTaskConfigSize = 16 << 10
+
+// ValidateTaskSize checks that the task's launch configuration, encoded as the
+// control plane encodes it for AX_TASK_YAML, fits within MaxTaskYAMLSize.
+// Larger tasks would be rejected by Substrate when their template is created.
+func ValidateTaskSize(t *Task) error {
+	launch := proto.Clone(t).(*Task)
+	launch.Status = nil
+	data, err := yaml.Marshal(launch)
+	if err != nil {
+		return fmt.Errorf("encoding task: %w", err)
+	}
+	if len(data) > MaxTaskYAMLSize {
+		return fmt.Errorf("task: encoded launch configuration is %d bytes, which exceeds the limit of %d bytes", len(data), MaxTaskYAMLSize)
+	}
+	return nil
+}
+
+// ValidateTaskConfig checks that spec.config fits within MaxTaskConfigSize.
+// The config is otherwise opaque: its schema belongs to the runner, and AX does
+// not interpret it.
+func ValidateTaskConfig(spec *TaskSpec) error {
+	config := spec.GetConfig()
+	if config == nil {
+		return nil
+	}
+	data, err := protoMarshal.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("spec.config: %w", err)
+	}
+	if len(data) > MaxTaskConfigSize {
+		return fmt.Errorf("spec.config: %d bytes exceeds the limit of %d bytes", len(data), MaxTaskConfigSize)
+	}
+	return nil
 }
