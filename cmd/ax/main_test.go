@@ -65,7 +65,7 @@ func TestApplyAtespace(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+				srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 				t.Cleanup(srv.Stop)
 				go func() { _ = srv.Serve(listener) }()
 
@@ -162,7 +162,7 @@ func TestRunApplyEmptyDocuments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+			srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 			t.Cleanup(srv.Stop)
 			go func() { _ = srv.Serve(listener) }()
 
@@ -228,7 +228,7 @@ func TestRunGetResourceAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := newServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+	srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -317,12 +317,6 @@ func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
 	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
 }
 
-// newServer returns a server that keeps resources in st and runs tasks
-// through rec.
-func newServer(st store.Store, rec *controller.TaskReconciler) *server.Server {
-	return server.NewServer(st, server.Options{Reconciler: rec, Substrate: rec.Client()})
-}
-
 func TestRunDeleteTask(t *testing.T) {
 	s := memory.NewStore()
 	meta := &v1alpha1.ObjectMeta{Name: "task-to-delete", Atespace: "default"}
@@ -340,7 +334,7 @@ func TestRunDeleteTask(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		close(deleted)
 	})
-	srv := newServer(s, newTestReconciler(sub)).GRPCServer()
+	srv := server.NewServer(s, newTestReconciler(sub)).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 

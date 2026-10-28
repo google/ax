@@ -38,7 +38,7 @@ import (
 
 func TestServerHealthzHTTP(t *testing.T) {
 	memStore := memory.NewStore()
-	srv := newServer(memStore, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memStore, newTestReconciler(substratetest.NewServer(t)))
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -62,7 +62,7 @@ func TestServerHealthzHTTP(t *testing.T) {
 
 func TestServerGRPC(t *testing.T) {
 	memStore := memory.NewStore()
-	srv := newServer(memStore, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memStore, newTestReconciler(substratetest.NewServer(t)))
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -231,7 +231,7 @@ func TestServerGRPC(t *testing.T) {
 // labels. The server rejects them up front instead of failing during Substrate
 // actor creation.
 func TestCreate_RejectsInvalidNames(t *testing.T) {
-	srv := newServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	for _, meta := range []*v1alpha1.ObjectMeta{
@@ -270,7 +270,7 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 }
 
 func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
-	srv := newServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -296,7 +296,7 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 
 func TestServer_DirectReconcilerLifecycle(t *testing.T) {
 	sub := substratetest.NewServer(t)
-	srv := newServer(memory.NewStore(), newTestReconciler(sub))
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
 	ctx := context.Background()
 
 	// 1. CreateTask creates the task's actor, suspended
@@ -376,7 +376,7 @@ func TestServer_DeleteTask_BlocksAndSetsPhaseTerminating(t *testing.T) {
 			observedPhaseDuringDelete = task.Status.Phase
 		}
 	})
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -407,7 +407,7 @@ func TestServer_DeleteTask_BlocksAndSetsPhaseTerminating(t *testing.T) {
 func TestServer_DeleteTask_ReconcileErrorRetainsTask(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -451,7 +451,7 @@ func TestServer_DeleteTask_UpdateStatusError(t *testing.T) {
 	base := memory.NewStore()
 	st := &failUpdateStatusStore{Store: base}
 	sub := substratetest.NewServer(t)
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -485,7 +485,7 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 	workerIP := readySrv.Listener.Addr().String()
 	sub := substratetest.NewServer(t)
 	sub.SetWorkerIP(workerIP)
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -525,7 +525,7 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 
 func TestServer_SuspendTask_SuccessUpdatesStoredState(t *testing.T) {
 	st := memory.NewStore()
-	srv := newServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -573,12 +573,6 @@ func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
 	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
 }
 
-// newServer returns a server that keeps resources in st and runs tasks
-// through rec.
-func newServer(st store.Store, rec *controller.TaskReconciler) *server.Server {
-	return server.NewServer(st, server.Options{Reconciler: rec, Substrate: rec.Client()})
-}
-
 // readyCondition returns the task's Ready condition, or nil.
 func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
 	for _, c := range task.GetStatus().GetConditions() {
@@ -592,7 +586,7 @@ func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
 func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	for _, name := range []string{"observed-a", "observed-b"} {
@@ -652,7 +646,7 @@ func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 
 func TestServer_CreateTask_InitialPhaseSuspended(t *testing.T) {
 	st := memory.NewStore()
-	srv := newServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	task, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -679,7 +673,7 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -717,7 +711,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{CreateAtespace: status.Error(codes.DeadlineExceeded, "substrate control plane timed out")})
-	srv := newServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
 	// 1. CreateTask while Substrate is unavailable records Phase="Pending" (not "Failed")

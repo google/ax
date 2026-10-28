@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
@@ -33,21 +34,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Reconciler coordinates sandbox/actor lifecycles on Agent Substrate directly.
-type Reconciler interface {
-	Reconcile(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error)
-	ReconcileDelete(ctx context.Context, atespace, taskName string) error
-}
-
 // Options configures the AX API Server.
 type Options struct {
 	// Locker serializes changes to a resource. It must be shared by all
 	// ax-server replicas; it defaults to an in-process lock.MemoryLocker.
-	Locker     lock.Locker
-	Reconciler Reconciler
-	// Substrate is read for the parts of a task's status owned by its actor,
-	// which the store never holds. Without it, tasks are returned as stored.
-	Substrate *substrate.Client
+	Locker lock.Locker
 }
 
 // Server provides the gRPC API for AX.
@@ -55,13 +46,18 @@ type Server struct {
 	v1alpha1.UnimplementedAXServer
 	store      store.Store
 	locker     lock.Locker
-	reconciler Reconciler
+	reconciler *controller.TaskReconciler
+	// substrate is the reconciler's client. It is read for the parts of a
+	// task's status owned by its actor, which the store never holds.
 	substrate  *substrate.Client
 	grpcServer *grpc.Server
 }
 
 // NewServer creates a new AX API server.
-func NewServer(s store.Store, opts ...Options) *Server {
+func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Options) *Server {
+	if reconciler == nil || reconciler.Client() == nil {
+		panic("server: NewServer requires a non-nil TaskReconciler with a Substrate client")
+	}
 	var opt Options
 	if len(opts) > 0 {
 		opt = opts[0]
@@ -74,8 +70,8 @@ func NewServer(s store.Store, opts ...Options) *Server {
 	srv := &Server{
 		store:      s,
 		locker:     locker,
-		reconciler: opt.Reconciler,
-		substrate:  opt.Substrate,
+		reconciler: reconciler,
+		substrate:  reconciler.Client(),
 		grpcServer: grpc.NewServer(),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
@@ -195,26 +191,24 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	task.Status.Phase = v1alpha1.PhaseSuspended
 
 	// Directly reconcile with Substrate
-	if s.reconciler != nil {
-		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-		if err != nil {
-			slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
-			if reconciled != nil && reconciled.Status != nil {
-				task.Status = reconciled.Status
-			}
-			if substrate.IsTransientError(err) {
-				task.Status.Phase = v1alpha1.PhasePending
-			} else if task.Status.Phase != v1alpha1.PhasePending {
-				task.Status.Phase = v1alpha1.PhaseFailed
-			}
-			_ = s.updateTask(ctx, atespace, taskName, task.Status)
-			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
-			}
-			return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
+	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
+	if err != nil {
+		slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
+		if reconciled != nil && reconciled.Status != nil {
+			task.Status = reconciled.Status
 		}
-		task.Status = reconciled.Status
+		if substrate.IsTransientError(err) {
+			task.Status.Phase = v1alpha1.PhasePending
+		} else if task.Status.Phase != v1alpha1.PhasePending {
+			task.Status.Phase = v1alpha1.PhaseFailed
+		}
+		_ = s.updateTask(ctx, atespace, taskName, task.Status)
+		if substrate.IsTransientError(err) {
+			return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
 	}
+	task.Status = reconciled.Status
 	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
@@ -293,22 +287,16 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	}
 	task.Status.Phase = v1alpha1.PhaseSuspended
 
-	if s.reconciler != nil {
-		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-		if err != nil {
-			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
-			}
-			return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
+	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
+	if err != nil {
+		if substrate.IsTransientError(err) {
+			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
-		task.Status = reconciled.Status
-		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
-			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
-		}
-	} else {
-		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
-			return nil, status.Errorf(codes.Internal, "suspending task: %v", err)
-		}
+		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
+	}
+	task.Status = reconciled.Status
+	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 
 	// Report the actor as it is now, as GetTask would.
@@ -345,31 +333,25 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	}
 	task.Status.Phase = v1alpha1.PhaseRunning
 
-	if s.reconciler != nil {
-		reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-		if err != nil {
-			if reconciled != nil && reconciled.Status != nil {
-				task.Status = reconciled.Status
-			}
-			if substrate.IsTransientError(err) {
-				task.Status.Phase = v1alpha1.PhasePending
-			} else if task.Status.Phase != v1alpha1.PhasePending {
-				task.Status.Phase = v1alpha1.PhaseFailed
-			}
-			_ = s.updateTask(ctx, atespace, taskName, task.Status)
-			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
-			}
-			return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
+	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
+	if err != nil {
+		if reconciled != nil && reconciled.Status != nil {
+			task.Status = reconciled.Status
 		}
-		task.Status = reconciled.Status
-		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
-			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+		if substrate.IsTransientError(err) {
+			task.Status.Phase = v1alpha1.PhasePending
+		} else if task.Status.Phase != v1alpha1.PhasePending {
+			task.Status.Phase = v1alpha1.PhaseFailed
 		}
-	} else {
-		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
-			return nil, status.Errorf(codes.Internal, "resuming task: %v", err)
+		_ = s.updateTask(ctx, atespace, taskName, task.Status)
+		if substrate.IsTransientError(err) {
+			return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
 		}
+		return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
+	}
+	task.Status = reconciled.Status
+	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 
 	// Report the actor as it is now, as GetTask would.
@@ -401,7 +383,7 @@ func (s *Server) getTask(ctx context.Context, atespace, name string) (*v1alpha1.
 // in, using one ListActors call per atespace.
 func (s *Server) listTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error) {
 	tasks, err := s.store.ListTasks(ctx, atespace, limit, offset)
-	if err != nil || s.substrate == nil {
+	if err != nil {
 		return tasks, err
 	}
 	byAtespace := make(map[string][]*v1alpha1.Task)
@@ -438,19 +420,17 @@ func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1al
 // deleteTask removes a task's actor and templates from Substrate, then its
 // record from the store. It returns a gRPC status error.
 func (s *Server) deleteTask(ctx context.Context, atespace, name string) error {
-	if s.reconciler != nil {
-		if err := s.reconciler.ReconcileDelete(ctx, atespace, name); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return status.Error(codes.Canceled, err.Error())
-			}
-			if errors.Is(err, context.DeadlineExceeded) {
-				return status.Error(codes.DeadlineExceeded, err.Error())
-			}
-			if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-				return err
-			}
-			return status.Errorf(codes.Internal, "cleaning up substrate resources for task %s/%s: %v", atespace, name, err)
+	if err := s.reconciler.ReconcileDelete(ctx, atespace, name); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return status.Error(codes.Canceled, err.Error())
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Error(codes.DeadlineExceeded, err.Error())
+		}
+		if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
+			return err
+		}
+		return status.Errorf(codes.Internal, "cleaning up substrate resources for task %s/%s: %v", atespace, name, err)
 	}
 	if err := s.store.DeleteTask(ctx, atespace, name); err != nil {
 		return status.Errorf(codes.Internal, "deleting task record: %v", err)
@@ -458,12 +438,8 @@ func (s *Server) deleteTask(ctx context.Context, atespace, name string) error {
 	return nil
 }
 
-// applyActor fills in the Substrate-owned status of task from its actor, when
-// the server is connected to Substrate.
+// applyActor fills in the Substrate-owned status of task from its actor.
 func (s *Server) applyActor(ctx context.Context, task *v1alpha1.Task) {
-	if s.substrate == nil {
-		return
-	}
 	actor, err := s.substrate.GetActor(ctx, task.GetMetadata().GetAtespace(), task.GetMetadata().GetName())
 	if status.Code(err) == codes.NotFound {
 		actor, err = nil, nil

@@ -96,7 +96,6 @@ func main() {
 	}
 	defer backend.Close()
 
-	var reconciler server.Reconciler
 	subClient, err := substrate.NewClientWithOptions(substrate.ClientOptions{
 		Target:      substrateEndpoint,
 		Authority:   substrateAuthority,
@@ -106,16 +105,14 @@ func main() {
 		Plaintext:   substratePlaintext,
 	})
 	if err != nil {
-		slog.Warn("could not initialize substrate client; running without substrate reconciliation", "error", err)
-	} else {
-		defer subClient.Close()
-		reconciler = controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+		slog.Error("initializing substrate client", "error", err)
+		os.Exit(1)
 	}
+	defer subClient.Close()
 
-	srv := server.NewServer(backend, server.Options{
-		Locker:     backend,
-		Reconciler: reconciler,
-		Substrate:  subClient,
+	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+	srv := server.NewServer(backend, reconciler, server.Options{
+		Locker: backend,
 	})
 
 	httpServer := &http.Server{
