@@ -185,3 +185,47 @@ func TestLockTakesOverExpiredLease(t *testing.T) {
 		t.Fatalf("acquired orphaned lock after %v, before its %v lease expired", elapsed, ttl)
 	}
 }
+
+// TestRestartKeepsTasksAndReleasesLocks simulates a server crash. A task is
+// saved and a lock is taken, then the store is closed without unlocking and
+// reopened on the same database. The task must still be there, and the lock
+// must be takeable once its lease runs out.
+func TestRestartKeepsTasksAndReleasesLocks(t *testing.T) {
+	ttl := 300 * time.Millisecond
+	opts := Options{LockTTL: ttl, LockRetryInterval: 20 * time.Millisecond}
+	s1 := openTest(t, opts)
+	ctx := context.Background()
+	task := &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "survivor"}}
+	if err := s1.SaveTask(ctx, task); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	if _, err := s1.Lock(ctx, "task", "default", "survivor"); err != nil {
+		t.Fatalf("Lock before restart: %v", err)
+	}
+	// Crash: close without calling unlock, so the lease is never released.
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Reopen without truncating, so the data from before the restart is kept.
+	s2, err := Open(ctx, testURL(t), opts)
+	if err != nil {
+		t.Fatalf("Open after restart: %v", err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	got, err := s2.GetTask(ctx, "default", "survivor")
+	if err != nil {
+		t.Fatalf("GetTask after restart: %v", err)
+	}
+	if got.GetMetadata().GetName() != "survivor" {
+		t.Fatalf("GetTask name = %q, want survivor", got.GetMetadata().GetName())
+	}
+
+	acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	unlock, err := s2.Lock(acquireCtx, "task", "default", "survivor")
+	if err != nil {
+		t.Fatalf("Lock after restart: %v", err)
+	}
+	unlock()
+}
