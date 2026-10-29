@@ -1,12 +1,12 @@
 # Claude Code runner
 
-`claude-code-runner` is a [runner](runner.md) that runs [Claude Code](https://claude.com/claude-code) headlessly, configured from the `Task` itself. It embeds the standard `runner` package, so workspace setup, supervision, probes, and shutdown work exactly as they do with the default runner. The only difference is where the command comes from. When a task leaves `spec.command` empty, the runner builds a `claude --print` command from `spec.config` and connects it to the MCP servers of the task's Workspace.
+`claude-code-runner` is a [runner](../../docs/runner.md) that runs [Claude Code](https://claude.com/claude-code) headlessly, configured from the `Task` itself. It embeds the standard `runner` package, so workspace setup, supervision, probes, and shutdown work exactly as they do with the default runner. The only difference is where the command comes from. When a task leaves `spec.command` empty, the runner builds a `claude --print` command from `spec.config` and connects it to the MCP servers of the task's Workspace.
 
 A task that sets `spec.command` runs that command unchanged, so the same image also works for tasks that call `claude` themselves.
 
 ## Build the image
 
-The image is built from [`Dockerfile.claude-code`](../Dockerfile.claude-code). It is the default task image with Claude Code installed and `claude-code-runner` at `/usr/local/bin/ax-task-runner`:
+The image is built from [`Dockerfile.claude-code`](../../Dockerfile.claude-code). It is the default task image with Claude Code installed and `claude-code-runner` at `/usr/local/bin/ax-task-runner`:
 
 ```bash
 make push-claude-code-image CLAUDE_CODE_REPO=<your-registry>/<image>
@@ -104,7 +104,7 @@ A server with an `endpoint` is reached over streamable HTTP. A server with a `co
 `spec.config` is stored in plain text and shown by `ax get task`, so keep credentials out of it, including in `settings.env`. Pass `ANTHROPIC_API_KEY` through `spec.env`, substituting it at apply time instead of committing it:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code.yaml | ax apply -f -
+ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code/task.yaml | ax apply -f -
 ```
 
 ## Debugging
@@ -122,4 +122,4 @@ go build -o claude-code-runner ./cmd/runners/claude-code-runner
 ./claude-code-runner --task-file task.yaml --workspace-file workspace.yaml --port 8080
 ```
 
-See [`examples/claude-code.yaml`](../examples/claude-code.yaml) for a complete Task and Workspace.
+See [`task.yaml`](task.yaml) for a complete Task and Workspace.

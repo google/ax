@@ -25,7 +25,7 @@
 #   make push-claude-code-image CLAUDE_CODE_VERSION=2.1.310
 #
 # Pin the digest the Makefile prints in your Task's spec.image. See
-# examples/claude-code.yaml for a Task that uses this image.
+# examples/claude-code/task.yaml for a Task that uses this image.
 #
 # Build on a linux/amd64 host (or in CI). The installer executes the
 # downloaded binary to finish setup, and that binary aborts under qemu

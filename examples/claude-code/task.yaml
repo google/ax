@@ -33,7 +33,7 @@
 #    So ANTHROPIC_API_KEY has to be set through spec.env. Substitute it at
 #    apply time instead of committing it:
 #
-#      ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code.yaml | ax apply -f -
+#      ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code/task.yaml | ax apply -f -
 #
 #   ax describe task claude-code
 #   ax ssh claude-code -- cat /workspace/claude-output.md
