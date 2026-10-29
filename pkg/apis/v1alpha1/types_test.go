@@ -711,3 +711,181 @@ func TestUnmarshalYAMLLenient_NormalizesWorkspace(t *testing.T) {
 		t.Errorf("mcp servers = %v, want one named srv", got)
 	}
 }
+
+func TestValidateTask_EgressAndSecretRefs(t *testing.T) {
+	inject := func(host, header string) *v1alpha1.CredentialInjection {
+		return &v1alpha1.CredentialInjection{Host: host, Header: header, Prefix: "Bearer "}
+	}
+	secretEnv := func(name string, ref *v1alpha1.SecretEnvSource) *v1alpha1.EnvVar {
+		return &v1alpha1.EnvVar{Name: name, SecretRef: ref}
+	}
+	tests := []struct {
+		name    string
+		spec    *v1alpha1.TaskSpec
+		wantErr string
+	}{
+		{name: "egress hosts", spec: &v1alpha1.TaskSpec{Egress: &v1alpha1.EgressSpec{Hosts: []string{"pypi.org", "*.googleapis.com"}}}},
+		{
+			name:    "egress host with scheme",
+			spec:    &v1alpha1.TaskSpec{Egress: &v1alpha1.EgressSpec{Hosts: []string{"https://pypi.org"}}},
+			wantErr: "spec.egress.hosts[0]",
+		},
+		{
+			name:    "egress bare wildcard",
+			spec:    &v1alpha1.TaskSpec{Egress: &v1alpha1.EgressSpec{Hosts: []string{"*"}}},
+			wantErr: "spec.egress.hosts[0]",
+		},
+		{
+			name: "valid secret ref",
+			spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{
+				secretEnv("STRIPE_API_KEY", &v1alpha1.SecretEnvSource{Name: "stripe", Key: "api-key", Inject: inject("api.stripe.com", "Authorization")}),
+			}},
+		},
+		{
+			name: "value and secret ref",
+			spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{
+				{Name: "K", Value: "literal", SecretRef: &v1alpha1.SecretEnvSource{Name: "s", Key: "k", Inject: inject("api.example.com", "Authorization")}},
+			}},
+			wantErr: "mutually exclusive",
+		},
+		{
+			name:    "secret ref without key",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Inject: inject("api.example.com", "Authorization")})}},
+			wantErr: "name and key are required",
+		},
+		{
+			name:    "secret name with slash",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "a/b", Key: "k", Inject: inject("api.example.com", "Authorization")})}},
+			wantErr: "secretRef.name",
+		},
+		{
+			name:    "secret key with slash",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Key: "../k", Inject: inject("api.example.com", "Authorization")})}},
+			wantErr: "secretRef.key",
+		},
+		{
+			name: "secret key with dots and underscores",
+			spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "my.secret", Key: "API_KEY.v2", Inject: inject("api.example.com", "Authorization")})}},
+		},
+		{
+			name:    "secret ref without inject",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Key: "k"})}},
+			wantErr: "host and header are required",
+		},
+		{
+			name:    "wildcard inject host",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Key: "k", Inject: inject("*.example.com", "Authorization")})}},
+			wantErr: "inject.host",
+		},
+		{
+			name:    "invalid header",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Key: "k", Inject: inject("api.example.com", "Bad Header")})}},
+			wantErr: "not a valid request header name",
+		},
+		{
+			name:    "host header",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Name: "s", Key: "k", Inject: inject("api.example.com", "Host")})}},
+			wantErr: "not a valid request header name",
+		},
+		{
+			name:    "invalid store name",
+			spec:    &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{secretEnv("K", &v1alpha1.SecretEnvSource{Store: "Bad_Store", Name: "s", Key: "k", Inject: inject("api.example.com", "Authorization")})}},
+			wantErr: "secretRef.store",
+		},
+		{
+			name: "same header injected twice for a host",
+			spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{
+				secretEnv("A", &v1alpha1.SecretEnvSource{Name: "a", Key: "k", Inject: inject("api.example.com", "Authorization")}),
+				secretEnv("B", &v1alpha1.SecretEnvSource{Name: "b", Key: "k", Inject: inject("api.example.com", "authorization")}),
+			}},
+			wantErr: `already injected by env "A"`,
+		},
+		{
+			name: "different headers for one host",
+			spec: &v1alpha1.TaskSpec{Env: []*v1alpha1.EnvVar{
+				secretEnv("A", &v1alpha1.SecretEnvSource{Name: "a", Key: "k", Inject: inject("api.example.com", "Authorization")}),
+				secretEnv("B", &v1alpha1.SecretEnvSource{Name: "b", Key: "k", Inject: inject("api.example.com", "X-Api-Key")}),
+			}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "task"}, Spec: tt.spec})
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEnvVar_ResolvedValue(t *testing.T) {
+	if got := (&v1alpha1.EnvVar{Name: "A", Value: "v"}).ResolvedValue(); got != "v" {
+		t.Errorf("literal: got %q", got)
+	}
+	ref := &v1alpha1.EnvVar{Name: "B", SecretRef: &v1alpha1.SecretEnvSource{Name: "s", Key: "k"}}
+	if got := ref.ResolvedValue(); got != v1alpha1.SecretPlaceholder {
+		t.Errorf("secret ref: got %q, want placeholder", got)
+	}
+}
+
+func TestSecretStore_YAML(t *testing.T) {
+	in := `apiVersion: ax.io/v1alpha1
+kind: SecretStore
+metadata:
+  name: default
+  atespace: team-a
+spec:
+  kubernetes:
+    namespace: team-a-secrets
+`
+	var s v1alpha1.SecretStore
+	if err := yaml.Unmarshal([]byte(in), &s); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := s.GetSpec().GetKubernetes().GetNamespace(); got != "team-a-secrets" {
+		t.Errorf("namespace = %q", got)
+	}
+	if err := v1alpha1.ValidateSecretStore(&s); err != nil {
+		t.Errorf("ValidateSecretStore: %v", err)
+	}
+	if err := v1alpha1.ValidateSecretStore(&v1alpha1.SecretStore{Metadata: &v1alpha1.ObjectMeta{Name: "x"}, Spec: &v1alpha1.SecretStoreSpec{}}); err == nil {
+		t.Error("expected an error for a store without a backend")
+	}
+}
+
+func TestTask_SecretRef_YAML(t *testing.T) {
+	in := `apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: t
+spec:
+  egress:
+    hosts: [pypi.org]
+  env:
+    - name: STRIPE_API_KEY
+      secretRef:
+        name: stripe
+        key: api-key
+        inject:
+          host: api.stripe.com
+          header: Authorization
+          prefix: "Bearer "
+`
+	var task v1alpha1.Task
+	if err := yaml.Unmarshal([]byte(in), &task); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	ref := task.GetSpec().GetEnv()[0].GetSecretRef()
+	if ref.StoreName() != v1alpha1.DefaultSecretStore || ref.GetInject().GetHost() != "api.stripe.com" || ref.GetInject().GetPrefix() != "Bearer " {
+		t.Errorf("unexpected secretRef: %v", ref)
+	}
+	if err := v1alpha1.ValidateTask(&task); err != nil {
+		t.Errorf("ValidateTask: %v", err)
+	}
+}

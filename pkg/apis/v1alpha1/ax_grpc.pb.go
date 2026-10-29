@@ -33,20 +33,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AX_GetTask_FullMethodName         = "/ax.v1alpha1.AX/GetTask"
-	AX_ListTasks_FullMethodName       = "/ax.v1alpha1.AX/ListTasks"
-	AX_CreateTask_FullMethodName      = "/ax.v1alpha1.AX/CreateTask"
-	AX_DeleteTask_FullMethodName      = "/ax.v1alpha1.AX/DeleteTask"
-	AX_SuspendTask_FullMethodName     = "/ax.v1alpha1.AX/SuspendTask"
-	AX_ResumeTask_FullMethodName      = "/ax.v1alpha1.AX/ResumeTask"
-	AX_GetWorkspace_FullMethodName    = "/ax.v1alpha1.AX/GetWorkspace"
-	AX_ListWorkspaces_FullMethodName  = "/ax.v1alpha1.AX/ListWorkspaces"
-	AX_UpdateWorkspace_FullMethodName = "/ax.v1alpha1.AX/UpdateWorkspace"
-	AX_DeleteWorkspace_FullMethodName = "/ax.v1alpha1.AX/DeleteWorkspace"
-	AX_GetModel_FullMethodName        = "/ax.v1alpha1.AX/GetModel"
-	AX_ListModels_FullMethodName      = "/ax.v1alpha1.AX/ListModels"
-	AX_UpdateModel_FullMethodName     = "/ax.v1alpha1.AX/UpdateModel"
-	AX_DeleteModel_FullMethodName     = "/ax.v1alpha1.AX/DeleteModel"
+	AX_GetTask_FullMethodName           = "/ax.v1alpha1.AX/GetTask"
+	AX_ListTasks_FullMethodName         = "/ax.v1alpha1.AX/ListTasks"
+	AX_CreateTask_FullMethodName        = "/ax.v1alpha1.AX/CreateTask"
+	AX_DeleteTask_FullMethodName        = "/ax.v1alpha1.AX/DeleteTask"
+	AX_SuspendTask_FullMethodName       = "/ax.v1alpha1.AX/SuspendTask"
+	AX_ResumeTask_FullMethodName        = "/ax.v1alpha1.AX/ResumeTask"
+	AX_GetWorkspace_FullMethodName      = "/ax.v1alpha1.AX/GetWorkspace"
+	AX_ListWorkspaces_FullMethodName    = "/ax.v1alpha1.AX/ListWorkspaces"
+	AX_UpdateWorkspace_FullMethodName   = "/ax.v1alpha1.AX/UpdateWorkspace"
+	AX_DeleteWorkspace_FullMethodName   = "/ax.v1alpha1.AX/DeleteWorkspace"
+	AX_GetModel_FullMethodName          = "/ax.v1alpha1.AX/GetModel"
+	AX_ListModels_FullMethodName        = "/ax.v1alpha1.AX/ListModels"
+	AX_UpdateModel_FullMethodName       = "/ax.v1alpha1.AX/UpdateModel"
+	AX_DeleteModel_FullMethodName       = "/ax.v1alpha1.AX/DeleteModel"
+	AX_GetSecretStore_FullMethodName    = "/ax.v1alpha1.AX/GetSecretStore"
+	AX_ListSecretStores_FullMethodName  = "/ax.v1alpha1.AX/ListSecretStores"
+	AX_UpdateSecretStore_FullMethodName = "/ax.v1alpha1.AX/UpdateSecretStore"
+	AX_DeleteSecretStore_FullMethodName = "/ax.v1alpha1.AX/DeleteSecretStore"
 )
 
 // AXClient is the client API for AX service.
@@ -72,6 +76,11 @@ type AXClient interface {
 	ListModels(ctx context.Context, in *ListModelsRequest, opts ...grpc.CallOption) (*ListModelsResponse, error)
 	UpdateModel(ctx context.Context, in *UpdateModelRequest, opts ...grpc.CallOption) (*Model, error)
 	DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*DeleteModelResponse, error)
+	// SecretStores
+	GetSecretStore(ctx context.Context, in *GetSecretStoreRequest, opts ...grpc.CallOption) (*SecretStore, error)
+	ListSecretStores(ctx context.Context, in *ListSecretStoresRequest, opts ...grpc.CallOption) (*ListSecretStoresResponse, error)
+	UpdateSecretStore(ctx context.Context, in *UpdateSecretStoreRequest, opts ...grpc.CallOption) (*SecretStore, error)
+	DeleteSecretStore(ctx context.Context, in *DeleteSecretStoreRequest, opts ...grpc.CallOption) (*DeleteSecretStoreResponse, error)
 }
 
 type aXClient struct {
@@ -222,6 +231,46 @@ func (c *aXClient) DeleteModel(ctx context.Context, in *DeleteModelRequest, opts
 	return out, nil
 }
 
+func (c *aXClient) GetSecretStore(ctx context.Context, in *GetSecretStoreRequest, opts ...grpc.CallOption) (*SecretStore, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SecretStore)
+	err := c.cc.Invoke(ctx, AX_GetSecretStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) ListSecretStores(ctx context.Context, in *ListSecretStoresRequest, opts ...grpc.CallOption) (*ListSecretStoresResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSecretStoresResponse)
+	err := c.cc.Invoke(ctx, AX_ListSecretStores_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) UpdateSecretStore(ctx context.Context, in *UpdateSecretStoreRequest, opts ...grpc.CallOption) (*SecretStore, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SecretStore)
+	err := c.cc.Invoke(ctx, AX_UpdateSecretStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) DeleteSecretStore(ctx context.Context, in *DeleteSecretStoreRequest, opts ...grpc.CallOption) (*DeleteSecretStoreResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSecretStoreResponse)
+	err := c.cc.Invoke(ctx, AX_DeleteSecretStore_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AXServer is the server API for AX service.
 // All implementations must embed UnimplementedAXServer
 // for forward compatibility.
@@ -245,6 +294,11 @@ type AXServer interface {
 	ListModels(context.Context, *ListModelsRequest) (*ListModelsResponse, error)
 	UpdateModel(context.Context, *UpdateModelRequest) (*Model, error)
 	DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error)
+	// SecretStores
+	GetSecretStore(context.Context, *GetSecretStoreRequest) (*SecretStore, error)
+	ListSecretStores(context.Context, *ListSecretStoresRequest) (*ListSecretStoresResponse, error)
+	UpdateSecretStore(context.Context, *UpdateSecretStoreRequest) (*SecretStore, error)
+	DeleteSecretStore(context.Context, *DeleteSecretStoreRequest) (*DeleteSecretStoreResponse, error)
 	mustEmbedUnimplementedAXServer()
 }
 
@@ -296,6 +350,18 @@ func (UnimplementedAXServer) UpdateModel(context.Context, *UpdateModelRequest) (
 }
 func (UnimplementedAXServer) DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteModel not implemented")
+}
+func (UnimplementedAXServer) GetSecretStore(context.Context, *GetSecretStoreRequest) (*SecretStore, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSecretStore not implemented")
+}
+func (UnimplementedAXServer) ListSecretStores(context.Context, *ListSecretStoresRequest) (*ListSecretStoresResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSecretStores not implemented")
+}
+func (UnimplementedAXServer) UpdateSecretStore(context.Context, *UpdateSecretStoreRequest) (*SecretStore, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSecretStore not implemented")
+}
+func (UnimplementedAXServer) DeleteSecretStore(context.Context, *DeleteSecretStoreRequest) (*DeleteSecretStoreResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSecretStore not implemented")
 }
 func (UnimplementedAXServer) mustEmbedUnimplementedAXServer() {}
 func (UnimplementedAXServer) testEmbeddedByValue()            {}
@@ -570,6 +636,78 @@ func _AX_DeleteModel_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AX_GetSecretStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSecretStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).GetSecretStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_GetSecretStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).GetSecretStore(ctx, req.(*GetSecretStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_ListSecretStores_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSecretStoresRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).ListSecretStores(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_ListSecretStores_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).ListSecretStores(ctx, req.(*ListSecretStoresRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_UpdateSecretStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSecretStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).UpdateSecretStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_UpdateSecretStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).UpdateSecretStore(ctx, req.(*UpdateSecretStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_DeleteSecretStore_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSecretStoreRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).DeleteSecretStore(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_DeleteSecretStore_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).DeleteSecretStore(ctx, req.(*DeleteSecretStoreRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AX_ServiceDesc is the grpc.ServiceDesc for AX service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -632,6 +770,22 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteModel",
 			Handler:    _AX_DeleteModel_Handler,
+		},
+		{
+			MethodName: "GetSecretStore",
+			Handler:    _AX_GetSecretStore_Handler,
+		},
+		{
+			MethodName: "ListSecretStores",
+			Handler:    _AX_ListSecretStores_Handler,
+		},
+		{
+			MethodName: "UpdateSecretStore",
+			Handler:    _AX_UpdateSecretStore_Handler,
+		},
+		{
+			MethodName: "DeleteSecretStore",
+			Handler:    _AX_DeleteSecretStore_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -30,10 +30,14 @@ import (
 )
 
 const (
-	APIVersion    = "ax.io/v1alpha1"
-	KindTask      = "Task"
-	KindWorkspace = "Workspace"
-	KindModel     = "Model"
+	APIVersion      = "ax.io/v1alpha1"
+	KindTask        = "Task"
+	KindWorkspace   = "Workspace"
+	KindModel       = "Model"
+	KindSecretStore = "SecretStore"
+
+	// DefaultSecretStore is the store a secret_ref uses when it names none.
+	DefaultSecretStore = "default"
 
 	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 	DefaultSystemNamespace = "ax-system"
@@ -311,6 +315,9 @@ func (w *Workspace) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, 
 func (m *Model) MarshalYAML() (any, error)        { return marshalYAML(m) }
 func (m *Model) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, m, normalizeModel) }
 
+func (s *SecretStore) MarshalYAML() (any, error)        { return marshalYAML(s) }
+func (s *SecretStore) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, s, nil) }
+
 // Workspace binding.
 //
 // A task binds at most one workspace through spec.workspace.
@@ -390,6 +397,32 @@ func ValidateModel(m *Model) error {
 	return ValidateObjectMeta(m.GetMetadata())
 }
 
+// ValidateSecretStore checks the store's metadata and that exactly one backend
+// is configured.
+func ValidateSecretStore(s *SecretStore) error {
+	if err := ValidateObjectMeta(s.GetMetadata()); err != nil {
+		return err
+	}
+	k := s.GetSpec().GetKubernetes()
+	if k == nil {
+		return errors.New("spec: a backend is required (spec.kubernetes)")
+	}
+	if ns := k.GetNamespace(); ns != "" {
+		if err := ValidateName(ns); err != nil {
+			return fmt.Errorf("spec.kubernetes.namespace: %w", err)
+		}
+	}
+	return nil
+}
+
+// StoreName is the SecretStore a secret_ref resolves against.
+func (r *SecretEnvSource) StoreName() string {
+	if r.GetStore() != "" {
+		return r.GetStore()
+	}
+	return DefaultSecretStore
+}
+
 // ValidateTask reports the first problem with a task that would make it
 // impossible to run correctly. It is called by the API server before saving.
 func ValidateTask(t *Task) error {
@@ -404,6 +437,9 @@ func ValidateTask(t *Task) error {
 		if p := ref.GetPath(); p != "" && !strings.HasPrefix(p, "/") {
 			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
 		}
+	}
+	if err := validateEgress(spec); err != nil {
+		return err
 	}
 	if err := ValidateTaskConfig(spec); err != nil {
 		return err
@@ -464,6 +500,99 @@ func ValidateTaskConfig(spec *TaskSpec) error {
 	}
 	if len(data) > MaxTaskConfigSize {
 		return fmt.Errorf("spec.config: %d bytes exceeds the limit of %d bytes", len(data), MaxTaskConfigSize)
+	}
+	return nil
+}
+
+// SecretPlaceholder is the value a task sees for an env var backed by a
+// secret_ref. The egress gateway replaces it with the secret on the way out.
+const SecretPlaceholder = "ax-placeholder"
+
+// ResolvedValue is the value the task's environment gets for e: the literal
+// value, or SecretPlaceholder when the variable is backed by a secret_ref.
+func (e *EnvVar) ResolvedValue() string {
+	if e.GetSecretRef() != nil {
+		return SecretPlaceholder
+	}
+	return e.GetValue()
+}
+
+var (
+	hostLabel    = `[a-z0-9]([-a-z0-9]*[a-z0-9])?`
+	hostRegexp   = regexp.MustCompile(`^` + hostLabel + `(\.` + hostLabel + `)*$`)
+	headerRegexp = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+	// secretNameRegexp and secretKeyRegexp follow Kubernetes' rules for Secret
+	// names (DNS subdomains) and data keys. Both end up as path segments of the
+	// credential URI, so neither may contain "/".
+	secretNameRegexp = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+	secretKeyRegexp  = regexp.MustCompile(`^[-._a-zA-Z0-9]+$`)
+	maxHostLength    = 253
+)
+
+// validateHost reports whether h is a lowercase DNS name, optionally with "*"
+// as its leftmost label when wildcard is true.
+func validateHost(h string, wildcard bool) error {
+	name := h
+	if wildcard {
+		name = strings.TrimPrefix(h, "*.")
+	}
+	if len(name) == 0 || len(name) > maxHostLength || !hostRegexp.MatchString(name) {
+		if wildcard {
+			return fmt.Errorf("%q must be a lowercase DNS name, optionally starting with \"*.\"", h)
+		}
+		return fmt.Errorf("%q must be a lowercase DNS name", h)
+	}
+	return nil
+}
+
+func validateEgress(spec *TaskSpec) error {
+	for i, h := range spec.GetEgress().GetHosts() {
+		if err := validateHost(h, true); err != nil {
+			return fmt.Errorf("spec.egress.hosts[%d]: %w", i, err)
+		}
+	}
+	injected := map[string]string{}
+	for i, e := range spec.GetEnv() {
+		field := fmt.Sprintf("spec.env[%d]", i)
+		ref := e.GetSecretRef()
+		if ref == nil {
+			continue
+		}
+		if e.GetValue() != "" {
+			return fmt.Errorf("%s: value and secretRef are mutually exclusive", field)
+		}
+		if ref.GetName() == "" || ref.GetKey() == "" {
+			return fmt.Errorf("%s.secretRef: name and key are required", field)
+		}
+		if len(ref.GetName()) > maxHostLength || !secretNameRegexp.MatchString(ref.GetName()) {
+			return fmt.Errorf("%s.secretRef.name: %q must be a lowercase DNS subdomain", field, ref.GetName())
+		}
+		if len(ref.GetKey()) > maxHostLength || !secretKeyRegexp.MatchString(ref.GetKey()) {
+			return fmt.Errorf("%s.secretRef.key: %q may only contain letters, digits, '-', '_', and '.'", field, ref.GetKey())
+		}
+		if ref.GetStore() != "" {
+			if err := ValidateName(ref.GetStore()); err != nil {
+				return fmt.Errorf("%s.secretRef.store: %w", field, err)
+			}
+		}
+		inj := ref.GetInject()
+		if inj == nil {
+			return fmt.Errorf("%s.secretRef.inject: host and header are required", field)
+		}
+		if err := validateHost(inj.GetHost(), false); err != nil {
+			return fmt.Errorf("%s.secretRef.inject.host: %w", field, err)
+		}
+		if !headerRegexp.MatchString(inj.GetHeader()) || strings.EqualFold(inj.GetHeader(), "host") {
+			return fmt.Errorf("%s.secretRef.inject.header: %q is not a valid request header name", field, inj.GetHeader())
+		}
+		if strings.ContainsAny(inj.GetPrefix(), "\r\n") {
+			return fmt.Errorf("%s.secretRef.inject.prefix: must not contain line breaks", field)
+		}
+		k := inj.GetHost() + " " + strings.ToLower(inj.GetHeader())
+		if other, dup := injected[k]; dup {
+			return fmt.Errorf("%s.secretRef.inject: header %q for host %q is already injected by env %q", field, inj.GetHeader(), inj.GetHost(), other)
+		}
+		injected[k] = e.GetName()
 	}
 	return nil
 }

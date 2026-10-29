@@ -47,6 +47,12 @@ service AX {
   rpc UpdateModel(UpdateModelRequest) returns (Model);
   rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
 
+  // SecretStores
+  rpc GetSecretStore(GetSecretStoreRequest) returns (SecretStore);
+  rpc ListSecretStores(ListSecretStoresRequest) returns (ListSecretStoresResponse);
+  rpc UpdateSecretStore(UpdateSecretStoreRequest) returns (SecretStore);
+  rpc DeleteSecretStore(DeleteSecretStoreRequest) returns (DeleteSecretStoreResponse);
+
 }
 
 // ObjectMeta is metadata for AX resources.
@@ -86,11 +92,49 @@ message TaskSpec {
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
   google.protobuf.Struct config = 7;
+  // egress lists the outbound destinations the task may reach. Agent Substrate
+  // denies all actor egress by default, so a task without egress has no network
+  // access. Hosts named by an env secret_ref are allowed automatically.
+  EgressSpec egress = 8;
 }
+
+message EgressSpec {
+  // hosts are DNS names the task may reach over TLS on port 443, or a DNS name
+  // with "*" as its leftmost label, such as "*.googleapis.com".
+  repeated string hosts = 1;
+}
+
 
 message EnvVar {
   string name = 1;
+  // value is a literal value. Exactly one of value and secret_ref is set.
   string value = 2;
+  // secret_ref injects a secret into the task's outbound requests instead of
+  // exposing it to the task. The variable is set to a placeholder, and Agent
+  // Substrate's egress gateway replaces the named request header with the
+  // secret on requests to the given host.
+  SecretEnvSource secret_ref = 3;
+}
+
+// SecretEnvSource names a secret in one of the atespace's SecretStores, and how
+// the egress gateway injects it.
+message SecretEnvSource {
+  // store is the SecretStore holding the secret. Empty means "default".
+  string store = 4;
+  string name = 1;
+  string key = 2;
+  CredentialInjection inject = 3;
+}
+
+// CredentialInjection tells the egress gateway where to put a secret: in the
+// given request header, on HTTPS requests to host.
+message CredentialInjection {
+  // host is the DNS name requests are sent to, such as "api.stripe.com".
+  string host = 1;
+  // header is the request header the gateway replaces, such as "Authorization".
+  string header = 2;
+  // prefix is prepended to the secret, such as "Bearer " (including the space).
+  string prefix = 3;
 }
 
 message ResourcesSpec {
@@ -271,6 +315,32 @@ message DeleteWorkspaceRequest {
 
 message DeleteWorkspaceResponse {}
 
+// --- SecretStore ---
+
+// SecretStore tells AX where an atespace's secrets live. Tasks reference
+// secrets by store, name, and key, and AX turns that into a credential
+// reference that Agent Substrate's egress gateway resolves, so tasks never
+// hold the secret itself.
+message SecretStore {
+  string api_version = 1;
+  string kind = 2;
+  ObjectMeta metadata = 3;
+  SecretStoreSpec spec = 4;
+}
+
+message SecretStoreSpec {
+  // kubernetes reads secrets from Kubernetes Secrets through Substrate's
+  // k8s.io credential provider. Exactly one backend is set.
+  KubernetesSecretStore kubernetes = 1;
+}
+
+message KubernetesSecretStore {
+  // namespace holds the Secrets. Empty means the namespace named after the
+  // store's atespace. Substrate's credential provider must grant the atespace
+  // access to this namespace.
+  string namespace = 1;
+}
+
 // Models
 message GetModelRequest {
   string atespace = 1;
@@ -295,4 +365,29 @@ message DeleteModelRequest {
 }
 
 message DeleteModelResponse {}
+
+// SecretStores
+message GetSecretStoreRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message ListSecretStoresRequest {
+  string atespace = 1;
+}
+
+message ListSecretStoresResponse {
+  repeated SecretStore secret_stores = 1;
+}
+
+message UpdateSecretStoreRequest {
+  SecretStore secret_store = 1;
+}
+
+message DeleteSecretStoreRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message DeleteSecretStoreResponse {}
 

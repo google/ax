@@ -23,7 +23,7 @@ import (
 // A newer ax-server may send Task and Workspace fields this runner doesn't
 // know; they must not stop the task from starting.
 func TestLoadSpec_IgnoresUnknownFields(t *testing.T) {
-	t.Setenv("AX_TASK_YAML", "metadata:\n  name: t\nspec:\n  image: img\n  egress:\n  - host: example.com\n")
+	t.Setenv("AX_TASK_YAML", "metadata:\n  name: t\nspec:\n  image: img\n  futureField:\n  - host: example.com\n")
 	var task v1alpha1.Task
 	if err := loadSpec("", "AX_TASK_YAML", &task); err != nil {
 		t.Fatalf("loadSpec: %v", err)
