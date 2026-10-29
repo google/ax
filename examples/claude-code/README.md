@@ -59,7 +59,7 @@ claude --print --allowed-tools=Bash --allowed-tools=Edit --allowed-tools=Write \
 | list of strings or numbers | `--flag=value` once per element |
 | object | `--flag=<JSON>`, for flags such as `--settings` that accept a JSON string |
 
-The runner has no list of valid flags. `claude` checks them itself, so an unknown flag or a bad value fails the session with an error in the container log. In exchange, any flag your Claude Code version supports works without changing the runner. The runner does reject, at startup, a missing prompt and any key that is not camelCase, such as `max-turns`, `allowedTools`, or `--model`.
+The runner has no list of valid flags. `claude` checks them itself, so an unknown flag or a bad value fails the session with an error in the container log.
 
 ### Permissions
 

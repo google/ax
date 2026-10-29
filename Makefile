@@ -141,7 +141,7 @@ deploy-server: check-image-repo
 # Apply example task and resources
 apply-example:
 	@echo "==> Applying example task and resources using bin/ax..."
-	./bin/ax apply -f examples/task.yaml
+	./bin/ax apply -f examples/simple.yaml
 
 ## --------------------------------------
 ## Test & Verification Targets

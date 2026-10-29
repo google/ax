@@ -109,14 +109,14 @@ This deploys PostgreSQL and the `ax-server` image you just pushed, configured to
 ### 4. Run your first task
 
 ```bash
-ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
+ax apply -f examples/simple.yaml         # the smallest useful Task
 ax get tasks
-# NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
-# task123   default    Running   task123         10.20.3.67   1m
+# NAME          ATESPACE   PHASE     ACTOR         WORKER-IP    AGE
+# simple-task   default    Running   simple-task   10.20.3.67   1m
 
-ax ssh task123 -- ls -la /workspace  # poke around inside the sandbox
-ax suspend task task123              # checkpoint and pause
-ax resume task task123               # pick up where it left off
+ax ssh simple-task -- ls -la /workspace  # poke around inside the sandbox
+ax suspend task simple-task              # checkpoint and pause
+ax resume task simple-task               # pick up where it left off
 ```
 
 Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.
@@ -142,7 +142,7 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 
 ```bash
 # Apply anything (multi-document YAML, file or stdin)
-ax apply -f examples/task.yaml
+ax apply -f examples/simple.yaml
 
 # Tasks
 ax get tasks                          # list
