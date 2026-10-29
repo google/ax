@@ -33,16 +33,31 @@ import (
 // of `claude [options] [prompt]`. Every other key is a claude flag.
 const promptKey = "prompt"
 
-// configKey matches a snake_case config key, e.g. model or max_turns. The
-// flag it names is the key with underscores turned into dashes, the spelling
-// `claude --help` lists for every flag.
-var configKey = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
+// configKey matches a camelCase config key, e.g. model or maxTurns. The flag
+// it names is the key with each capital letter turned into a dash and its
+// lowercase, the spelling `claude --help` lists for every flag.
+var configKey = regexp.MustCompile(`^[a-z][a-z0-9]*([A-Z][a-z0-9]+)*$`)
+
+// flagName returns the claude flag named by the camelCase key k, e.g.
+// --max-turns for maxTurns.
+func flagName(k string) string {
+	var b strings.Builder
+	b.WriteString("--")
+	for _, r := range k {
+		if 'A' <= r && r <= 'Z' {
+			b.WriteByte('-')
+			r += 'a' - 'A'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 // claudeArgs returns the arguments of a headless claude run described by
 // config and the Workspace MCP servers in mcp.
 //
-// Each config key other than prompt names a claude flag in snake_case, so
-// max_turns is --max-turns, and its value maps to arguments by type: a string or number becomes --key=value, true becomes
+// Each config key other than prompt names a claude flag in camelCase, so
+// maxTurns is --max-turns, and its value maps to arguments by type: a string or number becomes --key=value, true becomes
 // --key, false omits the flag, a list repeats --key=value for each element,
 // and an object is passed as JSON, as --settings and --mcp-config accept.
 // claude itself validates the flags and their values.
@@ -63,9 +78,9 @@ func claudeArgs(config *structpb.Struct, mcp *v1alpha1.MCPConfig) ([]string, err
 	slices.Sort(keys)
 	for _, k := range keys {
 		if !configKey.MatchString(k) {
-			return nil, fmt.Errorf("spec.config: key %q must be a claude flag name in snake_case, e.g. max_turns", k)
+			return nil, fmt.Errorf("spec.config: key %q must be a claude flag name in camelCase, e.g. maxTurns", k)
 		}
-		flagArgs, err := flagValues("--"+strings.ReplaceAll(k, "_", "-"), fields[k])
+		flagArgs, err := flagValues(flagName(k), fields[k])
 		if err != nil {
 			return nil, fmt.Errorf("spec.config.%s: %w", k, err)
 		}

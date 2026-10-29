@@ -36,21 +36,22 @@ func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
 
 func TestClaudeArgs_Errors(t *testing.T) {
 	for name, m := range map[string]map[string]any{
-		"missing prompt":      {"model": "claude-opus-5-5"},
-		"empty prompt":        {"prompt": ""},
-		"non-string prompt":   {"prompt": 1},
-		"flag with dashes":    {"prompt": "p", "--model": "x"},
-		"kebab-case key":      {"prompt": "p", "max-turns": 5},
-		"camelCase key":       {"prompt": "p", "allowedTools": []any{"Edit"}},
-		"flag with equals":    {"prompt": "p", "model=x": "y"},
-		"trailing underscore": {"prompt": "p", "model_": "x"},
-		"double underscore":   {"prompt": "p", "max__turns": 5},
-		"null value":          {"prompt": "p", "model": nil},
-		"nested list":         {"prompt": "p", "allowed_tools": []any{[]any{"Bash"}}},
-		"object in list":      {"prompt": "p", "allowed_tools": []any{map[string]any{}}},
-		"bool in list":        {"prompt": "p", "allowed_tools": []any{true}},
-		"empty flag name":     {"prompt": "p", "": "x"},
-		"leading digit flag":  {"prompt": "p", "1model": "x"},
+		"missing prompt":     {"model": "claude-opus-5-5"},
+		"empty prompt":       {"prompt": ""},
+		"non-string prompt":  {"prompt": 1},
+		"flag with dashes":   {"prompt": "p", "--model": "x"},
+		"kebab-case key":     {"prompt": "p", "max-turns": 5},
+		"snake_case key":     {"prompt": "p", "allowed_tools": []any{"Edit"}},
+		"PascalCase key":     {"prompt": "p", "MaxTurns": 5},
+		"capital run":        {"prompt": "p", "maxTURNS": 5},
+		"trailing capital":   {"prompt": "p", "modelX": "x"},
+		"flag with equals":   {"prompt": "p", "model=x": "y"},
+		"null value":         {"prompt": "p", "model": nil},
+		"nested list":        {"prompt": "p", "allowedTools": []any{[]any{"Bash"}}},
+		"object in list":     {"prompt": "p", "allowedTools": []any{map[string]any{}}},
+		"bool in list":       {"prompt": "p", "allowedTools": []any{true}},
+		"empty flag name":    {"prompt": "p", "": "x"},
+		"leading digit flag": {"prompt": "p", "1model": "x"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if args, err := claudeArgs(mustStruct(t, m), nil); err == nil {
@@ -73,14 +74,14 @@ func TestClaudeArgs_Minimal(t *testing.T) {
 
 func TestClaudeArgs_Flags(t *testing.T) {
 	got, err := claudeArgs(mustStruct(t, map[string]any{
-		"prompt":          "-starts with a dash",
-		"model":           "claude-opus-5-5",
-		"max_turns":       50,
-		"permission_mode": "bypassPermissions",
-		"allowed_tools":   []any{"Bash(git diff:*)", "Edit"},
-		"verbose":         true,
-		"debug":           false,
-		"settings":        map[string]any{"includeCoAuthoredBy": false},
+		"prompt":         "-starts with a dash",
+		"model":          "claude-opus-5-5",
+		"maxTurns":       50,
+		"permissionMode": "bypassPermissions",
+		"allowedTools":   []any{"Bash(git diff:*)", "Edit"},
+		"verbose":        true,
+		"debug":          false,
+		"settings":       map[string]any{"includeCoAuthoredBy": false},
 	}), nil)
 	if err != nil {
 		t.Fatalf("claudeArgs: %v", err)

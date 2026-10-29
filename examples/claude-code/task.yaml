@@ -70,8 +70,8 @@ spec:
   # Built from Dockerfile.claude-code; replace the digest with the one
   # `make push-claude-code-image` prints.
   image: "gcr.io/ax-images/ax-images@sha256:REPLACE_WITH_PUSHED_DIGEST"
-  # The prompt and claude's flags from `claude --help`, in snake_case
-  # (max_turns is --max-turns). The runner runs:
+  # The prompt and claude's flags from `claude --help`, in camelCase
+  # (maxTurns is --max-turns). The runner runs:
   #   claude --print --<flag>=<value>... -- <prompt>
   config:
     prompt: |
@@ -81,11 +81,11 @@ spec:
       writing a short markdown report of what you checked and what you changed
       to /workspace/claude-output.md.
     model: claude-opus-5-5
-    max_turns: 50
+    maxTurns: 50
     # Grant every permission: all tools run without approval. The sandbox is
     # the isolation boundary and nobody is there to answer a prompt. The image
     # sets IS_SANDBOX=1, which this flag requires when running as root.
-    dangerously_skip_permissions: true
+    dangerouslySkipPermissions: true
     # Passed as JSON; any Claude Code setting works here.
     settings:
       includeCoAuthoredBy: false

@@ -17,7 +17,7 @@ The target cross-compiles the runner, builds and pushes the image, and prints th
 
 ## Configure a task
 
-`spec.config` holds the prompt and `claude`'s command-line flags. Keys are snake_case: take a flag from `claude --help`, drop its leading dashes, and turn its dashes into underscores. So `--max-turns` becomes `max_turns` and `--allowed-tools` becomes `allowed_tools`. The runner always passes `--print`, then one flag per key in sorted order, then the prompt:
+`spec.config` holds the prompt and `claude`'s command-line flags. Keys are camelCase: take a flag from `claude --help`, drop its leading dashes, and capitalize each word after the first. So `--max-turns` becomes `maxTurns` and `--allowed-tools` becomes `allowedTools`. The runner always passes `--print`, then one flag per key in sorted order, then the prompt:
 
 ```yaml
 apiVersion: ax.io/v1alpha1
@@ -29,9 +29,9 @@ spec:
   config:
     prompt: "Run the test suite and fix any failing tests."
     model: claude-opus-5-5
-    max_turns: 50
-    permission_mode: bypassPermissions
-    allowed_tools: ["Bash", "Edit", "Write"]
+    maxTurns: 50
+    permissionMode: bypassPermissions
+    allowedTools: ["Bash", "Edit", "Write"]
     settings:
       includeCoAuthoredBy: false
   env:
@@ -59,15 +59,15 @@ claude --print --allowed-tools=Bash --allowed-tools=Edit --allowed-tools=Write \
 | list of strings or numbers | `--flag=value` once per element |
 | object | `--flag=<JSON>`, for flags such as `--settings` that accept a JSON string |
 
-The runner has no list of valid flags. `claude` checks them itself, so an unknown flag or a bad value fails the session with an error in the container log. In exchange, any flag your Claude Code version supports works without changing the runner. The runner does reject, at startup, a missing prompt and any key that is not snake_case, such as `max-turns`, `allowedTools`, or `--model`.
+The runner has no list of valid flags. `claude` checks them itself, so an unknown flag or a bad value fails the session with an error in the container log. In exchange, any flag your Claude Code version supports works without changing the runner. The runner does reject, at startup, a missing prompt and any key that is not camelCase, such as `max-turns`, `allowedTools`, or `--model`.
 
 ### Permissions
 
-The task runs as root with nobody there to approve tool use, so a useful headless session needs `permission_mode: bypassPermissions` (or `dangerously_skip_permissions: true`). As root, Claude Code accepts these only when `IS_SANDBOX=1` is set, which the image does. The sandbox is the isolation boundary. Use `allowed_tools` and `disallowed_tools` to narrow what the agent may do, for example `["Bash(pytest:*)", "Edit"]`.
+The task runs as root with nobody there to approve tool use, so a useful headless session needs `permissionMode: bypassPermissions` (or `dangerouslySkipPermissions: true`). As root, Claude Code accepts these only when `IS_SANDBOX=1` is set, which the image does. The sandbox is the isolation boundary. Use `allowedTools` and `disallowedTools` to narrow what the agent may do, for example `["Bash(pytest:*)", "Edit"]`.
 
 ### Output
 
-Claude Code's output goes to the container log. To keep a report in the workspace, ask for one in the prompt, for example "write a summary to /workspace/claude-output.md", and read it with `ax ssh <task> -- cat /workspace/claude-output.md`. Set `output_format: json` or `output_format: stream-json` (with `verbose: true`) for machine-readable output.
+Claude Code's output goes to the container log. To keep a report in the workspace, ask for one in the prompt, for example "write a summary to /workspace/claude-output.md", and read it with `ax ssh <task> -- cat /workspace/claude-output.md`. Set `outputFormat: json` or `outputFormat: stream-json` (with `verbose: true`) for machine-readable output.
 
 ## MCP servers
 
