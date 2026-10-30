@@ -106,10 +106,30 @@ make deploy
 
 This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
 
-### 4. Run your first task
+### 4. Create a WorkerPool
+
+Every task runs as a Substrate actor, and an actor needs a free worker from a `WorkerPool`. Nothing creates one for you — not `make deploy`, and not the Substrate installer — so without a pool, the first `ax resume` fails with `ResourceExhausted: no free workers available` (the task itself stays `Suspended`).
+
+Apply [`examples/workerpool.yaml`](examples/workerpool.yaml) to create a small gVisor pool. Worker selection is cluster-wide — matched by sandbox class and labels, not by namespace — but the worker image is a `ko://` reference built from Substrate sources, so install [`ko`](https://ko.build/install/) and run `ko apply` from a Substrate checkout:
+
+```bash
+git clone https://github.com/agent-substrate/substrate   # anywhere you like; skip if you have it
+cd substrate
+KO_DOCKER_REPO=<your-registry> ko apply -f <path-to-your-ax-checkout>/examples/workerpool.yaml
+kubectl get workerpools -n default
+```
+
+`KO_DOCKER_REPO` is where `ko` pushes the built worker image — use the same registry you passed as `AX_IMAGE_REPO` above, so your cluster can pull it.
+
+After applying, wait until the pool reports its workers ready. Workers stuck at zero usually mean the worker pods cannot be scheduled or the cluster cannot pull the worker image — `kubectl get pods -n default` shows which.
+
+### 5. Run your first task
+
+From your ax checkout:
 
 ```bash
 ax apply -f examples/task.yaml       # Task + Workspace + Model in one file
+ax resume task task123               # new tasks start Suspended; resume schedules the actor and starts it
 ax get tasks
 # NAME      ATESPACE   PHASE     ACTOR           WORKER-IP    AGE
 # task123   default    Running   task123         10.20.3.67   1m
@@ -119,7 +139,9 @@ ax suspend task task123              # checkpoint and pause
 ax resume task task123               # pick up where it left off
 ```
 
-Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.
+The first resume also waits for the workspace to initialize (cloning its git repos), so it can take a while; if the CLI gives up first, the task keeps coming up in the background — `ax get tasks` tells you where it is.
+
+Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
 
 ## Documentation
 
