@@ -183,32 +183,18 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	// The task is Pending until its actor exists. New tasks start suspended.
+	// The task is Pending until its actor exists.
 	task.Status.Phase = v1alpha1.PhasePending
 	if err := s.saveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
-	task.Status.Phase = v1alpha1.PhaseSuspended
 
-	// Directly reconcile with Substrate
-	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-	if err != nil {
-		slog.Error("direct reconcile error on create task", "task", taskName, "error", err)
-		if reconciled != nil && reconciled.Status != nil {
-			task.Status = reconciled.Status
-		}
-		if substrate.IsTransientError(err) {
-			task.Status.Phase = v1alpha1.PhasePending
-		} else if task.Status.Phase != v1alpha1.PhasePending {
-			task.Status.Phase = v1alpha1.PhaseFailed
-		}
-		_ = s.updateTask(ctx, atespace, taskName, task.Status)
-		if substrate.IsTransientError(err) {
-			return nil, status.Errorf(codes.Unavailable, "provisioning task on substrate: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "provisioning task on substrate: %v", err)
+	// New tasks start suspended.
+	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
-	task.Status = reconciled.Status
+	// The actor exists, so reads take the task's phase from it from now on.
+	task.Status.Phase = ""
 	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
@@ -285,16 +271,19 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Status.Phase = v1alpha1.PhaseSuspended
 
-	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-	if err != nil {
+	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+		// Store nothing: the actor keeps its state on Substrate, and a stored
+		// Pending or Failed would hide it.
 		if substrate.IsTransientError(err) {
 			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 	}
-	task.Status = reconciled.Status
+	// Clear any Pending or Failed left by an earlier failure, so reads take the
+	// phase from the actor. This also clears the Terminating left by a failed
+	// DeleteTask, which cancels that deletion.
+	task.Status.Phase = ""
 	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
@@ -331,25 +320,14 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Status.Phase = v1alpha1.PhaseRunning
 
-	reconciled, err := s.reconciler.Reconcile(ctx, task, s.fetchWorkspace(ctx, atespace, task))
-	if err != nil {
-		if reconciled != nil && reconciled.Status != nil {
-			task.Status = reconciled.Status
-		}
-		if substrate.IsTransientError(err) {
-			task.Status.Phase = v1alpha1.PhasePending
-		} else if task.Status.Phase != v1alpha1.PhasePending {
-			task.Status.Phase = v1alpha1.PhaseFailed
-		}
-		_ = s.updateTask(ctx, atespace, taskName, task.Status)
-		if substrate.IsTransientError(err) {
-			return nil, status.Errorf(codes.Unavailable, "resuming task on substrate: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "resuming task on substrate: %v", err)
+	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
-	task.Status = reconciled.Status
+	// Clear any Pending or Failed left by an earlier failure, so reads take the
+	// phase from the actor. This also clears the Terminating left by a failed
+	// DeleteTask, which cancels that deletion.
+	task.Status.Phase = ""
 	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
@@ -357,6 +335,21 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	// Report the actor as it is now, as GetTask would.
 	s.applyActor(ctx, task)
 	return task, nil
+}
+
+// recordFailure stores the status of a task that could not be provisioned or
+// resumed: phase Pending if err is a transient Substrate error, which a retry
+// may fix, and Failed otherwise. It returns the gRPC error for action.
+func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
+	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
+	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
+	code, phase := codes.Internal, v1alpha1.PhaseFailed
+	if substrate.IsTransientError(err) {
+		code, phase = codes.Unavailable, v1alpha1.PhasePending
+	}
+	task.Status.Phase = phase
+	_ = s.updateTask(ctx, atespace, name, task.Status)
+	return status.Errorf(code, "%s task on substrate: %v", action, err)
 }
 
 // Task storage and Substrate.
@@ -420,7 +413,7 @@ func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1al
 // deleteTask removes a task's actor and templates from Substrate, then its
 // record from the store. It returns a gRPC status error.
 func (s *Server) deleteTask(ctx context.Context, atespace, name string) error {
-	if err := s.reconciler.ReconcileDelete(ctx, atespace, name); err != nil {
+	if err := s.reconciler.Delete(ctx, atespace, name); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return status.Error(codes.Canceled, err.Error())
 		}
