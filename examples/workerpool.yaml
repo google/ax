@@ -27,11 +27,8 @@
 #
 #   KO_DOCKER_REPO=<your-registry> ko apply -f <path-to-this-file>
 #
-# Before applying, set the nodeSelector value to the version label your
-# Substrate install put on your nodes — a pool whose selector matches no
-# node never schedules its workers:
-#
-#   kubectl get ds -n ate-system -l app=atelet -L ate.dev/substrate-version
+# Substrate requires every pool to name its sandbox class. Leaving out
+# `configRef` uses the platform's default gVisor SandboxConfig.
 apiVersion: ate.dev/v1alpha1
 kind: WorkerPool
 metadata:
@@ -39,10 +36,10 @@ metadata:
   namespace: default
 spec:
   replicas: 2
-  workerImage: ko://github.com/agent-substrate/substrate/cmd/ateom-gvisor
+  workerImage: ko://go.ate.dev/substrate/cmd/ateworker-gvisor
+  sandboxClasses:
+    - name: gvisor
   template:
-    nodeSelector:
-      ate.dev/substrate-version: "<installed version>" # e.g. v0.2.0, or v0.2.0-10-g1d7ca8ce from a source install
     resources:
       requests:
         cpu: "250m"
