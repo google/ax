@@ -45,8 +45,9 @@ All Control API traffic goes through this package. It encapsulates:
   `ateapipb.NewControlClient`; every existing RPC is a method on `*Client`,
   wrapped in `retryOnCodes(..., codes.Unavailable)` where idempotent.
 - Each method has a table-driven case in `client_test.go` (`mockControlClient`).
-- Callers in `internal/controller` and `internal/server` exercise it through
-  `mockControlServer` (section 4).
+- Callers in `internal/controller` exercise it through `mockControlServer`;
+  `internal/server` and `cmd/ax` tests use `internal/substrate/substratetest`
+  (section 4).
 
 ## 3. Address contract
 
@@ -77,9 +78,11 @@ ateapipb.RegisterControlServer(grpcServer, mockSrv)
 ```
 
 Canonical examples: `internal/controller/reconciler_test.go` (reconciler state
-transitions; the largest test file in the repo) and
-`internal/server/server_test.go`. `internal/substrate/client_test.go` uses a
-client-side `mockControlClient` instead. No mocking library is in `go.mod`.
+transitions; the largest test file in the repo). `internal/server/server_test.go`
+and `cmd/ax/main_test.go` run a real `TaskReconciler` against
+`internal/substrate/substratetest`, an in-memory fake of the same API.
+`internal/substrate/client_test.go` uses a client-side `mockControlClient`
+instead. No mocking library is in `go.mod`.
 
 ### Substrate behaviour the code already depends on
 
@@ -87,9 +90,11 @@ client-side `mockControlClient` instead. No mocking library is in `go.mod`.
   `spec.image` fails at ActorTemplate creation with reason
   `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
   `bin/ax-server.digest` / `bin/ax-task-runner.digest` for this reason.
-- After `ResumeActor` the actor may be on a different worker: the reconciler
-  clears `Status.WorkerIp` on suspend and takes the IP returned by
-  `ResumeActor` (`internal/controller/reconciler.go`).
+- After `ResumeActor` the actor may be on a different worker, so AX never
+  stores a worker IP: the server reads it from the actor on every get and list
+  (`substrate.WorkerIP` in `internal/server/server.go`), and the reconciler
+  uses the IP `ResumeActor` returns only for its readiness probe
+  (`internal/controller/reconciler.go`).
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.
