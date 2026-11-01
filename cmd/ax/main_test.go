@@ -508,3 +508,44 @@ func TestParseSSHArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestParseGlobalArgsNamespacePrecedence(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		args []string
+		want string
+	}{
+		{
+			name: "defaults to ax-system",
+			args: []string{"ssh", "task123"},
+			want: "ax-system",
+		},
+		{
+			name: "falls back to AX_SYSTEM_NAMESPACE when -n omitted",
+			env:  "env-ax-system",
+			args: []string{"ssh", "task123"},
+			want: "env-ax-system",
+		},
+		{
+			name: "explicit -n overrides AX_SYSTEM_NAMESPACE",
+			env:  "env-ax-system",
+			args: []string{"-n", "flag-ax-system", "ssh", "task123"},
+			want: "flag-ax-system",
+		},
+		{
+			name: "explicit default --namespace=ax-system overrides AX_SYSTEM_NAMESPACE",
+			env:  "env-ax-system",
+			args: []string{"--namespace=ax-system", "ssh", "task123"},
+			want: "ax-system",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AX_SYSTEM_NAMESPACE", tt.env)
+			if got := parseGlobalArgs(tt.args).namespace; got != tt.want {
+				t.Errorf("parseGlobalArgs(%q).namespace with env=%q = %q, want %q", tt.args, tt.env, got, tt.want)
+			}
+		})
+	}
+}

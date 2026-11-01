@@ -123,7 +123,7 @@ func main() {
 	case "delete":
 		err = runDelete(serverURL, atespace, cleanArgs)
 	case "ssh":
-		err = runSSH(serverURL, atespace, kubeContext, cleanArgs)
+		err = runSSH(serverURL, atespace, kubeContext, axNamespace, cleanArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		printUsage()
@@ -152,7 +152,11 @@ type globalArgs struct {
 // stops interpreting flags at "--", so everything after it (for example the
 // command run by `ax ssh <task> -- ...`) is passed through to the command intact.
 func parseGlobalArgs(args []string) globalArgs {
-	g := globalArgs{atespace: "default", namespace: v1alpha1.DefaultSystemNamespace}
+	defaultNamespace := os.Getenv("AX_SYSTEM_NAMESPACE")
+	if defaultNamespace == "" {
+		defaultNamespace = v1alpha1.DefaultSystemNamespace
+	}
+	g := globalArgs{atespace: "default", namespace: defaultNamespace}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {
@@ -1012,7 +1016,7 @@ func parseSSHArgs(args []string) (taskName string, command []string, help bool, 
 	return taskName, command, false, nil
 }
 
-func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string) error {
 	taskName, cmdToRun, _, err := parseSSHArgs(args)
 	if err != nil {
 		return err
@@ -1063,52 +1067,10 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 	}
 
 	targetActor := fmt.Sprintf("%s/%s", task.Metadata.Atespace, task.Status.Actor)
-	var (
-		guestClient *guest.Client
-		cleanup     func()
-	)
-
-	// 1. First, check if worker IP is directly reachable (e.g. within cluster or local mesh)
-	d := net.Dialer{Timeout: 500 * time.Millisecond}
-	guestEndpoint := net.JoinHostPort(host, fmt.Sprint(port))
-	if testConn, dialErr := d.Dial("tcp", guestEndpoint); dialErr == nil {
-		_ = testConn.Close()
-		guestClient, err = guest.Dial(guestEndpoint)
-		if err != nil {
-			return fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
-		}
-	} else {
-		// 2. Connect via the Substrate atenet-router service in ate-system (mTLS on port 443, falling back to port 80)
-		axNamespace := os.Getenv("AX_SYSTEM_NAMESPACE")
-		if axNamespace == "" {
-			axNamespace = v1alpha1.DefaultSystemNamespace
-		}
-		if tlsCfg, tlsErr := tunnel.RouterTLSConfig(context.Background(), kubeContext, axNamespace, "ax-server"); tlsErr == nil {
-			if localPort, pfCleanup, pfErr := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 443); pfErr == nil {
-				cleanup = pfCleanup
-				routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-				guestClient, err = guest.DialTargetTLS(routerEndpoint, targetActor, tlsCfg)
-				if err != nil {
-					pfCleanup()
-					return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
-				}
-			}
-		}
-		if guestClient == nil {
-			localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
-			if err != nil {
-				return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
-			}
-			cleanup = pfCleanup
-			routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-			guestClient, err = guest.DialTarget(routerEndpoint, targetActor)
-			if err != nil {
-				pfCleanup()
-				return fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
-			}
-		}
+	guestClient, cleanup, err := dialGuest(host, port, targetActor, kubeContext, axNamespace)
+	if err != nil {
+		return err
 	}
-
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -1147,6 +1109,62 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
 	}
 
 	return nil
+}
+
+func dialGuest(host string, port int, targetActor, kubeContext, axNamespace string) (*guest.Client, func(), error) {
+	// 1. Connect directly if worker IP is reachable (e.g. within cluster or local mesh).
+	d := net.Dialer{Timeout: 500 * time.Millisecond}
+	guestEndpoint := net.JoinHostPort(host, fmt.Sprint(port))
+	if testConn, err := d.Dial("tcp", guestEndpoint); err == nil {
+		_ = testConn.Close()
+		client, err := guest.Dial(guestEndpoint)
+		if err != nil {
+			return nil, nil, fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
+		}
+		return client, nil, nil
+	}
+
+	// 2. Connect via Substrate atenet-router in ate-system (mTLS on 443, falling back to port 80).
+	if axNamespace == "" {
+		axNamespace = v1alpha1.DefaultSystemNamespace
+	}
+	client, cleanup, setupErr, dialErr := dialRouterTLS(targetActor, kubeContext, axNamespace)
+	if dialErr != nil {
+		return nil, nil, dialErr
+	}
+	if client != nil {
+		return client, cleanup, nil
+	}
+
+	localPort, cleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
+	if err != nil {
+		return nil, nil, fmt.Errorf("establishing port-forward to atenet-router: %w (%v)", err, setupErr)
+	}
+	routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+	client, err = guest.DialTarget(routerEndpoint, targetActor)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+	}
+	return client, cleanup, nil
+}
+
+func dialRouterTLS(targetActor, kubeContext, axNamespace string) (client *guest.Client, cleanup func(), setupErr, dialErr error) {
+	tlsCfg, err := tunnel.RouterTLSConfig(context.Background(), kubeContext, axNamespace, "ax-server")
+	if err != nil {
+		return nil, nil, fmt.Errorf("mTLS setup error: %w", err), nil
+	}
+	localPort, cleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 443)
+	if err != nil {
+		return nil, nil, fmt.Errorf("port 443 forward error: %w", err), nil
+	}
+	routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
+	client, err = guest.DialTargetTLS(routerEndpoint, targetActor, tlsCfg)
+	if err != nil {
+		cleanup()
+		return nil, nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
+	}
+	return client, cleanup, nil, nil
 }
 
 // interruptExitWindow is how soon a second Ctrl-C must follow the first to end
