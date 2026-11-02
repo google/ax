@@ -33,6 +33,8 @@ const (
 	DefaultAXDir = "/ax"
 	// InitializedMarkerFilename is the base name of the marker file written after a successful maiden run.
 	InitializedMarkerFilename = "initialized"
+	// markerDirName is the directory under the workspace that holds the marker.
+	markerDirName = ".ax"
 
 	defaultWorkspacePath = "/workspace"
 	defaultBranch        = "main"
@@ -60,8 +62,8 @@ type SetupResult struct {
 }
 
 // SetupWorkspace prepares the workspace directory on its maiden run: it clones the
-// declared Git repositories and creates the skills path. A marker file under AXDir
-// records a completed maiden run so subsequent calls are no-ops.
+// declared Git repositories and creates the skills path. A marker file under the workspace
+// (see workspaceMarkerPath) records a completed maiden run so subsequent calls are no-ops.
 //
 // Git failures are logged and recorded under AXDir but do not abort setup. The marker
 // is withheld in that case so the next start retries the clone.
@@ -82,9 +84,19 @@ func SetupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, targetPath stri
 		slog.Warn("creating ax state directory", "dir", AXDir, "error", err)
 	}
 
-	markerPath := filepath.Join(AXDir, MarkerName(targetPath))
+	markerPath := workspaceMarkerPath(targetPath)
+	if markerLinked(markerPath) {
+		return nil, fmt.Errorf("marker path %s is a symbolic link; refusing to trust or write it", markerPath)
+	}
 	if _, err := os.Stat(markerPath); err == nil {
 		slog.Info("workspace already initialized; skipping maiden run setup", "path", targetPath)
+		return res, nil
+	}
+	// A marker from before the workspace-volume change lives under AXDir. Migrate it, so a
+	// container that still has AXDir does not rerun setup over the agent's edits.
+	if data, err := os.ReadFile(filepath.Join(AXDir, MarkerName(targetPath))); err == nil && legacyOwnedBy(data, ws) {
+		slog.Info("migrating legacy workspace marker", "path", targetPath)
+		writeMarker(workspaceMarkerPath(targetPath), ws)
 		return res, nil
 	}
 
@@ -103,7 +115,7 @@ func SetupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, targetPath stri
 		return res, nil
 	}
 
-	writeMarker(markerPath, ws)
+	writeMarker(workspaceMarkerPath(targetPath), ws)
 	slog.Info("maiden run workspace setup completed successfully", "path", targetPath)
 	return res, nil
 }
@@ -257,11 +269,21 @@ func MarkerName(path string) string {
 	if path == "" {
 		path = defaultWorkspacePath
 	}
-	clean := strings.Trim(filepath.Clean(path), "/")
+	clean := strings.Trim(filepath.ToSlash(filepath.Clean(path)), "/")
 	if clean == "" {
 		clean = "root"
 	}
 	return InitializedMarkerFilename + "-" + strings.ReplaceAll(clean, "/", "-")
+}
+
+// workspaceMarkerPath returns where the maiden-run marker lives: on the workspace volume, so
+// it survives a volumes-only resume. For a Git repo it sits in the Git directory, which
+// `git add -A` and `git clean -fdx` never touch. Otherwise it sits in .ax.
+func workspaceMarkerPath(targetPath string) string {
+	if info, err := os.Lstat(filepath.Join(targetPath, ".git")); err == nil && info.IsDir() {
+		return filepath.Join(targetPath, ".git", markerDirName, InitializedMarkerFilename)
+	}
+	return filepath.Join(targetPath, markerDirName, InitializedMarkerFilename)
 }
 
 // writeMarker records a completed maiden run.
@@ -271,6 +293,10 @@ func writeMarker(path string, ws *v1alpha1.Workspace) {
 		name = ws.GetMetadata().GetName()
 	}
 	content := fmt.Sprintf("workspace: %s\ninitialized_at: %s\n", name, time.Now().UTC().Format(time.RFC3339))
+	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+		slog.Warn("failed to create initialized marker directory", "path", path, "error", err)
+		return
+	}
 	if err := os.WriteFile(path, []byte(content), filePerm); err != nil {
 		slog.Warn("failed to write initialized marker file", "path", path, "error", err)
 	}
@@ -318,4 +344,25 @@ func writeFiles(files []*v1alpha1.File, targetPath string) {
 		}
 		slog.Info("wrote inlined workspace file", "path", dest)
 	}
+}
+
+// markerLinked reports whether the marker's directory or the marker itself is a symbolic
+// link. The agent can create one, and reading or writing through it would leave the workspace.
+func markerLinked(path string) bool {
+	for _, p := range []string{filepath.Dir(path), path} {
+		if info, err := os.Lstat(p); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyOwnedBy reports whether a legacy marker was written for this workspace. Two paths can
+// share a legacy name (/a/b and /a-b), so the recorded name is checked too.
+func legacyOwnedBy(data []byte, ws *v1alpha1.Workspace) bool {
+	name := ws.GetMetadata().GetName()
+	if name == "" {
+		name = "unknown"
+	}
+	return strings.HasPrefix(string(data), "workspace: "+name+"\n")
 }

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -58,18 +59,15 @@ func TestSetupWorkspace_MaidenRun(t *testing.T) {
 		t.Errorf("expected maiden run to be true")
 	}
 
-	// Verify marker file exists under stateDir/initialized
-	markerFile := filepath.Join(stateDir, workspace.MarkerName(tempDir))
+	// Verify marker file exists under the workspace .ax directory
+	markerFile := filepath.Join(tempDir, ".ax", workspace.InitializedMarkerFilename)
 	if _, err := os.Stat(markerFile); os.IsNotExist(err) {
 		t.Errorf("expected marker file %s to exist", markerFile)
 	}
 
-	// Verify workspace directory has no .ax-initialized or .ax directory
+	// The old marker name must not be written into the workspace.
 	if _, err := os.Stat(filepath.Join(tempDir, ".ax-initialized")); !os.IsNotExist(err) {
 		t.Errorf("expected .ax-initialized not to be in workspace")
-	}
-	if _, err := os.Stat(filepath.Join(tempDir, ".ax")); !os.IsNotExist(err) {
-		t.Errorf("expected .ax directory not to be in workspace")
 	}
 
 	// 2. Second run (should detect already initialized)
@@ -193,7 +191,7 @@ func TestSetupWorkspace_GitError(t *testing.T) {
 	}
 
 	// Verify initialization marker was not created due to failure
-	markerFile := filepath.Join(stateDir, workspace.MarkerName(tempDir))
+	markerFile := filepath.Join(tempDir, ".ax", workspace.InitializedMarkerFilename)
 	if _, err := os.Stat(markerFile); !os.IsNotExist(err) {
 		t.Errorf("expected marker file %s NOT to exist after failure", markerFile)
 	}
@@ -331,3 +329,142 @@ func TestSetupWorkspace_InlinedFiles(t *testing.T) {
 		t.Errorf("unexpected content in notes.txt: %s", string(notesData))
 	}
 }
+
+// TestSetupWorkspace_MarkerFollowsRootClone checks that when a repo is cloned into the
+// workspace root, the marker is written where the next run looks for it: inside the new
+// .git directory. The next run must then skip setup.
+func TestSetupWorkspace_MarkerFollowsRootClone(t *testing.T) {
+	tempDir := t.TempDir()
+	src := filepath.Join(tempDir, "src")
+	initSourceRepo(t, src, "hi\n")
+
+	target := filepath.Join(tempDir, "ws")
+	origAXDir := workspace.AXDir
+	workspace.AXDir = filepath.Join(tempDir, "ax-state-root-clone")
+	defer func() { workspace.AXDir = origAXDir }()
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "root-clone-ws"},
+		Spec:     &v1alpha1.WorkspaceSpec{Git: []*v1alpha1.GitRepo{{Name: "root", Repo: src, Dir: "."}}},
+	}
+	if _, err := workspace.SetupWorkspace(context.Background(), ws, target); err != nil {
+		t.Fatalf("first setup failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".git", ".ax", workspace.InitializedMarkerFilename)); err != nil {
+		t.Fatalf("marker not in the cloned .git directory: %v", err)
+	}
+	res, err := workspace.SetupWorkspace(context.Background(), ws, target)
+	if err != nil {
+		t.Fatalf("second setup failed: %v", err)
+	}
+	if res.IsMaidenRun {
+		t.Errorf("second run reran setup; the marker was not found")
+	}
+}
+
+// initSourceRepo makes a git repo at dir with one committed file, README.md = content.
+func initSourceRepo(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", "git init -q && git symbolic-ref HEAD refs/heads/main && git config user.email t@ax.io && git config user.name AX && git add . && git commit -qm init")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v (%s)", err, out)
+	}
+}
+
+// TestSetupWorkspace_MigratesOwnLegacyMarker checks that a legacy marker written for this
+// workspace is migrated, so setup does not rerun.
+func TestSetupWorkspace_MigratesOwnLegacyMarker(t *testing.T) {
+	tempDir := t.TempDir()
+	target := filepath.Join(tempDir, "ws")
+	axDir := filepath.Join(tempDir, "ax-state-own")
+	if err := os.MkdirAll(axDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(axDir, workspace.MarkerName(target)), []byte("workspace: own-ws\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origAXDir := workspace.AXDir
+	workspace.AXDir = axDir
+	defer func() { workspace.AXDir = origAXDir }()
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "own-ws"},
+		Spec:     &v1alpha1.WorkspaceSpec{Files: []*v1alpha1.File{{Path: "x.txt", Content: "x"}}},
+	}
+	if _, err := workspace.SetupWorkspace(context.Background(), ws, target); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, ".ax", workspace.InitializedMarkerFilename)); err != nil {
+		t.Errorf("legacy marker not migrated: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "x.txt")); !os.IsNotExist(err) {
+		t.Errorf("setup reran although the legacy marker was this workspace's")
+	}
+}
+
+// TestSetupWorkspace_IgnoresLegacyMarkerOfOtherWorkspace checks that a legacy marker written
+// for a different workspace, with the same legacy name, does not suppress this setup.
+func TestSetupWorkspace_IgnoresLegacyMarkerOfOtherWorkspace(t *testing.T) {
+	tempDir := t.TempDir()
+	target := filepath.Join(tempDir, "ws")
+	axDir := filepath.Join(tempDir, "ax-state-other")
+	if err := os.MkdirAll(axDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(axDir, workspace.MarkerName(target)), []byte("workspace: other-ws\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origAXDir := workspace.AXDir
+	workspace.AXDir = axDir
+	defer func() { workspace.AXDir = origAXDir }()
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "this-ws"},
+		Spec:     &v1alpha1.WorkspaceSpec{Files: []*v1alpha1.File{{Path: "x.txt", Content: "x"}}},
+	}
+	if _, err := workspace.SetupWorkspace(context.Background(), ws, target); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "x.txt")); err != nil {
+		t.Errorf("setup was skipped because of another workspace's legacy marker: %v", err)
+	}
+}
+
+// TestSetupWorkspace_RefusesLinkedMarkerDir checks that a .ax directory that is a link to a
+// directory outside the workspace is refused, and nothing is written through it.
+func TestSetupWorkspace_RefusesLinkedMarkerDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symbolic links needs extra privileges on Windows")
+	}
+	tempDir := t.TempDir()
+	outside := filepath.Join(tempDir, "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(tempDir, "ws")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(target, ".ax")); err != nil {
+		t.Fatal(err)
+	}
+	origAXDir := workspace.AXDir
+	workspace.AXDir = filepath.Join(tempDir, "ax-state-linked")
+	defer func() { workspace.AXDir = origAXDir }()
+
+	ws := &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "linked-ws"}}
+	if _, err := workspace.SetupWorkspace(context.Background(), ws, target); err == nil {
+		t.Errorf("expected a linked .ax directory to be refused")
+	}
+	if _, err := os.Stat(filepath.Join(outside, workspace.InitializedMarkerFilename)); !os.IsNotExist(err) {
+		t.Errorf("marker was written through a linked .ax directory")
+	}
+}
+
