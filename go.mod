@@ -6,7 +6,7 @@ require (
 	github.com/agent-substrate/env v0.0.11-0.20260912052224-4468a200b170
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/jackc/pgx/v5 v5.11.0
-	go.ate.dev/substrate v0.6.0
+	go.ate.dev/substrate v1.0.0-rc.1
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1

@@ -25,7 +25,6 @@
 #   KUBECONFIG               Path to kubeconfig file (default: .tmp/kubeconfig-${KIND_CLUSTER_NAME})
 #   AX_SYSTEM_NAMESPACE      Kubernetes namespace for AX control plane (default: ax-system)
 #   AX_WORKER_REPLICAS       Number of gVisor worker replicas in the AX WorkerPool (default: 4)
-#   AX_SNAPSHOTS_BUCKET      Snapshot storage bucket URI (default: gs://ate-snapshots/ax/)
 #   REGISTRY_ADDR            Local container registry address (default: localhost:5001)
 #   RECREATE_KIND            Set to true to delete and recreate the Kind cluster
 #   FORCE_INSTALL_SUBSTRATE  Set to true to reinstall Substrate even if the commit is unchanged
@@ -47,7 +46,6 @@ export KUBECONFIG="${KUBECONFIG:-${TMP_DIR}/kubeconfig-${KIND_CLUSTER_NAME}}"
 export KUBE_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 export AX_SYSTEM_NAMESPACE="${AX_SYSTEM_NAMESPACE:-ax-system}"
 export AX_WORKER_REPLICAS="${AX_WORKER_REPLICAS:-4}"
-export AX_SNAPSHOTS_BUCKET="${AX_SNAPSHOTS_BUCKET:-gs://ate-snapshots/ax/}"
 export REGISTRY_ADDR="${REGISTRY_ADDR:-localhost:5001}"
 SUBSTRATE_REPO="${SUBSTRATE_REPO:-https://github.com/agent-substrate/substrate.git}"
 GOARCH="$(go env GOARCH)"
@@ -77,7 +75,7 @@ k() {
 
 # render_manifest substitutes only the AX_* variables below so any other `$`
 # in the manifests is left untouched.
-MANIFEST_VARS=(AX_SYSTEM_NAMESPACE AX_WORKER_REPLICAS AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE AX_SNAPSHOTS_BUCKET)
+MANIFEST_VARS=(AX_SYSTEM_NAMESPACE AX_WORKER_REPLICAS AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE)
 render_manifest() {
   local manifest="${E2E_DIR}/manifests/$1"
   if command -v envsubst > /dev/null 2>&1; then
@@ -318,14 +316,19 @@ if [[ "${FORCE_INSTALL_SUBSTRATE:-false}" == "true" ]] ||
       install_args+=(--credential-provider='{"enabled":false}')
     fi
   fi
+  install_cmd=()
+  if [[ -f "${SUBSTRATE_WORK_DIR}/hack/install-ate-kind.sh" ]]; then
+    install_cmd=(./hack/install-ate-kind.sh)
+  else
+    install_cmd=(go run ./cmd/ate-setup --kind --kind-cluster-name="${KIND_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG}")
+  fi
   if [[ -n "${SUBSTRATE_IMAGE_TAG}" ]]; then
     ensure_substrate_images
-    # install-ate.sh passes these settings to ate-setup through the environment.
     (cd "${SUBSTRATE_WORK_DIR}" &&
       ATE_IMAGE_REPO="${REGISTRY_ADDR}" ATE_IMAGE_TAG="${SUBSTRATE_IMAGE_TAG}" \
-        ./hack/install-ate-kind.sh "${install_args[@]}")
+        "${install_cmd[@]}" "${install_args[@]}")
   else
-    (cd "${SUBSTRATE_WORK_DIR}" && ./hack/install-ate-kind.sh "${install_args[@]}")
+    (cd "${SUBSTRATE_WORK_DIR}" && "${install_cmd[@]}" "${install_args[@]}")
   fi
   k annotate namespace ate-system "substrate-commit=${SUBSTRATE_COMMIT}" --overwrite > /dev/null
 else
