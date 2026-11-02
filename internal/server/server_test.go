@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,6 +292,117 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatalf("expected a valid workspace binding to be accepted, got %v", err)
+	}
+}
+
+func TestCreateTask_Template(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	mem := memory.NewStore()
+	srv := server.NewServer(mem, newTestReconciler(sub))
+	ctx := context.Background()
+
+	// 1. Both image and template set is rejected.
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "both"},
+		Spec: &v1alpha1.TaskSpec{
+			Image:    "alpine",
+			Template: &v1alpha1.ObjectRef{Name: "node-agent"},
+		},
+	}})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "set image or template, not both") {
+		t.Fatalf("expected InvalidArgument 'set image or template, not both', got %v", err)
+	}
+
+	// 2. Both command and template set is rejected.
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "cmd-tmpl"},
+		Spec: &v1alpha1.TaskSpec{
+			Command:  []string{"echo", "hi"},
+			Template: &v1alpha1.ObjectRef{Name: "node-agent"},
+		},
+	}})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "command cannot be set with template") {
+		t.Fatalf("expected InvalidArgument 'command cannot be set with template', got %v", err)
+	}
+
+	// 3. Nameless template is rejected.
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "nameless"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{},
+		},
+	}})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "spec.template: name is required") {
+		t.Fatalf("expected InvalidArgument 'spec.template: name is required', got %v", err)
+	}
+
+	// 4. Missing template is rejected before saving or provisioning.
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "missing-tmpl", Atespace: "team-x"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{Name: "node-agent", Atespace: "ax-system"},
+		},
+	}})
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), `actor template "node-agent" not found in atespace "ax-system"`) {
+		t.Fatalf("expected FailedPrecondition for missing template, got %v", err)
+	}
+	if _, getErr := mem.GetTask(ctx, "team-x", "missing-tmpl"); !errors.Is(getErr, store.ErrNotFound) {
+		t.Errorf("expected task not to be stored, got %v", getErr)
+	}
+	if _, hasActor := sub.Actor("team-x", "missing-tmpl"); hasActor {
+		t.Errorf("expected no actor to be created on Substrate")
+	}
+
+	// 5. Missing template defaulting atespace to task's atespace is rejected.
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "missing-local", Atespace: "team-x"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{Name: "local-agent"},
+		},
+	}})
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), `actor template "local-agent" not found in atespace "team-x"`) {
+		t.Fatalf("expected FailedPrecondition for missing local template, got %v", err)
+	}
+
+	// 6. Pre-existing template in Substrate is accepted and actor created.
+	sub.SetTemplate(&ateapipb.ActorTemplate{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: "ax-system", Name: "node-agent"},
+	})
+	task, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "valid-tmpl", Atespace: "team-x"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{Name: "node-agent", Atespace: "ax-system"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("CreateTask with template failed: %v", err)
+	}
+	if task.GetSpec().GetTemplate() == nil || task.GetSpec().GetTemplate().GetName() != "node-agent" {
+		t.Errorf("expected task to preserve template ref, got %v", task.GetSpec().GetTemplate())
+	}
+
+	// Actor should exist in Substrate
+	actor, exists := sub.Actor("team-x", "valid-tmpl")
+	if !exists || actor == nil {
+		t.Fatalf("expected actor 'valid-tmpl' to exist in Substrate")
+	}
+	if got, want := actor.GetActorTemplate().GetName(), "node-agent"; got != want {
+		t.Errorf("actor template name = %q, want %q", got, want)
+	}
+	if got, want := actor.GetActorTemplate().GetAtespace(), "ax-system"; got != want {
+		t.Errorf("actor template atespace = %q, want %q", got, want)
+	}
+
+	// 7. Deleting task removes actor and skips template deletion.
+	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Atespace: "team-x", Name: "valid-tmpl"})
+	if err != nil {
+		t.Fatalf("DeleteTask failed: %v", err)
+	}
+	if _, exists := sub.Actor("team-x", "valid-tmpl"); exists {
+		t.Errorf("expected actor to be deleted")
+	}
+	if _, tmplExists := sub.Template("ax-system", "node-agent"); !tmplExists {
+		t.Errorf("expected template to remain in Substrate")
 	}
 }
 

@@ -37,6 +37,28 @@ spec:
 
 Substrate requires `spec.image` to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the task's ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
 
+### Running from an existing ActorTemplate
+
+`spec.template` references a Substrate `ActorTemplate` to run the task from, specifying `name` and optional `atespace` (which defaults to the task's atespace):
+
+```yaml
+spec:
+  template:
+    name: node-agent
+    atespace: ax-system  # optional, defaults to the task's atespace
+```
+
+A task sets at most one of `spec.image` and `spec.template`:
+- If `spec.image` is set, the task runs from that image.
+- If `spec.template` is set, the task runs directly from the referenced ActorTemplate.
+- If neither is set, it defaults to the pre-configured runner image.
+
+`ax apply` rejects a task that sets both `spec.image` and `spec.template`. It also rejects `spec.command` together with `spec.template`, because the template defines what runs.
+
+The referenced `ActorTemplate` must already exist in Substrate. Creating a task that references a missing template fails with `FailedPrecondition` and stores nothing.
+
+When `spec.template` is used, AX provisions the actor directly against the existing template without creating a per-task ActorTemplate. Deleting the task cleans up only the actor, never the referenced template.
+
 ### Binding a workspace
 
 A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.command`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`.

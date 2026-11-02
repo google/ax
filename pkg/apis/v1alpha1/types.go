@@ -397,6 +397,17 @@ func ValidateTask(t *Task) error {
 		return err
 	}
 	spec := t.GetSpec()
+	if spec.GetImage() != "" && spec.GetTemplate() != nil {
+		return errors.New("spec: set image or template, not both")
+	}
+	if tmpl := spec.GetTemplate(); tmpl != nil {
+		if tmpl.GetName() == "" {
+			return errors.New("spec.template: name is required")
+		}
+		if len(spec.GetCommand()) > 0 {
+			return errors.New("spec: command cannot be set with template")
+		}
+	}
 	if ref := spec.GetWorkspace(); ref != nil {
 		if ref.GetName() == "" {
 			return errors.New("spec.workspace: name is required")

@@ -86,6 +86,9 @@ message TaskSpec {
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
   google.protobuf.Struct config = 7;
+  // template references the Substrate ActorTemplate to run the task from.
+  // It can't be combined with image or command.
+  ObjectRef template = 8;
 }
 
 message EnvVar {
@@ -106,6 +109,13 @@ message ResourceList {
 message WorkspaceRef {
   string name = 1;
   string path = 2;
+}
+
+// ObjectRef references a resource by name.
+message ObjectRef {
+  string name = 1;
+  // atespace defaults to the referencing resource's atespace.
+  string atespace = 2;
 }
 
 message TaskStatus {

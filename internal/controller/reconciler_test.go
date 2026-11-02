@@ -36,23 +36,24 @@ import (
 
 type mockControlServer struct {
 	ateapipb.UnimplementedControlServer
-	workerIP          string
-	createdAtespaces  []string
-	createdActors     []string
-	resumedActors     []string
-	suspendedActors   []string
-	suspendErr        error
-	deletedActors     []string
-	actorTemplates    map[string]bool
-	createdTemplates  []*ateapipb.ActorTemplate
-	templateImages    []string
-	deletedTemplates  []string
-	getActorFunc      func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error)
-	createAtespaceErr error
-	createActorErr    error
-	resumeActorErr    error
-	crashedActor      string
-	revertedActors    []string
+	workerIP              string
+	createdAtespaces      []string
+	createdActors         []string
+	resumedActors         []string
+	suspendedActors       []string
+	suspendErr            error
+	deletedActors         []string
+	actorTemplates        map[string]bool
+	createdTemplates      []*ateapipb.ActorTemplate
+	templateImages        []string
+	deletedTemplates      []string
+	getActorFunc          func(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error)
+	createAtespaceErr     error
+	createActorErr        error
+	resumeActorErr        error
+	crashedActor          string
+	revertedActors        []string
+	createdActorTemplates map[string]*ateapipb.ObjectRef
 	// createTemplateErr, when set, is returned by CreateActorTemplate to stand in
 	// for Substrate rejecting a template (for example an invalid quantity).
 	createTemplateErr error
@@ -106,8 +107,13 @@ func (m *mockControlServer) CreateActor(ctx context.Context, req *ateapipb.Creat
 		return nil, status.Error(codes.AlreadyExists, "actor exists")
 	}
 	m.createdActors = append(m.createdActors, name)
+	if m.createdActorTemplates == nil {
+		m.createdActorTemplates = make(map[string]*ateapipb.ObjectRef)
+	}
+	m.createdActorTemplates[name] = req.GetActor().GetActorTemplate()
 	return &ateapipb.Actor{
-		Metadata: &ateapipb.ResourceMetadata{Name: name},
+		Metadata:      &ateapipb.ResourceMetadata{Name: name},
+		ActorTemplate: req.GetActor().GetActorTemplate(),
 		Status: &ateapipb.ActorStatus{
 			State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
 		},
@@ -1114,4 +1120,158 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	}
 	assertCondition(t, task4, "Ready", "False", v1alpha1.ReasonActorCreationFailed)
 	mockSrv.createActorErr = nil
+}
+
+func TestTaskReconciler_UserActorTemplate(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "default-template", v1alpha1.DefaultSystemNamespace, "")
+
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "custom-task", Atespace: "team-a"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{
+				Name:     "node-agent",
+				Atespace: "ax-system",
+			},
+		},
+	}
+
+	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+
+	// Verify no per-task ActorTemplate was created on Substrate.
+	if len(mockSrv.createdTemplates) != 0 {
+		t.Errorf("expected 0 templates created, got %d", len(mockSrv.createdTemplates))
+	}
+
+	// Verify actor was created referencing the user's template.
+	if len(mockSrv.createdActors) != 1 || mockSrv.createdActors[0] != "custom-task" {
+		t.Fatalf("expected actor 'custom-task' created, got %v", mockSrv.createdActors)
+	}
+	tmplRef := mockSrv.createdActorTemplates["custom-task"]
+	if tmplRef == nil {
+		t.Fatal("expected actor to have an ActorTemplate reference")
+	}
+	if got, want := tmplRef.GetName(), "node-agent"; got != want {
+		t.Errorf("actor template name = %q, want %q", got, want)
+	}
+	if got, want := tmplRef.GetAtespace(), "ax-system"; got != want {
+		t.Errorf("actor template atespace = %q, want %q", got, want)
+	}
+}
+
+func TestTaskReconciler_UserActorTemplate_DefaultAtespace(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "default-template", v1alpha1.DefaultSystemNamespace, "")
+
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task-in-ns", Atespace: "team-b"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{
+				Name: "my-template",
+			},
+		},
+	}
+
+	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+
+	if len(mockSrv.createdTemplates) != 0 {
+		t.Errorf("expected 0 templates created, got %d", len(mockSrv.createdTemplates))
+	}
+	tmplRef := mockSrv.createdActorTemplates["task-in-ns"]
+	if tmplRef == nil {
+		t.Fatal("expected actor to have an ActorTemplate reference")
+	}
+	if got, want := tmplRef.GetName(), "my-template"; got != want {
+		t.Errorf("actor template name = %q, want %q", got, want)
+	}
+	if got, want := tmplRef.GetAtespace(), "team-b"; got != want {
+		t.Errorf("actor template atespace = %q, want %q (defaulted to task's atespace)", got, want)
+	}
+}
+
+func TestDelete_UserActorTemplate_SkipsTemplateDeletion(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{actorTemplates: map[string]bool{
+		"my-tmpl":               true,
+		"my-task-tmpl-0a1b2c3d": true,
+	}}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "my-task", Atespace: "default"},
+		Spec: &v1alpha1.TaskSpec{
+			Template: &v1alpha1.ObjectRef{Name: "my-tmpl"},
+		},
+	}
+
+	if err := reconciler.DeleteTask(ctx, task); err != nil {
+		t.Fatalf("DeleteTask failed: %v", err)
+	}
+
+	if len(mockSrv.deletedActors) != 1 || mockSrv.deletedActors[0] != "my-task" {
+		t.Errorf("expected actor 'my-task' deleted, got %v", mockSrv.deletedActors)
+	}
+	if len(mockSrv.deletedTemplates) != 0 {
+		t.Errorf("expected 0 templates deleted for user template task, got %v", mockSrv.deletedTemplates)
+	}
 }

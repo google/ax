@@ -274,6 +274,118 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 }
 
+const templateTaskManifest = `apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: {{.Name}}
+  atespace: {{.Atespace}}
+spec:
+  template:
+    name: {{.TemplateName}}
+{{- if .TemplateAtespace}}
+    atespace: {{.TemplateAtespace}}
+{{- end}}
+`
+
+func templateTaskManifestYAML(t *testing.T, atespace, name, tmplName, tmplAtespace string) string {
+	return renderYAML(t, templateTaskManifest, map[string]any{
+		"Name":             name,
+		"Atespace":         atespace,
+		"TemplateName":     tmplName,
+		"TemplateAtespace": tmplAtespace,
+	})
+}
+
+// TestE2E_TaskWithActorTemplate verifies tasks running from an existing Substrate ActorTemplate:
+//   - A task referencing a missing template is rejected at apply time.
+//   - A task referencing an existing template starts Suspended and is backed by an
+//     Actor pointing directly to that template (no per-task ActorTemplate created).
+//   - Resuming the task moves it to Running.
+//   - Deleting the task removes the Actor while preserving the referenced ActorTemplate.
+func TestE2E_TaskWithActorTemplate(t *testing.T) {
+	ctx := t.Context()
+	ns := defaultAtespace
+
+	// 1. A task referencing a non-existent template is rejected at apply time.
+	missingTmplName := uniqueName("missing-tmpl")
+	missingTaskName := uniqueName("task-missing-tmpl")
+	missingManifest := templateTaskManifestYAML(t, ns, missingTaskName, missingTmplName, ns)
+	out, err := env.runAX(ns, "apply", "-f", writeManifest(t, missingManifest))
+	if err == nil {
+		t.Fatalf("expected apply with non-existent template to fail, got:\n%s", out)
+	}
+	assertContains(t, "rejection for missing template", out, fmt.Sprintf("actor template %q not found in atespace %q", missingTmplName, ns))
+
+	if _, err := env.AXClient.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: missingTaskName, Atespace: ns}); status.Code(err) != codes.NotFound {
+		t.Fatalf("AX GetTask for rejected task: got %v, want NotFound", err)
+	}
+	if _, err := env.SubstrateClient.GetActor(ctx, ns, missingTaskName); status.Code(err) != codes.NotFound {
+		t.Fatalf("Substrate GetActor for rejected task: got %v, want NotFound", err)
+	}
+
+	// 2. Discover the cluster's task-runner image by checking a base task.
+	baseTaskName := uniqueName("base-for-tmpl")
+	assertContains(t, "'ax apply base'", env.apply(t, ns, taskManifest(t, ns, baseTaskName, false)), "created")
+	baseActor := env.getActor(t, ns, baseTaskName, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
+	baseTmplName := baseActor.GetActorTemplate().GetName()
+	baseTmpl, err := env.SubstrateClient.GetActorTemplate(ctx, ns, baseTmplName)
+	if err != nil {
+		t.Fatalf("GetActorTemplate(%s/%s): %v", ns, baseTmplName, err)
+	}
+	runnerImage := baseTmpl.GetContainers()[0].GetImage()
+	env.mustRunAX(t, ns, "delete", "task", baseTaskName)
+
+	// 3. Provision an ActorTemplate directly on Substrate.
+	userTmplName := uniqueName("user-tmpl")
+	_, err = env.SubstrateClient.EnsureActorTemplateWithImage(ctx, ns, baseTmplName, ns, userTmplName, runnerImage, nil)
+	if err != nil {
+		t.Fatalf("EnsureActorTemplateWithImage(%s/%s): %v", ns, userTmplName, err)
+	}
+	t.Cleanup(func() {
+		_ = env.SubstrateClient.DeleteActorTemplate(context.Background(), ns, userTmplName)
+	})
+
+	// 4. Apply a task using the pre-existing ActorTemplate.
+	taskName := uniqueName("task-with-tmpl")
+	env.deleteOnCleanup(t, ns, "task", taskName)
+
+	manifest := templateTaskManifestYAML(t, ns, taskName, userTmplName, ns)
+	assertContains(t, "'ax apply with template'", env.apply(t, ns, manifest), "task.ax.io/"+taskName+" created")
+
+	task := env.getTask(t, ns, taskName)
+	assertPhase(t, task, phaseSuspended)
+	if task.GetSpec().GetTemplate() == nil || task.GetSpec().GetTemplate().GetName() != userTmplName {
+		t.Fatalf("task spec.template = %v, want %s", task.GetSpec().GetTemplate(), userTmplName)
+	}
+
+	// 5. Verify the Actor points directly to the user's template (no per-task template created).
+	actor := env.getActor(t, ns, taskName, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
+	if got := actor.GetActorTemplate().GetName(); got != userTmplName {
+		t.Fatalf("actor template name = %q, want user template %q", got, userTmplName)
+	}
+	if got := actor.GetActorTemplate().GetAtespace(); got != ns {
+		t.Fatalf("actor template atespace = %q, want %q", got, ns)
+	}
+
+	// 6. Resume the task and verify it transitions to Running.
+	assertContains(t, "'ax resume task'", env.mustRunAX(t, ns, "resume", "task", taskName), "resumed")
+	task = env.getTask(t, ns, taskName)
+	assertPhase(t, task, phaseRunning)
+	assertCondition(t, task, "Ready", "True", v1alpha1.ReasonTaskRunning)
+
+	// 7. Delete the task and verify the Actor is deleted, but the ActorTemplate remains.
+	assertContains(t, "'ax delete task'", env.mustRunAX(t, ns, "delete", "task", taskName), "deleted")
+	if _, err := env.AXClient.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: taskName, Atespace: ns}); status.Code(err) != codes.NotFound {
+		t.Fatalf("AX GetTask after delete: got %v, want NotFound", err)
+	}
+	if _, err := env.SubstrateClient.GetActor(ctx, ns, taskName); status.Code(err) != codes.NotFound {
+		t.Fatalf("Substrate GetActor after delete: got %v, want NotFound", err)
+	}
+	if tmpl, err := env.SubstrateClient.GetActorTemplate(ctx, ns, userTmplName); err != nil || tmpl == nil {
+		t.Fatalf("expected ActorTemplate %s to be preserved after task deletion, got err=%v", userTmplName, err)
+	}
+}
+
 const metadataManifest = `apiVersion: ax.io/v1alpha1
 kind: Workspace
 metadata:
