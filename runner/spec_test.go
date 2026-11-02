@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package runner
 
 import (
 	"testing"
@@ -25,7 +25,7 @@ import (
 func TestLoadSpec_IgnoresUnknownFields(t *testing.T) {
 	t.Setenv("AX_TASK_YAML", "metadata:\n  name: t\nspec:\n  image: img\n  egress:\n  - host: example.com\n")
 	var task v1alpha1.Task
-	if err := loadSpec("", "AX_TASK_YAML", &task); err != nil {
+	if err := LoadSpec("", "AX_TASK_YAML", &task); err != nil {
 		t.Fatalf("loadSpec: %v", err)
 	}
 	if task.GetMetadata().GetName() != "t" || task.GetSpec().GetImage() != "img" {
@@ -36,7 +36,7 @@ func TestLoadSpec_IgnoresUnknownFields(t *testing.T) {
 func TestLoadSpec_Empty(t *testing.T) {
 	t.Setenv("AX_TASK_YAML", "\n")
 	var task v1alpha1.Task
-	if err := loadSpec("", "AX_TASK_YAML", &task); err != nil {
+	if err := LoadSpec("", "AX_TASK_YAML", &task); err != nil {
 		t.Fatalf("loadSpec: %v", err)
 	}
 	if task.GetMetadata() != nil {
@@ -47,7 +47,7 @@ func TestLoadSpec_Empty(t *testing.T) {
 func TestLoadSpec_WorkspaceIgnoresUnknownFields(t *testing.T) {
 	t.Setenv("AX_WORKSPACE_YAML", "metadata:\n  name: ws\nspec:\n  fieldFromTheFuture: 1\n")
 	var ws v1alpha1.Workspace
-	if err := loadSpec("", "AX_WORKSPACE_YAML", &ws); err != nil {
+	if err := LoadSpec("", "AX_WORKSPACE_YAML", &ws); err != nil {
 		t.Fatalf("loadSpec: %v", err)
 	}
 	if ws.GetMetadata().GetName() != "ws" {

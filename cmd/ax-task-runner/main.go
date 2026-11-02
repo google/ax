@@ -24,7 +24,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -32,8 +31,6 @@ import (
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/ax/runner"
-	"google.golang.org/protobuf/proto"
-	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -52,14 +49,14 @@ func main() {
 	slog.SetDefault(logger)
 
 	var task v1alpha1.Task
-	if err := loadSpec(taskFile, "AX_TASK_YAML", &task); err != nil {
+	if err := runner.LoadSpec(taskFile, "AX_TASK_YAML", &task); err != nil {
 		fatal(err)
 	} else if task.GetMetadata() != nil {
 		cfg.Task = &task
 	}
 
 	var ws v1alpha1.Workspace
-	if err := loadSpec(wsFile, "AX_WORKSPACE_YAML", &ws); err != nil {
+	if err := runner.LoadSpec(wsFile, "AX_WORKSPACE_YAML", &ws); err != nil {
 		fatal(err)
 	} else if ws.GetMetadata() != nil {
 		cfg.Workspace = &ws
@@ -71,37 +68,6 @@ func main() {
 	if err := runner.Run(ctx, cfg); err != nil {
 		fatal(err)
 	}
-}
-
-// loadSpec decodes YAML into out from file when set, otherwise from the named
-// environment variable. It is not an error for neither to be present, or for
-// the YAML to be blank. Unknown fields are ignored, so a runner image keeps
-// working with a newer control plane.
-func loadSpec(file, envVar string, out proto.Message) error {
-	var raw []byte
-	switch {
-	case file != "":
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", file, err)
-		}
-		raw = data
-	case os.Getenv(envVar) != "":
-		raw = []byte(os.Getenv(envVar))
-	default:
-		return nil
-	}
-	var node yaml.Node
-	if err := yaml.Unmarshal(raw, &node); err != nil {
-		return fmt.Errorf("parsing %T: %w", out, err)
-	}
-	if len(node.Content) == 0 || node.Content[0].ShortTag() == "!!null" {
-		return nil
-	}
-	if err := v1alpha1.UnmarshalYAMLLenient(node.Content[0], out); err != nil {
-		return fmt.Errorf("parsing %T: %w", out, err)
-	}
-	return nil
 }
 
 func fatal(err error) {

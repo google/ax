@@ -19,9 +19,9 @@ reconciler or server.
 
 ```
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tunnel)
-cmd/ax-server          Control plane: gRPC API + reconciler loop
+cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
-internal/controller    Task lifecycle state machine; reconciler_test.go is the test template
+internal/controller    TaskReconciler: Substrate side of task suspend/resume/delete; reconciler_test.go is the test template
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
@@ -67,8 +67,9 @@ location is where to look. How-to lives in the skills.
   (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
   (`internal/metadata/server.go`, `cmd/ax/main.go`).
-- Unit tests run against an in-process `mockControlServer`
-  (`internal/controller/reconciler_test.go`, `internal/server/server_test.go`).
+- Unit tests run against in-process fakes: `mockControlServer`
+  (`internal/controller/reconciler_test.go`) and `internal/substrate/substratetest`
+  (`internal/server/server_test.go`, `cmd/ax/main_test.go`).
 - `go.mod` has no `replace` directive; E2E installs Substrate at the `go.mod`
   version (`hack/setup-e2e-kind.sh`).
 

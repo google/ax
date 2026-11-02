@@ -8,6 +8,7 @@ bin/*
 !bin/linux_amd64
 !bin/linux_amd64/ax-task-runner
 !bin/linux_amd64/ax-server
+!bin/linux_amd64/claude-code-runner
 !bin/linux_arm64
 !bin/linux_arm64/ax-task-runner
 !bin/linux_arm64/ax-server

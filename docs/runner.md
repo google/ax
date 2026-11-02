@@ -68,8 +68,13 @@ There are three levels of customization. Pick the shallowest one that solves you
 
 If the runner behavior is fine and you only need different tools in the sandbox, build on top of the default image and keep its entrypoint:
 
+The image below is private. Build and push your own runner from the same AX
+checkout as the CLI and control plane, then replace `FROM` with its digest
+reference. The [installation guide](installation.md) shows the build steps for
+its pinned baseline.
+
 ```dockerfile
-# Pin the same digest the examples use so the runner behavior is reproducible.
+# Replace this with the digest of the runner built from the same AX checkout.
 FROM gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:69b764607ec7f1e433d83d2eca17dccfa04f663b43f071fd376e2dd716a57f8c
 
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
@@ -78,6 +83,7 @@ RUN npm install -g my-agent
 ```
 
 The runner binary stays at `/usr/local/bin/ax-task-runner`, so nothing else changes.
+
 
 ### 2. Embed the runner package in your own binary
 
@@ -128,6 +134,8 @@ func main() {
 ```
 
 Cross-compile it for `linux/amd64` with `CGO_ENABLED=0` and copy it into your image at `/usr/local/bin/ax-task-runner`.
+
+For a working example, see [`cmd/runners/claude-code-runner`](../cmd/runners/claude-code-runner), which builds a Claude Code invocation from `spec.config` and passes it to `runner.Run` as the command. [Claude Code runner](../examples/claude-code/README.md) documents it.
 
 ### 3. Write a runner from scratch
 

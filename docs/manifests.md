@@ -1,6 +1,6 @@
 # Writing manifests
 
-All four kinds can live in one multi-document YAML file. See [`examples/task.yaml`](../examples/task.yaml) for a complete, working set.
+All four kinds can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
 
 `metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting the task fail later with `ActorCreationFailed`.
 

@@ -30,10 +30,15 @@ AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
 AX_TASK_RUNNER_DIGEST := $(strip $(shell cat bin/ax-task-runner.digest 2>/dev/null))
 AX_DEFAULT_TASK_IMAGE ?= $(if $(AX_TASK_RUNNER_DIGEST),$(AX_IMAGE_REPO)/ax-task-runner@$(AX_TASK_RUNNER_DIGEST),$(AX_TASK_RUNNER_IMAGE))
 
+# Task image with Claude Code preinstalled; see Dockerfile.claude-code.
+CLAUDE_CODE_REPO ?= gcr.io/ax-images/ax-images
+CLAUDE_CODE_VERSION ?= latest
+CLAUDE_CODE_BASE_IMAGE ?=
+
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-.PHONY: build install images check-image-repo deploy deploy-server deploy-postgres apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image deploy deploy-server deploy-postgres apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -94,6 +99,21 @@ define push_image
 	fi
 endef
 
+# Build a task image with Claude Code preinstalled and claude-code-runner as
+# its runner, on top of the default runner image
+build-claude-code-image:
+	@echo "==> Cross-compiling claude-code-runner for linux/amd64..."
+	@mkdir -p bin/linux_amd64
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_amd64/claude-code-runner ./cmd/runners/claude-code-runner
+	@echo "==> Building container image $(CLAUDE_CODE_REPO):latest (Claude Code $(CLAUDE_CODE_VERSION)) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/amd64 --build-arg CLAUDE_CODE_VERSION=$(CLAUDE_CODE_VERSION) $(if $(CLAUDE_CODE_BASE_IMAGE),--build-arg BASE_IMAGE=$(CLAUDE_CODE_BASE_IMAGE),) -t $(CLAUDE_CODE_REPO):latest -f Dockerfile.claude-code .
+
+# Push the Claude Code task image to the registry and print the digest to pin in spec.image
+push-claude-code-image: build-claude-code-image
+	@mkdir -p bin
+	$(call push_image,$(CLAUDE_CODE_REPO):latest,claude-code)
+	@echo "==> Pushed digest: $(CLAUDE_CODE_REPO)@$$(cat bin/claude-code.digest)"
+
 ## --------------------------------------
 ## Deployment Targets
 ## --------------------------------------
@@ -121,7 +141,7 @@ deploy-server: check-image-repo
 # Apply example task and resources
 apply-example:
 	@echo "==> Applying example task and resources using bin/ax..."
-	./bin/ax apply -f examples/task.yaml
+	./bin/ax apply -f examples/simple.yaml
 
 ## --------------------------------------
 ## Test & Verification Targets

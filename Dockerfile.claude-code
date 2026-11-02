@@ -1,0 +1,62 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Task image with Claude Code preinstalled.
+#
+# Extends the default ax-task-runner image and replaces its runner with
+# claude-code-runner (cmd/runners/claude-code-runner), installed at the same
+# /usr/local/bin/ax-task-runner path. A Task that leaves spec.command empty is
+# configured through spec.config, which holds the prompt and claude's flags:
+# the runner turns it into a headless `claude --print` session. A Task that sets spec.command runs it as usual.
+#
+#   make build-claude-code-image            # build locally
+#   make push-claude-code-image             # push and print the digest
+#   make push-claude-code-image CLAUDE_CODE_VERSION=2.1.310
+#
+# Pin the digest the Makefile prints in your Task's spec.image. See
+# examples/claude-code/task.yaml for a Task that uses this image.
+#
+# Build on a linux/amd64 host (or in CI). The installer executes the
+# downloaded binary to finish setup, and that binary aborts under qemu
+# emulation, so cross-building for amd64 on Apple Silicon fails.
+
+# Pinned to the same digest the examples use so runner behavior is
+# reproducible. Override with --build-arg BASE_IMAGE=... (or
+# CLAUDE_CODE_BASE_IMAGE= for the Makefile target) to build on another image.
+ARG BASE_IMAGE=gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6
+FROM ${BASE_IMAGE}
+
+# Claude Code's native installer ships a standalone binary, so no Node.js is
+# needed. "latest", "stable", or an exact version such as 2.1.310.
+ARG CLAUDE_CODE_VERSION=latest
+
+# The installer puts the launcher in ~/.local/bin and versioned binaries in
+# ~/.local/share/claude. Install as root (the task runs as root) and expose the
+# launcher on the default PATH so spec.command can call `claude` directly.
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}" \
+    && ln -s /root/.local/bin/claude /usr/local/bin/claude \
+    && claude --version
+
+# The sandbox is the isolation boundary, so headless runs use
+# --dangerously-skip-permissions. Claude Code refuses that flag when running
+# as root unless IS_SANDBOX is set.
+ENV IS_SANDBOX=1 \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    DISABLE_AUTOUPDATER=1
+
+# The Makefile cross-compiles the runner into bin/ before building the image.
+ARG TARGETARCH=amd64
+COPY bin/linux_${TARGETARCH}/claude-code-runner /usr/local/bin/ax-task-runner
+
+ENTRYPOINT ["/usr/local/bin/ax-task-runner"]

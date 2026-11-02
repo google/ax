@@ -9,3 +9,5 @@ bin/
 /ax-task-runner
 
 .vscode/
+/claude-code-runner
+ax-claude-code-runner

@@ -343,6 +343,8 @@ func PortForward(ctx context.Context, kubeContext, namespace, targetResource str
 		_ = pw.Close()
 		return 0, nil, fmt.Errorf("spawning kubectl port-forward for %s: %w", targetResource, err)
 	}
+	// Close the parent's write end so pr.Read observes EOF as soon as kubectl exits.
+	_ = pw.Close()
 
 	portChan := make(chan int, 1)
 	errChan := make(chan error, 1)
@@ -373,7 +375,6 @@ func PortForward(ctx context.Context, kubeContext, namespace, targetResource str
 
 	cleanup := func() {
 		_ = pr.Close()
-		_ = pw.Close()
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 			_ = cmd.Process.Kill()
