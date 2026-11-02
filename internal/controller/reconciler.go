@@ -143,7 +143,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if task.Spec == nil {
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
-	if task.Spec.Image == "" {
+	if task.Spec.Image == "" && task.Spec.Template == nil {
 		task.Spec.Image = r.defaultTaskImage
 	}
 
@@ -169,6 +169,37 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	}
 
 	// 3. Ensure Actor exists on Substrate
+	var templateAtespace, templateName string
+	if tmpl := task.Spec.Template; tmpl != nil {
+		templateName = tmpl.Name
+		templateAtespace = tmpl.Atespace
+		if templateAtespace == "" {
+			templateAtespace = atespace
+		}
+	} else {
+		var err error
+		templateAtespace, templateName, err = r.ensureTaskTemplate(ctx, task, ws, atespace, now)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
+	if err != nil {
+		if substrate.IsTransientError(err) {
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			return fmt.Errorf("ensuring actor: %w", err)
+		}
+		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
+		return fmt.Errorf("ensuring actor: %w", err)
+	}
+	return nil
+}
+
+// ensureTaskTemplate provisions or resolves a dedicated ActorTemplate for a task
+// that runs from an image. It incorporates the task's environment, workspace binding,
+// and resource limits into the template.
+func (r *TaskReconciler) ensureTaskTemplate(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, atespace string, now time.Time) (string, string, error) {
 	templateName := r.defaultTemplate
 	templateAtespace := r.defaultTemplateAtespace
 	if parts := strings.SplitN(templateName, "/", 2); len(parts) == 2 {
@@ -205,7 +236,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	// here as well as at apply time: a task must never run without limits it asked for.
 	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
 		r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
-		return fmt.Errorf("validating resources: %w", err)
+		return "", "", fmt.Errorf("validating resources: %w", err)
 	}
 	resources := substrate.ResourceLimits(task.Spec.Resources)
 
@@ -220,14 +251,14 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-				return fmt.Errorf("ensuring actor template: %w", err)
+				return "", "", fmt.Errorf("ensuring actor template: %w", err)
 			}
 			// Falling back to the default template would run a different image than
 			// the user asked for, without the limits it asked for, or fail later with
 			// a misleading "actor template not found". Surface the real error on the
 			// task and stop here.
 			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
-			return fmt.Errorf("ensuring actor template: %w", err)
+			return "", "", fmt.Errorf("ensuring actor template: %w", err)
 		}
 		if tmpl != nil && tmpl.Metadata != nil {
 			templateAtespace = tmpl.Metadata.Atespace
@@ -235,17 +266,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 			slog.Info("using custom ActorTemplate for actor", "templateAtespace", templateAtespace, "templateName", templateName)
 		}
 	}
-
-	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
-	if err != nil {
-		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			return fmt.Errorf("ensuring actor: %w", err)
-		}
-		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
-		return fmt.Errorf("ensuring actor: %w", err)
-	}
-	return nil
+	return templateAtespace, templateName, nil
 }
 
 // Suspend runs ensureSubstrateResources, then suspends the task's actor. A
@@ -457,12 +478,35 @@ func taskTemplatePattern(taskName string) *regexp.Regexp {
 // Delete cleans up Substrate resources when a Task is deleted: the actor,
 // which shares the task's name, then every ActorTemplate provisioned for the task.
 func (r *TaskReconciler) Delete(ctx context.Context, atespace, taskName string) error {
+	return r.delete(ctx, atespace, taskName, false)
+}
+
+// DeleteTask cleans up Substrate resources for the given Task. If the task runs
+// from a user-supplied ActorTemplate (spec.template != nil), template cleanup
+// is skipped.
+func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) error {
+	if task == nil {
+		return nil
+	}
+	atespace := task.GetMetadata().GetAtespace()
+	if atespace == "" {
+		atespace = "default"
+	}
+	taskName := task.GetMetadata().GetName()
+	skipTemplates := task.GetSpec().GetTemplate() != nil
+	return r.delete(ctx, atespace, taskName, skipTemplates)
+}
+
+func (r *TaskReconciler) delete(ctx context.Context, atespace, taskName string, skipTemplates bool) error {
 	if atespace == "" {
 		atespace = "default"
 	}
 	slog.Info("deleting Substrate actor for task", "atespace", atespace, "task", taskName)
 	if err := r.client.DeleteActor(ctx, atespace, taskName); err != nil {
 		return err
+	}
+	if skipTemplates {
+		return nil
 	}
 	if err := r.deleteTaskTemplates(ctx, atespace, taskName); err != nil {
 		slog.Warn("could not clean up actor templates for task", "task", taskName, "error", err)

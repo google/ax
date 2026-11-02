@@ -121,6 +121,35 @@ func TestTask_YAMLOutputShape(t *testing.T) {
 	}
 }
 
+func TestTask_Template_YAML(t *testing.T) {
+	manifest := `
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: lint
+  atespace: default
+spec:
+  template:
+    name: node-agent
+    atespace: ax-system
+  workspace:
+    name: default-workspace
+`
+	var task v1alpha1.Task
+	if err := yaml.Unmarshal([]byte(manifest), &task); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if task.Spec == nil || task.Spec.Template == nil {
+		t.Fatalf("expected template to be parsed, got %v", task.Spec)
+	}
+	if got, want := task.Spec.Template.Name, "node-agent"; got != want {
+		t.Errorf("template.name = %q, want %q", got, want)
+	}
+	if got, want := task.Spec.Template.Atespace, "ax-system"; got != want {
+		t.Errorf("template.atespace = %q, want %q", got, want)
+	}
+}
+
 func TestStrictDecoding_RejectsUnknownFields(t *testing.T) {
 	var task v1alpha1.Task
 	err := yaml.Unmarshal([]byte("kind: Task\nspec:\n  imgae: typo\n"), &task)
@@ -463,6 +492,29 @@ func TestValidateTask(t *testing.T) {
 			name:    "oversized command",
 			spec:    &v1alpha1.TaskSpec{Command: []string{"sh", "-c", strings.Repeat("z", v1alpha1.MaxEnvValueSize)}},
 			wantErr: "task: encoded launch configuration",
+		},
+		{
+			name: "valid template",
+			spec: &v1alpha1.TaskSpec{Template: &v1alpha1.ObjectRef{Name: "node-agent"}},
+		},
+		{
+			name: "valid template with atespace",
+			spec: &v1alpha1.TaskSpec{Template: &v1alpha1.ObjectRef{Name: "node-agent", Atespace: "ax-system"}},
+		},
+		{
+			name:    "image and template both set",
+			spec:    &v1alpha1.TaskSpec{Image: "alpine", Template: &v1alpha1.ObjectRef{Name: "node-agent"}},
+			wantErr: "spec: set image or template, not both",
+		},
+		{
+			name:    "command and template both set",
+			spec:    &v1alpha1.TaskSpec{Template: &v1alpha1.ObjectRef{Name: "node-agent"}, Command: []string{"sh"}},
+			wantErr: "spec: command cannot be set with template",
+		},
+		{
+			name:    "nameless template",
+			spec:    &v1alpha1.TaskSpec{Template: &v1alpha1.ObjectRef{}},
+			wantErr: "spec.template: name is required",
 		},
 	}
 	for _, tt := range tests {

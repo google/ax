@@ -701,6 +701,13 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		if ref := task.Spec.GetWorkspace(); ref != nil {
 			fmt.Printf("Workspace:    %s  path=%s\n", ref.Name, task.Spec.WorkspacePath())
 		}
+		if tmpl := task.Spec.GetTemplate(); tmpl != nil {
+			if tmpl.Atespace != "" && tmpl.Atespace != taskAtespace {
+				fmt.Printf("Template:     %s/%s\n", tmpl.Atespace, tmpl.Name)
+			} else {
+				fmt.Printf("Template:     %s\n", tmpl.Name)
+			}
+		}
 		if task.Spec.Image != "" {
 			fmt.Printf("Image:        %s\n", task.Spec.Image)
 		}

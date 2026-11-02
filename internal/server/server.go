@@ -177,6 +177,26 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
+	// Tasks are immutable, so a task whose referenced ActorTemplate does not exist
+	// cannot be fixed later. Reject it before saving or provisioning.
+	if tmpl := task.GetSpec().GetTemplate(); tmpl != nil {
+		tmplAtespace := tmpl.GetAtespace()
+		if tmplAtespace == "" {
+			tmplAtespace = atespace
+		}
+		tmplName := tmpl.GetName()
+		_, err := s.substrate.GetActorTemplate(ctx, tmplAtespace, tmplName)
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return nil, status.Errorf(codes.FailedPrecondition, "actor template %q not found in atespace %q", tmplName, tmplAtespace)
+			}
+			if st, ok := status.FromError(err); ok {
+				return nil, status.Errorf(st.Code(), "getting actor template %s/%s: %s", tmplAtespace, tmplName, st.Message())
+			}
+			return nil, status.Errorf(codes.Internal, "getting actor template %s/%s: %v", tmplAtespace, tmplName, err)
+		}
+	}
+
 	if task.Metadata.CreateTime == nil {
 		task.Metadata.CreateTime = timestamppb.Now()
 	}
@@ -238,7 +258,7 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 
-	if err := s.deleteTask(ctx, atespace, taskName); err != nil {
+	if err := s.deleteTask(ctx, task); err != nil {
 		return nil, err
 	}
 	return &v1alpha1.DeleteTaskResponse{}, nil
@@ -412,8 +432,10 @@ func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1al
 
 // deleteTask removes a task's actor and templates from Substrate, then its
 // record from the store. It returns a gRPC status error.
-func (s *Server) deleteTask(ctx context.Context, atespace, name string) error {
-	if err := s.reconciler.Delete(ctx, atespace, name); err != nil {
+func (s *Server) deleteTask(ctx context.Context, task *v1alpha1.Task) error {
+	atespace := task.GetMetadata().GetAtespace()
+	name := task.GetMetadata().GetName()
+	if err := s.reconciler.DeleteTask(ctx, task); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return status.Error(codes.Canceled, err.Error())
 		}

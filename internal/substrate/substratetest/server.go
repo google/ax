@@ -133,6 +133,13 @@ func (s *Server) Actor(atespace, name string) (*ateapipb.Actor, bool) {
 	return proto.Clone(actor).(*ateapipb.Actor), true
 }
 
+// SetTemplate stores a copy of template, replacing any template of the same name.
+func (s *Server) SetTemplate(tmpl *ateapipb.ActorTemplate) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.templates[key(tmpl.GetMetadata().GetAtespace(), tmpl.GetMetadata().GetName())] = proto.Clone(tmpl).(*ateapipb.ActorTemplate)
+}
+
 // Template returns a copy of the named actor template, if it exists.
 func (s *Server) Template(atespace, name string) (*ateapipb.ActorTemplate, bool) {
 	s.mu.Lock()
