@@ -29,7 +29,7 @@ import (
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/internal/substrate/substratetest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"go.ate.dev/substrate/pkg/proto/ateapipb"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"

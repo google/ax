@@ -92,11 +92,12 @@ Keep its source ref fixed when building or deploying Substrate components. AX's
 
 Configure Substrate's cluster-wide `--snapshot-location` and access to its
 [snapshot storage](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/operator-install.md#snapshot-storage).
-Keep `PerTemplateSnapshotLocation` disabled: this AX client does not opt in to
-preview APIs. Substrate uses its cluster location instead of the template
-location sent through `AX_SNAPSHOTS_BUCKET`. That template field is still
-validated as a URI, so leave its default value; changing it does not configure
-snapshot storage.
+By default, AX leaves the template-level snapshot storage location (`snapshotsBucket`)
+empty so that Substrate uses its cluster-wide snapshot location. Specifying a custom
+`snapshotsBucket` on an ActorTemplate can only be used when the Substrate
+`PerTemplateSnapshotLocation` preview feature gate is enabled on the cluster. If that
+gate is not enabled, Substrate strictly rejects template creation with
+`actor_template.snapshot_config.storage_location: Forbidden`.
 
 [Authorize](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/authorization.md)
 `system:serviceaccount:ax-system:ax-server` with global permission to create
@@ -187,8 +188,8 @@ sed -e "s|\${AX_SERVER_IMAGE}|$AX_SERVER_IMAGE|g" \
   Keep TLS verification and the projected service-account token configured.
 - Keep the PodCertificate projection for signer
   `podidentity.podcert.ate.dev/identity`; the server uses it for router mTLS.
-- Leave `AX_SNAPSHOTS_BUCKET` unchanged; configure storage in Substrate as described in
-  [Substrate setup](#substrate-setup).
+- Snapshot storage is managed cluster-wide by Substrate as described in
+  [Substrate setup](#substrate-setup); AX manifests do not set a template snapshot location.
 
 Inspect the trust bundles and their signer names:
 

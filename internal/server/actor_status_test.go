@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"go.ate.dev/substrate/pkg/proto/ateapipb"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
 
 func testActor(name string, state ateapipb.ActorState, workerIP string) *ateapipb.Actor {

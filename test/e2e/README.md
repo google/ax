@@ -60,7 +60,6 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `KUBECONFIG` | `.tmp/kubeconfig-${KIND_CLUSTER_NAME}` | Kubeconfig for the Kind cluster |
 | `AX_SYSTEM_NAMESPACE` | `ax-system` | Namespace for `ax-postgres`, `ax-server`, and the `ax-workers` WorkerPool |
 | `AX_WORKER_REPLICAS` | `4` | gVisor worker replicas |
-| `AX_SNAPSHOTS_BUCKET` | `gs://ate-snapshots/ax/` | Snapshot location in Substrate's in-cluster RustFS |
 | `RECREATE_KIND` | `false` | Delete and recreate the Kind cluster |
 | `FORCE_INSTALL_SUBSTRATE` | `false` | Reinstall Substrate even if the requested commit is already installed |
 | `SUBSTRATE_IMAGE_CACHE_DIR` | unset | Host directory for the local registry's storage. When set, Substrate's images are published there once per Substrate version (`git describe`) and installed pre-built afterwards, skipping the Substrate build. CI caches this directory |

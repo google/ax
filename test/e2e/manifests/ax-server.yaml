@@ -66,8 +66,6 @@ spec:
                   key: password
             - name: ATENET_ROUTER_ADDR
               value: "https://atenet-router.ate-system.svc.cluster.local:443"
-            - name: AX_SNAPSHOTS_BUCKET
-              value: "${AX_SNAPSHOTS_BUCKET}"
             - name: AX_DEFAULT_TASK_IMAGE
               value: "${AX_DEFAULT_TASK_IMAGE}"
           ports:

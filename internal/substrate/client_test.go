@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"go.ate.dev/substrate/pkg/proto/ateapipb"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -199,8 +199,6 @@ func TestClient_DeleteActor_PropagatesRPCError(t *testing.T) {
 }
 
 func TestBuildActorTemplate(t *testing.T) {
-	t.Setenv("AX_SNAPSHOTS_BUCKET", "gs://ate-snapshots/ax/")
-
 	tmpl := BuildActorTemplate("", "test-tmpl", "", map[string]string{"FOO": "BAR"}, nil, "", nil)
 	if tmpl.GetMetadata().GetAtespace() != "default" {
 		t.Errorf("expected default atespace, got %q", tmpl.GetMetadata().GetAtespace())
@@ -220,11 +218,17 @@ func TestBuildActorTemplate(t *testing.T) {
 	if snapCfg == nil {
 		t.Fatal("expected SnapshotConfig to be set")
 	}
-	if snapCfg.GetStorageLocation() != "gs://ate-snapshots/ax/" {
-		t.Errorf("expected StorageLocation gs://ate-snapshots/ax/, got %q", snapCfg.GetStorageLocation())
+	if snapCfg.GetStorageLocation() != "" {
+		t.Errorf("expected empty StorageLocation by default in Substrate v1.0+, got %q", snapCfg.GetStorageLocation())
 	}
 	if snapCfg.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
 		t.Errorf("expected PreferredFidelity VOLUMES, got %v", snapCfg.GetPreferredFidelity())
+	}
+
+	// When snapshotsBucket is explicitly provided, StorageLocation is set.
+	tmplWithBucket := BuildActorTemplate("", "test-tmpl", "", nil, nil, "gs://ate-snapshots/ax/", nil)
+	if tmplWithBucket.GetSnapshotConfig().GetStorageLocation() != "gs://ate-snapshots/ax/" {
+		t.Errorf("expected StorageLocation gs://ate-snapshots/ax/, got %q", tmplWithBucket.GetSnapshotConfig().GetStorageLocation())
 	}
 }
 

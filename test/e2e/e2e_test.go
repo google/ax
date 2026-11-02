@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"go.ate.dev/substrate/pkg/proto/ateapipb"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -241,9 +241,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if probe := tmpl.GetContainers()[0].GetWakeupProbe().GetHttpGet(); probe.GetPath() != "/readyz" || probe.GetPort() != 80 {
 		t.Fatalf("unexpected WakeupProbe: %+v", tmpl.GetContainers()[0].GetWakeupProbe())
 	}
-	// Newer Substrate versions may return SnapshotConfig fields AX's proto does
-	// not know about, so accept either a known storage location or unknown fields.
-	if sc := tmpl.GetSnapshotConfig(); sc.GetStorageLocation() == "" && len(sc.ProtoReflect().GetUnknown()) == 0 {
+	// Verify that the ActorTemplate has a SnapshotConfig set with VOLUMES fidelity.
+	if sc := tmpl.GetSnapshotConfig(); sc == nil || sc.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
