@@ -29,7 +29,7 @@
 #
 # Substrate requires every pool to name its sandbox class. Leaving out
 # `configRef` uses the platform's default gVisor SandboxConfig.
-apiVersion: ate.dev/v1alpha1
+apiVersion: ate.dev/v1
 kind: WorkerPool
 metadata:
   name: ax-pool
