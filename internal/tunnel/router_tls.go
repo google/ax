@@ -39,6 +39,11 @@ const (
 	podIdentitySignerName = "podidentity.podcert.ate.dev/identity"
 	liveBundleSelector    = "podcert.ate.dev/canarying=live"
 	routerServerName      = "atenet-router.ate-system.svc"
+
+	// routerCertExpiry is how long before its NotAfter a client
+	// certificate is treated as expired, so it is not used for a connection
+	// that outlives it.
+	routerCertExpiry = 1 * time.Minute
 )
 
 type cachedRouterTLS struct {
@@ -72,11 +77,24 @@ func RouterTLSConfig(ctx context.Context, kubeContext, namespace, serviceAccount
 		return nil, fmt.Errorf("requesting podidentity client certificate: %w", err)
 	}
 
+	notAfter, err := leafNotAfter(cert)
+	if err != nil {
+		return nil, err
+	}
+	if !time.Now().Before(notAfter) {
+		return nil, fmt.Errorf("issued podidentity client certificate already expired at %s", notAfter.UTC().Format(time.RFC3339))
+	}
+
+	// Cache for at most 30 minutes, and never past the certificate's expiry.
+	expiresAt := time.Now().Add(30 * time.Minute)
+	if certExpiry := notAfter.Add(-routerCertExpiry); certExpiry.Before(expiresAt) {
+		expiresAt = certExpiry
+	}
 	_ = saveCachedRouterTLS(ctxName, namespace, serviceAccount, &cachedRouterTLS{
 		TrustBundlePEM: trustPEM,
 		CertChainPEM:   chainPEM,
 		KeyPEM:         keyPEM,
-		ExpiresAt:      time.Now().Add(30 * time.Minute),
+		ExpiresAt:      expiresAt,
 	})
 
 	return &tls.Config{
@@ -120,12 +138,31 @@ func loadCachedRouterTLS(ctxName, namespace, serviceAccount string) (*tls.Config
 	if err != nil {
 		return nil, err
 	}
+	notAfter, err := leafNotAfter(cert)
+	if err != nil {
+		return nil, err
+	}
+	if time.Now().Add(routerCertExpiry).After(notAfter) {
+		return nil, fmt.Errorf("cached router TLS certificate expired")
+	}
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS12,
 		RootCAs:      pool,
 		Certificates: []tls.Certificate{cert},
 		ServerName:   routerServerName,
 	}, nil
+}
+
+// leafNotAfter returns the expiry of the leaf certificate in cert.
+func leafNotAfter(cert tls.Certificate) (time.Time, error) {
+	if len(cert.Certificate) == 0 {
+		return time.Time{}, fmt.Errorf("certificate chain is empty")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing leaf certificate: %w", err)
+	}
+	return leaf.NotAfter, nil
 }
 
 func saveCachedRouterTLS(ctxName, namespace, serviceAccount string, cached *cachedRouterTLS) error {
