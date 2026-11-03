@@ -177,6 +177,19 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
+	// Tasks are immutable, so a task created before its Workspace would keep
+	// an empty workspace for its whole life. Reject it instead.
+	var workspace *v1alpha1.Workspace
+	if wsName := task.GetSpec().GetWorkspace().GetName(); wsName != "" {
+		workspace, err = s.store.GetWorkspace(ctx, atespace, wsName)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.FailedPrecondition, "workspace %q not found in atespace %q", wsName, atespace)
+		}
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "getting workspace %q: %v", wsName, err)
+		}
+	}
+
 	if task.Metadata.CreateTime == nil {
 		task.Metadata.CreateTime = timestamppb.Now()
 	}
@@ -190,7 +203,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	// New tasks start suspended.
-	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+	if err := s.reconciler.Suspend(ctx, task, workspace); err != nil {
 		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
 	// The actor exists, so reads take the task's phase from it from now on.

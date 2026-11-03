@@ -15,11 +15,14 @@
 package server_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,6 +286,11 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 		t.Fatalf("expected InvalidArgument for a nameless workspace binding, got %v", err)
 	}
 
+	if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "a"},
+	}}); err != nil {
+		t.Fatalf("UpdateWorkspace: %v", err)
+	}
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},
 		Spec: &v1alpha1.TaskSpec{
@@ -291,6 +299,105 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatalf("expected a valid workspace binding to be accepted, got %v", err)
+	}
+}
+
+type failGetWorkspaceStore struct {
+	store.Store
+	err error
+}
+
+func (f *failGetWorkspaceStore) GetWorkspace(context.Context, string, string) (*v1alpha1.Workspace, error) {
+	return nil, f.err
+}
+
+// A task is immutable, so CreateTask must not save or provision a task whose
+// Workspace does not exist yet: it would run with an empty workspace forever.
+func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		taskAtespace  string
+		wsAtespace    string // where the "data" Workspace exists; empty for nowhere
+		binding       string
+		getErr        error
+		wantCode      codes.Code
+		wantMsg       string
+		wantWorkspace bool
+	}{
+		{name: "missing", binding: "data", wantCode: codes.FailedPrecondition, wantMsg: `workspace "data" not found in atespace "default"`},
+		{name: "other atespace", taskAtespace: "team-a", wsAtespace: "team-b", binding: "data", wantCode: codes.FailedPrecondition, wantMsg: `workspace "data" not found in atespace "team-a"`},
+		{name: "wrapped not found", binding: "data", getErr: fmt.Errorf("lookup: %w", store.ErrNotFound), wantCode: codes.FailedPrecondition},
+		{name: "store error", binding: "data", getErr: errors.New("store unavailable"), wantCode: codes.Internal, wantMsg: `getting workspace "data": store unavailable`},
+		{name: "present", wsAtespace: "default", binding: "data", wantCode: codes.OK, wantWorkspace: true},
+		{name: "present in task atespace", taskAtespace: "team-a", wsAtespace: "team-a", binding: "data", wantCode: codes.OK, wantWorkspace: true},
+		{name: "no binding", wantCode: codes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			mem := memory.NewStore()
+			var st store.Store = mem
+			if tc.getErr != nil {
+				st = &failGetWorkspaceStore{Store: mem, err: tc.getErr}
+			}
+			if tc.wsAtespace != "" {
+				if err := mem.SaveWorkspace(ctx, &v1alpha1.Workspace{
+					Metadata: &v1alpha1.ObjectMeta{Atespace: tc.wsAtespace, Name: "data"},
+					Spec:     &v1alpha1.WorkspaceSpec{},
+				}); err != nil {
+					t.Fatalf("SaveWorkspace: %v", err)
+				}
+			}
+			sub := substratetest.NewServer(t)
+			srv := server.NewServer(st, newTestReconciler(sub))
+
+			task := &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
+				Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+			}
+			if tc.binding != "" {
+				task.Spec.Workspace = &v1alpha1.WorkspaceRef{Name: tc.binding}
+			}
+			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: task})
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("CreateTask: got %v, want %v", err, tc.wantCode)
+			}
+			if !strings.Contains(status.Convert(err).Message(), tc.wantMsg) {
+				t.Errorf("CreateTask error = %q, want it to contain %q", status.Convert(err).Message(), tc.wantMsg)
+			}
+
+			atespace := cmp.Or(tc.taskAtespace, "default")
+			_, getErr := mem.GetTask(ctx, atespace, "task")
+			actor, hasActor := sub.Actor(atespace, "task")
+			if tc.wantCode != codes.OK {
+				if !errors.Is(getErr, store.ErrNotFound) {
+					t.Errorf("stored task after rejection: got %v, want ErrNotFound", getErr)
+				}
+				if hasActor {
+					t.Errorf("rejected task has actor %v, want none", actor)
+				}
+				return
+			}
+			if getErr != nil {
+				t.Fatalf("stored task: %v", getErr)
+			}
+			if !hasActor {
+				t.Fatal("accepted task has no actor")
+			}
+			ref := actor.GetActorTemplate()
+			tmpl, ok := sub.Template(ref.GetAtespace(), ref.GetName())
+			if !ok {
+				t.Fatalf("actor template %v not found", ref)
+			}
+			var gotWorkspace bool
+			for _, env := range tmpl.GetContainers()[0].GetEnv() {
+				if env.GetName() == "AX_WORKSPACE_YAML" {
+					gotWorkspace = true
+				}
+			}
+			if gotWorkspace != tc.wantWorkspace {
+				t.Errorf("template has AX_WORKSPACE_YAML = %v, want %v", gotWorkspace, tc.wantWorkspace)
+			}
+		})
 	}
 }
 
