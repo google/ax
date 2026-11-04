@@ -106,10 +106,19 @@ make deploy
 
 This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
 
-### 4. Run your first task
+### 4. Create a WorkerPool
+
+Every task runs as a Substrate actor, and an actor needs a free worker from a `WorkerPool`. Nothing creates one for you — not `make deploy`, and not the Substrate installer — so without a pool, the first `ax resume` fails with `ResourceExhausted: no free workers available` (the task itself stays `Suspended`).
+
+Create a small gVisor pool from [`examples/workerpool.yaml`](examples/workerpool.yaml) (its header explains how to apply it), or follow the WorkerPool step in the [installation guide](docs/installation.md#substrate-setup). Then wait until `kubectl get workerpools -A` shows the workers ready.
+
+### 5. Run your first task
+
+From your ax checkout:
 
 ```bash
 ax apply -f examples/simple.yaml         # the smallest useful Task
+ax resume task simple-task               # new tasks start Suspended; resume schedules the actor and starts it
 ax get tasks
 # NAME          ATESPACE   PHASE     ACTOR         WORKER-IP    AGE
 # simple-task   default    Running   simple-task   10.20.3.67   1m
@@ -119,7 +128,9 @@ ax suspend task simple-task              # checkpoint and pause
 ax resume task simple-task               # pick up where it left off
 ```
 
-Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, waits for readiness, runs commands over `ax ssh`, and suspends the task.
+The first resume also waits for the workspace to initialize (cloning its git repos), so it can take a while; if the CLI gives up first, the task keeps coming up in the background — `ax get tasks` tells you where it is.
+
+Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
 
 ## Documentation
 
