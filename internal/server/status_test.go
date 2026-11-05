@@ -44,6 +44,11 @@ func TestStoredStatus(t *testing.T) {
 		t.Errorf("storedStatus modified its input: %v", in)
 	}
 
+	in = &v1alpha1.TaskStatus{Phase: "Running", Residency: v1alpha1.ResidencyRunning, ActorUid: "uid-1"}
+	if got := storedStatus(in); got.Residency != v1alpha1.ResidencyRunning || got.ActorUid != "uid-1" {
+		t.Errorf("storedStatus(%v) = %v, want residency and actor UID kept", in, got)
+	}
+
 	in = &v1alpha1.TaskStatus{Phase: v1alpha1.PhaseFailed, Conditions: []*v1alpha1.Condition{{Type: "Ready"}}}
 	if got := storedStatus(in); got.Phase != v1alpha1.PhaseFailed || len(got.Conditions) != 1 {
 		t.Errorf("storedStatus(%v) = %v, want AX phase and its conditions kept", in, got)

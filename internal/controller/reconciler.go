@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -123,11 +124,11 @@ func newProbeHTTPClient() *http.Client {
 }
 
 // ensureSubstrateResources fills in the task's defaults and makes sure its
-// atespace, ActorTemplate and actor exist on Substrate. It records only what AX
-// stores in the task's status: the task ID, and on failure the reason in a
-// False Ready condition. The caller sets the phase, and the server reads the
-// rest of the status from the actor.
-func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
+// atespace, ActorTemplate and actor exist on Substrate, and returns the actor.
+// It records only what AX stores in the task's status: the task ID, and on
+// failure the reason in a False Ready condition. The caller sets the phase,
+// and the server reads the rest of the status from the actor.
+func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) (*ateapipb.Actor, error) {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -155,10 +156,10 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if err := r.client.EnsureAtespace(ctx, atespace); err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			return fmt.Errorf("ensuring atespace: %w", err)
+			return nil, fmt.Errorf("ensuring atespace: %w", err)
 		}
 		r.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
-		return fmt.Errorf("ensuring atespace: %w", err)
+		return nil, fmt.Errorf("ensuring atespace: %w", err)
 	}
 
 	// 2. The actor is always named after the task, so the two can be used
@@ -205,7 +206,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	// here as well as at apply time: a task must never run without limits it asked for.
 	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
 		r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
-		return fmt.Errorf("validating resources: %w", err)
+		return nil, fmt.Errorf("validating resources: %w", err)
 	}
 	resources := substrate.ResourceLimits(task.Spec.Resources)
 
@@ -220,14 +221,14 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-				return fmt.Errorf("ensuring actor template: %w", err)
+				return nil, fmt.Errorf("ensuring actor template: %w", err)
 			}
 			// Falling back to the default template would run a different image than
 			// the user asked for, without the limits it asked for, or fail later with
 			// a misleading "actor template not found". Surface the real error on the
 			// task and stop here.
 			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
-			return fmt.Errorf("ensuring actor template: %w", err)
+			return nil, fmt.Errorf("ensuring actor template: %w", err)
 		}
 		if tmpl != nil && tmpl.Metadata != nil {
 			templateAtespace = tmpl.Metadata.Atespace
@@ -236,47 +237,67 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		}
 	}
 
-	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
+	actor, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			return fmt.Errorf("ensuring actor: %w", err)
+			return nil, fmt.Errorf("ensuring actor: %w", err)
 		}
 		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
-		return fmt.Errorf("ensuring actor: %w", err)
+		return nil, fmt.Errorf("ensuring actor: %w", err)
 	}
-	return nil
+	return actor, nil
 }
 
-// Suspend runs ensureSubstrateResources, then suspends the task's actor. A
-// failure to suspend the actor is returned without changing the task's status.
+// recordActor records the UID and residency of the task's actor, as Substrate
+// returned them, in the task's status. It leaves both unchanged when Substrate
+// returned no actor.
+func recordActor(task *v1alpha1.Task, actor *ateapipb.Actor) {
+	if uid := actor.GetMetadata().GetUid(); uid != "" {
+		task.Status.ActorUid = uid
+	}
+	if residency := substrate.Residency(actor); residency != "" {
+		task.Status.Residency = residency
+	}
+}
+
+// Suspend runs ensureSubstrateResources, then suspends the task's actor and
+// records the actor's UID and residency in the task's status. A failure to
+// suspend the actor is returned without changing the task's status.
 func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
-	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
+	ensured, err := r.ensureSubstrateResources(ctx, task, ws)
+	if err != nil {
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	slog.Info("suspending actor on Substrate", "actor", actorName)
-	if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
+	suspended, err := r.client.SuspendActor(ctx, atespace, actorName)
+	if err != nil {
 		return fmt.Errorf("suspending actor: %w", err)
 	}
+	recordActor(task, ensured)
+	recordActor(task, suspended)
 	slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
 	return nil
 }
 
-// Resume runs ensureSubstrateResources, resumes the task's actor, and waits up
-// to WorkspaceReadyTimeout for the task's workspace to be set up, recording the
+// Resume runs ensureSubstrateResources, resumes the task's actor, records the
+// actor's UID and residency in the task's status, and waits up to
+// WorkspaceReadyTimeout for the task's workspace to be set up, recording the
 // result in the WorkspaceReady condition. A failure to resume the actor is
 // recorded the way ensureSubstrateResources records its own.
 func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
-	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
+	ensured, err := r.ensureSubstrateResources(ctx, task, ws)
+	if err != nil {
 		return err
 	}
+	recordActor(task, ensured)
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	now := time.Now()
 
 	// Resume the Actor to activate container execution
 	slog.Info("resuming actor on Substrate worker", "actor", actorName)
-	_, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
+	actor, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
@@ -285,6 +306,7 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
 		return fmt.Errorf("resuming actor: %w", err)
 	}
+	recordActor(task, actor)
 
 	// Check if workspace setup inside the actor has completed
 	host := workerIP

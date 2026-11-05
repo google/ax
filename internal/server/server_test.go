@@ -979,3 +979,110 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 		t.Errorf("phase after ResumeTask = %q, want Running", task.GetStatus().GetPhase())
 	}
 }
+
+// residencyRecorder records the residency of every task status written to the
+// store, in order.
+type residencyRecorder struct {
+	store.Store
+	written []string
+}
+
+func (r *residencyRecorder) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
+	r.written = append(r.written, task.GetStatus().GetResidency())
+	return r.Store.SaveTask(ctx, task)
+}
+
+func (r *residencyRecorder) UpdateTaskStatus(ctx context.Context, atespace, name string, st *v1alpha1.TaskStatus) error {
+	r.written = append(r.written, st.GetResidency())
+	return r.Store.UpdateTaskStatus(ctx, atespace, name, st)
+}
+
+func TestServer_RecordsResidencyAndActorUID(t *testing.T) {
+	st := &residencyRecorder{Store: memory.NewStore()}
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(st, newTestReconciler(sub))
+	ctx := context.Background()
+
+	task, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "resident"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+	}})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	actor, _ := sub.Actor("default", "resident")
+	uid := actor.GetMetadata().GetUid()
+	if uid == "" {
+		t.Fatal("fake Substrate gave the actor no UID")
+	}
+	if got := task.GetStatus(); got.GetResidency() != v1alpha1.ResidencySuspended || got.GetActorUid() != uid {
+		t.Errorf("CreateTask status residency=%q actorUID=%q, want %q %q", got.GetResidency(), got.GetActorUid(), v1alpha1.ResidencySuspended, uid)
+	}
+
+	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "resident"}); err != nil {
+		t.Fatalf("ResumeTask: %v", err)
+	}
+	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "resident"}); err != nil {
+		t.Fatalf("SuspendTask: %v", err)
+	}
+
+	stored, err := st.GetTask(ctx, "default", "resident")
+	if err != nil {
+		t.Fatalf("store GetTask: %v", err)
+	}
+	if got := stored.GetStatus(); got.GetResidency() != v1alpha1.ResidencySuspended || got.GetActorUid() != uid {
+		t.Errorf("stored residency=%q actorUID=%q, want %q %q", got.GetResidency(), got.GetActorUid(), v1alpha1.ResidencySuspended, uid)
+	}
+
+	// A request wakes the actor through the router, without AX (#502). Reads
+	// report it running; the stored residency is AX's last write.
+	actor, _ = sub.Actor("default", "resident")
+	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_RUNNING}
+	sub.SetActor(actor)
+	got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "resident"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.GetStatus().GetResidency() != v1alpha1.ResidencyRunning {
+		t.Errorf("residency after a wake on Substrate = %q, want %q", got.GetStatus().GetResidency(), v1alpha1.ResidencyRunning)
+	}
+
+	if _, err := srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "resident"}); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+
+	want := []string{
+		v1alpha1.ResidencyQueued,    // CreateTask, before the actor exists
+		v1alpha1.ResidencySuspended, // CreateTask, once the actor is created suspended
+		v1alpha1.ResidencyRunning,   // ResumeTask
+		v1alpha1.ResidencySuspended, // SuspendTask
+		v1alpha1.ResidencyDeleting,  // DeleteTask, before the actor is deleted
+	}
+	if strings.Join(st.written, ",") != strings.Join(want, ",") {
+		t.Errorf("stored residencies = %v, want %v", st.written, want)
+	}
+}
+
+func TestServer_ActorDeletedOutsideAXIsResidencyDeleted(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	ctx := context.Background()
+
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "orphaned"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+	}}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if err := sub.Client().DeleteActor(ctx, "default", "orphaned"); err != nil {
+		t.Fatalf("DeleteActor: %v", err)
+	}
+
+	got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "orphaned"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.GetStatus().GetResidency() != v1alpha1.ResidencyDeleted || got.GetStatus().GetActorUid() == "" {
+		t.Errorf("residency=%q actorUID=%q, want %q and the deleted actor's UID", got.GetStatus().GetResidency(), got.GetStatus().GetActorUid(), v1alpha1.ResidencyDeleted)
+	}
+}

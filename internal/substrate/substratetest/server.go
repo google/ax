@@ -18,6 +18,7 @@ package substratetest
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -59,6 +60,7 @@ type Server struct {
 	errs             Errors
 	onDeleteActor    func()
 	deleteActorCalls int
+	nextUID          int // numbers the UIDs given to created actors
 }
 
 // NewServer starts a Server with nothing in it. It stops when the test ends.
@@ -244,6 +246,8 @@ func (s *Server) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest
 		return nil, status.Errorf(codes.AlreadyExists, "actor %s already exists", k)
 	}
 	actor := proto.Clone(req.GetActor()).(*ateapipb.Actor)
+	s.nextUID++
+	actor.Metadata.Uid = fmt.Sprintf("actor-uid-%d", s.nextUID)
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
 	s.actors[k] = actor
 	return proto.Clone(actor).(*ateapipb.Actor), nil
@@ -260,7 +264,7 @@ func (s *Server) SuspendActor(_ context.Context, req *ateapipb.SuspendActorReque
 		return nil, err
 	}
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
-	return &ateapipb.SuspendActorResponse{}, nil
+	return &ateapipb.SuspendActorResponse{Actor: proto.Clone(actor).(*ateapipb.Actor)}, nil
 }
 
 func (s *Server) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {

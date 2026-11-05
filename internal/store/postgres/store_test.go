@@ -229,3 +229,32 @@ func TestRestartKeepsTasksAndReleasesLocks(t *testing.T) {
 	}
 	unlock()
 }
+
+// TestUpdateTaskStatusKeepsResidencyAndActorUID checks that the status fields
+// state-change telemetry compares survive a write and a read.
+func TestUpdateTaskStatusKeepsResidencyAndActorUID(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := context.Background()
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "resident"},
+		Status:   &v1alpha1.TaskStatus{Phase: v1alpha1.PhasePending, Residency: v1alpha1.ResidencyQueued},
+	}
+	if err := s.SaveTask(ctx, task); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	if got, err := s.GetTask(ctx, "default", "resident"); err != nil || got.GetStatus().GetResidency() != v1alpha1.ResidencyQueued {
+		t.Fatalf("GetTask after SaveTask = %v, %v; want residency %q", got.GetStatus(), err, v1alpha1.ResidencyQueued)
+	}
+
+	st := &v1alpha1.TaskStatus{Residency: v1alpha1.ResidencySuspended, ActorUid: "uid-1"}
+	if err := s.UpdateTaskStatus(ctx, "default", "resident", st); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
+	}
+	got, err := s.GetTask(ctx, "default", "resident")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.GetStatus().GetResidency() != v1alpha1.ResidencySuspended || got.GetStatus().GetActorUid() != "uid-1" {
+		t.Errorf("stored status = %v, want residency %q and actor UID uid-1", got.GetStatus(), v1alpha1.ResidencySuspended)
+	}
+}

@@ -126,3 +126,42 @@ func TestSetActorStatus_SubstrateErrorReportsUnknown(t *testing.T) {
 		t.Errorf("phase = %q, want %q to be kept", got, v1alpha1.PhaseTerminating)
 	}
 }
+
+func TestSetActorStatus_ResidencyAndActorUID(t *testing.T) {
+	withUID := func(a *ateapipb.Actor, uid string) *ateapipb.Actor {
+		a.Metadata.Uid = uid
+		return a
+	}
+	recorded := func(name, phase, residency, uid string) *v1alpha1.Task {
+		task := storedTask(name, phase)
+		task.Status.Residency, task.Status.ActorUid = residency, uid
+		return task
+	}
+
+	tests := []struct {
+		name          string
+		task          *v1alpha1.Task
+		actor         *ateapipb.Actor
+		err           error
+		wantResidency string
+		wantUID       string
+	}{
+		{"live state wins over the recorded one", recorded("a", "", "suspended", "uid-1"), withUID(testActor("a", ateapipb.ActorState_ACTOR_STATE_RUNNING, ""), "uid-1"), nil, "running", "uid-1"},
+		{"crashed", recorded("a", "", "running", "uid-1"), withUID(testActor("a", ateapipb.ActorState_ACTOR_STATE_CRASHED, ""), "uid-1"), nil, "crashed", "uid-1"},
+		{"reverting", recorded("a", "", "crashed", "uid-1"), withUID(testActor("a", ateapipb.ActorState_ACTOR_STATE_REVERTING, ""), "uid-1"), nil, "reverting", "uid-1"},
+		{"recreated actor has a new UID", recorded("a", "", "crashed", "uid-1"), withUID(testActor("a", ateapipb.ActorState_ACTOR_STATE_SUSPENDED, ""), "uid-2"), nil, "suspended", "uid-2"},
+		{"actor without a UID keeps the recorded one", recorded("a", "", "suspended", "uid-1"), testActor("a", ateapipb.ActorState_ACTOR_STATE_RUNNING, ""), nil, "running", "uid-1"},
+		{"actor that existed is gone", recorded("a", "", "running", "uid-1"), nil, nil, "deleted", "uid-1"},
+		{"actor not created yet", recorded("a", v1alpha1.PhasePending, "queued", ""), nil, nil, "queued", ""},
+		{"substrate unreachable keeps the recorded values", recorded("a", "", "suspended", "uid-1"), nil, errors.New("unavailable"), "suspended", "uid-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setActorStatus(tt.task, tt.actor, tt.err)
+			st := tt.task.GetStatus()
+			if st.GetResidency() != tt.wantResidency || st.GetActorUid() != tt.wantUID {
+				t.Errorf("residency=%q actorUID=%q, want %q %q", st.GetResidency(), st.GetActorUid(), tt.wantResidency, tt.wantUID)
+			}
+		})
+	}
+}

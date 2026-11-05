@@ -312,6 +312,75 @@ func TestRunGetResourceAliases(t *testing.T) {
 	}
 }
 
+// captureStdout runs fn with os.Stdout redirected to a file and returns what
+// fn wrote.
+func captureStdout(t *testing.T, fn func() error) string {
+	t.Helper()
+	output, err := os.CreateTemp(t.TempDir(), "stdout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer output.Close()
+	stdout := os.Stdout
+	os.Stdout = output
+	runErr := fn()
+	os.Stdout = stdout
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	data, err := os.ReadFile(output.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestRunGetAndDescribeShowResidencyAndOutcome(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	if _, err := srv.CreateTask(context.Background(), &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "resident", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	actor, _ := sub.Actor("default", "resident")
+	uid := actor.GetMetadata().GetUid()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := srv.GRPCServer()
+	t.Cleanup(grpcServer.Stop)
+	go func() { _ = grpcServer.Serve(listener) }()
+	addr := listener.Addr().String()
+
+	out := captureStdout(t, func() error { return runGet(addr, "default", []string{"tasks"}) })
+	rows := strings.Split(strings.TrimSpace(out), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("expected a header and one task, got %q", out)
+	}
+	header, row := strings.Fields(rows[0]), strings.Fields(rows[1])
+	want := map[string]string{"NAME": "resident", "PHASE": "Suspended", "RESIDENCY": "suspended", "OUTCOME": "<none>"}
+	for i, col := range header {
+		if w, ok := want[col]; ok && (i >= len(row) || row[i] != w) {
+			t.Errorf("column %s = %q, want %q; output:\n%s", col, row[i], w, out)
+		}
+		delete(want, col)
+	}
+	if len(want) != 0 {
+		t.Errorf("ax get tasks has no columns %v; output:\n%s", want, out)
+	}
+
+	out = captureStdout(t, func() error { return runDescribe(addr, "default", []string{"task", "resident"}) })
+	for _, line := range []string{"Residency:    suspended", "Outcome:      <none>", "Actor UID:    " + uid} {
+		if !strings.Contains(out, line+"\n") {
+			t.Errorf("ax describe task output has no line %q:\n%s", line, out)
+		}
+	}
+}
+
 // newTestReconciler returns a TaskReconciler that runs tasks on sub.
 func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
 	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")

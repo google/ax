@@ -210,6 +210,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if got := task.GetStatus().GetActor(); got != name {
 		t.Fatalf("task actor = %q, want %q", got, name)
 	}
+	assertTaskRow(t, env.mustRunAX(t, ns, "get", "tasks"), name, phaseSuspended, v1alpha1.ResidencySuspended, "<none>")
 
 	// 2. Tasks are immutable: both CreateTask and `ax apply` reject a duplicate.
 	_, err := env.AXClient.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -225,8 +226,13 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 	assertContains(t, "duplicate 'ax apply'", out, "already exists and is immutable")
 
-	// 3. Substrate has a suspended Actor using a per-task ActorTemplate.
+	// 3. Substrate has a suspended Actor using a per-task ActorTemplate, and
+	// the task carries the Actor's UID.
 	actor := env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
+	actorUID := actor.GetMetadata().GetUid()
+	if got := task.GetStatus().GetActorUid(); actorUID == "" || got != actorUID {
+		t.Fatalf("task actorUid = %q, want the Substrate actor's UID %q", got, actorUID)
+	}
 	tmplName := actor.GetActorTemplate().GetName()
 	if !strings.HasPrefix(tmplName, name+"-tmpl-") {
 		t.Fatalf("actor template = %q, want prefix %q", tmplName, name+"-tmpl-")
@@ -260,6 +266,9 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if ips := actor.GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) == 0 || ips[0] != workerIP {
 		t.Fatalf("Substrate WorkerPodIps = %v, want first IP %q", ips, workerIP)
 	}
+	assertTaskRow(t, env.mustRunAX(t, ns, "get", "tasks"), name, phaseRunning, v1alpha1.ResidencyRunning, "<none>")
+	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", name),
+		"Residency:    running\n", "Outcome:      <none>\n", "Actor UID:    "+actorUID+"\n")
 
 	// 5. Deleting the task removes the AX task, the Actor, and its ActorTemplate.
 	assertContains(t, "'ax delete task'", env.mustRunAX(t, ns, "delete", "task", name), "deleted")
@@ -482,6 +491,7 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 	if ip := got.GetStatus().GetWorkerIp(); ip != "" {
 		t.Fatalf("expected empty WorkerIp when suspended, got %q", ip)
 	}
+	assertTaskRow(t, env.mustRunAX(t, ns, "get", "tasks"), task, phaseSuspended, v1alpha1.ResidencySuspended, "<none>")
 	actor := env.getActor(t, ns, task, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 	if len(actor.GetStatus().GetSnapshots()) == 0 && len(actor.GetStatus().ProtoReflect().GetUnknown()) == 0 {
 		t.Fatal("expected non-empty Snapshots on suspended actor")

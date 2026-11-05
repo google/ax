@@ -65,6 +65,22 @@ const (
 	PhaseUnknown = "Unknown"
 )
 
+// Residencies reported in Task status. Each one but ResidencyQueued and
+// ResidencyDeleted names a state of the task's actor on Agent Substrate.
+const (
+	// ResidencyQueued marks a task whose actor has not been created yet.
+	ResidencyQueued     = "queued"
+	ResidencyResuming   = "resuming"
+	ResidencyRunning    = "running"
+	ResidencySuspending = "suspending"
+	ResidencySuspended  = "suspended"
+	ResidencyReverting  = "reverting"
+	ResidencyCrashed    = "crashed"
+	ResidencyDeleting   = "deleting"
+	// ResidencyDeleted marks a task whose actor existed and is gone.
+	ResidencyDeleted = "deleted"
+)
+
 // Condition types reported on Task status.
 const (
 	// ConditionReady reports whether the task as a whole is ready to do work:

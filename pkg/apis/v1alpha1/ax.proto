@@ -115,6 +115,21 @@ message TaskStatus {
   // json_name keeps the established `workerIP` spelling in YAML and JSON.
   string worker_ip = 4 [json_name = "workerIP"];
   repeated Condition conditions = 7;
+  // residency is where the task's actor is in its lifecycle on Agent
+  // Substrate: queued (no actor yet), resuming, running, suspending,
+  // suspended, reverting, crashed, deleting, or deleted. Unlike phase, it
+  // tells a crashed or reverting actor apart from a failed task. Reads report
+  // the actor's current state; the stored value is the one Substrate last
+  // returned to ax-server.
+  string residency = 8;
+  // actor_uid is the UID Agent Substrate assigned to the task's actor, the
+  // ate.actor.uid that Substrate's telemetry carries. It changes when the
+  // actor is recreated.
+  string actor_uid = 9;
+  // outcome is how the task's command ended: succeeded, failed, or
+  // cancelled. It is empty while the command has not ended. AX does not set
+  // it yet; command exit detection (#346) will.
+  string outcome = 10;
 }
 
 message Condition {

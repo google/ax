@@ -17,6 +17,8 @@ The unit is deliberately small. An agent is not one process that runs to complet
 | `WorkspaceReady` | The workspace has finished setting up. Stays True afterwards. |
 | `Ready` | The task is running and `WorkspaceReady` is True. This is the one to wait on. |
 
+`status.residency` says where the task's actor is on Agent Substrate: `queued` (no actor yet), `resuming`, `running`, `suspending`, `suspended`, `reverting`, `crashed`, `deleting`, or `deleted`. Unlike the phase, it tells a crashed or reverting actor apart from a task AX failed to provision. `status.actorUid` is the actor's Substrate UID, the `ate.actor.uid` that Substrate's logs and telemetry carry. `status.outcome` will say how the command ended (`succeeded`, `failed`, or `cancelled`); AX does not detect command exit yet ([#346](https://github.com/google/ax/issues/346)), so it is empty for now. `ax get tasks` shows the residency and outcome; `ax describe task` also shows the actor UID.
+
 Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `Suspended`; resuming sets it back. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
 
 ## Workspace

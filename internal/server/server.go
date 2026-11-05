@@ -198,6 +198,9 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	// The task is Pending until its actor exists.
 	task.Status.Phase = v1alpha1.PhasePending
+	if task.Status.Residency == "" {
+		task.Status.Residency = v1alpha1.ResidencyQueued
+	}
 	if err := s.saveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
@@ -247,6 +250,7 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.Phase = v1alpha1.PhaseTerminating
+	task.Status.Residency = v1alpha1.ResidencyDeleting
 	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
@@ -454,10 +458,10 @@ func (s *Server) applyActor(ctx context.Context, task *v1alpha1.Task) {
 }
 
 // setActorStatus overlays the actor's state on the task's status: actor,
-// workerIP, and, unless the phase is one of AX's own, the phase and Ready
-// condition. actor is nil when the task has no actor; err is set when the actor
-// could not be looked up, in which case the task is reported with phase
-// Unknown.
+// actorUID, residency, workerIP, and, unless the phase is one of AX's own, the
+// phase and Ready condition. actor is nil when the task has no actor; err is
+// set when the actor could not be looked up, in which case the task is
+// reported with phase Unknown and its last recorded residency.
 func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -474,6 +478,11 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			setReady(task, "Unknown", v1alpha1.ReasonSubstrateUnavailable, err.Error())
 		}
 	case actor == nil:
+		// An actor UID means the actor existed; without one the task is still
+		// queued.
+		if st.ActorUid != "" {
+			st.Residency = v1alpha1.ResidencyDeleted
+		}
 		// A task that finished provisioning always has an actor, so a missing one
 		// was removed outside AX.
 		if !v1alpha1.IsAXPhase(st.Phase) {
@@ -482,6 +491,10 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		}
 	default:
 		st.Actor = actor.GetMetadata().GetName()
+		if uid := actor.GetMetadata().GetUid(); uid != "" {
+			st.ActorUid = uid
+		}
+		st.Residency = substrate.Residency(actor)
 		st.WorkerIp = substrate.WorkerIP(actor)
 		if v1alpha1.IsAXPhase(st.Phase) {
 			return
@@ -563,7 +576,9 @@ func setReady(task *v1alpha1.Task, condStatus, reason, message string) {
 
 // storedStatus returns the part of a task's status that AX owns and stores. The
 // actor, its worker, and the phase and Ready condition that follow from the
-// actor's state are dropped. st is not modified.
+// actor's state are dropped. The actor's UID and residency are kept as
+// Substrate last returned them, so that a change to either is a stored change.
+// st is not modified.
 func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	out := &v1alpha1.TaskStatus{}
 	if st != nil {
