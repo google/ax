@@ -70,7 +70,25 @@ func main() {
 		printUsage()
 		return
 	case "ctx", "context":
-		if err := runContext(kubeContext); err != nil {
+		if err := runContextCommand(kubeContext, cleanArgs, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "local":
+		if err := runLocal(axNamespace, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "install":
+		if err := runInstall(kubeContext, axNamespace, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "uninstall":
+		if err := runUninstall(kubeContext, axNamespace, cleanArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -225,7 +243,10 @@ Available Commands:
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace
   delete model <name>     Delete a model
-  ctx, context            Show active Kubernetes context and AX connection
+  local <up|stop|status|delete> Manage local Kubernetes + Substrate + AX environment
+  install                 Install or upgrade AX on a Substrate cluster
+  uninstall               Uninstall AX from a Substrate cluster
+  ctx, context [name]     List or switch active Kubernetes context
   tunnel <list|stop>      Manage background tunnels to Kubernetes clusters
   version                 Print AX version
 
@@ -901,28 +922,6 @@ func formatAge(d time.Duration) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
-}
-
-func runContext(kubeContext string) error {
-	ctxName, err := tunnel.CurrentContext(kubeContext)
-	if err != nil || ctxName == "" {
-		fmt.Println("No active Kubernetes context detected.")
-		fmt.Println("Fallback server: http://localhost:8080 (or set $AX_SERVER / --server)")
-		return nil
-	}
-
-	fmt.Printf("Active Kubernetes Context: %s\n", ctxName)
-	if t, err := tunnel.GetTunnel(ctxName); err == nil && t != nil {
-		status := "Healthy"
-		if !tunnel.IsTunnelHealthy(t.Port) {
-			status = "Stale / Not responding"
-		}
-		fmt.Printf("AX Tunnel:                 http://127.0.0.1:%d -> %s/svc/%s:8080 (PID: %d, %s)\n",
-			t.Port, t.Namespace, t.Service, t.PID, status)
-	} else {
-		fmt.Println("AX Tunnel:                 No background tunnel running (will auto-connect on next command)")
-	}
-	return nil
 }
 
 func runTunnel(args []string) error {

@@ -17,7 +17,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 | `WorkspaceReady` | The workspace has finished setting up. Stays True afterwards. |
 | `Ready` | The task is running and `WorkspaceReady` is True. This is the one to wait on. |
 
-Two transitions are worth knowing. Suspending a task sets `Ready` to False with reason `Suspended`; resuming sets it back. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
+New tasks created with `ax apply` start in the `Suspended` phase (`Ready` is False with reason `Suspended`). Running `ax resume task <name>` starts or restores the sandbox and sets `Ready` to True once `WorkspaceReady` is True; running `ax suspend task <name>` checkpoints the sandbox back to `Suspended`. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
 
 ## Workspace
 

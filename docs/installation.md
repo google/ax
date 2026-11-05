@@ -1,5 +1,8 @@
 # Version-pinned installation
 
+> [!TIP]
+> For automated setup, use `ax local up --from-source .` to stand up a self-contained local Kubernetes 1.36+ cluster with Agent Substrate `v1.0.0-rc.1` and AX, or `ax install` to register Substrate caller permissions, resolve `@sha256` digests, and deploy AX onto an existing cluster. The manual steps below document the underlying version-pinned deployment contract for auditing and custom environments.
+
 This source-install recipe uses the development baseline in the
 [version table](#version-compatibility), not the v0.3.x deployment
 layout. Build the CLI, server, and runner from the same checkout. The pins come
@@ -16,13 +19,14 @@ These are the Substrate dependencies recorded in each AX ref's `go.mod`.
 They identify source pins; they do not certify an end-to-end deployment or
 compatibility with an entire Substrate release series. The historical
 pseudo-versions below refer to commits; the development baseline uses the
-published Substrate v0.6.0 tag.
+published Substrate `v1.0.0-rc.1` tag.
 
 | AX ref | Substrate module version | Substrate checkout |
 |---|---|---|
 | [v0.3.0](https://github.com/google/ax/blob/v0.3.0/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
 | [v0.3.1](https://github.com/google/ax/blob/v0.3.1/go.mod) | `v0.0.0-20260911232748-672533541dbf` | [`672533541dbf`](https://github.com/agent-substrate/substrate/commit/672533541dbfcd29084e4de2475267088bda3651) |
-| [Development baseline `a496fc1ff1cf`](https://github.com/google/ax/blob/a496fc1ff1cf9bea4c34924348e4119172cfea5b/go.mod) | `v0.6.0` | [`d3f2363590a1`](https://github.com/agent-substrate/substrate/commit/d3f2363590a11b2f50489971985ba033b4c9eff7) |
+| [`a496fc1ff1cf`](https://github.com/google/ax/blob/a496fc1ff1cf9bea4c34924348e4119172cfea5b/go.mod) | `v0.6.0` | [`d3f2363590a1`](https://github.com/agent-substrate/substrate/commit/d3f2363590a11b2f50489971985ba033b4c9eff7) |
+| [Development baseline `1dd2e923a351`](https://github.com/google/ax/blob/1dd2e923a351ccb369266f8145c8b218cce96c76/go.mod) | `v1.0.0-rc.1` | [`f86fde9dfb54`](https://github.com/agent-substrate/substrate/commit/f86fde9dfb5424c8d16f613de80469bdbef06541) |
 
 The development baseline uses ax-server and PostgreSQL. v0.3.0 and v0.3.1 use
 Redis and a separate ax-controller; use their own checkouts' manifests and build
@@ -54,8 +58,8 @@ remain available. These full commits match the development row in the version ta
 
 ```bash
 set -euo pipefail
-AX_REF=a496fc1ff1cf9bea4c34924348e4119172cfea5b
-SUBSTRATE_REF=d3f2363590a11b2f50489971985ba033b4c9eff7
+AX_REF=1dd2e923a351ccb369266f8145c8b218cce96c76
+SUBSTRATE_REF=f86fde9dfb5424c8d16f613de80469bdbef06541
 git clone https://github.com/google/ax.git ax-install
 cd ax-install
 git checkout --detach "$AX_REF"
@@ -74,24 +78,27 @@ module version matches the table. The development module path is
 
 ### Substrate setup
 
-- A Linux/amd64 Kubernetes cluster configured for the pinned Substrate version.
-  Enable ClusterTrustBundle, ClusterTrustBundleProjection, and
-  PodCertificateRequest, including the `certificates.k8s.io/v1beta1` API used
-  by the pinned manifests. Select its kube context before proceeding.
+- A Linux/amd64 **Kubernetes 1.36+** cluster configured for the pinned Substrate version
+  (with a CNI that enforces `NetworkPolicy`, such as GKE Dataplane V2 or `kind >= v0.32.0`'s
+  `kindnetd`, and `net.ipv4.conf.all.proxy_arp=1` on worker nodes). Enable
+  `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and `PodCertificateRequest`
+  (Kubernetes 1.36+ is required for `PodCertificateRequestSpec.stubPKCS10Request` used by
+  `ax ssh` router mTLS), including the `certificates.k8s.io/v1beta1` API used by the
+  pinned manifests. Select its kube context before proceeding.
 - Worker kernels with OverlayFS `lowerdir+` support through `fsconfig`, as used
-  by the pinned [Substrate image cache](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/internal/imagecache/bundle_linux.go).
+  by the pinned [Substrate image cache](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/internal/imagecache/bundle_linux.go).
   This feature is available in
   [upstream Linux 6.8 and newer](https://docs.kernel.org/filesystems/overlayfs.html#multiple-lower-layers);
   vendor kernels may backport it. For kind, check the kernel of the Docker host
   or provider VM: changing the kind node image does not change that kernel.
 
-Install Substrate from `../substrate-ax`, following [that revision's README](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/README.md)
-and [operator installation guide](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/operator-install.md), then return to the AX checkout.
+Install Substrate from `../substrate-ax`, following [that revision's README](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/README.md)
+and [operator installation guide](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/docs/guides/operator-install.md), then return to the AX checkout.
 Keep its source ref fixed when building or deploying Substrate components. AX's
 `env` module is also pinned by `go.mod`; no separate checkout is needed.
 
 Configure Substrate's cluster-wide `--snapshot-location` and access to its
-[snapshot storage](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/operator-install.md#snapshot-storage).
+[snapshot storage](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/docs/guides/operator-install.md#snapshot-storage).
 By default, AX leaves the template-level snapshot storage location (`snapshotsBucket`)
 empty so that Substrate uses its cluster-wide snapshot location. Specifying a custom
 `snapshotsBucket` on an ActorTemplate can only be used when the Substrate
@@ -99,14 +106,17 @@ empty so that Substrate uses its cluster-wide snapshot location. Specifying a cu
 gate is not enabled, Substrate strictly rejects template creation with
 `actor_template.snapshot_config.storage_location: Forbidden`.
 
-[Authorize](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/authorization.md)
-`system:serviceaccount:ax-system:ax-server` with global permission to create
-atespaces and permission to manage their actors and templates. Also allow
-`spiffe://cluster.local/ns/ax-system/sa/ax-server`
-in the router's ingress policy (`--ingress-allowed-spiffe-ids` in `ate-setup`).
-Adjust the trust domain if your cluster uses a different one.
+[Authorize](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/docs/guides/authorization.md)
+`system:serviceaccount:ax-system:ax-server` (`--authz-bootstrap-owners` on `ate-api-server`)
+with global permission to create atespaces and permission to manage their actors and templates.
+Also allow `spiffe://cluster.local/ns/ax-system/sa/ax-server`
+in the router's ingress policy (`--ingress-allowed-spiffe-ids` on `atenet-router`), and if
+`k8s-credential-provider` is deployed, allow `ax-system` in
+`ate-system/k8s-credential-provider-namespace-policy` with
+`secretSelector.matchLabels: {"ax.io/credential": "true"}`. Adjust the trust domain if your
+cluster uses a different one.
 
-Create a WorkerPool using the pinned [WorkerPool guide](https://github.com/agent-substrate/substrate/blob/d3f2363590a11b2f50489971985ba033b4c9eff7/docs/api-guide.md#1-workerpool-the-physical-capacity),
+Create a WorkerPool using the pinned [WorkerPool guide](https://github.com/agent-substrate/substrate/blob/f86fde9dfb5424c8d16f613de80469bdbef06541/docs/reference/api-guide.md#1-workerpool-the-physical-capacity),
 with `spec.sandboxClasses: [{name: gvisor}]`, and wait for its worker pods to be
 ready. Installing the Substrate control plane alone does not create this pool.
 This recipe uses gVisor, but AX sets no `workerSelector`: it does not restrict
@@ -206,6 +216,7 @@ retaining the volume would break authentication.
 ```bash
 kubectl --context "$AX_CONTEXT" create namespace ax-system --dry-run=client -o yaml \
   | kubectl --context "$AX_CONTEXT" apply -f -
+kubectl --context "$AX_CONTEXT" label namespace ax-system ate.dev/api-access=true --overwrite
 kubectl --context "$AX_CONTEXT" -n ax-system get secret ax-postgres >/dev/null 2>&1 \
   || kubectl --context "$AX_CONTEXT" -n ax-system create secret generic ax-postgres \
     --from-literal=password="$(openssl rand -hex 24)"

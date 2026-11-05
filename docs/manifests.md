@@ -15,7 +15,7 @@ metadata:
   name: task123
   atespace: default
 spec:
-  image: "ghcr.io/my-org/my-agent-image"
+  image: "ghcr.io/my-org/my-agent-image@sha256:..."   # optional; omit to use ax-server's digest-pinned default
   command: ["python", "agent.py"]
   env:
     - name: ENVIRONMENT
@@ -32,6 +32,16 @@ spec:
 
   debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
+
+### Task lifecycle (initial `Suspended` phase)
+
+`ax apply` provisions a new task's `ActorTemplate` and `Actor` in the `Suspended` phase (`Ready=False`, `Reason=Suspended`) without running `spec.command` immediately. Start execution by resuming the task:
+
+```bash
+ax resume task task123
+```
+
+`ax resume` waits for the sandbox and workspace to report `Ready=True`, which is also required before connecting with `ax ssh`. Run `ax suspend task task123` to checkpoint the sandbox and pause it again.
 
 ### Image references
 

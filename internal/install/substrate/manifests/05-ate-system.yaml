@@ -1,0 +1,2106 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ate-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    apps: ate-client
+  name: ate-client
+  namespace: ate-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    apps: ate-controller
+  name: ate-controller
+  namespace: ate-system
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  name: ate-idp-server
+  namespace: ate-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atelet
+  namespace: ate-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: atenet-router
+  name: atenet-router
+  namespace: ate-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: otel-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atelet-endpointslices
+  namespace: ate-system
+rules:
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atenet-router-endpointslices
+  namespace: ate-system
+rules:
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ate-api-server
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools
+  - csidriverconfigs
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ate-prometheus
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: atelet
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ate.dev
+  resources:
+  - csidriverconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ate.dev
+  resources:
+  - sandboxconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - clustertrustbundles
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ate-controller
+  namespace: ate-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ate-controller
+subjects:
+- kind: ServiceAccount
+  name: ate-controller
+  namespace: ate-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ate-prometheus
+  namespace: ate-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ate-prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: otel-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atelet-endpointslices
+  namespace: ate-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atelet-endpointslices
+subjects:
+- kind: ServiceAccount
+  name: atelet
+  namespace: ate-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atenet-router-endpointslices
+  namespace: ate-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atenet-router-endpointslices
+subjects:
+- kind: ServiceAccount
+  name: atenet-router
+  namespace: ate-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ate-prometheus
+  namespace: otel-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ate-prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: otel-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ate-api-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ate-api-server
+subjects:
+- kind: ServiceAccount
+  name: ate-api-server
+  namespace: ate-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ate-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ate-controller
+subjects:
+- kind: ServiceAccount
+  name: ate-controller
+  namespace: ate-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: atelet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: atelet
+subjects:
+- kind: ServiceAccount
+  name: atelet
+  namespace: ate-system
+---
+apiVersion: v1
+data:
+  ATE_WORKER_OTEL_LOGS_EXPORTER: otlp,console
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://opentelemetry-collector.otel-system.svc:4317
+  OTEL_LOGS_EXPORTER: otlp,console
+  OTEL_METRIC_EXPORT_INTERVAL: "10000"
+  OTEL_METRIC_EXPORT_TIMEOUT: "10000"
+kind: ConfigMap
+metadata:
+  name: ate-otel-config
+  namespace: ate-system
+---
+apiVersion: v1
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address:
+          # Loopback only. The admin API is unauthenticated and includes
+          # /quitquitquit, /drain_listeners, /runtime_modify and /config_dump,
+          # so it must not be reachable on the pod IP. In-pod callers (the
+          # router's drain sequence and dataplane health check) dial localhost,
+          # and `kubectl port-forward` dials loopback inside the pod's network
+          # namespace, so both keep working. Prometheus scrapes the
+          # envoy_metrics listener below instead.
+          address: 127.0.0.1
+          port_value: 9901
+
+    node:
+      id: substrate-envoy-node
+      cluster: substrate-router-cluster
+
+    # Required for main_internal (see xds.go's buildMainInternalListener):
+    # Envoy rejects any Listener.internal_listener without this registered,
+    # with "InternalListener bootstrap extension is mandatory".
+    bootstrap_extensions:
+    - name: envoy.bootstrap.internal_listener
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener
+
+    dynamic_resources:
+      lds_config:
+        resource_api_version: V3
+        ads: {}
+      cds_config:
+        resource_api_version: V3
+        ads: {}
+      ads_config:
+        api_type: GRPC
+        transport_api_version: V3
+        grpc_services:
+        - envoy_grpc:
+            cluster_name: xds_cluster
+
+    static_resources:
+      # envoy_metrics is the only pod-IP-reachable view of the admin API: it
+      # proxies GET /stats/prometheus (the PodMonitoring in
+      # atenet-router-monitoring.yaml) and GET /ready (the envoy container's
+      # readiness probe) to the loopback-only admin listener and 404s
+      # everything else. The stat prefixes contain "admin" so
+      # envoyDrainer.activeConnections excludes probes and scrapes from the
+      # downstream connection count it waits on to reach zero.
+      listeners:
+      - name: envoy_metrics
+        stat_prefix: admin_metrics
+        address:
+          socket_address:
+            address: "::"
+            ipv4_compat: true
+            port_value: 9902
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: admin_metrics
+              route_config:
+                name: envoy_metrics
+                virtual_hosts:
+                - name: envoy_metrics
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      path: /stats/prometheus
+                      headers:
+                      - name: ":method"
+                        string_match: { exact: GET }
+                    route: { cluster: envoy_admin }
+                  - match:
+                      path: /ready
+                      headers:
+                      - name: ":method"
+                        string_match: { exact: GET }
+                    route: { cluster: envoy_admin }
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+      - name: envoy_admin
+        connect_timeout: 0.25s
+        type: STATIC
+        load_assignment:
+          cluster_name: envoy_admin
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: 127.0.0.1
+                    port_value: 9901
+      - name: xds_cluster
+        connect_timeout: 0.25s
+        type: STRICT_DNS
+        lb_policy: ROUND_ROBIN
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options: {}
+        load_assignment:
+          cluster_name: xds_cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: 127.0.0.1
+                    port_value: 18000
+kind: ConfigMap
+metadata:
+  name: atenet-router-envoy-config
+  namespace: ate-system
+---
+apiVersion: v1
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch:
+
+      # The count connector below sends deltas, and the Prometheus exporter
+      # reads the new start timestamp of each batch as a reset. Without
+      # deltatocumulative the counts do not accumulate and each scrape shows
+      # only the last batch.
+      #
+      # max_streams bounds the memory. A stream is for each process and
+      # count, and not for each service, because serverboot gives each
+      # process its own service.instance.id. Above the limit new streams drop
+      # with no log line and the totals become too low.
+      deltatocumulative:
+        max_streams: 10000
+
+    # The volume of telemetry for each service, the same two counts that
+    # benchmarking/telemetry/meter.yaml gives on GKE. On GKE the managed
+    # collector cannot hold a connector, thus a measurement there needs a
+    # second collector in front of it. Here the collector is ours, thus the
+    # counts belong in it and kind needs no meter.
+    connectors:
+      count:
+        spans:
+          substrate_spans:
+            description: Spans received, by emitting service.
+            attributes:
+              # The connector reads each key from the attributes of the item,
+              # then the scope, then the resource, thus service.name resolves
+              # from the resource with no transform in front of it. The
+              # Prometheus exporter writes the key as service_name.
+              #
+              # Without a default value the connector removes each item that
+              # has no service.name from the count. The item does not show as
+              # unknown, and the totals are too low with no error message.
+              - key: service.name
+                default_value: unknown
+        datapoints:
+          substrate_datapoints:
+            description: Metric datapoints received, by emitting service.
+            attributes:
+              - key: service.name
+                default_value: unknown
+
+        # The actor lifecycle events. The key is ate.actor.state and not the
+        # event name: the connector reads the attributes of the item, and the
+        # event name is a top level field of the record, which would need a
+        # transform in front of this. The state is bounded and is the more
+        # useful of the two anyway.
+        logs:
+          substrate_actor_state_changes:
+            description: Actor state change events received, by state.
+            attributes:
+              - key: service.name
+                default_value: unknown
+              # No default: drops workload logs, which have no such key.
+              - key: ate.actor.state
+
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger.otel-system.svc.cluster.local:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+      debug:
+        verbosity: detailed
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [otlp/jaeger, debug]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus, debug]
+
+        # Every ate event, plus any workload that sends OTLP logs. debug is the
+        # only exporter: kind has no log store, and the e2e read-back goes
+        # through the count connector below. Never put a sampler or a filter
+        # here. A consumer takes the last event for an actor, thus a dropped
+        # record reports a stale state with no sign that anything is missing.
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+
+        # The count pipelines read the same receiver as the pipelines above,
+        # and they only count. The connector declares MutatesData false, thus
+        # it changes nothing that reaches Jaeger or Prometheus.
+        traces/count:
+          receivers: [otlp]
+          exporters: [count]
+        metrics/count:
+          receivers: [otlp]
+          exporters: [count]
+        logs/count:
+          receivers: [otlp]
+          exporters: [count]
+
+        # The counts that the connector makes, out to the Prometheus exporter.
+        metrics/count-out:
+          receivers: [count]
+          processors: [deltatocumulative]
+          exporters: [prometheus]
+
+      # The otelcol_* counters of the collector itself. A service that reports
+      # zero volume gives no data by itself: otelcol_receiver_accepted_* shows
+      # the difference between a service that sent nothing and data that never
+      # arrived. The default reader binds to localhost, thus give the address
+      # of each interface so the Prometheus pod can reach it.
+      #
+      # The level stays at the default. It already gives each counter above,
+      # and detailed adds histograms only, which no query here reads.
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+kind: ConfigMap
+metadata:
+  name: opentelemetry-collector-config
+  namespace: otel-system
+---
+apiVersion: v1
+data:
+  prometheus.yml: |
+    # The kubernetes-pods scrape job below is adapted from the
+    # prometheus-community Helm chart's job of the same name:
+    # https://github.com/prometheus-community/helm-charts/blob/main/charts/prometheus/values.yaml
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - ate-system
+                - otel-system
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port, __meta_kubernetes_pod_ip]
+            action: replace
+            regex: (\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})
+            replacement: '[$2]:$1'
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port, __meta_kubernetes_pod_ip]
+            action: replace
+            regex: (\d+);((([0-9]+?)(\.|$)){4})
+            replacement: $2:$1
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: drop
+            regex: Pending|Succeeded|Failed
+
+      # The two read ports of the collector: 8889 carries the substrate_*
+      # counts of the count connector, and 8888 the otelcol_* counters of the
+      # collector itself. The two go together: when a service reports zero
+      # volume, otelcol_receiver_accepted_* shows the difference between a
+      # service that sent nothing and data that never arrived.
+      #
+      # This job, and not the annotation job above, reads the collector. The
+      # annotation can name one port only, thus the collector pod carries no
+      # prometheus.io/scrape annotation. Read the two ports here instead.
+      #
+      # 8889 re-exports each metric that the pipelines push, and the pods of
+      # ate-api-server, atelet, and atenet-router already carry the annotation
+      # on 9090. Keep the substrate_* and otelcol_* names only, or every
+      # series of those services arrives twice and sum() gives double.
+      - job_name: otel-collector-self
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - otel-system
+        relabel_configs:
+          - source_labels:
+              - __meta_kubernetes_pod_label_app
+              - __meta_kubernetes_pod_container_port_number
+            action: keep
+            regex: opentelemetry-collector;(8888|8889)
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            action: keep
+            regex: (substrate|otelcol)_.*
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: otel-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: ate-system
+spec:
+  clusterIP: None
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: grpc
+    port: 443
+    protocol: TCP
+    targetPort: 443
+  - name: exchange
+    port: 8445
+    protocol: TCP
+    targetPort: 8445
+  selector:
+    app: ate-api-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ate-controller
+  name: ate-controller
+  namespace: ate-system
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: metrics
+  selector:
+    app: ate-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atenet-router
+  namespace: ate-system
+spec:
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 8443
+  - name: connect-tls
+    port: 8444
+    protocol: TCP
+    targetPort: 8444
+  selector:
+    app: atenet-router
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp
+  namespace: ate-system
+spec:
+  ports:
+  - appProtocol: https
+    name: https
+    port: 443
+    targetPort: https
+  selector:
+    app: ate-idp-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: ate-system
+spec:
+  ports:
+  - name: api
+    port: 9000
+    targetPort: 9000
+  - name: console
+    port: 9001
+    targetPort: 9001
+  selector:
+    app: rustfs
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: otel-system
+spec:
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+  - name: query
+    port: 16686
+    targetPort: 16686
+  selector:
+    app: jaeger
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opentelemetry-collector
+  namespace: otel-system
+spec:
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp-http
+    port: 4318
+    targetPort: 4318
+  - name: prom
+    port: 8889
+    targetPort: 8889
+  - name: self
+    port: 8888
+    targetPort: 8888
+  selector:
+    app: opentelemetry-collector
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: prometheus
+  name: prometheus
+  namespace: otel-system
+spec:
+  ports:
+  - name: web
+    port: 9090
+    targetPort: web
+  selector:
+    app: prometheus
+  type: ClusterIP
+---
+apiVersion: scheduling.k8s.io/v1
+description: Node-local ate components that every actor activation depends on.
+globalDefault: false
+kind: PriorityClass
+metadata:
+  name: ate-node-critical
+value: 1000000000
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustfs-data
+  namespace: ate-system
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ate-api-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: ate-api-server
+    spec:
+      containers:
+      - args:
+        - --grpc-server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+        - --config-file=/run/apiconfig.ate.dev/apiconfig.textproto
+        - --authentication-config=/etc/ateapi/authentication/authentication.yaml
+        - --postgres-read-write-connection-string=@env
+        - --postgres-owner-connection-string=@env
+        - --postgres-read-write-role=@env
+        - --postgres-owner-role=@env
+        - --postgres-schema=@env
+        - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
+        - --actor-jwt-issuer=@env
+        - --actor-id-ca-pool=/run/actor-id-ca-pool/pool.json
+        - --atelet-client-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --pod-identity-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+        - --default-egress-gateway-address=atenet-egress.ate-system.svc:443
+        - --drain-delay=13s
+        - --drain-timeout=15s
+        - --objectstore-plugin-socket=/run/objectstore-plugin/control.sock
+        - --snapshot-location=@env
+        env:
+        - name: OTEL_TRACES_SAMPLER
+          value: parentbased_always_on
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        - configMapRef:
+            name: ate-api-server-envvars
+            optional: true
+        - secretRef:
+            name: ate-api-server-secret-envvars
+            optional: true
+        image: ghcr.io/agent-substrate/substrate/ateapi:v1.0.0-rc.1@sha256:53afaaabe07c6caa71036dc880b514da9ca08973f4ba03586ccb4dbfe28931e3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: ate-api-server
+        ports:
+        - containerPort: 443
+        - containerPort: 9090
+          name: prometheus
+        - containerPort: 9091
+          name: health
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - ALL
+          runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 24
+          httpGet:
+            path: /healthz
+            port: health
+          periodSeconds: 5
+        volumeMounts:
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/postgres.podcert.ate.dev
+          name: postgres
+          readOnly: true
+        - mountPath: /run/actor-id-jwt-pool
+          name: actor-id-jwt-pool
+        - mountPath: /run/actor-id-ca-pool
+          name: actor-id-ca-pool
+          readOnly: true
+        - mountPath: /run/apiconfig.ate.dev
+          name: api-config
+          readOnly: true
+        - mountPath: /etc/ateapi/authentication
+          name: authentication-config
+          readOnly: true
+        - mountPath: /run/postgres-server-ca
+          name: postgres-server-ca
+          readOnly: true
+      initContainers:
+      - args:
+        - control
+        - --socket=/run/objectstore-plugin/control.sock
+        - --exchange-listen=:8445
+        - --actor-jwt-issuer=$(ATE_API_ACTOR_JWT_ISSUER)
+        - --transfer-service-account=$(ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT)
+        env:
+        - name: ATE_STORAGE_BACKEND
+          value: s3
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs.ate-system.svc:9000
+        - name: AWS_S3_USE_PATH_STYLE
+          value: "true"
+        - name: AWS_ACCESS_KEY_ID
+          value: rustfsadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: rustfsadmin
+        - name: ATE_API_ACTOR_JWT_ISSUER
+          valueFrom:
+            configMapKeyRef:
+              key: ATE_API_ACTOR_JWT_ISSUER
+              name: ate-api-server-envvars
+        - name: ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT
+          valueFrom:
+            configMapKeyRef:
+              key: ATE_API_SNAPSHOT_TRANSFER_SERVICE_ACCOUNT
+              name: ate-api-server-envvars
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/agent-substrate/substrate/objectstore-plugin:v1.0.0-rc.1@sha256:d621b8cb79a75b908928d33a0646abb8eb5ab96504d1fa25108c9be5bf59c3cc
+        name: objectstore-plugin
+        ports:
+        - containerPort: 8445
+          name: exchange
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        startupProbe:
+          exec:
+            command:
+            - /ko-app/objectstore-plugin
+            - healthcheck
+            - --socket=/run/objectstore-plugin/control.sock
+          failureThreshold: 30
+          periodSeconds: 2
+        volumeMounts:
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+          readOnly: true
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+          readOnly: true
+        - mountPath: /run/actor-id-jwt-jwks
+          name: actor-id-jwt-jwks
+          readOnly: true
+      serviceAccountName: ate-api-server
+      terminationGracePeriodSeconds: 40
+      volumes:
+      - emptyDir: {}
+        name: objectstore-plugin
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: servicedns.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: postgres
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: substrate_owner_user.pem
+              keyType: ECDSAP256
+              signerName: postgres.podcert.ate.dev/identity
+              userAnnotations:
+                postgres.podcert.ate.dev/username: substrate_owner_user
+          - podCertificate:
+              credentialBundlePath: substrate_readwrite_user.pem
+              keyType: ECDSAP256
+              signerName: postgres.podcert.ate.dev/identity
+              userAnnotations:
+                postgres.podcert.ate.dev/username: substrate_readwrite_user
+      - name: actor-id-jwt-pool
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: pool
+                path: pool.json
+              name: actor-id-jwt-pool
+      - name: actor-id-jwt-jwks
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: jwks
+                path: jwks.json
+              name: actor-id-jwt-pool
+      - name: actor-id-ca-pool
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: pool
+                path: pool.json
+              name: actor-id-ca-pool
+      - configMap:
+          name: ate-api-config
+        name: api-config
+      - configMap:
+          name: ate-api-authentication
+        name: authentication-config
+      - name: postgres-server-ca
+        secret:
+          optional: true
+          secretName: postgres-server-ca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-controller
+  namespace: ate-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ate-controller
+  template:
+    metadata:
+      labels:
+        app: ate-controller
+    spec:
+      containers:
+      - args:
+        - --ateapi-ca-file=/run/servicedns-ca/trust-bundle.pem
+        - --ateapi-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --dns-egress-policy=enforce-in-atunnel
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/agent-substrate/substrate/atecontroller:v1.0.0-rc.1@sha256:b280e6ee6c9e4ebf01a18a271549c3294da3ced85f49b2deb88de4a8b035ea24
+        name: ate-controller
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 8081
+          name: healthz
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/servicedns-ca
+          name: servicedns-ca
+      serviceAccountName: ate-controller
+      volumes:
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: servicedns-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-idp-server
+  namespace: ate-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ate-idp-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ate-idp-server
+    spec:
+      containers:
+      - args:
+        - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
+        - --server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+        - --issuer=https://idp.ate-system.svc
+        image: ghcr.io/agent-substrate/substrate/ate-idp-server:v1.0.0-rc.1@sha256:e12ba06ad37b792daed6fdc0517b176174fb8814429ac8662cc02848f47732d1
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          periodSeconds: 10
+        name: ate-idp-server
+        ports:
+        - containerPort: 8443
+          name: https
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+        - mountPath: /run/actor-id-jwt-pool
+          name: actor-id-jwt-pool
+      serviceAccountName: ate-idp-server
+      volumes:
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: servicedns.podcert.ate.dev/identity
+      - name: actor-id-jwt-pool
+        projected:
+          sources:
+          - secret:
+              items:
+              - key: pool
+                path: pool.json
+              name: actor-id-jwt-pool
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: atenet-router
+  name: atenet-router
+  namespace: ate-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: atenet-router
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: atenet-router
+    spec:
+      containers:
+      - args:
+        - router
+        - --mode=ingress
+        - --namespace=ate-system
+        - --port-xds=18000
+        - --port-extproc=50051
+        - --extproc-address=127.0.0.1
+        - --status-port=4040
+        - --port-https=8443
+        - --envoy-cert-path=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+        - --port-connect-tls=8444
+        - --ingress-client-ca-file=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+        - --ateapi-address=k8s:///api.ate-system.svc:443
+        - --ateapi-ca-file=/run/servicedns-ca/trust-bundle.pem
+        - --ateapi-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --drain-delay=13s
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/agent-substrate/substrate/atenet:v1.0.0-rc.1@sha256:e2633da825fe45bcf32c23f96e7d434370a0fd6bdeb9eb50cd3f7ee3d8c311b8
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: atenet-router
+        ports:
+        - containerPort: 50051
+          name: extproc
+        - containerPort: 9090
+          name: metrics
+        - containerPort: 9091
+          name: health
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        volumeMounts:
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/servicedns-ca
+          name: servicedns-ca
+        - mountPath: /var/run/atenet
+          name: drain-signal
+      - command:
+        - /usr/local/bin/envoy
+        - -c
+        - /etc/envoy/envoy.yaml
+        image: ghcr.io/agent-substrate/substrate/envoy-dataplane:v1.0.0-rc.1@sha256:c8dcfc127ec4381b31da9b9190b3231e2a98ccd207dd97a5c0b39bf25eeb20dd
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sh
+              - -c
+              - while [ ! -f /var/run/atenet/drain-complete ]; do sleep 0.5; done
+        name: envoy
+        ports:
+        - containerPort: 8443
+          name: https
+        - containerPort: 8444
+          name: connect-tls
+        - containerPort: 9902
+          name: envoy-metrics
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: envoy-metrics
+          periodSeconds: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65532
+        volumeMounts:
+        - mountPath: /etc/envoy
+          name: envoy-config
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /var/run/atenet
+          name: drain-signal
+          readOnly: true
+      serviceAccountName: atenet-router
+      terminationGracePeriodSeconds: 60
+      volumes:
+      - configMap:
+          name: atenet-router-envoy-config
+        name: envoy-config
+      - emptyDir: {}
+        name: drain-signal
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: servicedns.podcert.ate.dev/identity
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: servicedns-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  namespace: ate-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      containers:
+      - env:
+        - name: RUSTFS_ADDRESS
+          value: :9000
+        - name: RUSTFS_CONSOLE_ADDRESS
+          value: :9001
+        - name: RUSTFS_CONSOLE_ENABLE
+          value: "true"
+        - name: RUSTFS_VOLUMES
+          value: /data
+        - name: RUSTFS_ACCESS_KEY
+          value: rustfsadmin
+        - name: RUSTFS_SECRET_KEY
+          value: rustfsadmin
+        image: rustfs/rustfs:1.0.3@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+        imagePullPolicy: IfNotPresent
+        name: rustfs
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        volumeMounts:
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsUser: 10001
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: rustfs-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: jaeger
+  name: jaeger
+  namespace: otel-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+      - image: jaegertracing/jaeger:2.22.0@sha256:836b967b5abcf1f7758066aa6b348619267a2f1459f72d472840570f9bd88a17
+        name: jaeger
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 16686
+          name: query
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: opentelemetry-collector
+  name: opentelemetry-collector
+  namespace: otel-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opentelemetry-collector
+  template:
+    metadata:
+      labels:
+        app: opentelemetry-collector
+    spec:
+      containers:
+      - args:
+        - --config=/conf/otel-collector-config.yaml
+        image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+        name: otel-collector
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 8889
+          name: prom
+        - containerPort: 8888
+          name: self
+        volumeMounts:
+        - mountPath: /conf
+          name: config
+      volumes:
+      - configMap:
+          items:
+          - key: otel-collector-config.yaml
+            path: otel-collector-config.yaml
+          name: opentelemetry-collector-config
+        name: config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: prometheus
+  name: prometheus
+  namespace: otel-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/healthy
+            port: web
+          initialDelaySeconds: 5
+          periodSeconds: 15
+          timeoutSeconds: 3
+        name: prometheus
+        ports:
+        - containerPort: 9090
+          name: web
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/ready
+            port: web
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /etc/prometheus
+          name: config
+          readOnly: true
+        - mountPath: /prometheus
+          name: storage
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: prometheus
+      volumes:
+      - configMap:
+          name: prometheus-config
+        name: config
+      - emptyDir: {}
+        name: storage
+      - emptyDir: {}
+        name: tmp
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ate-api-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ate-idp-server
+  namespace: ate-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ate-idp-server
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: atelet
+  name: atelet
+  namespace: ate-system
+spec:
+  selector:
+    matchLabels:
+      app: atelet
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9090"
+        prometheus.io/scrape: "true"
+      labels:
+        app: atelet
+    spec:
+      containers:
+      - args:
+        - --localhost-registry-replacement=kind-registry:5000
+        - --grpc-server-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+        - --log-level=debug
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.node.name=$(NODE_NAME),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/agent-substrate/substrate/atelet:v1.0.0-rc.1@sha256:5c117b06276e709d023bf6c090b0a65f42d3f1bdeb2ffe99265d34c7ddbe453c
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: atelet
+        ports:
+        - containerPort: 21998
+          name: grpc
+        - containerPort: 9090
+          name: prometheus
+          protocol: TCP
+        - containerPort: 9091
+          name: health
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            add:
+            - DAC_OVERRIDE
+            drop:
+            - ALL
+          runAsGroup: 0
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /var/lib/ate
+          mountPropagation: HostToContainer
+          name: ate-base
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/podidentity.podcert.ate.dev
+          name: podidentity
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns-ca
+          readOnly: true
+        - mountPath: /var/lib/kubelet/plugins
+          name: kubelet-plugins
+        - mountPath: /var/lib/kubelet/device-plugins
+          name: device-plugins
+        - mountPath: /host/dev
+          name: host-dev
+          readOnly: true
+      initContainers:
+      - args:
+        - node
+        - --socket=/run/objectstore-plugin/node.sock
+        - --root=/var/lib/ate
+        - --asset-staging-dir=/var/lib/objectstore-plugin/asset-staging
+        - --asset-staging-capacity=8Gi
+        env:
+        - name: ATE_STORAGE_BACKEND
+          value: s3
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs.ate-system.svc:9000
+        - name: AWS_S3_USE_PATH_STYLE
+          value: "true"
+        - name: AWS_ACCESS_KEY_ID
+          value: rustfsadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: rustfsadmin
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        image: ghcr.io/agent-substrate/substrate/objectstore-plugin:v1.0.0-rc.1@sha256:d621b8cb79a75b908928d33a0646abb8eb5ab96504d1fa25108c9be5bf59c3cc
+        name: objectstore-plugin
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        restartPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 0
+          runAsUser: 0
+        startupProbe:
+          exec:
+            command:
+            - /ko-app/objectstore-plugin
+            - healthcheck
+            - --socket=/run/objectstore-plugin/node.sock
+          failureThreshold: 30
+          periodSeconds: 2
+        volumeMounts:
+        - mountPath: /var/lib/ate
+          mountPropagation: HostToContainer
+          name: ate-base
+        - mountPath: /run/objectstore-plugin
+          name: objectstore-plugin
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns-ca
+          readOnly: true
+        - mountPath: /var/lib/objectstore-plugin/asset-staging
+          name: asset-staging
+      priorityClassName: ate-node-critical
+      serviceAccountName: atelet
+      terminationGracePeriodSeconds: 330
+      tolerations:
+      - effect: NoSchedule
+        key: ate.dev/sandboxClass
+        operator: Exists
+      - effect: NoSchedule
+        key: cloud.google.com/compute-class
+        operator: Exists
+      volumes:
+      - emptyDir: {}
+        name: objectstore-plugin
+      - emptyDir:
+          sizeLimit: 9Gi
+        name: asset-staging
+      - hostPath:
+          path: /var/lib/ate
+          type: DirectoryOrCreate
+        name: ate-base
+      - hostPath:
+          path: /var/lib/kubelet/plugins
+          type: DirectoryOrCreate
+        name: kubelet-plugins
+      - hostPath:
+          path: /var/lib/kubelet/device-plugins
+          type: DirectoryOrCreate
+        name: device-plugins
+      - hostPath:
+          path: /dev
+          type: Directory
+        name: host-dev
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: podidentity.podcert.ate.dev/identity
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: podidentity.podcert.ate.dev/identity
+      - name: servicedns-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: servicedns.podcert.ate.dev/identity
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-bucket-init
+  namespace: ate-system
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          for i in $(seq 1 60); do
+            if aws s3api head-bucket --bucket ate-snapshots 2>/dev/null; then
+              echo "bucket ate-snapshots already exists"
+              exit 0
+            fi
+            if aws s3api create-bucket --bucket ate-snapshots 2>/dev/null; then
+              echo "bucket ate-snapshots created"
+              exit 0
+            fi
+            echo "waiting for rustfs to become available... ($i/60)"
+            sleep 2
+          done
+          echo "timed out waiting for rustfs"
+          exit 1
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          value: rustfsadmin
+        - name: AWS_SECRET_ACCESS_KEY
+          value: rustfsadmin
+        - name: AWS_REGION
+          value: us-east-1
+        - name: AWS_ENDPOINT_URL
+          value: http://rustfs.ate-system.svc:9000
+        image: amazon/aws-cli:2.38.5@sha256:c8156a0e74e13929a42d7e60f0d4e14e7d28d980cd21822505d4bff80e5460c1
+        name: create-bucket
+      restartPolicy: OnFailure
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ate-api-server
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - ate-controller
+          - atelet
+          - atenet-egress
+          - atenet-router
+    - namespaceSelector:
+        matchLabels:
+          ate.dev/api-access: "true"
+      podSelector:
+        matchExpressions:
+        - key: ate.dev/worker-pool
+          operator: DoesNotExist
+    ports:
+    - port: 443
+      protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: atelet
+    ports:
+    - port: 8445
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: ate-api-server
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ate-idp-server
+  namespace: ate-system
+spec:
+  ingress:
+  - ports:
+    - port: https
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: ate-idp-server
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ate-system-observability
+  namespace: ate-system
+spec:
+  ingress:
+  - ports:
+    - port: metrics
+      protocol: TCP
+    - port: prometheus
+      protocol: TCP
+    - port: envoy-metrics
+      protocol: TCP
+    - port: health
+      protocol: TCP
+    - port: healthz
+      protocol: TCP
+    - port: stats
+      protocol: TCP
+    - port: readiness
+      protocol: TCP
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: NotIn
+      values:
+      - k8s-credential-provider
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atelet
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ate-api-server
+    ports:
+    - port: grpc
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: atelet
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchExpressions:
+        - key: ate.dev/worker-pool
+          operator: Exists
+    ports:
+    - port: https
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: atenet-egress
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atenet-router
+  namespace: ate-system
+spec:
+  ingress:
+  - ports:
+    - port: https
+      protocol: TCP
+    - port: connect-tls
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: atenet-router
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: ate-system
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: ate-api-server
+    ports:
+    - port: postgres
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rustfs
+  namespace: ate-system
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - ate-api-server
+          - atelet
+    - podSelector:
+        matchLabels:
+          batch.kubernetes.io/job-name: rustfs-bucket-init
+    ports:
+    - port: api
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: rustfs
+  policyTypes:
+  - Ingress

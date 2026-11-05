@@ -1,0 +1,1525 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# contract expected by atunnel's egress client:
+#   * downstream mTLS on :443 (present servicedns identity, require + verify an
+#     actor-identity client cert),
+#   * terminate the actor's HTTP CONNECT, whose authority is the actor's
+#     original destination, always sent as IP:port. The gateway never dials
+#     that address.
+#
+# What goes through the tunnel is authorized against the actor's EgressPolicy
+# by the ext_proc sidecar. Cleartext HTTP and the TLS this gateway terminates
+# are decided per request, on the Host and the port the actor dialed, and the
+# request goes to the Host's name resolved here, on that port. Other TLS is
+# decided at the ClientHello by the SNI rules the sidecar returned on CONNECT,
+# and relayed unread to the resolved SNI. See
+# cmd/atenet/internal/router/README.md.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+#
+# No RBAC is bound to this ServiceAccount on purpose: the ext_proc sidecar runs
+# with --mode=egress, which serves the egress ext_proc handler and nothing else
+# — no xDS server, so no Kubernetes access. It reaches the control plane over
+# the ate API only.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+data:
+  envoy.yaml: |
+    # Requires Envoy 1.37 or newer: on_demand_secret and cert_mappers.sni do not
+    # exist in earlier releases.
+    # SDS refuses to start without a node id and cluster.
+    node:
+      id: atenet-egress
+      cluster: atenet-egress
+
+    admin:
+      address:
+        # Loopback only. The admin API is unauthenticated and includes
+        # /quitquitquit, /drain_listeners, /runtime_modify and /config_dump,
+        # so it must not be reachable on the pod IP. The ext_proc sidecar's
+        # drain sequence dials it on 127.0.0.1; the kubelet probes go through
+        # the envoy_metrics listener below.
+        socket_address: { address: 127.0.0.1, port_value: 15000 }
+
+    # Required by the mitm_listener below. An internal listener has no socket,
+    # so it is reachable only through a cluster with an envoy_internal_address;
+    # without this extension registered, that listener silently fails to load.
+    bootstrap_extensions:
+    - name: envoy.bootstrap.internal_listener
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener
+
+    static_resources:
+      listeners:
+      - name: egress
+        address:
+          # ipv4_compat rather than a second socket: IPv4 peers arrive as
+          # ::ffff: and nothing here reads the peer -- identity is the cert.
+          socket_address: { address: "::", ipv4_compat: true, port_value: 443 }
+        # Limit single I/O read to 64 Kb to prevent overly active actors from starving other actors.
+        per_connection_buffer_limit_bytes: 65535
+        filter_chains:
+        # Named so ext_proc can read it back as xds.filter_chain_name. Must
+        # match EgressFilterChainName in
+        # cmd/atenet/internal/router/extproc/dispatch.go.
+        - name: egress
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                alpn_protocols: ["h2", "http/1.1"]
+                # Gateway server identity (servicedns signer), via filesystem
+                # SDS: watched_directory only works on SDS-delivered secrets,
+                # so an inline cert would never pick up kubelet's rotation.
+                tls_certificate_sds_secret_configs:
+                - name: servicedns_serving_cert
+                  sds_config:
+                    resource_api_version: V3
+                    path_config_source:
+                      path: /etc/envoy/sds-servicedns-cert.yaml
+                # Actors authenticate with an actor-identity client cert.
+                # Envoy enforces chain, signature, and validity period here, so
+                # an unsigned or expired actor cert never reaches ext_proc,
+                # which reads the actor from its SPIFFE URI SAN. Filesystem SDS
+                # for the same reason as the serving cert above.
+                validation_context_sds_secret_config:
+                  name: actor_identity_validation_context
+                  sds_config:
+                    resource_api_version: V3
+                    path_config_source:
+                      path: /etc/envoy/sds-actor-identity-validation.yaml
+          filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: egress_connect
+              common_http_protocol_options:
+                # Set low idle timeout for connections, as atunnel does close tunnels from deleted actors.
+                idle_timeout: 30s
+              http2_protocol_options:
+                # 100 streams per connection provides good balance between connection sharing and worker load.
+                max_concurrent_streams: 100
+                # Set windows sizes to values that balance throughput and memory usage.
+                initial_stream_window_size: 1048576
+                initial_connection_window_size: 1048576
+              upgrade_configs:
+              - upgrade_type: CONNECT
+              # TODO(liorlieberman): Can we make this cleaner?
+              forward_client_cert_details: SANITIZE_SET
+              set_current_client_cert_details:
+                chain: true
+              # Emit the access log as soon as the CONNECT tunnel is established
+              # (atunnel keeps the tunnel open, so the default log-on-close would
+              # not fire during the demo).
+              access_log_options:
+                flush_log_on_tunnel_successfully_established: true
+              access_log:
+              - name: envoy.access_loggers.stdout
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                  log_format:
+                    text_format_source:
+                      inline_string: "[egress] authority=%REQ(:AUTHORITY)% peer_san=%DOWNSTREAM_PEER_URI_SAN% peer_serial=%DOWNSTREAM_PEER_SERIAL% protocol=%PROTOCOL% code=%RESPONSE_CODE% flags=%RESPONSE_FLAGS% up_bytes=%BYTES_RECEIVED% down_bytes=%BYTES_SENT%\n"
+              route_config:
+                name: connect_route
+                virtual_hosts:
+                - name: connect
+                  domains: ["*"]
+                  routes:
+                  - match: { connect_matcher: {} }
+                    route:
+                      # the tunnel is handed to the MITM
+                      # listener below, which terminates the tunnelled TLS and
+                      # re-originates it. Sending it straight to
+                      # egress_forward_proxy here would be a raw TCP passthrough
+                      # with no per-destination visibility at all.
+                      cluster: mitm_internal
+                      # Set request timeout to disabled (0) as CONNECT is a long-running stream.
+                      # There will still be a stream_idle_timeout (5 minutes by default).
+                      timeout: 0s
+                      upgrade_configs:
+                      - upgrade_type: CONNECT
+                        connect_config: {}
+              http_filters:
+              # The actor's identity, carried across the CONNECT/MITM boundary.
+              # Envoy terminates the CONNECT, so the tunnelled request is a
+              # separate transaction: nothing set here as a header reaches
+              # mitm_listener, and a header sent from inside the tunnel is a
+              # channel the actor controls end to end, which would let one actor
+              # name another. Filter state is the only sound carrier, and this
+              # value comes from the peer certificate Envoy already verified
+              # against the actor-identity CA above.
+              - name: envoy.filters.http.set_filter_state
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  on_request_headers:
+                  - object_key: dev.ate.actor.identity
+                    factory_key: envoy.hashable_string
+                    # This will create connection per actor to the origin servers, preventing
+                    # different actors from sharing the same connection to the origin.
+                    shared_with_upstream: TRANSITIVE
+                    skip_if_empty: true
+                    format_string:
+                      text_format_source:
+                        inline_string: "%DOWNSTREAM_PEER_URI_SAN%"
+                      # Without this an absent SAN renders as "-", which is a
+                      # non-empty string and fails open at whatever reads it.
+                      omit_empty_values: true
+                  # The IP:port the actor dialed, for the request legs to match a
+                  # rule's ports against: a port in a request's Host is not it.
+                  - object_key: dev.ate.connect.authority
+                    factory_key: envoy.hashable_string
+                    # This will further partition connection pool per destination port, preventing
+                    # secure connections from picking pools that use cleartext ports.
+                    shared_with_upstream: TRANSITIVE
+                    skip_if_empty: true
+                    format_string:
+                      text_format_source:
+                        inline_string: "%REQ(:AUTHORITY)%"
+                      omit_empty_values: true
+              # The CONNECT leg. The sidecar authenticates the actor from its
+              # certificate (see cmd/atenet/internal/router/egress) and returns
+              # the SNI rules in dev.ate.policy.egress and the dialed port in
+              # dev.ate.egress. Fails closed if the router is down.
+              - name: envoy.filters.http.ext_proc
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+                  stat_prefix: egress_identity
+                  grpc_service:
+                    envoy_grpc:
+                      cluster_name: ext_proc_server
+                    timeout: 2s
+                  failure_mode_allow: false
+                  # Set ext_proc timeout to 5s (from default 200ms) to handle slower ext_proc transactions.
+                  message_timeout: 5s
+                  # How the ext_proc server tells egress from ingress. It applies
+                  # opposite trust models to the two directions, and dispatches on
+                  # this Envoy-asserted filter chain name so that no client can
+                  # select the egress path by crafting a request. The value must
+                  # match EgressFilterChainName in
+                  # cmd/atenet/internal/router/extproc/dispatch.go; renaming the
+                  # filter chain above without updating it fails closed (the
+                  # request is classified as ingress, which this --mode=egress
+                  # instance does not serve, and is refused with a 404).
+                  request_attributes:
+                  - xds.filter_chain_name
+                  processing_mode:
+                    request_header_mode: SEND
+                    response_header_mode: SKIP
+                    request_body_mode: NONE
+                    response_body_mode: NONE
+                    request_trailer_mode: SKIP
+                    response_trailer_mode: SKIP
+                  # This leg authenticates and never rewrites; the sidecar may
+                  # not touch routing or Envoy's own headers here.
+                  mutation_rules:
+                    disallow_system: true
+                    disallow_is_error: true
+                  # Envoy silently drops metadata from a namespace not listed
+                  # here, and the filter state below would never be set.
+                  metadata_options:
+                    receiving_namespaces:
+                      untyped:
+                      - dev.ate.egress
+                      - dev.ate.policy.egress
+              - name: envoy.filters.http.dynamic_modules
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_modules.v3.DynamicModuleFilter
+                  dynamic_module_config:
+                    name: envoy_substrate_egress_policy
+                  filter_name: envoy_substrate_egress_policy_store
+              # The CONNECT leg's answers, copied into filter state shared with
+              # the inner listener. Must stay after ext_proc.
+              - name: envoy.filters.http.set_filter_state
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  on_request_headers:
+                  # The port the actor dialed, under the key Envoy's dynamic
+                  # forward proxy reads, so the passthrough chain dials the
+                  # resolved SNI on that port. The address the actor dialed is
+                  # never carried.
+                  - object_key: envoy.upstream.dynamic_port
+                    skip_if_empty: true
+                    shared_with_upstream: ONCE
+                    format_string:
+                      text_format_source:
+                        inline_string: "%DYNAMIC_METADATA(dev.ate.egress:dialed_port)%"
+                      omit_empty_values: true
+                  # Workaround for dynamic module inability to store filter state that is shared with the upstream.
+                  # TODO(yanavlasov): Remove after Envoy v1.40 is released.
+                  - object_key: dev.ate.policy.egress.hash
+                    factory_key: envoy.hashable_string
+                    skip_if_empty: true
+                    shared_with_upstream: ONCE
+                    format_string:
+                      text_format_source:
+                        inline_string: "%FILTER_STATE(dev.ate.policy.egress.hash.not_shared:PLAIN)%"
+                      omit_empty_values: true
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      # ---------------------------------------------------------------------
+      # Listener B: the MITM leg. No socket of its own -- it is reachable only
+      # through the mitm_internal cluster's envoy_internal_address, so it
+      # cannot be dialled from outside this pod.
+      #
+      # It exists because the CONNECT authority is an IP:port (atunnel takes it
+      # from SO_ORIGINAL_DST and rejects hostnames), so the destination
+      # hostname is visible only inside the tunnel. This leg terminates the
+      # tunnelled TLS with a leaf sdsmint mints for the SNI, reads the real
+      # Host, and re-originates.
+      #
+      # The egress-policy module (cmd/dataplane/envoy/dynamic-modules/egress-policy)
+      # writes the chain name to dev.ate.egress.filter_chain: TLS matching an
+      # SNI rule goes to MITM, other TLS is denied, and non-TLS goes to
+      # cleartext. "denied" matches no chain, so the connection is closed.
+      #
+      # The two HTTP chains are named so ext_proc can tell them apart
+      # (xds.filter_chain_name; the names must match
+      # cmd/atenet/internal/router/extproc/dispatch.go), and each runs the
+      # policy ext_proc on every request. They also carry an
+      # #ATE_MITM_EXTPROC_FILTER marker, with a matching
+      # #ATE_MITM_EXTPROC_CLUSTER in the cluster list: inert comments until
+      # ate-setup is run with
+      # --experimental-additional-egress-extproc-service, which replaces each
+      # with a generated block for an additional, external processor. The
+      # marker sits below the policy filter, so that processor sees only
+      # requests the policy allowed, including any headers the policy added; a
+      # request the policy denies never reaches it.
+      #
+      # The passthrough chain is a tcp_proxy, so it has no HTTP filters of its
+      # own, and it decides nothing: the module already matched the SNI to a
+      # tls_passthrough rule, and the chain relays the bytes to that name.
+      # ---------------------------------------------------------------------
+      - name: mitm_listener
+        stat_prefix: mitm
+        internal_listener: {}
+        # Both inspectors work by peeking at bytes the client sends first, so on
+        # a server-speaks-first protocol -- SSH, SMTP, MySQL -- they wait for a
+        # client that is itself waiting for the origin, and the tunnel deadlocks
+        # until the actor's own timeout fires. Giving up quickly is the only way
+        # out: on timeout the module is skipped, no chain matches, and the
+        # connection is closed. The cost is paid only by connections
+        # that send nothing; a client that speaks is classified immediately. One
+        # second is far longer than a local actor needs to emit a ClientHello,
+        # and short enough to stay well inside the probe timeouts.
+        listener_filters_timeout: 1s
+        continue_on_listener_filters_timeout: true
+        # Logs connections that matched no chain (NR). A "denied" chain is a
+        # policy denial; an empty one is a timeout.
+        access_log:
+        - name: envoy.access_loggers.file
+          filter:
+            response_flag_filter:
+              flags: ["NR"]
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+            path: /dev/stdout
+            log_format:
+              json_format:
+                leg: clienthello
+                time: "%START_TIME%"
+                actor: "%FILTER_STATE(dev.ate.actor.identity:PLAIN)%"
+                sni: "%REQUESTED_SERVER_NAME%"
+                chain: "%FILTER_STATE(dev.ate.egress.filter_chain:PLAIN)%"
+                destination: "%FILTER_STATE(dev.ate.connect.authority:PLAIN)%"
+                flags: "%RESPONSE_FLAGS%"
+                details: "%RESPONSE_CODE_DETAILS%"
+        listener_filters:
+        - name: envoy.filters.listener.tls_inspector
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+        - name: envoy.filters.listener.http_inspector
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector
+        - name: envoy.filters.listener.dynamic_modules
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.dynamic_modules.v3.DynamicModuleListenerFilter
+            dynamic_module_config:
+              name: envoy_substrate_egress_policy
+            filter_name: envoy_substrate_egress_policy
+        filter_chain_matcher:
+          matcher_tree:
+            input:
+              name: filter_state
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.matching.common_inputs.network.v3.FilterStateInput
+                key: dev.ate.egress.filter_chain
+            exact_match_map:
+              map:
+                "mitm":
+                  action:
+                    name: egress_tls_mitm
+                    typed_config:
+                      "@type": type.googleapis.com/google.protobuf.StringValue
+                      value: egress_tls_mitm
+                "passthrough":
+                  action:
+                    name: egress_passthrough
+                    typed_config:
+                      "@type": type.googleapis.com/google.protobuf.StringValue
+                      value: egress_passthrough
+                "cleartext":
+                  action:
+                    name: egress_cleartext
+                    typed_config:
+                      "@type": type.googleapis.com/google.protobuf.StringValue
+                      value: egress_cleartext
+                "denied":
+                  action:
+                    name: non_existent_filter_chain
+                    typed_config:
+                      "@type": type.googleapis.com/google.protobuf.StringValue
+                      value: denied
+        filter_chains:
+        - name: egress_tls_mitm
+          filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: mitm_http
+              # The egress request filter returns the explanatory 403. Keep
+              # the HCM default disabled as a defense if a request ever gets
+              # past that decision.
+              upgrade_configs:
+              - upgrade_type: websocket
+                enabled: false
+              # Disable stream_idle_timeout as there is already an overall timeout in the outer tunnel in the HCM.
+              stream_idle_timeout: 0s
+              # This is the leg that knows where the traffic actually went.
+              # REQUESTED_SERVER_NAME is the SNI the leaf was minted for and it
+              # should equal the authority, which is what the routes resolve
+              # and verify the origin against.
+              access_log:
+              - name: envoy.access_loggers.file
+                # Every actor request lands here, so log the ones that went
+                # wrong, including gRPC errors sent with HTTP 200, and a sample
+                # of the rest. The runtime keys let an operator turn full
+                # logging back on at the admin port:
+                # /runtime_modify?access_log.min_status=0.
+                filter:
+                  or_filter:
+                    filters:
+                    - status_code_filter:
+                        comparison:
+                          op: GE
+                          value: {default_value: 400, runtime_key: access_log.min_status}
+                    - response_flag_filter: {}
+                    - and_filter:
+                        filters:
+                        - header_filter:
+                            header:
+                              name: content-type
+                              string_match: {prefix: application/grpc}
+                        - grpc_status_filter: {exclude: true, statuses: [OK]}
+                    - runtime_filter:
+                        runtime_key: access_log.sample
+                        percent_sampled: {numerator: 1, denominator: HUNDRED}
+                        use_independent_randomness: true
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                  path: /dev/stdout
+                  log_format:
+                    json_format:
+                      leg: mitm
+                      time: "%START_TIME%"
+                      actor: "%FILTER_STATE(dev.ate.actor.identity:PLAIN)%"
+                      sni: "%REQUESTED_SERVER_NAME%"
+                      authority: "%REQ(:AUTHORITY)%"
+                      method: "%REQ(:METHOD)%"
+                      path: "%PATH(NQ:ORIG_OR_PATH)%"
+                      protocol: "%PROTOCOL%"
+                      status: "%RESPONSE_CODE%"
+                      grpc_status: "%GRPC_STATUS%"
+                      flags: "%RESPONSE_FLAGS%"
+                      duration_ms: "%DURATION%"
+                      bytes_sent: "%BYTES_SENT%"
+                      bytes_rcvd: "%BYTES_RECEIVED%"
+                      upstream: "%UPSTREAM_HOST%"
+                      upstream_failure: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+                      termination: "%CONNECTION_TERMINATION_DETAILS%"
+              route_config:
+                name: local
+                virtual_hosts:
+                - name: all
+                  domains: ["*"]
+                  routes:
+                  # There is no default route: the initial route lookup cannot
+                  # match before ext_proc supplies dev.ate.egress:dial. This
+                  # lets the request filter return the unsupported-upgrade
+                  # response before route-level upgrade rejection. Each route
+                  # also needs the answered name (dev.ate.egress:host); without
+                  # it the forward proxy would dial the Host's port.
+                  # Native gRPC uses upstream ALPN to negotiate h2 and carry
+                  # status in trailers. Other requests stay on HTTP/1.1; the
+                  # content-type match keeps those protocol choices separate.
+                  - match:
+                      prefix: "/"
+                      headers:
+                      - name: content-type
+                        string_match:
+                          prefix: application/grpc
+                      dynamic_metadata:
+                      - filter: dev.ate.egress
+                        path: [{ key: dial }]
+                        value: { string_match: { exact: name } }
+                      - filter: dev.ate.egress
+                        path: [{ key: host }]
+                        value: { present_match: true }
+                    route:
+                      cluster: egress_forward_proxy_grpc
+                      upgrade_configs:
+                      - upgrade_type: websocket
+                        enabled: false
+                      timeout: 0s
+                  - match:
+                      prefix: "/"
+                      dynamic_metadata:
+                      - filter: dev.ate.egress
+                        path: [{ key: dial }]
+                        value: { string_match: { exact: name } }
+                      - filter: dev.ate.egress
+                        path: [{ key: host }]
+                        value: { present_match: true }
+                    route:
+                      cluster: egress_forward_proxy
+                      upgrade_configs:
+                      - upgrade_type: websocket
+                        enabled: false
+                      # The route timeout runs until the response completes, which
+                      # for SSE or long-poll is never, so 0.
+                      timeout: 0s
+              http_filters:
+              # Every request on this chain is authorized against the actor's
+              # EgressPolicy by the same sidecar; the actor comes from the filter
+              # state the CONNECT leg set, never from a header.
+              - name: envoy.filters.http.ext_proc
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+                  stat_prefix: egress_policy_mitm
+                  grpc_service:
+                    envoy_grpc:
+                      cluster_name: ext_proc_server
+                    timeout: 5s
+                  failure_mode_allow: false
+                  # A cache miss in the sidecar is one ateapi round trip; 5s covers that
+                  # with room, and a slower answer is a denied request, not an allowed one.
+                  message_timeout: 5s
+                  request_attributes:
+                  - xds.filter_chain_name
+                  - filter_state['dev.ate.actor.identity']
+                  - filter_state['dev.ate.connect.authority']
+                  - connection.requested_server_name
+                  processing_mode:
+                    request_header_mode: SEND
+                    response_header_mode: SKIP
+                    request_body_mode: NONE
+                    response_body_mode: NONE
+                    request_trailer_mode: SKIP
+                    response_trailer_mode: SKIP
+                  # The sidecar may add headers but never touch routing: a rewritten
+                  # Host would ask the origin for a site other than the one policed.
+                  mutation_rules:
+                    disallow_system: true
+                    disallow_is_error: true
+                  # The answer (dev.ate.egress:dial) picks the route. Envoy drops
+                  # metadata from a namespace not listed here, and a request
+                  # with no dial has no route.
+                  metadata_options:
+                    receiving_namespaces:
+                      untyped:
+                      - dev.ate.egress
+              # Envoy dials a port written in the Host unless the name to dial
+              # comes from filter state too, so the name the request was
+              # decided on goes there. Must stay after ext_proc.
+              - name: envoy.filters.http.set_filter_state
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  on_request_headers:
+                  - object_key: envoy.upstream.dynamic_host
+                    skip_if_empty: true
+                    format_string:
+                      text_format_source:
+                        inline_string: "%DYNAMIC_METADATA(dev.ate.egress:host)%"
+                      omit_empty_values: true
+              #ATE_MITM_EXTPROC_FILTER -- see the mitm_listener comment above.
+              # Resolves the route's name before the cluster dials it.
+              # allow_dynamic_host_from_filter_state makes it resolve
+              # envoy.upstream.dynamic_host on the port the actor dialed, the
+              # entry the cluster dials; without it, it resolves the Host as
+              # sent, and every port or spelling an actor puts there takes a
+              # slot in the DNS cache all actors share.
+              - name: envoy.filters.http.dynamic_forward_proxy
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                  allow_dynamic_host_from_filter_state: true
+                  dns_cache_config:
+                    name: egress_dns_cache
+                    # V4_ONLY resolves nothing on an IPv6-only cluster. ALL
+                    # returns both families and enables Happy Eyeballs, so
+                    # neither family is stranded.
+                    dns_lookup_family: ALL
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          # REQUIRED. Without it an sdsmint outage does not fail a
+          # first-contact handshake, it pauses it forever.
+          transport_socket_connect_timeout: 5s
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                alpn_protocols: ["h2", "http/1.1"]
+                custom_tls_certificate_selector:
+                  name: on-demand
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_selectors.on_demand_secret.v3.Config
+                    config_source:
+                      api_config_source:
+                        api_type: DELTA_GRPC
+                        transport_api_version: V3
+                        grpc_services:
+                        - envoy_grpc:
+                            cluster_name: sds_mint
+                    certificate_mapper:
+                      name: sni
+                      typed_config:
+                        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.cert_mappers.sni.v3.SNI
+                        # Reached only by a client that sent no SNI, i.e. one
+                        # dialing by IP. It gets a leaf for this name, which
+                        # resolves nowhere and so matches no destination it
+                        # could have meant -- and since the client prints the
+                        # name in its verification error, the name says why.
+                        default_value: "sni-required.egress.ate.invalid"  # default_value is required.
+              # A resumed session skips certificate selection entirely, which
+              # would hand a client a secret minted for a different name.
+              disable_stateless_session_resumption: true
+              disable_stateful_session_resumption: true
+
+        # The cleartext chain. Nothing to terminate and nothing to mint: the
+        # Host header is already in the clear, so this leg reads the
+        # destination directly rather than from a certificate it issued.
+        # Non-HTTP streams fail in the codec.
+        - name: egress_cleartext
+          filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: mitm_cleartext
+              # http_inspector steers HTTP/1.0 here; without this the codec
+              # answers it 426 before any filter runs.
+              http_protocol_options:
+                accept_http_10: true
+              # The egress request filter returns the explanatory 403. Keep
+              # the HCM default disabled as a defense if a request ever gets
+              # past that decision.
+              upgrade_configs:
+              - upgrade_type: websocket
+                enabled: false
+              stream_idle_timeout: 0s
+              access_log:
+              - name: envoy.access_loggers.file
+                # Every actor request lands here, so log the ones that went
+                # wrong, including gRPC errors sent with HTTP 200, and a sample
+                # of the rest. The runtime keys let an operator turn full
+                # logging back on at the admin port:
+                # /runtime_modify?access_log.min_status=0.
+                filter:
+                  or_filter:
+                    filters:
+                    - status_code_filter:
+                        comparison:
+                          op: GE
+                          value: {default_value: 400, runtime_key: access_log.min_status}
+                    - response_flag_filter: {}
+                    - and_filter:
+                        filters:
+                        - header_filter:
+                            header:
+                              name: content-type
+                              string_match: {prefix: application/grpc}
+                        - grpc_status_filter: {exclude: true, statuses: [OK]}
+                    - runtime_filter:
+                        runtime_key: access_log.sample
+                        percent_sampled: {numerator: 1, denominator: HUNDRED}
+                        use_independent_randomness: true
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                  path: /dev/stdout
+                  log_format:
+                    json_format:
+                      leg: cleartext
+                      time: "%START_TIME%"
+                      actor: "%FILTER_STATE(dev.ate.actor.identity:PLAIN)%"
+                      authority: "%REQ(:AUTHORITY)%"
+                      method: "%REQ(:METHOD)%"
+                      path: "%PATH(NQ:ORIG_OR_PATH)%"
+                      protocol: "%PROTOCOL%"
+                      status: "%RESPONSE_CODE%"
+                      grpc_status: "%GRPC_STATUS%"
+                      flags: "%RESPONSE_FLAGS%"
+                      duration_ms: "%DURATION%"
+                      bytes_sent: "%BYTES_SENT%"
+                      bytes_rcvd: "%BYTES_RECEIVED%"
+                      upstream: "%UPSTREAM_HOST%"
+                      upstream_failure: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+                      termination: "%CONNECTION_TERMINATION_DETAILS%"
+              route_config:
+                name: cleartext
+                virtual_hosts:
+                - name: all
+                  domains: ["*"]
+                  # Only the dial the sidecar answers with has a route, and
+                  # there is no default: a request it did not answer for has
+                  # no route. The route also needs the answered name
+                  # (dev.ate.egress:host); without it the forward proxy would
+                  # dial the Host's port.
+                  routes:
+                  - match:
+                      prefix: "/"
+                      dynamic_metadata:
+                      - filter: dev.ate.egress
+                        path: [{ key: dial }]
+                        value: { string_match: { exact: name } }
+                      - filter: dev.ate.egress
+                        path: [{ key: host }]
+                        value: { present_match: true }
+                    route:
+                      cluster: egress_forward_proxy_cleartext
+                      upgrade_configs:
+                      - upgrade_type: websocket
+                        enabled: false
+                      timeout: 0s
+              http_filters:
+              # Every request on this chain is authorized against the actor's
+              # EgressPolicy by the same sidecar; the actor comes from the filter
+              # state the CONNECT leg set, never from a header.
+              - name: envoy.filters.http.ext_proc
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+                  stat_prefix: egress_policy_cleartext
+                  grpc_service:
+                    envoy_grpc:
+                      cluster_name: ext_proc_server
+                    timeout: 5s
+                  failure_mode_allow: false
+                  # A cache miss in the sidecar is one ateapi round trip; 5s covers that
+                  # with room, and a slower answer is a denied request, not an allowed one.
+                  message_timeout: 5s
+                  request_attributes:
+                  - xds.filter_chain_name
+                  - filter_state['dev.ate.actor.identity']
+                  - filter_state['dev.ate.connect.authority']
+                  - connection.requested_server_name
+                  processing_mode:
+                    request_header_mode: SEND
+                    response_header_mode: SKIP
+                    request_body_mode: NONE
+                    response_body_mode: NONE
+                    request_trailer_mode: SKIP
+                    response_trailer_mode: SKIP
+                  # The sidecar may add headers but never touch routing: a rewritten
+                  # Host would ask the origin for a site other than the one policed.
+                  mutation_rules:
+                    disallow_system: true
+                    disallow_is_error: true
+                  # The answer (dev.ate.egress:dial) picks the route. Envoy drops
+                  # metadata from a namespace not listed here, and a request
+                  # with no dial has no route.
+                  metadata_options:
+                    receiving_namespaces:
+                      untyped:
+                      - dev.ate.egress
+              # Envoy dials a port written in the Host unless the name to dial
+              # comes from filter state too, so the name the request was
+              # decided on goes there. Must stay after ext_proc.
+              - name: envoy.filters.http.set_filter_state
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.set_filter_state.v3.Config
+                  on_request_headers:
+                  - object_key: envoy.upstream.dynamic_host
+                    skip_if_empty: true
+                    format_string:
+                      text_format_source:
+                        inline_string: "%DYNAMIC_METADATA(dev.ate.egress:host)%"
+                      omit_empty_values: true
+              #ATE_MITM_EXTPROC_FILTER -- Don't modify this line.
+              # Resolves the route's name before the cluster dials it.
+              # allow_dynamic_host_from_filter_state makes it resolve
+              # envoy.upstream.dynamic_host on the port the actor dialed, the
+              # entry the cluster dials; without it, it resolves the Host as
+              # sent, and every port or spelling an actor puts there takes a
+              # slot in the DNS cache all actors share.
+              - name: envoy.filters.http.dynamic_forward_proxy
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                  allow_dynamic_host_from_filter_state: true
+                  dns_cache_config:
+                    name: egress_dns_cache
+                    dns_lookup_family: ALL
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+        # The passthrough chain, selected by the module's "passthrough" verdict.
+        # The gateway resolves the SNI itself and relays the bytes to it unread,
+        # on the port the actor dialed. The address the actor dialed plays no
+        # part: an SNI only authorizes a dial to the name it claims
+        # (docs/network-egress.md).
+        - name: egress_passthrough
+          filters:
+          - name: envoy.filters.network.sni_dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.sni_dynamic_forward_proxy.v3.FilterConfig
+              dns_cache_config:
+                name: egress_dns_cache
+                dns_lookup_family: ALL
+              # Fallback when envoy.upstream.dynamic_port is absent; the CONNECT
+              # leg always sets it.
+              port_value: 443
+          - name: envoy.filters.network.tcp_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+              stat_prefix: passthrough
+              cluster: egress_forward_proxy_passthrough
+              access_log:
+              - name: envoy.access_loggers.file
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+                  path: /dev/stdout
+                  log_format:
+                    json_format:
+                      leg: passthrough
+                      time: "%START_TIME%"
+                      actor: "%FILTER_STATE(dev.ate.actor.identity:PLAIN)%"
+                      # The name the rule matched and the gateway dialed.
+                      sni: "%REQUESTED_SERVER_NAME%"
+                      # What the actor dialed; upstream is where the connection went.
+                      dialed: "%FILTER_STATE(dev.ate.connect.authority:PLAIN)%"
+                      flags: "%RESPONSE_FLAGS%"
+                      duration_ms: "%DURATION%"
+                      bytes_sent: "%BYTES_SENT%"
+                      bytes_rcvd: "%BYTES_RECEIVED%"
+                      upstream: "%UPSTREAM_HOST%"
+                      upstream_failure: "%UPSTREAM_TRANSPORT_FAILURE_REASON%"
+                      termination: "%CONNECTION_TERMINATION_DETAILS%"
+
+      # The only pod-IP-reachable view of the admin API: proxies GET /ready
+      # (the kubelet probes below) and GET /stats/prometheus to the
+      # loopback-only admin listener and 404s everything else. ipv4_compat
+      # because the kubelet dials the pod IP, which is IPv4 on an IPv4
+      # cluster. The stat prefixes contain "admin" so envoyDrainer excludes
+      # probe connections from the downstream count it waits on.
+      - name: envoy_metrics
+        stat_prefix: admin_metrics
+        address:
+          socket_address: { address: "::", ipv4_compat: true, port_value: 15090 }
+        filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: admin_metrics
+              route_config:
+                name: envoy_metrics
+                virtual_hosts:
+                - name: envoy_metrics
+                  domains: ["*"]
+                  routes:
+                  - match:
+                      path: /ready
+                      headers:
+                      - name: ":method"
+                        string_match: { exact: GET }
+                    route: { cluster: envoy_admin }
+                  - match:
+                      path: /stats/prometheus
+                      headers:
+                      - name: ":method"
+                        string_match: { exact: GET }
+                    route: { cluster: envoy_admin }
+              http_filters:
+              - name: envoy.filters.http.router
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      clusters:
+      - name: envoy_admin
+        connect_timeout: 0.25s
+        type: STATIC
+        load_assignment:
+          cluster_name: envoy_admin
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address: { address: 127.0.0.1, port_value: 15000 }
+      # The only way into mitm_listener. An internal address, not a socket, so
+      # the MITM leg has no listening port anywhere in the pod's netns.
+      - name: mitm_internal
+        # Create one pool per unique tuple, containing the following filter state objects:
+        # actor ID from "dev.ate.actor.identity"
+        # CONNECT authority from "dev.ate.connect.authority"
+        # Egress policy hash from "dev.ate.policy.egress.hash"
+        # TODO(yanavlasov): use just the port from CONNECT authority to minimize number of pools.
+        # Pools are created using hashes of filter state, which includes filter state objects that use
+        # envoy.hashable_string factory.
+        connect_timeout: 1s
+        # Envoy always opens a new pool's first connection.
+        # Past the limit, a second tunnel in the same pool waits for one to close.
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 1048400
+            max_requests: 1048400
+            max_pending_requests: 1048400
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.tcp.v3.TcpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.tcp.v3.TcpProtocolOptions
+            # Closes a connection no tunnel holds. The timer runs only while no
+            # tunnel holds the connection, so a quiet tunnel is never cut by it.
+            idle_timeout: 30s
+        # Copies every filter state object shared with the upstream onto the
+        # internal listener's downstream connection: dev.ate.actor.identity,
+        # dev.ate.connect.authority, dev.ate.policy.egress.hash, and
+        # envoy.upstream.dynamic_port, all set on the CONNECT leg above.
+        #
+        # Without this none of them reaches mitm_listener, and nothing reports it:
+        # the request proxies and every read resolves to the zero value, which
+        # looks exactly like the filters above not running. The wrapped socket
+        # is required and is raw_buffer because there is no TLS on this hop --
+        # the tunnelled TLS is terminated on mitm_listener.
+        transport_socket:
+          name: envoy.transport_sockets.internal_upstream
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.internal_upstream.v3.InternalUpstreamTransport
+            transport_socket:
+              name: envoy.transport_sockets.raw_buffer
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.transport_sockets.raw_buffer.v3.RawBuffer
+        load_assignment:
+          cluster_name: mitm_internal
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  envoy_internal_address:
+                    server_listener_name: mitm_listener
+
+      - name: sds_mint
+        type: STATIC
+        connect_timeout: 1s
+        # One HTTP/2 connection carrying one DELTA_GRPC stream per name in
+        # flight. max_requests is the one that matters, and it is subtler than
+        # a burst limit: Envoy does not close the stream once the secret
+        # arrives, it holds it open for as long as the secret is live. So this
+        # is not "concurrent mints", it is a hard cap on the size of the live
+        # secret set. Past the cap Envoy is refused a mint rather than queued
+        # for one, which surfaces as a handshake failure and looks exactly like
+        # the allowlist denying the name -- silently, at a threshold nothing
+        # else in this file mentions. 32768 is deliberately ~3x the
+        # 10,000-name target rather than equal to it: memory should bind first,
+        # and a limit that trips before it would replace a diagnosable overload
+        # with a mystery. Raise it when you raise the target.
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 128
+            max_pending_requests: 32768
+            max_requests: 32768
+            max_retries: 8
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options: {}
+        load_assignment:
+          cluster_name: sds_mint
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  pipe: {path: /var/run/sdsmint/sdsmint.sock}
+      # ext_proc gRPC server = the atenet router, co-located in this pod as a
+      # sidecar and called over localhost (same topology the ingress gateway uses
+      # for its dataplane + ext_proc).
+      - name: ext_proc_server
+        type: STATIC
+        lb_policy: ROUND_ROBIN
+        connect_timeout: 1s
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            explicit_http_config:
+              http2_protocol_options: {}
+        load_assignment:
+          cluster_name: ext_proc_server
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: 127.0.0.1
+                    port_value: 50051
+      # The MITM leg's forward proxy. It dials the name the sidecar answered for
+      # the decrypted request, not the CONNECT authority, on the port the actor
+      # dialed.
+      - name: egress_forward_proxy
+        lb_policy: CLUSTER_PROVIDED
+        connect_timeout: 5s
+        # Fits 1000 destinations x 32 worker threads x 2 requests at once per
+        # destination per thread = 64000 connections.
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 65536
+            max_pending_requests: 65536
+            max_requests: 65536
+        cluster_type:
+          name: envoy.clusters.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+            dns_cache_config:
+              name: egress_dns_cache
+              dns_lookup_family: ALL
+        # The MITM must not weaken upstream authentication. Envoy decrypted the
+        # actor's TLS with a leaf of its own; it still sends the real SNI here
+        # and still validates the real origin's certificate against the public
+        # roots. Without this the re-originated request would leave the pod in
+        # plaintext.
+        #
+        # Spelled through typed_extension_protocol_options because the
+        # cluster-level upstream_http_protocol_options field is deprecated.
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            upstream_http_protocol_options:
+              auto_sni: true
+              auto_san_validation: true
+            auto_config:
+              http_protocol_options: {}
+              http2_protocol_options:
+                # Avoid hotspotting origins by piling all requests into one connection.
+                max_concurrent_streams: 100
+                # Prevent origin servers from overwhelming egress gateway if actor is slow.
+                initial_stream_window_size: 1048576
+                initial_connection_window_size: 1048576
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+            common_tls_context:
+              validation_context:
+                trusted_ca:
+                  filename: /etc/ssl/certs/ca-certificates.crt
+
+      - name: egress_forward_proxy_grpc
+        lb_policy: CLUSTER_PROVIDED
+        connect_timeout: 5s
+        cluster_type:
+          name: envoy.clusters.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+            dns_cache_config:
+              name: egress_dns_cache
+              dns_lookup_family: ALL
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            upstream_http_protocol_options:
+              auto_sni: true
+              auto_san_validation: true
+            auto_config:
+              http_protocol_options: {}
+              http2_protocol_options: {}
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+            common_tls_context:
+              validation_context:
+                trusted_ca:
+                  filename: /etc/ssl/certs/ca-certificates.crt
+
+      # The cleartext chain's upstream. Identical to egress_forward_proxy but
+      # without the TLS transport socket: the actor sent plaintext and this
+      # gateway does not upgrade it. Re-originating over TLS here would mean
+      # answering a request the actor made in the clear with a connection it
+      # never asked for and cannot see the peer of.
+      #
+      # It shares egress_dns_cache with egress_forward_proxy -- same name, same
+      # config, so both legs resolve through one cache.
+      - name: egress_forward_proxy_cleartext
+        lb_policy: CLUSTER_PROVIDED
+        connect_timeout: 5s
+        # Sized like egress_forward_proxy, for the same reason.
+        circuit_breakers:
+          thresholds:
+          - priority: DEFAULT
+            max_connections: 65536
+            max_pending_requests: 65536
+            max_requests: 65536
+        cluster_type:
+          name: envoy.clusters.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+            dns_cache_config:
+              name: egress_dns_cache
+              dns_lookup_family: ALL
+            # Envoy refuses to build a dynamic forward proxy cluster without
+            # auto_sni and auto_san_validation unless this is set, because for
+            # the usual TLS case resolving the host from a header and then not
+            # validating against it is a real hole. There is no upstream TLS on
+            # this cluster, so there is no SNI to send and no SAN to check --
+            # the two settings it is asking for would be no-ops. Setting this
+            # on egress_forward_proxy, which does re-originate TLS, would be
+            # the hole it is named after.
+            allow_insecure_cluster_options: true
+        typed_extension_protocol_options:
+          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+            use_downstream_protocol_config:
+              http_protocol_options: {}
+              http2_protocol_options: {}
+
+      # The passthrough chain's upstream: the MITM leg's forward proxy on the
+      # same DNS cache, with no transport socket (the bytes are the actor's own
+      # TLS) and no HTTP options. Only egress_passthrough may dial it; nothing
+      # else authorizes a raw dial by name.
+      - name: egress_forward_proxy_passthrough
+        lb_policy: CLUSTER_PROVIDED
+        connect_timeout: 5s
+        cluster_type:
+          name: envoy.clusters.dynamic_forward_proxy
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+            dns_cache_config:
+              name: egress_dns_cache
+              dns_lookup_family: ALL
+
+      #ATE_MITM_EXTPROC_CLUSTER -- Don't modify this line.
+  # SDS resource for the gateway serving cert. kubelet rotates the projected
+  # volume by swapping its ..data symlink, which fires the watch and makes
+  # Envoy re-read the bundle (leaf cert and key concatenated in one file).
+  sds-servicedns-cert.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: servicedns_serving_cert
+      tls_certificate:
+        certificate_chain: { filename: /run/servicedns.podcert.ate.dev/credential-bundle.pem }
+        private_key: { filename: /run/servicedns.podcert.ate.dev/credential-bundle.pem }
+        watched_directory: { path: /run/servicedns.podcert.ate.dev }
+  # SDS resource for the actor-identity CA roots the egress listener trusts.
+  # The actor-id-ca-certs Secret volume rotates the same way.
+  sds-actor-identity-validation.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: actor_identity_validation_context
+      validation_context:
+        trusted_ca: { filename: /run/actor-id-ca-certs/ca.crt }
+        watched_directory: { path: /run/actor-id-ca-certs }
+  # The next two keys are used only by the additional_egress_ext_proc cluster
+  # spliced over the #ATE_MITM_EXTPROC_CLUSTER marker. They ship
+  # unconditionally because the splice can only rewrite envoy.yaml, not add
+  # ConfigMap keys; with the flag off they are unreferenced files.
+  sds-podidentity-cert.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: podidentity_client_cert
+      tls_certificate:
+        certificate_chain: { filename: /run/podidentity.podcert.ate.dev/credential-bundle.pem }
+        private_key: { filename: /run/podidentity.podcert.ate.dev/credential-bundle.pem }
+        watched_directory: { path: /run/podidentity.podcert.ate.dev }
+  sds-servicedns-validation.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: servicedns_validation_context
+      validation_context:
+        trusted_ca: { filename: /run/servicedns.podcert.ate.dev/trust-bundle.pem }
+        watched_directory: { path: /run/servicedns.podcert.ate.dev }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+  labels:
+    app: atenet-egress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: atenet-egress
+  template:
+    metadata:
+      labels:
+        app: atenet-egress
+    spec:
+      serviceAccountName: atenet-egress
+      # sdsmint and envoy containers must share a UID: sdsmint creates the SDS socket mode
+      # 0600, and Envoy has to be able to open it. The stock Envoy image runs as
+      # UID 101 and ko's distroless base as 65532, so left alone they would not
+      # agree and Envoy would fail every handshake with a connection error on
+      # the sds_mint cluster. Neither listening port is privileged.
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        fsGroup: 65532
+        # Allow the non-root envoy user to bind :443.
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: "0"
+      terminationGracePeriodSeconds: 60
+      initContainers:
+      # A native sidecar, not a plain init container. Ordering matters in both
+      # directions: sdsmint is serving before Envoy loads its config, and it
+      # outlives Envoy on shutdown, so a drain does not pull the SDS server out
+      # from under handshakes that are still in flight.
+      - name: sdsmint
+        # The same image as the ext-proc container below, run as a different
+        # subcommand. Sharing the binary is what keeps the two from drifting;
+        # staying two CONTAINERS is what keeps the MITM signing key off the
+        # data plane and gives the minter its own memory limit.
+        image: ghcr.io/agent-substrate/substrate/atenet:v1.0.0-rc.1@sha256:e2633da825fe45bcf32c23f96e7d434370a0fd6bdeb9eb50cd3f7ee3d8c311b8
+        restartPolicy: Always
+        args:
+        - "sdsmint"
+        - "--uds-path=/var/run/sdsmint/sdsmint.sock"
+        - "--ca-pool-path=/run/ca-state/mitm-pool.json"
+        # --leaf-cert-ttl sets two things at once. It stamps the leaf's notAfter,
+        # and sdsmint derives the xDS resource TTL from that notAfter, a minute
+        # short of it -- so at 15m, Envoy drops each cached secret after 14m and
+        # the next handshake for that name re-mints, with a minute of the old
+        # leaf still valid to cover the gap. That drop is the only thing that
+        # replaces a leaf: nothing pushes, and rotation and the idle sweep are
+        # both gone. Cost follows traffic, since a name nobody asks for is
+        # dropped and never minted again.
+        #
+        # Do not reach for a longer TTL to cut minting. The two move together,
+        # and the failure mode at the far end is silent: without the resource
+        # TTL, Envoy holds a secret indefinitely, serves the leaf past its
+        # notAfter, and the handshake still completes -- actors cannot object
+        # because they reach the gateway with verification off, nothing in the
+        # cluster trusting the MITM anchor. Measured against Envoy 1.37.5, both
+        # with the TTL and without it.
+        #
+        # It does not bound validity exactly: leaves are back-dated 5m for
+        # clock skew and NotAfter is ttl past issuance, so the window a client
+        # would accept is ttl+5m. See minter.certificate in
+        # cmd/atenet/internal/sdsmint.
+        - "--leaf-cert-ttl=15m"
+        - "--log-level=info"
+        env:
+        # Go's nearest thing to Envoy's fixed_heap, and it is not as close as
+        # it looks. It bounds the GARBAGE, not the live set: almost everything
+        # resident here is reachable -- three goroutine stacks per subscription
+        # and their timers -- and no amount of GC pressure reclaims a live
+        # subscription. What it does buy is real though, because minting
+        # allocates hard, and a soft ceiling meaningfully trims the peak RSS
+        # that churn produces. Set below the container limit so the
+        # collector starts working before the kernel starts killing. If sdsmint
+        # ever reaches this figure with a genuinely live heap it will thrash the
+        # GC and then OOM anyway; that is a missing shed path, not a
+        # misconfiguration here.
+        - name: GOMEMLIMIT
+          value: "640MiB"
+        # Both of these scale with the live secret count, not with request rate.
+        #
+        # memory  ~44,750 B per live secret x 10,000 => ~427 MiB, against a
+        #         768Mi limit, mostly stream overhead rather than
+        #         certificates. The request is measured steady state rather than
+        #         a token floor, on purpose -- the scheduler places pods on
+        #         requests, so a 64Mi request on a container that grows to 427
+        #         MiB does not fail to schedule, it schedules onto a node it
+        #         will later destabilise. Understating it is how this pod takes
+        #         its neighbours down with it.
+        # cpu     ~126 mcore was the measured floor at 10k with no traffic at
+        #         all, when 50 re-mints a second ran on a rotation ticker. That
+        #         steady-state cost is now zero: nothing re-mints, so a name
+        #         costs one signature ever and an idle gateway signs nothing.
+        #         The request is sized for the burst instead. A single mint is
+        #         the ~600us the PoC measured, so a 500/s wave of cold names is
+        #         ~0.3 core -- which is why this is requested and not limited.
+        #         Throttling the signer turns a CPU shortage into handshake
+        #         timeouts across every cold SNI at once. Left at 200m rather
+        #         than trimmed to the new floor because the burst, not the
+        #         steady state, is what this has to absorb.
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            memory: 768Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: sdsmint-sock
+          mountPath: /var/run/sdsmint
+        # The MITM CA. Mounted here and nowhere else -- in particular not on
+        # the Envoy container. Keeping the signing key out of the data plane is
+        # the reason this is an SDS server rather than a file on disk.
+        - name: ca-state
+          mountPath: /run/ca-state
+          readOnly: true
+      containers:
+      - name: envoy
+        # ENVOY_DATAPLANE_IMAGE is substituted for the image URI in renderAtenetEgressManifest
+        image: ghcr.io/agent-substrate/substrate/envoy-dataplane:v1.0.0-rc.1@sha256:c8dcfc127ec4381b31da9b9190b3231e2a98ccd207dd97a5c0b39bf25eeb20dd
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65532
+        args:
+        - -c
+        - /etc/envoy/envoy.yaml
+        - --service-node
+        - atenet-egress
+        - --service-cluster
+        - atenet-egress
+        # Prevents Envoy from fast-exiting on SIGTERM before the ext-proc
+        # sidecar finishes its drain sequence. Polls for the drain-complete
+        # marker the sidecar writes on the shared emptyDir, terminating Envoy
+        # as soon as the drain completes (or at terminationGracePeriodSeconds
+        # if the sidecar crashes).
+        #
+        # TODO(liorlieberman): decide the drain policy for long-lived CONNECT
+        # tunnels. envoyDrainer polls downstream_cx_active until it reaches
+        # zero, which suits ingress (short request/response connections) but
+        # not egress: atunnel holds a tunnel open for the life of the actor's
+        # connection, so an actor still streaming when the rollout starts keeps
+        # the count above zero until the ~15s window expires. Every rollout
+        # with active egress will therefore log "N downstream connections still
+        # active at the drain deadline". Either accept that as the honest
+        # outcome (we tried to drain, then cut), or give egress its own shorter
+        # window so we stop pretending a tunnel will close on its own.
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "while [ ! -f /var/run/atenet/drain-complete ]; do sleep 0.5; done"]
+        ports:
+        - name: https
+          containerPort: 443
+        # Filtered admin view (GET /ready and /stats/prometheus only). The
+        # admin API itself (15000) is loopback-only and deliberately not listed.
+        - name: envoy-metrics
+          containerPort: 15090
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: envoy-metrics
+          periodSeconds: 10
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /ready
+            port: envoy-metrics
+          periodSeconds: 1
+        volumeMounts:
+        - name: config
+          mountPath: /etc/envoy
+          readOnly: true
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ate.dev
+          readOnly: true
+        - name: podidentity
+          mountPath: /run/podidentity.podcert.ate.dev
+          readOnly: true
+        - name: actor-id-ca-certs
+          mountPath: /run/actor-id-ca-certs
+          readOnly: true
+        - name: drain-signal
+          mountPath: /var/run/atenet
+          readOnly: true
+        - name: sdsmint-sock
+          mountPath: /var/run/sdsmint     
+      # Co-located ext_proc server: the same atenet router binary the ingress
+      # gateway runs, started with --mode=egress so it serves only the egress
+      # ext_proc handler (no xDS server, no Kubernetes access). The egress
+      # Envoy calls it over localhost to
+      # authenticate actor identity against the ate API on every CONNECT.
+      - name: ext-proc
+        image: ghcr.io/agent-substrate/substrate/atenet:v1.0.0-rc.1@sha256:e2633da825fe45bcf32c23f96e7d434370a0fd6bdeb9eb50cd3f7ee3d8c311b8
+        args:
+        - router
+        - --mode=egress
+        - --namespace=ate-system
+        - --port-extproc=50051
+        - --extproc-address=127.0.0.1
+        - --ateapi-address=dns:///api.ate-system.svc:443
+        - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+        - --ateapi-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        # Same bundle Envoy validates the handshake against. The handler
+        # re-verifies the chain in Go and reads the actor from its SPIFFE URI
+        # SAN; without this flag the router has no actor-identity roots and
+        # denies every egress CONNECT with a 503.
+        - --actor-identity-ca-file=/run/actor-id-ca-certs/ca.crt
+        # Disables Envoy-side tracing only (a span per CONNECT tunnel is
+        # dataplane-volume noise). The ext-proc's own OTel SDK exports to
+        # $OTEL_EXPORTER_OTLP_ENDPOINT from ate-otel-config below.
+        - --otlp-collector-address=
+        # The egress Envoy's admin listener is on 15000, not the 9901 the flag
+        # defaults to (that is the ingress gateway's port). Without this the
+        # drain sequence dials a closed port, reads the connection refusal as
+        # "Envoy already exited", and reports a drain it never performed.
+        - --envoy-admin-address=127.0.0.1:15000
+        # Egress credential-injection flags. The installer replaces this marker
+        # with the --credential-provider-* flags for the provider that the
+        # installer's --credential-provider selects, or removes it when that is
+        # {"enabled":false}. Without a provider, a request matching a rule that
+        # requires an injection is denied (see egress.applyEffects).
+        - --credential-provider-name=k8s.io
+        - --credential-provider-address=k8s-credential-provider.ate-system.svc.cluster.local:50051
+        - --credential-provider-server-name=k8s-credential-provider.ate-system.svc
+        - --credential-provider-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+        - --credential-provider-client-cert=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        # OTLP exporter settings shared by every control plane component; see
+        # manifests/ate-install/ate-otel-config.yaml. Without this the SDK
+        # falls back to localhost:4317, where nothing listens, and every
+        # egress metric and span is lost.
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        ports:
+        - name: extproc
+          containerPort: 50051
+        - name: metrics
+          containerPort: 9090
+        - name: health
+          containerPort: 9091
+        # Probed on the health port, not the ext_proc port: the ext_proc server
+        # binds loopback (--extproc-address 127.0.0.1) so it is unreachable from
+        # other pods, which a pod-IP tcpSocket probe on 50051 could not reach. The
+        # health server binds all interfaces and /readyz reflects the process.
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          failureThreshold: 3
+        volumeMounts:
+        # Trust bundle used to verify ateapi's servicedns serving cert.
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ate.dev
+          readOnly: true
+        # ext-proc's own client identity presented to ateapi.
+        - name: podidentity
+          mountPath: /run/podidentity.podcert.ate.dev
+          readOnly: true
+        # Actor-identity CA roots, for --actor-identity-ca-file above.
+        - name: actor-id-ca-certs
+          mountPath: /run/actor-id-ca-certs
+          readOnly: true
+        - name: drain-signal
+          mountPath: /var/run/atenet
+      volumes:
+      - name: config
+        configMap:
+          name: atenet-egress
+      - name: drain-signal
+        emptyDir: {}
+      - name: sdsmint-sock
+        emptyDir: {}
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              signerName: podidentity.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: podidentity.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: actor-id-ca-certs
+        secret:
+          secretName: actor-id-ca-certs
+      - name: ca-state
+        projected:
+          sources:
+          - secret:
+              name: egress-mitm-ca-pool
+              items:
+              - key: pool
+                path: mitm-pool.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atenet-egress
+  namespace: ate-system
+spec:
+  type: ClusterIP
+  ipFamilyPolicy: PreferDualStack
+  selector:
+    app: atenet-egress
+  ports:
+  - name: https
+    port: 443
+    targetPort: https
+    protocol: TCP

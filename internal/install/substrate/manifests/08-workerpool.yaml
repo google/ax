@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ate-workers
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: ax-workers
+  namespace: ate-workers
+spec:
+  replicas: ${AX_WORKER_REPLICAS}
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0-rc.1@sha256:02a31963cdfb1d250d205a55fb870385b1ba5bad1be1308d556a6296f76bf145
+  sandboxClasses:
+  - name: gvisor
+    configRef:
+      name: gvisor-default

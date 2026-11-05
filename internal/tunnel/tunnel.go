@@ -243,7 +243,11 @@ func EnsureServerURL(opts Options) (string, error) {
 	}
 	kArgs = append(kArgs, "port-forward", "-n", opts.Namespace, targetRes, fmt.Sprintf(":%d", opts.Port))
 
-	cmd := exec.Command("kubectl", kArgs...)
+	kubectlBin, err := resolveKubectl(context.Background())
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command(kubectlBin, kArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -328,7 +332,11 @@ func PortForward(ctx context.Context, kubeContext, namespace, targetResource str
 	}
 	kArgs = append(kArgs, "port-forward", targetResource, fmt.Sprintf(":%d", remotePort))
 
-	cmd := exec.CommandContext(ctx, "kubectl", kArgs...)
+	kubectlBin, err := resolveKubectl(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	cmd := exec.CommandContext(ctx, kubectlBin, kArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	pr, pw, err := os.Pipe()
