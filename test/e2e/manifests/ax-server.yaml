@@ -71,6 +71,8 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 9090
+              name: metrics
           resources:
             requests:
               cpu: 100m
@@ -141,5 +143,8 @@ spec:
     - port: 8080
       targetPort: 8080
       name: http
+    - port: 9090
+      targetPort: 9090
+      name: metrics
   selector:
     app.kubernetes.io/name: ax-server

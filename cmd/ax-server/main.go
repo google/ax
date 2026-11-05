@@ -31,6 +31,7 @@ import (
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -38,6 +39,7 @@ import (
 func main() {
 	var (
 		listenAddr              string
+		metricsAddr             string
 		storeURL                string
 		substrateEndpoint       string
 		substrateAuthority      string
@@ -51,6 +53,7 @@ func main() {
 	)
 
 	flag.StringVar(&listenAddr, "addr", ":8080", "HTTP listen address")
+	flag.StringVar(&metricsAddr, "metrics-addr", ":9090", "Listen address for Prometheus /metrics; empty disables it")
 	flag.StringVar(&storeURL, "store", "postgres://ax@localhost:5432/ax?sslmode=disable", "PostgreSQL connection URL (env: AX_STORE). libpq variables such as PGPASSWORD fill in what it leaves out")
 	flag.StringVar(&substrateEndpoint, "substrate-endpoint", "api.ate-system.svc.cluster.local:443", "Agent Substrate Control API endpoint")
 	flag.StringVar(&substrateAuthority, "substrate-authority", "api.ate-system.svc", "Authority / TLS ServerName for Substrate endpoint")
@@ -76,11 +79,25 @@ func main() {
 		defaultTaskImage = envImage
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(telemetry.NewLogHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(logger)
+
+	tel, err := telemetry.Init(context.Background(), "ax-server")
+	if err != nil {
+		slog.Error("initializing telemetry", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tel.Shutdown(ctx); err != nil {
+			slog.Warn("flushing telemetry", "error", err)
+		}
+	}()
 
 	slog.Info("starting ax-server",
 		"listenAddr", listenAddr,
+		"metricsAddr", metricsAddr,
 		"store", describeStore(storeURL),
 		"substrateEndpoint", substrateEndpoint,
 		"template", defaultTemplate,
@@ -133,12 +150,29 @@ func main() {
 		}
 	}()
 
+	// Metrics get their own listener so the probe and API port stays as it is.
+	var metricsServer *http.Server
+	if metricsAddr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", tel.MetricsHandler())
+		metricsServer = &http.Server{Addr: metricsAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("metrics server failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+	}
+
 	<-ctx.Done()
 	slog.Info("shutting down ax-server")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+	if metricsServer != nil {
+		_ = metricsServer.Shutdown(shutdownCtx)
+	}
 }
 
 // describeStore summarizes a store connection string for logs. It parses the
