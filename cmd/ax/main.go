@@ -414,7 +414,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		tasks := resp.Tasks
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tATESPACE\tPHASE\tACTOR\tWORKER-IP\tAGE")
+		fmt.Fprintln(w, "NAME\tATESPACE\tPHASE\tRESIDENCY\tOUTCOME\tACTOR\tWORKER-IP\tAGE")
 		for _, t := range tasks {
 			workerIP := ""
 			actor := ""
@@ -426,12 +426,6 @@ func runGet(serverURL, atespace string, args []string) error {
 					phase = t.Status.Phase
 				}
 			}
-			if workerIP == "" {
-				workerIP = "<none>"
-			}
-			if actor == "" {
-				actor = "<none>"
-			}
 			age := "<unknown>"
 			name := ""
 			tAtespace := ""
@@ -442,12 +436,14 @@ func runGet(serverURL, atespace string, args []string) error {
 					age = formatAge(time.Since(t.Metadata.CreateTime.AsTime()))
 				}
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				name,
 				tAtespace,
 				phase,
-				actor,
-				workerIP,
+				orNone(t.GetStatus().GetResidency()),
+				orNone(t.GetStatus().GetOutcome()),
+				orNone(actor),
+				orNone(workerIP),
 				age,
 			)
 		}
@@ -695,7 +691,10 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	fmt.Printf("Name:         %s\n", taskName)
 	fmt.Printf("Atespace:     %s\n", taskAtespace)
 	fmt.Printf("Phase:        %s\n", phase)
+	fmt.Printf("Residency:    %s\n", orNone(task.GetStatus().GetResidency()))
+	fmt.Printf("Outcome:      %s\n", orNone(task.GetStatus().GetOutcome()))
 	fmt.Printf("Actor:        %s\n", actor)
+	fmt.Printf("Actor UID:    %s\n", orNone(task.GetStatus().GetActorUid()))
 	fmt.Printf("Worker IP:    %s\n", workerIP)
 	if task.Spec != nil {
 		if ref := task.Spec.GetWorkspace(); ref != nil {
@@ -728,6 +727,14 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	}
 
 	return nil
+}
+
+// orNone returns s, or "<none>" when s is empty, for table and describe output.
+func orNone(s string) string {
+	if s == "" {
+		return "<none>"
+	}
+	return s
 }
 
 // runDelete removes one resource by kind and name.

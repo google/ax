@@ -120,8 +120,8 @@ From your ax checkout:
 ax apply -f examples/simple.yaml         # the smallest useful Task
 ax resume task simple-task               # new tasks start Suspended; resume schedules the actor and starts it
 ax get tasks
-# NAME          ATESPACE   PHASE     ACTOR         WORKER-IP    AGE
-# simple-task   default    Running   simple-task   10.20.3.67   1m
+# NAME          ATESPACE   PHASE     RESIDENCY   OUTCOME   ACTOR         WORKER-IP    AGE
+# simple-task   default    Running   running     <none>    simple-task   10.20.3.67   1m
 
 ax ssh simple-task -- ls -la /workspace  # poke around inside the sandbox
 ax suspend task simple-task              # checkpoint and pause

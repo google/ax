@@ -39,6 +39,8 @@ type mockControlClient struct {
 	actorRemaining      int // Number of GetActor calls before returning NotFound
 	resumeErrs          []error
 	resumeActor         *ateapipb.Actor
+	suspendErrs         []error
+	suspendActor        *ateapipb.Actor
 	deleteTemplateErrs  []error
 	deleteTemplateCalls int
 	templates           map[string]*ateapipb.ActorTemplate
@@ -81,6 +83,19 @@ func (m *mockControlClient) ResumeActor(ctx context.Context, req *ateapipb.Resum
 		}
 	}
 	return &ateapipb.ResumeActorResponse{Actor: m.resumeActor, Resumed: true}, nil
+}
+
+func (m *mockControlClient) SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest, opts ...grpc.CallOption) (*ateapipb.SuspendActorResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.suspendErrs) > 0 {
+		err := m.suspendErrs[0]
+		m.suspendErrs = m.suspendErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &ateapipb.SuspendActorResponse{Actor: m.suspendActor}, nil
 }
 
 func (m *mockControlClient) DeleteActorTemplate(ctx context.Context, req *ateapipb.DeleteActorTemplateRequest, opts ...grpc.CallOption) (*ateapipb.ActorTemplate, error) {
@@ -263,6 +278,53 @@ func TestClient_ResumeActor_WorkerPodIpsAndRetry(t *testing.T) {
 	}
 	if ip != "fd00::99" {
 		t.Errorf("expected primary worker IP fd00::99, got %q", ip)
+	}
+}
+
+func TestClient_SuspendActor_ReturnsActorAfterRetry(t *testing.T) {
+	oldInterval := defaultRetryInterval
+	defaultRetryInterval = 5 * time.Millisecond
+	defer func() { defaultRetryInterval = oldInterval }()
+
+	mock := &mockControlClient{
+		suspendErrs: []error{status.Error(codes.Aborted, "operation aborted"), nil},
+		suspendActor: &ateapipb.Actor{
+			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "task-1", Uid: "uid-1"},
+			Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		},
+	}
+	c := &Client{control: mock}
+	actor, err := c.SuspendActor(context.Background(), "default", "task-1")
+	if err != nil {
+		t.Fatalf("SuspendActor failed: %v", err)
+	}
+	if actor.GetMetadata().GetUid() != "uid-1" || Residency(actor) != v1alpha1.ResidencySuspended {
+		t.Errorf("SuspendActor returned %v, want the suspended actor Substrate returned", actor)
+	}
+}
+
+func TestResidency(t *testing.T) {
+	tests := []struct {
+		state ateapipb.ActorState
+		want  string
+	}{
+		{ateapipb.ActorState_ACTOR_STATE_RESUMING, v1alpha1.ResidencyResuming},
+		{ateapipb.ActorState_ACTOR_STATE_RUNNING, v1alpha1.ResidencyRunning},
+		{ateapipb.ActorState_ACTOR_STATE_SUSPENDING, v1alpha1.ResidencySuspending},
+		{ateapipb.ActorState_ACTOR_STATE_SUSPENDED, v1alpha1.ResidencySuspended},
+		{ateapipb.ActorState_ACTOR_STATE_REVERTING, v1alpha1.ResidencyReverting},
+		{ateapipb.ActorState_ACTOR_STATE_CRASHED, v1alpha1.ResidencyCrashed},
+		{ateapipb.ActorState_ACTOR_STATE_DELETING, v1alpha1.ResidencyDeleting},
+		{ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED, ""},
+	}
+	for _, tt := range tests {
+		actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: tt.state}}
+		if got := Residency(actor); got != tt.want {
+			t.Errorf("Residency(%v) = %q, want %q", tt.state, got, tt.want)
+		}
+	}
+	if got := Residency(nil); got != "" {
+		t.Errorf("Residency(nil) = %q, want empty", got)
 	}
 }
 

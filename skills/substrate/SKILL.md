@@ -37,7 +37,7 @@ All Control API traffic goes through this package. It encapsulates:
 - **Retry** — `IsTransientError` + `retryOnCodes` for `Unavailable`-class errors.
 - **Helpers** the reconciler relies on — `EnsureAtespace`, `EnsureActorTemplateWithImage`,
   `EnsureActor`, `SuspendActor`, `ResumeActor`, `DeleteActor`, `WorkerIP`,
-  `ResourceLimits`, `BuildActorTemplate`.
+  `Residency`, `ResourceLimits`, `BuildActorTemplate`.
 
 ### Where a new Control API call lives today
 
@@ -95,6 +95,12 @@ instead. No mocking library is in `go.mod`.
   (`substrate.WorkerIP` in `internal/server/server.go`), and the reconciler
   uses the IP `ResumeActor` returns only for its readiness probe
   (`internal/controller/reconciler.go`).
+- `TaskStatus.residency` and `actorUid` are the exception to that rule: the
+  reconciler records them from the actor that `CreateActor`, `SuspendActor` and
+  `ResumeActor` return (`recordActor` in `internal/controller/reconciler.go`),
+  the store keeps them, and reads overlay the live actor's values
+  (`setActorStatus` in `internal/server/server.go`). `substratetest` assigns
+  each created actor a UID (`actor-uid-N`) for this.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.

@@ -551,22 +551,48 @@ func WorkerIP(actor *ateapipb.Actor) string {
 	return ""
 }
 
-// SuspendActor suspends the specified actor, triggering state checkpointing.
-func (c *Client) SuspendActor(ctx context.Context, atespace, actorName string) error {
+// Residency returns the task residency that matches an actor's state, or ""
+// for a state AX does not recognize.
+func Residency(actor *ateapipb.Actor) string {
+	switch actor.GetStatus().GetState() {
+	case ateapipb.ActorState_ACTOR_STATE_RESUMING:
+		return v1alpha1.ResidencyResuming
+	case ateapipb.ActorState_ACTOR_STATE_RUNNING:
+		return v1alpha1.ResidencyRunning
+	case ateapipb.ActorState_ACTOR_STATE_SUSPENDING:
+		return v1alpha1.ResidencySuspending
+	case ateapipb.ActorState_ACTOR_STATE_SUSPENDED:
+		return v1alpha1.ResidencySuspended
+	case ateapipb.ActorState_ACTOR_STATE_REVERTING:
+		return v1alpha1.ResidencyReverting
+	case ateapipb.ActorState_ACTOR_STATE_CRASHED:
+		return v1alpha1.ResidencyCrashed
+	case ateapipb.ActorState_ACTOR_STATE_DELETING:
+		return v1alpha1.ResidencyDeleting
+	default:
+		return ""
+	}
+}
+
+// SuspendActor suspends the specified actor, triggering state checkpointing,
+// and returns the actor as Substrate reports it afterwards.
+func (c *Client) SuspendActor(ctx context.Context, atespace, actorName string) (*ateapipb.Actor, error) {
 	req := &ateapipb.SuspendActorRequest{
 		Actor: &ateapipb.ObjectRef{
 			Atespace: atespace,
 			Name:     actorName,
 		},
 	}
+	var resp *ateapipb.SuspendActorResponse
 	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.SuspendActor(ctx, req)
+		var err error
+		resp, err = c.control.SuspendActor(ctx, req)
 		return err
 	}, codes.Aborted, codes.Unavailable)
 	if err != nil {
-		return fmt.Errorf("suspending actor %s/%s: %w", atespace, actorName, err)
+		return nil, fmt.Errorf("suspending actor %s/%s: %w", atespace, actorName, err)
 	}
-	return nil
+	return resp.GetActor(), nil
 }
 
 // GetActor fetches an Actor by name.

@@ -434,6 +434,30 @@ func assertContains(t *testing.T, what, out string, wants ...string) {
 	}
 }
 
+// assertTaskRow fails the test unless the `ax get tasks` output has a row for
+// name with the given PHASE, RESIDENCY and OUTCOME columns.
+func assertTaskRow(t *testing.T, out, name, phase, residency, outcome string) {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	header := strings.Fields(lines[0])
+	for _, line := range lines[1:] {
+		row := strings.Fields(line)
+		if len(row) != len(header) || row[0] != name {
+			continue
+		}
+		got := make(map[string]string, len(header))
+		for i, col := range header {
+			got[col] = row[i]
+		}
+		if got["PHASE"] != phase || got["RESIDENCY"] != residency || got["OUTCOME"] != outcome {
+			t.Fatalf("'ax get tasks' row for %s has PHASE=%q RESIDENCY=%q OUTCOME=%q, want %q %q %q:\n%s",
+				name, got["PHASE"], got["RESIDENCY"], got["OUTCOME"], phase, residency, outcome, out)
+		}
+		return
+	}
+	t.Fatalf("'ax get tasks' has no row for %s:\n%s", name, out)
+}
+
 func (s *suiteEnv) getTask(t *testing.T, atespace, name string) *v1alpha1.Task {
 	t.Helper()
 	task, err := s.AXClient.GetTask(t.Context(), &v1alpha1.GetTaskRequest{Name: name, Atespace: atespace})
