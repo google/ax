@@ -263,7 +263,7 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 	if st, err := os.Stat(codePath); err != nil || !st.IsDir() {
 		t.Errorf("workspace dir %s missing: %v", codePath, err)
 	}
-	marker := filepath.Join(workspace.AXDir, workspace.MarkerName(codePath))
+	marker := filepath.Join(codePath, ".ax", workspace.InitializedMarkerFilename)
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("marker %s missing: %v", marker, err)
 	}
