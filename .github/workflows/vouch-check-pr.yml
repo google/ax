@@ -14,9 +14,11 @@
 
 name: Vouch - Check PR
 
-# pull_request_target runs the workflow from the base branch with a write
-# token. It must never check out or run code from the pull request.
-on:
+# pull_request_target is required so the token can comment on and close pull
+# requests from forks. This is safe here because the workflow never checks out
+# or runs code from the pull request and only reads the PR author and number.
+# It must stay that way.
+on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, reopened]
 
