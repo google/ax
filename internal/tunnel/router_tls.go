@@ -47,10 +47,11 @@ const (
 )
 
 type cachedRouterTLS struct {
-	TrustBundlePEM string    `json:"trust_bundle_pem"`
-	CertChainPEM   string    `json:"cert_chain_pem"`
-	KeyPEM         string    `json:"key_pem"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	ClusterFingerprint string    `json:"cluster_fingerprint,omitempty"`
+	TrustBundlePEM     string    `json:"trust_bundle_pem"`
+	CertChainPEM       string    `json:"cert_chain_pem"`
+	KeyPEM             string    `json:"key_pem"`
+	ExpiresAt          time.Time `json:"expires_at"`
 }
 
 // RouterTLSConfig builds a TLS configuration for connecting to Substrate's
@@ -91,10 +92,11 @@ func RouterTLSConfig(ctx context.Context, kubeContext, namespace, serviceAccount
 		expiresAt = certExpiry
 	}
 	_ = saveCachedRouterTLS(ctxName, namespace, serviceAccount, &cachedRouterTLS{
-		TrustBundlePEM: trustPEM,
-		CertChainPEM:   chainPEM,
-		KeyPEM:         keyPEM,
-		ExpiresAt:      expiresAt,
+		ClusterFingerprint: clusterFingerprint(ctxName),
+		TrustBundlePEM:     trustPEM,
+		CertChainPEM:       chainPEM,
+		KeyPEM:             keyPEM,
+		ExpiresAt:          expiresAt,
 	})
 
 	return &tls.Config{
@@ -110,8 +112,12 @@ func routerTLSCachePath(ctxName, namespace, serviceAccount string) (string, erro
 	if err != nil {
 		return "", err
 	}
+	cacheDir := filepath.Join(dir, "router-tls")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		return "", err
+	}
 	key := SanitizeContext(ctxName + "-" + namespace + "-" + serviceAccount)
-	return filepath.Join(dir, key+"-router-tls.json"), nil
+	return filepath.Join(cacheDir, key+"-router-tls.json"), nil
 }
 
 func loadCachedRouterTLS(ctxName, namespace, serviceAccount string) (*tls.Config, error) {
@@ -126,6 +132,9 @@ func loadCachedRouterTLS(ctxName, namespace, serviceAccount string) (*tls.Config
 	var cached cachedRouterTLS
 	if err := json.Unmarshal(data, &cached); err != nil {
 		return nil, err
+	}
+	if cached.ClusterFingerprint != clusterFingerprint(ctxName) {
+		return nil, fmt.Errorf("cached router TLS cluster changed")
 	}
 	if time.Now().After(cached.ExpiresAt) {
 		return nil, fmt.Errorf("cached router TLS credentials expired")
@@ -170,6 +179,9 @@ func saveCachedRouterTLS(ctxName, namespace, serviceAccount string, cached *cach
 	if err != nil {
 		return err
 	}
+	if cached.ClusterFingerprint == "" {
+		cached.ClusterFingerprint = clusterFingerprint(ctxName)
+	}
 	data, err := json.Marshal(cached)
 	if err != nil {
 		return err
@@ -185,8 +197,12 @@ func kubectlArgs(ctxName string, args ...string) []string {
 }
 
 func serviceDNSTrustPool(ctx context.Context, ctxName string) (string, *x509.CertPool, error) {
+	kubectlBin, err := resolveKubectl(ctx)
+	if err != nil {
+		return "", nil, err
+	}
 	args := kubectlArgs(ctxName, "get", "clustertrustbundles.certificates.k8s.io", "-l", liveBundleSelector, "-o", "json")
-	out, err := exec.CommandContext(ctx, "kubectl", args...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, kubectlBin, args...).CombinedOutput()
 	if err != nil {
 		return "", nil, fmt.Errorf("kubectl get clustertrustbundles: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -229,6 +245,10 @@ func serviceDNSTrustPool(ctx context.Context, ctxName string) (string, *x509.Cer
 }
 
 func requestPodIdentityCert(ctx context.Context, ctxName, namespace, serviceAccount string) (tls.Certificate, string, string, error) {
+	kubectlBin, err := resolveKubectl(ctx)
+	if err != nil {
+		return tls.Certificate{}, "", "", err
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, "", "", fmt.Errorf("generating key: %w", err)
@@ -274,7 +294,7 @@ func requestPodIdentityCert(ctx context.Context, ctxName, namespace, serviceAcco
 		if err != nil {
 			return tls.Certificate{}, "", "", err
 		}
-		cmd := exec.CommandContext(ctx, "kubectl", kubectlArgs(ctxName, "create", "-f", "-")...)
+		cmd := exec.CommandContext(ctx, kubectlBin, kubectlArgs(ctxName, "create", "-f", "-")...)
 		cmd.Stdin = bytes.NewReader(body)
 		out, err := cmd.CombinedOutput()
 		if err == nil {
@@ -290,7 +310,7 @@ func requestPodIdentityCert(ctx context.Context, ctxName, namespace, serviceAcco
 	defer func() {
 		delCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = exec.CommandContext(delCtx, "kubectl",
+		_ = exec.CommandContext(delCtx, kubectlBin,
 			kubectlArgs(ctxName, "-n", namespace, "delete", "podcertificaterequests.certificates.k8s.io", name, "--ignore-not-found")...,
 		).Run()
 	}()
@@ -300,7 +320,7 @@ func requestPodIdentityCert(ctx context.Context, ctxName, namespace, serviceAcco
 
 	var chainPEM string
 	for {
-		out, err := exec.CommandContext(pollCtx, "kubectl",
+		out, err := exec.CommandContext(pollCtx, kubectlBin,
 			kubectlArgs(ctxName, "-n", namespace, "get", "podcertificaterequests.certificates.k8s.io", name, "-o", "json")...,
 		).CombinedOutput()
 		if err == nil {

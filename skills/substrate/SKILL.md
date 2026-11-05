@@ -18,7 +18,7 @@ and `hack/setup-e2e-kind.sh` if they look stale.
 
 | Module | Pinned | Provides | Imported by |
 |---|---|---|---|
-| `go.ate.dev/substrate` | `v1.0.0-rc.1` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume) | `internal/substrate`, `internal/server`, `internal/controller`, `test/e2e` |
+| `go.ate.dev/substrate` | `v1.0.0-rc.1` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume) and `pkg/postgressetup` | `internal/substrate`, `internal/install/substrate`, `internal/server`, `internal/controller`, `test/e2e` |
 | `github.com/agent-substrate/env` | `v0.0.11-0.20260912052224-4468a200b170` (pseudo-version) | Guest services served inside the sandbox (process exec + file system gRPC) and `proto/ateenv/v1alpha` | `internal/guest`, `internal/metadata` |
 
 There is no `replace` directive for either module. Local hacking against a
@@ -55,7 +55,7 @@ All Control API traffic goes through this package. It encapsulates:
 |---|---|
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
-| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`) |
+| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 
 Why it matters: tasks never get a Service/Ingress. Every request to a task is
 proxied by the **atenet router**, which picks the target from the
@@ -134,6 +134,7 @@ What the repo mechanically requires when `go.ate.dev/substrate` or
 ```bash
 go get go.ate.dev/substrate@vX.Y.Z            # and/or github.com/agent-substrate/env@<sha>
 go mod tidy                                    # CI diffs go.mod/go.sum
+./hack/sync-substrate-manifests.sh             # re-renders internal/install/substrate/manifests/ for `ax local`
 go build ./... && go test ./...                # unit tests compile against the new ateapipb
 make test-e2e                                  # hack/setup-e2e-kind.sh installs the go.mod version
 ```

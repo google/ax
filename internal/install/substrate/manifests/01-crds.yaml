@@ -1,0 +1,1096 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: csidriverconfigs.ate.dev
+spec:
+  group: ate.dev
+  names:
+    kind: CSIDriverConfig
+    listKind: CSIDriverConfigList
+    plural: csidriverconfigs
+    shortNames:
+    - csidriverconfig
+    singular: csidriverconfig
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.driverName
+      name: Driver
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: CSIDriverConfig is the Schema for the csidriverconfigs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of CSIDriverConfig
+            properties:
+              controllerEndpoint:
+                description: |-
+                  controllerEndpoint is the gRPC endpoint for the CSI Controller service.
+                  Must be a valid network URI (e.g. dns:///csi-service:9000 or tcp://127.0.0.1:9000).
+                pattern: ^(tcp|dns)://.+$
+                type: string
+              driverName:
+                description: |-
+                  driverName is the standard CSI driver name (e.g. "hostpath.csi.k8s.io").
+                  Matches the StorageClass referenced in ActorTemplate volume definitions.
+                maxLength: 63
+                minLength: 1
+                pattern: ^(substrate\.io/)?([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)$
+                type: string
+              nodeSocketOverride:
+                description: |-
+                  nodeSocketOverride is an optional override for the CSI Node service socket
+                  on the worker nodes. If empty, ATE defaults to unix:///var/lib/kubelet/plugins/[DriverName]/csi.sock.
+                pattern: ^unix://.+$
+                type: string
+              tls:
+                description: tls configures TLS/mTLS for the connection to the ControllerEndpoint.
+                properties:
+                  enabled:
+                    description: enabled controls whether TLS is used.
+                    type: boolean
+                  serverName:
+                    description: |-
+                      serverName specifies the expected server name (SAN) for TLS certificate verification.
+                      Required when TLS is enabled.
+                    type: string
+                  usePodIdentity:
+                    description: usePodIdentity indicates whether to reuse Substrate's
+                      Pod Identity (SPIFFE) certificates.
+                    type: boolean
+                required:
+                - enabled
+                type: object
+                x-kubernetes-validations:
+                - message: tls.usePodIdentity must be true when tls.enabled is true;
+                    manual certificates are not yet supported
+                  rule: '!self.enabled || (has(self.usePodIdentity) && self.usePodIdentity)'
+                - message: tls.serverName is required when tls.enabled is true
+                  rule: '!self.enabled || (has(self.serverName) && size(self.serverName)
+                    > 0)'
+            required:
+            - controllerEndpoint
+            - driverName
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+
+---
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: sandboxconfigs.ate.dev
+spec:
+  group: ate.dev
+  names:
+    kind: SandboxConfig
+    listKind: SandboxConfigList
+    plural: sandboxconfigs
+    shortNames:
+    - sandboxconfig
+    singular: sandboxconfig
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.sandboxClass
+      name: Class
+      type: string
+    - jsonPath: .spec.defaultVersion
+      name: Default
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SandboxConfig is cluster-scoped configuration describing the versions of the
+          sandbox binaries for a sandbox runtime family. It is referenced by a
+          WorkerPool's spec.sandboxClasses[].configRef (or resolved via the
+          sandboxconfig.ate.dev/is-class-default annotation) and decouples sandbox
+          binary selection from the workload definition.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of SandboxConfig
+            properties:
+              defaultVersion:
+                description: |-
+                  defaultVersion names the entry in versions that new sandboxes boot with.
+                  It must name an existing, non-Disabled version.
+                maxLength: 63
+                minLength: 1
+                type: string
+              sandboxClass:
+                default: gvisor
+                description: |-
+                  sandboxClass is the sandbox runtime family this config applies to. A
+                  WorkerPool only uses SandboxConfigs whose sandboxClass matches the entry
+                  in its spec.sandboxClasses.
+                enum:
+                - gvisor
+                - microvm
+                type: string
+              versions:
+                description: versions are the sandbox versions this config offers,
+                  keyed by name.
+                items:
+                  description: |-
+                    SandboxVersionConfig is one version of a SandboxConfig: the asset set a
+                    sandbox boots with.
+                  properties:
+                    assets:
+                      additionalProperties:
+                        additionalProperties:
+                          description: |-
+                            AssetFile is one content-addressed file that atelet fetches for a sandbox
+                            runtime (e.g. the gVisor runsc binary, or a micro-VM kernel/firmware/config).
+                          properties:
+                            sha256:
+                              description: |-
+                                sha256 is the lower-case hex SHA256 of the asset. It both names the cached
+                                file (preventing collisions) and verifies the download's integrity.
+                              pattern: ^[a-f0-9]{64}$
+                              type: string
+                            url:
+                              description: |-
+                                url is where to download the asset from (e.g. a gs:// URL). atelet
+                                fetches every URL through the node's object-store plugin, with the
+                                plugin's credentials. The plugin refuses URLs under a snapshot location.
+                                The in-tree plugin serves only its storage backend's scheme: gs:// on
+                                GCS, s3:// on S3. A gs:// URL the plugin has no object for or cannot
+                                serve is then read anonymously, which serves public buckets such as
+                                gs://gvisor.
+                              maxLength: 2048
+                              minLength: 1
+                              type: string
+                          required:
+                          - sha256
+                          - url
+                          type: object
+                        type: object
+                      description: |-
+                        assets is the set of files atelet fetches for this runtime, keyed first by
+                        architecture (GOARCH, e.g. "amd64", "arm64") and then by asset name. The
+                        asset names are interpreted by the sandbox backend: gVisor expects a
+                        "gvisor" asset (the release's gvisor.tar.zstd, which atelet extracts so
+                        the gvisor-bin/ helpers sit next to runsc); a micro-VM backend expects
+                        several (e.g. "cloud-hypervisor", "kata-kernel", "kata-image"). The
+                        schema is intentionally generic; per-class requirements are enforced by
+                        a ValidatingAdmissionPolicy.
+                      type: object
+                    name:
+                      description: |-
+                        name identifies this version within its SandboxConfig. It is a DNS label
+                        (lower-case alphanumerics and '-').
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    state:
+                      default: Enabled
+                      description: |-
+                        state is whether this version may be used: Enabled (default) or
+                        Disabled.
+                      enum:
+                      - Enabled
+                      - Disabled
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 16
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - defaultVersion
+            - versions
+            type: object
+            x-kubernetes-validations:
+            - message: defaultVersion must name an entry in versions
+              rule: self.versions.exists(v, v.name == self.defaultVersion)
+            - message: the version named by defaultVersion must not be Disabled
+              rule: '!self.versions.exists(v, v.name == self.defaultVersion && has(v.state)
+                && v.state == ''Disabled'')'
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+
+---
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: workerpools.ate.dev
+spec:
+  group: ate.dev
+  names:
+    kind: WorkerPool
+    listKind: WorkerPoolList
+    plural: workerpools
+    shortNames:
+    - workerpool
+    singular: workerpool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.replicas
+      name: Desired
+      type: integer
+    - jsonPath: .status.replicas
+      name: Replicas
+      type: integer
+    - jsonPath: .status.readyReplicas
+      name: Ready
+      type: integer
+    - jsonPath: .status.sandboxClasses[*].configRef.name
+      name: SandboxConfig
+      type: string
+    - jsonPath: .status.sandboxClasses[*].conditions[?(@.type=="Resolved")].status
+      name: Resolved
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: WorkerPool is the Schema for the workerpools API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of WorkerPool
+            properties:
+              replicas:
+                description: replicas is the number of worker pods to run.
+                format: int32
+                minimum: 0
+                type: integer
+              sandboxClasses:
+                description: |-
+                  sandboxClasses lists the sandbox runtime families this pool runs. Exactly
+                  one entry is allowed today. The names cannot change after creation.
+                items:
+                  description: WorkerPoolSandboxClass is one sandbox runtime family
+                    a WorkerPool runs.
+                  properties:
+                    configRef:
+                      description: |-
+                        configRef names a cluster-scoped SandboxConfig for this sandbox class.
+                        The referenced config's SandboxClass must match Name. When omitted, the
+                        pool uses the newest SandboxConfig of this class annotated
+                        sandboxconfig.ate.dev/is-class-default: "true". The controller reports
+                        the resolved config in status.sandboxClasses.
+                      properties:
+                        name:
+                          description: name is the SandboxConfig's metadata.name.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    name:
+                      description: |-
+                        name selects the sandbox runtime family, which drives the worker pod
+                        shape (KVM/vhost device mounts and node placement). The concrete binary
+                        is still selected by WorkerImage. The sandbox binaries themselves come
+                        from the SandboxConfig referenced by ConfigRef (or the class default).
+                      enum:
+                      - gvisor
+                      - microvm
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 1
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: sandboxClasses names are immutable
+                  rule: self.map(c, c.name) == oldSelf.map(c, c.name)
+              template:
+                description: template holds optional metadata, scheduling, and resource
+                  settings for worker workloads.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      annotations are added to the generated Deployment and worker pods. Keys
+                      in the ate.dev domain and its subdomains are reserved for controllers.
+                    maxProperties: 64
+                    type: object
+                    x-kubernetes-validations:
+                    - message: ate.dev and its subdomains are reserved
+                      rule: self.all(key, !key.startsWith('ate.dev/') && !key.contains('.ate.dev/'))
+                    - message: annotation keys must be valid Kubernetes qualified
+                        names
+                      rule: self.all(key, !format.qualifiedName().validate(key).hasValue())
+                  labels:
+                    additionalProperties:
+                      description: |-
+                        WorkerPoolLabelValue is a Kubernetes label value for generated worker
+                        workloads.
+                      maxLength: 63
+                      pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                      type: string
+                    description: |-
+                      labels are added to the generated Deployment and worker pods. Keys in
+                      the ate.dev domain and its subdomains are reserved for controllers.
+                    maxProperties: 64
+                    type: object
+                    x-kubernetes-validations:
+                    - message: ate.dev and its subdomains are reserved
+                      rule: self.all(key, !key.startsWith('ate.dev/') && !key.contains('.ate.dev/'))
+                    - message: label keys must be valid Kubernetes qualified names
+                      rule: self.all(key, !format.qualifiedName().validate(key).hasValue())
+                  nodeAffinity:
+                    description: |-
+                      nodeAffinity scheduling rules for the worker pods. Mapped to
+                      spec.affinity.nodeAffinity on the pod.
+                    properties:
+                      preferredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          The scheduler will prefer to schedule pods to nodes that satisfy
+                          the affinity expressions specified by this field, but it may choose
+                          a node that violates one or more of the expressions. The node that is
+                          most preferred is the one with the greatest sum of weights, i.e.
+                          for each node that meets all of the scheduling requirements (resource
+                          request, requiredDuringScheduling affinity expressions, etc.),
+                          compute a sum by iterating through the elements of this field and adding
+                          "weight" to the sum if the node matches the corresponding matchExpressions; the
+                          node(s) with the highest sum are the most preferred.
+                        items:
+                          description: |-
+                            An empty preferred scheduling term matches all objects with implicit weight 0
+                            (i.e. it's a no-op). A null preferred scheduling term matches no objects (i.e. is also a no-op).
+                          properties:
+                            preference:
+                              description: A node selector term, associated with the
+                                corresponding weight.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            weight:
+                              description: Weight associated with matching the corresponding
+                                nodeSelectorTerm, in the range 1-100.
+                              format: int32
+                              type: integer
+                          required:
+                          - preference
+                          - weight
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      requiredDuringSchedulingIgnoredDuringExecution:
+                        description: |-
+                          If the affinity requirements specified by this field are not met at
+                          scheduling time, the pod will not be scheduled onto the node.
+                          If the affinity requirements specified by this field cease to be met
+                          at some point during pod execution (e.g. due to an update), the system
+                          may or may not try to eventually evict the pod from its node.
+                        properties:
+                          nodeSelectorTerms:
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
+                            items:
+                              description: |-
+                                A null or empty node selector term matches no objects. The requirements of
+                                them are ANDed.
+                                The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - nodeSelectorTerms
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: nodeSelector is a selector which must be true for
+                      the pod to fit on a node.
+                    type: object
+                  priorityClassName:
+                    description: priorityClassName for the worker pods.
+                    type: string
+                  resources:
+                    description: resources are the compute resources allocated for
+                      each worker pod.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  serviceAccountName:
+                    description: |-
+                      serviceAccountName for the worker pods. The ServiceAccount must exist
+                      in the WorkerPool's namespace. When omitted, the pods run as the
+                      "ateworker" ServiceAccount, which the controller creates.
+                    minLength: 1
+                    type: string
+                  tolerations:
+                    description: tolerations for the worker pods.
+                    items:
+                      description: |-
+                        The pod this Toleration is attached to tolerates any taint that matches
+                        the triple <key,value,effect> using the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: |-
+                            Effect indicates the taint effect to match. Empty means match all taint effects.
+                            When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: |-
+                            Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                            If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                          type: string
+                        operator:
+                          description: |-
+                            Operator represents a key's relationship to the value.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                            Exists is equivalent to wildcard for value, so that a pod can
+                            tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                          type: string
+                        tolerationSeconds:
+                          description: |-
+                            TolerationSeconds represents the period of time the toleration (which must be
+                            of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                            it is not set, which means tolerate the taint forever (do not evict). Zero and
+                            negative values will be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: |-
+                            Value is the taint value the toleration matches to.
+                            If the operator is Exists, the value should be empty, otherwise just a regular string.
+                          type: string
+                      type: object
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              workerImage:
+                description: workerImage is the worker container image to deploy as
+                  workers.
+                minLength: 1
+                type: string
+            required:
+            - replicas
+            - sandboxClasses
+            - workerImage
+            type: object
+          status:
+            description: status is the observed state of WorkerPool
+            properties:
+              readyReplicas:
+                description: readyReplicas is the number of ready worker pods.
+                format: int32
+                minimum: 0
+                type: integer
+              replicas:
+                description: replicas is the total number of worker pods.
+                format: int32
+                minimum: 0
+                type: integer
+              sandboxClasses:
+                description: |-
+                  sandboxClasses reports the SandboxConfig each sandbox class of the pool
+                  uses and whether the class's spec resolves.
+                items:
+                  description: |-
+                    WorkerPoolSandboxClassStatus reports the SandboxConfig and resolution state
+                    of one sandbox class of a WorkerPool.
+                  properties:
+                    conditions:
+                      description: conditions describe the current state of this sandbox
+                        class.
+                      items:
+                        description: Condition contains details for one aspect of
+                          the current state of this API Resource.
+                        properties:
+                          lastTransitionTime:
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            format: date-time
+                            type: string
+                          message:
+                            default: ""
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
+                            maxLength: 32768
+                            type: string
+                          observedGeneration:
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          reason:
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                            type: string
+                          status:
+                            description: status of the condition, one of True, False,
+                              Unknown.
+                            enum:
+                            - "True"
+                            - "False"
+                            - Unknown
+                            type: string
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - reason
+                        - status
+                        - type
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - type
+                      x-kubernetes-list-type: map
+                    configRef:
+                      description: |-
+                        configRef names the cluster-scoped SandboxConfig in use. That is the
+                        config spec.sandboxClasses[].configRef names, or the class default, or
+                        the last resolved config while the spec does not resolve. Omitted when
+                        the class has never resolved.
+                      properties:
+                        name:
+                          description: name is the SandboxConfig's metadata.name.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    name:
+                      description: name is the sandbox runtime family.
+                      enum:
+                      - gvisor
+                      - microvm
+                      type: string
+                    pendingConfigRef:
+                      description: |-
+                        pendingConfigRef names the SandboxConfig the class is switching to
+                        while the controller confirms it against the API server. It protects
+                        the config from deletion like configRef does. The same reconcile
+                        clears it, and configRef either moves to it or stays where it was.
+                      properties:
+                        name:
+                          description: name is the SandboxConfig's metadata.name.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                  required:
+                  - name
+                  type: object
+                maxItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              selector:
+                description: selector is the label selector for the worker pods.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 63 characters, because worker pods
+            use it as a label value
+          rule: size(self.metadata.name) <= 63
+    served: true
+    storage: true
+    subresources:
+      scale:
+        labelSelectorPath: .status.selector
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+      status: {}
+
+---
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ate-controller
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
+- apiGroups:
+  - ate.dev
+  resources:
+  - sandboxconfigs
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ate.dev
+  resources:
+  - workerpools/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - clustertrustbundles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - certificates.k8s.io
+  resourceNames:
+  - egress-mitm.ate.dev/*
+  resources:
+  - signers
+  verbs:
+  - attest
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ate-controller
+  namespace: ate-system
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - egress-mitm-ca-pool
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch

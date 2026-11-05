@@ -1,0 +1,188 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# The credential provider: a gRPC service that resolves ate-secret:// URIs
+# of the k8s.io class to Kubernetes Secret values. It is the ONLY
+# component in the egress credential-injection path with Kubernetes access; the
+# egress gateway and the injector never read Secrets.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-credential-provider
+  namespace: ate-system
+---
+# POC scope note: this grants read on Secrets cluster-wide so a policy can name a
+# Secret in any namespace. A production deployment would scope this to the
+# namespaces a provider instance is allowed to serve.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-credential-provider-secret-reader
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-credential-provider-secret-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-credential-provider-secret-reader
+subjects:
+- kind: ServiceAccount
+  name: k8s-credential-provider
+  namespace: ate-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-credential-provider
+  namespace: ate-system
+  labels:
+    app: k8s-credential-provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-credential-provider
+  template:
+    metadata:
+      labels:
+        app: k8s-credential-provider
+    spec:
+      serviceAccountName: k8s-credential-provider
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+      containers:
+      - name: k8s-credential-provider
+        image: ghcr.io/agent-substrate/substrate/kubernetes-secrets:v1.0.0-rc.1@sha256:d0e376e7abfe4548316b8dc37e7f26b6da4763637ad7a3b33a6e8311ce23bcdd
+        args:
+        - "--listen-address=:50051"
+        - "--metrics-address=:9090"
+        - "--health-address=:9091"
+        # The /statusz page binds 127.0.0.1 for port-forward access.
+        - "--status-address=127.0.0.1:4040"
+        # Serve with the pod's servicedns identity (SAN k8s-credential-provider.ate-system.svc)
+        # and require the injector to present a podidentity client cert whose chain
+        # verifies against the trust bundle. The provider additionally pins the
+        # caller's SAN to the egress gateway's identity
+        # (spiffe://cluster.local/ns/ate-system/sa/atenet-egress), so no other
+        # CA-trusted workload can fetch secrets.
+        - "--server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem"
+        - "--client-ca-file=/run/podidentity.podcert.ate.dev/trust-bundle.pem"
+        # Enforce the atespace→namespace authorization policy (default-deny).
+        - "--namespace-policy-file=/etc/k8s-credential-provider/namespace-policy.yaml"
+        - "--log-level=info"
+        ports:
+        - name: grpc
+          containerPort: 50051
+        - name: metrics
+          containerPort: 9090
+        - name: health
+          containerPort: 9091
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: namespace-policy
+          mountPath: /etc/k8s-credential-provider
+          readOnly: true
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ate.dev
+          readOnly: true
+        - name: podidentity
+          mountPath: /run/podidentity.podcert.ate.dev
+          readOnly: true
+      volumes:
+      - name: namespace-policy
+        configMap:
+          name: k8s-credential-provider-namespace-policy
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              signerName: podidentity.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: podidentity.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-credential-provider
+  namespace: ate-system
+spec:
+  type: ClusterIP
+  selector:
+    app: k8s-credential-provider
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: grpc
+    protocol: TCP
+---
+# Only the egress gateway may reach the provider's gRPC port; every other
+# connection to the provider pods is dropped. The provider also pins the
+# client certificate to the gateway's identity (see the Deployment), so this
+# keeps other pods from reaching it at all. Takes effect only on a cluster
+# whose network plugin enforces NetworkPolicy, such as GKE Dataplane V2.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: k8s-credential-provider
+  namespace: ate-system
+spec:
+  podSelector:
+    matchLabels:
+      app: k8s-credential-provider
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: atenet-egress
+    ports:
+    - protocol: TCP
+      port: 50051

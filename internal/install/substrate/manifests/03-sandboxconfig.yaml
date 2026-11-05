@@ -1,0 +1,112 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Per-sandbox-class asset requirements for SandboxConfig. The CRD schema is
+# generic (any arch -> any asset name -> {url, sha256}); this policy enforces the
+# requirements a given sandbox class actually needs on every version under
+# spec.versions, fail-closed at apply time.
+# (url/sha256 being required and well-formed is enforced by the CRD schema.)
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandboxconfig-assets
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:   ["ate.dev"]
+      apiVersions: ["v1"]
+      operations:  ["CREATE", "UPDATE"]
+      resources:   ["sandboxconfigs"]
+  validations:
+  # gVisor needs a "gvisor" release-tarball asset (gvisor.tar.zstd: runsc plus
+  # its gvisor-bin/ helpers) for every architecture it advertises.
+  - expression: >-
+      object.spec.sandboxClass != 'gvisor' ||
+      object.spec.versions.all(v,
+        has(v.assets) && size(v.assets) > 0 &&
+        v.assets.all(arch, 'gvisor' in v.assets[arch]))
+    message: "a gvisor SandboxConfig must define a 'gvisor' (release tarball) asset for every architecture of every version under spec.versions[].assets"
+  # The micro-VM (cloud-hypervisor) runtime needs its asset set for every
+  # architecture it advertises.
+  - expression: >-
+      object.spec.sandboxClass != 'microvm' ||
+      object.spec.versions.all(v,
+        has(v.assets) && size(v.assets) > 0 &&
+        v.assets.all(arch,
+          ['cloud-hypervisor', 'virtiofsd', 'kata-kernel', 'kata-image']
+            .all(name, name in v.assets[arch])))
+    message: "a microvm SandboxConfig must define cloud-hypervisor, virtiofsd, kata-kernel, and kata-image assets for every architecture of every version under spec.versions[].assets"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandboxconfig-assets
+spec:
+  policyName: sandboxconfig-assets
+  validationActions: ["Deny"]
+
+---
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Cluster-wide SandboxConfig for the gVisor (runsc) sandbox class, shipped with
+# the platform as the class default so gVisor WorkerPools resolve it unless
+# they pin a specific configRef. atelet fetches the gVisor release tarball
+# (gvisor.tar.zstd: runsc plus the gvisor-bin/ helpers runsc requires next to
+# it) matching the worker node's architecture and extracts it locally. To pin a
+# different release, add a version below and point defaultVersion at it, or
+# create another SandboxConfig and reference it from the WorkerPool.
+#
+# A bump adds a version and points defaultVersion at it. Keep the
+# previous version unless it has a known vulnerability: an actor restores its
+# memory only on the version its snapshot was taken with.
+apiVersion: ate.dev/v1
+kind: SandboxConfig
+metadata:
+  name: gvisor-default
+  annotations:
+    sandboxconfig.ate.dev/is-class-default: "true"
+spec:
+  sandboxClass: gvisor
+  defaultVersion: v6
+  versions:
+  # gVisor release 20261026.0. ateworker-gvisor saves container rootfs overlays
+  # (rootfs/) and durable-dir volumes (fs/) as separate checkpoint bundles. That
+  # needs google/gvisor@b79256080dec, first in tagged release 20261019.0.
+  # ateworker-gvisor also runs the sandbox with no root container
+  # (google/gvisor#15551). This release's restore picks each container's init
+  # process correctly in such a sandbox (google/gvisor@29b97c66d945).
+  - name: v6
+    state: Enabled
+    assets:
+      amd64:
+        gvisor:
+          url: "gs://gvisor/releases/release/20261026.0/x86_64/gvisor.tar.zstd"
+          sha256: "708afc62f2ee82d19930c703e85f9dab4f27a78c0aec40c0f55eb1040107f1a7"
+      arm64:
+        gvisor:
+          url: "gs://gvisor/releases/release/20261026.0/aarch64/gvisor.tar.zstd"
+          sha256: "6257e49955f13e6caceb2c4181c5dc5406c460e805940c944e67ad65553f5b02"

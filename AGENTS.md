@@ -18,10 +18,12 @@ reconciler or server.
 ## Layout
 
 ```
-cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tunnel)
+cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/local/install/uninstall/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
+deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/controller    TaskReconciler: Substrate side of task suspend/resume/delete; reconciler_test.go is the test template
+internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
@@ -29,8 +31,8 @@ internal/workspace     git clone / inline files / skills dir (MCP is spec-only; 
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 pkg/apis/v1alpha1      ax.proto (source of truth) -> *.pb.go (generated), types.go, resources.go
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
-hack/                  E2E provisioning scripts
-docs/                  manifests.md is the user-facing API reference
+hack/                  E2E provisioning and Substrate manifest sync scripts
+docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
 ```
 
@@ -40,7 +42,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 go mod tidy && git diff --exit-code go.mod go.sum
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~20 s, 16 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 21 packages with tests; Postgres + E2E tiers self-skip
 go vet ./... && gofmt -l .       # not run by CI; both are clean at HEAD
 ```
 
@@ -62,7 +64,7 @@ location is where to look. How-to lives in the skills.
 - `internal/substrate/client.go` is the only non-test file that constructs
   `ateapipb.NewControlClient`; new Control API calls go there.
 - `api.ate-system.svc`, `atenet-router.ate-system.svc`, and namespace
-  `ate-system` are hard-coded across 10 files (list in `/substrate`).
+  `ate-system` are hard-coded across 15 files (list in `/substrate`).
 - Substrate rejects tag-only images; `spec.image` must be digest-pinned
   (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
@@ -90,7 +92,7 @@ location is where to look. How-to lives in the skills.
 
 | Area | Skill | When to load |
 |---|---|---|
-| Substrate | `/substrate` | Touching `internal/substrate`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
+| Substrate | `/substrate` | Touching `internal/substrate`, `internal/install`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
 | Contract sync | `/sync-contract` | After any code change, before declaring done: verify `AGENTS.md` and `skills/` still match the code |
 
 Conventions: one directory per skill, `skills/<name>/SKILL.md`, frontmatter
