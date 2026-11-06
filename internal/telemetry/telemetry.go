@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package telemetry sets up OpenTelemetry for ax-server: a tracer provider and
-// a logger provider that export over OTLP/gRPC, a meter provider read by a
-// Prometheus exporter, and a slog handler that stamps log lines with the
-// current trace and span IDs.
+// Package telemetry sets up OpenTelemetry for ax-server: a tracer provider, a
+// meter provider, and a logger provider for structured events, all exporting
+// over OTLP/gRPC; a Prometheus handler for the same metrics; and a slog
+// handler that stamps log lines with the current trace context.
 //
 // Configuration follows the OpenTelemetry environment variables:
 // OTEL_EXPORTER_OTLP_ENDPOINT (and the per-signal variants) choose the
-// collector, OTEL_TRACES_EXPORTER and OTEL_LOGS_EXPORTER choose otlp (the
-// default) or none, OTEL_TRACES_SAMPLER overrides the default sampler, and
-// OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES override the resource.
+// collector; OTEL_TRACES_EXPORTER, OTEL_METRICS_EXPORTER, and
+// OTEL_LOGS_EXPORTER choose the exporters; OTEL_TRACES_SAMPLER and
+// OTEL_TRACES_SAMPLER_ARG override the default sampler; and OTEL_SERVICE_NAME
+// and OTEL_RESOURCE_ATTRIBUTES override the resource. A value ax-server does
+// not understand is logged and ignored, which keeps ax-server's default.
 package telemetry
 
 import (
@@ -31,16 +33,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/log/global"
+	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -49,26 +52,17 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 )
 
-const (
-	// CardinalityLimit caps the attribute sets an instrument keeps per
-	// collection. Sets beyond it are folded into one overflow series, so a
-	// label that turns out to be unbounded cannot exhaust ax-server's memory or
-	// the metrics backend.
-	CardinalityLimit = 100
-	// DefaultSampleRatio is the share of new traces sampled when
-	// OTEL_TRACES_SAMPLER is unset. A caller's sampling decision, carried in
-	// traceparent, is always followed.
-	DefaultSampleRatio = 0.1
-
-	exporterOTLP = "otlp"
-	exporterNone = "none"
-)
+// DefaultSampleRatio is the share of new traces sampled unless
+// OTEL_TRACES_SAMPLER validly says otherwise. The default sampler is parent
+// based, so a caller's sampling decision, carried in traceparent, is followed.
+const DefaultSampleRatio = 0.1
 
 // Providers holds the providers Init installed as the OpenTelemetry globals.
 type Providers struct {
 	Tracer *sdktrace.TracerProvider
 	Meter  *sdkmetric.MeterProvider
-	// Logger is nil when OTEL_LOGS_EXPORTER turns OTLP logs off.
+	// Logger is nil when OTEL_LOGS_EXPORTER does not select otlp. Emit then
+	// writes events to stdout.
 	Logger *sdklog.LoggerProvider
 
 	registry *prometheus.Registry
@@ -78,8 +72,10 @@ type Providers struct {
 // OpenTelemetry globals with the W3C trace context propagator, and routes SDK
 // errors to slog. Call Shutdown on the result before the process exits.
 //
-// Nothing is exported until something records a span or emits a log record,
-// so a deployment without a collector only sees errors once it does.
+// Metrics are pushed every OTEL_METRIC_EXPORT_INTERVAL (60 s by default) while
+// OTEL_METRICS_EXPORTER selects otlp, so without a reachable collector the SDK
+// logs an export error at that interval. Traces and events are exported only
+// once something records them.
 func Init(ctx context.Context, serviceName string) (*Providers, error) {
 	// The SDK's default handler writes to stderr, outside the JSON logs.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
@@ -94,7 +90,7 @@ func Init(ctx context.Context, serviceName string) (*Providers, error) {
 	if p.Tracer, err = newTracerProvider(ctx, res); err != nil {
 		return nil, err
 	}
-	if p.Meter, p.registry, err = newMeterProvider(res); err != nil {
+	if p.Meter, p.registry, err = newMeterProvider(ctx, res); err != nil {
 		return nil, errors.Join(err, p.Shutdown(ctx))
 	}
 	if p.Logger, err = newLoggerProvider(ctx, res); err != nil {
@@ -105,6 +101,9 @@ func Init(ctx context.Context, serviceName string) (*Providers, error) {
 	otel.SetMeterProvider(p.Meter)
 	if p.Logger != nil {
 		global.SetLoggerProvider(p.Logger)
+	} else {
+		// Emit checks the global provider; a no-op one sends events to stdout.
+		global.SetLoggerProvider(lognoop.NewLoggerProvider())
 	}
 	// Only trace context crosses process boundaries. Baggage from a caller is
 	// not trusted, so it is not propagated.
@@ -113,7 +112,8 @@ func Init(ctx context.Context, serviceName string) (*Providers, error) {
 }
 
 // MetricsHandler serves the meter provider's metrics, together with Go
-// runtime and process metrics, in the Prometheus exposition format.
+// runtime and process metrics, in the Prometheus exposition format. The Go
+// and process metrics are served here only, not pushed over OTLP.
 func (p *Providers) MetricsHandler() http.Handler {
 	return promhttp.HandlerFor(p.registry, promhttp.HandlerOpts{})
 }
@@ -135,11 +135,12 @@ func (p *Providers) Shutdown(ctx context.Context) error {
 }
 
 // newResource describes the process. OTEL_SERVICE_NAME and
-// OTEL_RESOURCE_ATTRIBUTES override the defaults.
+// OTEL_RESOURCE_ATTRIBUTES override the defaults; the bundled manifests set
+// service.instance.id to the pod UID and add the k8s.* attributes there.
 func newResource(ctx context.Context, serviceName string) (*resource.Resource, error) {
 	attrs := resource.WithAttributes(semconv.ServiceName(serviceName))
 	opts := []resource.Option{resource.WithTelemetrySDK(), resource.WithSchemaURL(semconv.SchemaURL), attrs}
-	// In Kubernetes the hostname is the pod name, which tells replicas apart.
+	// Without OTEL_RESOURCE_ATTRIBUTES, the hostname tells replicas apart.
 	if host, err := os.Hostname(); err == nil {
 		opts = append(opts, resource.WithAttributes(semconv.ServiceInstanceID(host)))
 	}
@@ -156,12 +157,9 @@ func newResource(ctx context.Context, serviceName string) (*resource.Resource, e
 }
 
 func newTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.TracerProvider, error) {
-	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
-	// Without WithSampler, the SDK reads OTEL_TRACES_SAMPLER itself.
-	if strings.TrimSpace(os.Getenv("OTEL_TRACES_SAMPLER")) == "" {
-		opts = append(opts, sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(DefaultSampleRatio))))
-	}
-	export := exporterSelected(ctx, "OTEL_TRACES_EXPORTER")
+	def := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(DefaultSampleRatio))
+	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res), sdktrace.WithSampler(resolveSampler(ctx, def))}
+	export := resolveExportersEnv(ctx, tracesExporterEnv, []string{exporterOTLP}, exporters{exporterOTLP: true}).has(exporterOTLP)
 	if export {
 		exp, err := otlptracegrpc.New(ctx)
 		if err != nil {
@@ -176,7 +174,14 @@ func newTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.T
 	return tp, nil
 }
 
-func newMeterProvider(res *resource.Resource) (*sdkmetric.MeterProvider, *prometheus.Registry, error) {
+// newMeterProvider builds a meter provider with a Prometheus reader, which
+// MetricsHandler serves, and an OTLP periodic reader while
+// OTEL_METRICS_EXPORTER selects otlp. The variable controls only the push:
+// prometheus or none turns it off, and --metrics-addr controls /metrics.
+//
+// Each instrument keeps the SDK's default of 2000 attribute sets per
+// collection, which OTEL_GO_X_CARDINALITY_LIMIT overrides.
+func newMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.MeterProvider, *prometheus.Registry, error) {
 	reg := prometheus.NewRegistry()
 	if err := reg.Register(collectors.NewGoCollector()); err != nil {
 		return nil, nil, fmt.Errorf("registering Go metrics: %w", err)
@@ -184,24 +189,40 @@ func newMeterProvider(res *resource.Resource) (*sdkmetric.MeterProvider, *promet
 	if err := reg.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{})); err != nil {
 		return nil, nil, fmt.Errorf("registering process metrics: %w", err)
 	}
-	reader, err := promexporter.New(promexporter.WithRegisterer(reg))
+	promReader, err := promexporter.New(promexporter.WithRegisterer(reg))
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating Prometheus exporter: %w", err)
 	}
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(reader),
-		sdkmetric.WithCardinalityLimit(CardinalityLimit),
-	)
+	opts := []sdkmetric.Option{sdkmetric.WithResource(res), sdkmetric.WithReader(promReader)}
+
+	selected := resolveExportersEnv(ctx, metricsExporterEnv, []string{exporterOTLP, exporterPrometheus},
+		exporters{exporterOTLP: true, exporterPrometheus: true})
+	push := selected.has(exporterOTLP)
+	if push {
+		exp, err := otlpmetricgrpc.New(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("creating OTLP metric exporter: %w", err)
+		}
+		opts = append(opts, sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exp)))
+	}
+	mp := sdkmetric.NewMeterProvider(opts...)
+	slog.InfoContext(ctx, "metrics initialized", "export", push)
 	return mp, reg, nil
 }
 
 // newLoggerProvider returns the provider for structured events, or nil when
-// OTEL_LOGS_EXPORTER turns OTLP off. ax-server's own log lines go to stdout,
-// not through it.
+// OTEL_LOGS_EXPORTER does not select otlp. It also sets whether Emit writes
+// events to stdout beside OTLP (console). ax-server's own log lines go to
+// stdout, not through this provider.
+//
+// The default is none rather than the specification's otlp, as in Agent
+// Substrate: events stay on stdout, where they are never lost, until an
+// operator points them at a collector.
 func newLoggerProvider(ctx context.Context, res *resource.Resource) (*sdklog.LoggerProvider, error) {
-	if !exporterSelected(ctx, "OTEL_LOGS_EXPORTER") {
-		slog.InfoContext(ctx, "OTLP logs export disabled")
+	selected := resolveExportersEnv(ctx, logsExporterEnv, []string{exporterOTLP, exporterConsole}, exporters{})
+	console.Store(selected.has(exporterConsole))
+	if !selected.has(exporterOTLP) {
+		slog.InfoContext(ctx, "OTLP logs export disabled", "exporter", selected.String())
 		return nil, nil
 	}
 	exp, err := otlploggrpc.New(ctx)
@@ -210,28 +231,6 @@ func newLoggerProvider(ctx context.Context, res *resource.Resource) (*sdklog.Log
 	}
 	// Batched, so an unreachable collector never blocks the caller emitting.
 	lp := sdklog.NewLoggerProvider(sdklog.WithResource(res), sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)))
-	slog.InfoContext(ctx, "OTLP logs export initialized")
+	slog.InfoContext(ctx, "OTLP logs export initialized", "exporter", selected.String())
 	return lp, nil
-}
-
-// exporterSelected reports whether the exporter list in the environment
-// variable key selects otlp. Unset selects otlp. ax-server knows only otlp and
-// none; other names are logged and ignored.
-func exporterSelected(ctx context.Context, key string) bool {
-	val := strings.TrimSpace(os.Getenv(key))
-	if val == "" {
-		return true
-	}
-	selected := false
-	for _, name := range strings.Split(val, ",") {
-		switch name = strings.ToLower(strings.TrimSpace(name)); name {
-		case exporterOTLP:
-			selected = true
-		case exporterNone:
-			return false
-		default:
-			slog.WarnContext(ctx, "ignoring unsupported OpenTelemetry exporter", "variable", key, "exporter", name)
-		}
-	}
-	return selected
 }
