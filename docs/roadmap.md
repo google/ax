@@ -34,12 +34,29 @@ Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 Harden perimeter security, enterprise governance, and platform observability for production deployments:
 
+- **Gateways**: Introduce a Gateway used to configure ingress and egress policies for tasks, controlling which traffic can reach task actors and which external destinations they can access.
 - **SPIFFE Identity for Tasks**: Issue cryptographic workload identities (SPIFFE IDs / X.509-SVIDs) to every `Task` actor, enabling zero-trust mutual TLS (mTLS) authentication across tasks, MCP servers, and internal services.
 - **Google Platform Requirements for Governance**: Meet baseline Google platform requirements for MCP and skill registry integration, access control, policy enforcement, budget guardrails, and audit compliance.
 - **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner layer without requiring custom instrumentation in user containers.
 
 
-## 5. Documentation
+## 5. Local Development
+
+Make it easy to build on a developer machine:
+
+- **Easy Setup**: Install and run AX locally without having to set up container tooling or a Kubernetes cluster.
+- **Studio**: Provide a local studio experience for authoring, running, inspecting, and debugging tasks.
+
+
+## 6. Prebuilt Runners
+
+Ship ready-to-use runner images so users don't have to build their own to get started:
+
+- **Common Harnesses**: Publish prebuilt runner images for common agent harnesses such as Antigravity, Claude Code, and others.
+- **Agent Frameworks**: Publish prebuilt runner images for agent frameworks such as ADK.
+
+
+## 7. Documentation
 
 Expand documentation in `docs/` to cover architecture rationale and extensibility guides:
 
