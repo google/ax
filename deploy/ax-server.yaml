@@ -47,6 +47,25 @@ roleRef:
   kind: ClusterRole
   name: ax-server
 ---
+# OpenTelemetry settings for ax-server, read with envFrom. Point ax-server at a
+# collector here; see docs/observability.md. On a cluster that runs Agent
+# Substrate, the endpoint can be the one in ate-system's ate-otel-config.
+# Editing this ConfigMap does not restart ax-server; follow a change with
+# `kubectl -n ax-system rollout restart deployment/ax-server`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ax-otel-config
+  namespace: ax-system
+data:
+  # OTLP export is off until you set a collector. Metrics stay on /metrics
+  # (port 9090) and events go to stdout. To export, set the endpoint and
+  # remove the two exporter lines; add OTEL_LOGS_EXPORTER: otlp to send
+  # events too.
+  # OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4317
+  OTEL_TRACES_EXPORTER: none
+  OTEL_METRICS_EXPORTER: prometheus
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -79,7 +98,26 @@ spec:
             - "--substrate-ca-file=/run/servicedns-ca/trust-bundle.pem"
             - "--template=default-template"
             - "--template-atespace=ax-system"
+          envFrom:
+            - configMapRef:
+                name: ax-otel-config
           env:
+            # The resource attributes come from the downward API. Kubernetes
+            # expands $(VAR) only for a variable listed earlier.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)"
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:

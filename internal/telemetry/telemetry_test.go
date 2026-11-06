@@ -21,34 +21,39 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otellog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/grpc"
 )
 
 // fakeCollector is an in-process OTLP/gRPC collector that keeps what it
-// receives.
+// receives. It serves the trace service itself; logsService and
+// metricsService serve the others, whose Export methods share the name.
 type fakeCollector struct {
 	coltracepb.UnimplementedTraceServiceServer
-	collogspb.UnimplementedLogsServiceServer
 
-	mu    sync.Mutex
-	spans []*coltracepb.ExportTraceServiceRequest
-	logs  []*collogspb.ExportLogsServiceRequest
+	mu      sync.Mutex
+	spans   []*coltracepb.ExportTraceServiceRequest
+	logs    []*collogspb.ExportLogsServiceRequest
+	metrics []*colmetricspb.ExportMetricsServiceRequest
 }
 
 func (c *fakeCollector) Export(_ context.Context, req *coltracepb.ExportTraceServiceRequest) (*coltracepb.ExportTraceServiceResponse, error) {
@@ -58,8 +63,6 @@ func (c *fakeCollector) Export(_ context.Context, req *coltracepb.ExportTraceSer
 	return &coltracepb.ExportTraceServiceResponse{}, nil
 }
 
-// logsService adapts fakeCollector to the logs service, whose Export method
-// has the same name as the trace service's.
 type logsService struct {
 	collogspb.UnimplementedLogsServiceServer
 	c *fakeCollector
@@ -70,6 +73,18 @@ func (s logsService) Export(_ context.Context, req *collogspb.ExportLogsServiceR
 	defer s.c.mu.Unlock()
 	s.c.logs = append(s.c.logs, req)
 	return &collogspb.ExportLogsServiceResponse{}, nil
+}
+
+type metricsService struct {
+	colmetricspb.UnimplementedMetricsServiceServer
+	c *fakeCollector
+}
+
+func (s metricsService) Export(_ context.Context, req *colmetricspb.ExportMetricsServiceRequest) (*colmetricspb.ExportMetricsServiceResponse, error) {
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	s.c.metrics = append(s.c.metrics, req)
+	return &colmetricspb.ExportMetricsServiceResponse{}, nil
 }
 
 // startCollector starts a fakeCollector and points the OTLP exporters at it.
@@ -83,10 +98,19 @@ func startCollector(t *testing.T) *fakeCollector {
 	srv := grpc.NewServer()
 	coltracepb.RegisterTraceServiceServer(srv, c)
 	collogspb.RegisterLogsServiceServer(srv, logsService{c: c})
+	colmetricspb.RegisterMetricsServiceServer(srv, metricsService{c: c})
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+lis.Addr().String())
 	return c
+}
+
+// noExport turns off every OTLP exporter, for tests without a collector.
+func noExport(t *testing.T) {
+	t.Helper()
+	t.Setenv("OTEL_TRACES_EXPORTER", "none")
+	t.Setenv("OTEL_METRICS_EXPORTER", "prometheus")
+	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 }
 
 // initForTest runs Init and shuts the providers down when the test ends.
@@ -100,6 +124,34 @@ func initForTest(t *testing.T) *Providers {
 	return p
 }
 
+// captureLogs points slog.Default() at a JSON buffer until the test ends.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// stdoutEvents returns the log lines in buf that carry an event attribute.
+func stdoutEvents(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var events []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line is not JSON: %v\n%s", err, line)
+		}
+		if _, ok := rec["event"]; ok {
+			events = append(events, rec)
+		}
+	}
+	return events
+}
+
+var testEvent = Event{Name: "ax.test.event", Body: "Test event", Severity: otellog.SeverityInfo}
+
 func resourceAttr(attrs []*commonpb.KeyValue, key string) string {
 	for _, kv := range attrs {
 		if kv.GetKey() == key {
@@ -109,19 +161,23 @@ func resourceAttr(attrs []*commonpb.KeyValue, key string) string {
 	return ""
 }
 
-func TestInitExportsSpansAndLogsOverOTLP(t *testing.T) {
+func TestInitExportsAllSignalsOverOTLP(t *testing.T) {
 	c := startCollector(t)
 	t.Setenv("OTEL_TRACES_SAMPLER", "always_on")
+	t.Setenv("OTEL_LOGS_EXPORTER", "otlp")
+	buf := captureLogs(t)
 	p := initForTest(t)
 
 	_, span := otel.Tracer("test").Start(context.Background(), "test-span")
 	span.End()
-	var rec otellog.Record
-	rec.SetEventName("ax.test.event")
-	rec.SetBody(attribute.StringValue("hello"))
-	global.GetLoggerProvider().Logger("test").Emit(context.Background(), rec)
+	counter, err := otel.Meter("test").Int64Counter("ax.test.requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter.Add(context.Background(), 1)
+	Emit(context.Background(), testEvent, slog.String("ax.task.id", "t-1"), slog.Int("count", 3))
 
-	// Shutdown flushes both batchers.
+	// Shutdown flushes the batchers and runs a last metrics export.
 	if err := p.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
@@ -138,12 +194,35 @@ func TestInitExportsSpansAndLogsOverOTLP(t *testing.T) {
 	if name := rs.GetScopeSpans()[0].GetSpans()[0].GetName(); name != "test-span" {
 		t.Errorf("span name = %q, want test-span", name)
 	}
+
+	if len(c.metrics) == 0 || len(c.metrics[0].GetResourceMetrics()) == 0 {
+		t.Fatal("collector received no metrics")
+	}
+	var names []string
+	for _, rm := range c.metrics[0].GetResourceMetrics() {
+		for _, sm := range rm.GetScopeMetrics() {
+			for _, m := range sm.GetMetrics() {
+				names = append(names, m.GetName())
+			}
+		}
+	}
+	if !slices.Contains(names, "ax.test.requests") {
+		t.Errorf("pushed metrics = %v, want ax.test.requests", names)
+	}
+
 	if len(c.logs) == 0 || len(c.logs[0].GetResourceLogs()) == 0 {
 		t.Fatal("collector received no log records")
 	}
 	lr := c.logs[0].GetResourceLogs()[0].GetScopeLogs()[0].GetLogRecords()[0]
-	if lr.GetEventName() != "ax.test.event" || lr.GetBody().GetStringValue() != "hello" {
-		t.Errorf("log record = %v, want event ax.test.event with body hello", lr)
+	if lr.GetEventName() != testEvent.Name || lr.GetBody().GetStringValue() != testEvent.Body {
+		t.Errorf("log record = %v, want event %s with body %q", lr, testEvent.Name, testEvent.Body)
+	}
+	if got := resourceAttr(lr.GetAttributes(), "ax.task.id"); got != "t-1" {
+		t.Errorf("log record ax.task.id = %q, want t-1", got)
+	}
+	// Without console, an event sent over OTLP is not also written to stdout.
+	if events := stdoutEvents(t, buf); len(events) != 0 {
+		t.Errorf("event also written to stdout without console: %v", events)
 	}
 }
 
@@ -151,6 +230,7 @@ func TestInitHonorsExporterNone(t *testing.T) {
 	c := startCollector(t)
 	t.Setenv("OTEL_TRACES_SAMPLER", "always_on")
 	t.Setenv("OTEL_TRACES_EXPORTER", "none")
+	t.Setenv("OTEL_METRICS_EXPORTER", "none")
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 	p := initForTest(t)
 	if p.Logger != nil {
@@ -163,36 +243,101 @@ func TestInitHonorsExporterNone(t *testing.T) {
 		t.Error("span not sampled with OTEL_TRACES_EXPORTER=none")
 	}
 	span.End()
+	counter, err := otel.Meter("test").Int64Counter("ax.test.requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter.Add(context.Background(), 1)
+	// /metrics still serves with the push off.
+	if body := scrape(t, p.MetricsHandler()); !strings.Contains(body, "ax_test_requests_total") {
+		t.Error("/metrics has no ax_test_requests_total with OTEL_METRICS_EXPORTER=none")
+	}
 	if err := p.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.spans) != 0 || len(c.logs) != 0 {
-		t.Errorf("collector received %d span and %d log exports, want none", len(c.spans), len(c.logs))
+	if len(c.spans) != 0 || len(c.metrics) != 0 || len(c.logs) != 0 {
+		t.Errorf("collector received %d span, %d metric, and %d log exports, want none", len(c.spans), len(c.metrics), len(c.logs))
 	}
 }
 
-func TestDefaultSamplerFollowsParentAndSamplesTenthOfRoots(t *testing.T) {
+func TestEmitWritesEventsToStdoutByDefault(t *testing.T) {
+	c := startCollector(t)
 	t.Setenv("OTEL_TRACES_EXPORTER", "none")
-	t.Setenv("OTEL_LOGS_EXPORTER", "none")
-	initForTest(t)
-	tracer := otel.Tracer("test")
+	t.Setenv("OTEL_METRICS_EXPORTER", "none")
+	buf := captureLogs(t)
+	p := initForTest(t)
+	if p.Logger != nil {
+		t.Error("Logger provider built with OTEL_LOGS_EXPORTER unset; the default is none")
+	}
 
-	const roots = 4000
+	Emit(context.Background(), testEvent, slog.String("ax.task.id", "t-1"))
+	if err := p.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	events := stdoutEvents(t, buf)
+	if len(events) != 1 {
+		t.Fatalf("got %d stdout events, want 1:\n%s", len(events), buf.String())
+	}
+	if ev := events[0]; ev["event"] != testEvent.Name || ev["msg"] != testEvent.Body || ev["level"] != "INFO" || ev["ax.task.id"] != "t-1" {
+		t.Errorf("stdout event = %v", ev)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.logs) != 0 {
+		t.Errorf("collector received %d log exports, want none", len(c.logs))
+	}
+}
+
+func TestEmitWithConsoleWritesBoth(t *testing.T) {
+	c := startCollector(t)
+	t.Setenv("OTEL_TRACES_EXPORTER", "none")
+	t.Setenv("OTEL_METRICS_EXPORTER", "none")
+	t.Setenv("OTEL_LOGS_EXPORTER", "otlp,console")
+	buf := captureLogs(t)
+	p := initForTest(t)
+
+	Emit(context.Background(), testEvent)
+	if err := p.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	if events := stdoutEvents(t, buf); len(events) != 1 {
+		t.Errorf("got %d stdout events, want 1:\n%s", len(events), buf.String())
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.logs) != 1 {
+		t.Errorf("collector received %d log exports, want 1", len(c.logs))
+	}
+}
+
+// sampledShare starts n root spans and returns the share sampled.
+func sampledShare(n int) float64 {
+	tracer := otel.Tracer("test")
 	sampled := 0
-	for range roots {
+	for range n {
 		_, span := tracer.Start(context.Background(), "root")
 		if span.SpanContext().IsSampled() {
 			sampled++
 		}
 		span.End()
 	}
+	return float64(sampled) / float64(n)
+}
+
+func TestDefaultSamplerFollowsParentAndSamplesTenthOfRoots(t *testing.T) {
+	noExport(t)
+	initForTest(t)
+
 	// 10% of 4000 is 400, with a standard deviation of about 19.
-	if sampled < 300 || sampled > 500 {
-		t.Errorf("%d of %d root spans sampled, want about %d", sampled, roots, int(roots*DefaultSampleRatio))
+	if got := sampledShare(4000); got < 0.075 || got > 0.125 {
+		t.Errorf("%.3f of root spans sampled, want about %.1f", got, DefaultSampleRatio)
 	}
 
+	tracer := otel.Tracer("test")
 	for _, parentSampled := range []bool{true, false} {
 		flags := trace.TraceFlags(0)
 		if parentSampled {
@@ -209,9 +354,57 @@ func TestDefaultSamplerFollowsParentAndSamplesTenthOfRoots(t *testing.T) {
 	}
 }
 
+func TestInvalidSamplerSettingKeepsDefault(t *testing.T) {
+	for _, tt := range []struct{ sampler, arg string }{
+		{"parentbased_traceidratoi", "0.1"}, // typo
+		{"parentbased_traceidratio", ""},
+		{"parentbased_traceidratio", "10"},
+	} {
+		t.Run(tt.sampler+"="+tt.arg, func(t *testing.T) {
+			noExport(t)
+			t.Setenv("OTEL_TRACES_SAMPLER", tt.sampler)
+			t.Setenv("OTEL_TRACES_SAMPLER_ARG", tt.arg)
+			initForTest(t)
+			if got := sampledShare(2000); got < 0.065 || got > 0.135 {
+				t.Errorf("%.3f of root spans sampled, want about %.1f", got, DefaultSampleRatio)
+			}
+		})
+	}
+}
+
+func TestParseSampler(t *testing.T) {
+	def := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(DefaultSampleRatio))
+	tests := []struct {
+		name, arg string
+		nameSet   bool
+		argSet    bool
+		want      string // the sampler's Description
+		wantErr   bool
+	}{
+		{name: "", want: def.Description()},
+		{name: " ", nameSet: true, want: def.Description()},
+		{name: "always_on", nameSet: true, want: "AlwaysOnSampler"},
+		{name: "ALWAYS_OFF", nameSet: true, want: "AlwaysOffSampler"},
+		{name: "traceidratio", nameSet: true, arg: "0.5", argSet: true, want: "TraceIDRatioBased{0.5}"},
+		{name: "parentbased_traceidratio", nameSet: true, arg: " 0.25 ", argSet: true, want: sdktrace.ParentBased(sdktrace.TraceIDRatioBased(0.25)).Description()},
+		{name: "parentbased_always_on", nameSet: true, want: sdktrace.ParentBased(sdktrace.AlwaysSample()).Description()},
+		{name: "parentbased_always_off", nameSet: true, want: sdktrace.ParentBased(sdktrace.NeverSample()).Description()},
+		{name: "parentbased_traceidratoi", nameSet: true, arg: "0.1", argSet: true, want: def.Description(), wantErr: true},
+		{name: "jaeger_remote", nameSet: true, want: def.Description(), wantErr: true},
+		{name: "traceidratio", nameSet: true, want: def.Description(), wantErr: true},
+		{name: "traceidratio", nameSet: true, arg: "half", argSet: true, want: def.Description(), wantErr: true},
+		{name: "traceidratio", nameSet: true, arg: "-0.1", argSet: true, want: def.Description(), wantErr: true},
+	}
+	for _, tt := range tests {
+		got, err := parseSampler(tt.name, tt.nameSet, tt.arg, tt.argSet, def)
+		if got.Description() != tt.want || (err != nil) != tt.wantErr {
+			t.Errorf("parseSampler(%q, %q) = %s, %v; want %s, error %v", tt.name, tt.arg, got.Description(), err, tt.want, tt.wantErr)
+		}
+	}
+}
+
 func TestPropagatorCarriesTraceContextOnly(t *testing.T) {
-	t.Setenv("OTEL_TRACES_EXPORTER", "none")
-	t.Setenv("OTEL_LOGS_EXPORTER", "none")
+	noExport(t)
 	initForTest(t)
 	got := strings.Join(otel.GetTextMapPropagator().Fields(), ",")
 	if got != "traceparent,tracestate" {
@@ -235,19 +428,17 @@ func scrape(t *testing.T, h http.Handler) string {
 	return string(body)
 }
 
-func TestMetricsHandlerServesInstrumentsWithCardinalityCap(t *testing.T) {
-	t.Setenv("OTEL_TRACES_EXPORTER", "none")
-	t.Setenv("OTEL_LOGS_EXPORTER", "none")
-	p := initForTest(t)
-
+// countSeries adds n attribute sets to a counter and returns the number of
+// series /metrics serves for it, and the body.
+func countSeries(t *testing.T, p *Providers, n int) (int, string) {
+	t.Helper()
 	counter, err := otel.Meter("test").Int64Counter("ax.test.requests")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := range CardinalityLimit * 3 {
+	for i := range n {
 		counter.Add(context.Background(), 1, metric.WithAttributes(attribute.String("key", fmt.Sprint(i))))
 	}
-
 	body := scrape(t, p.MetricsHandler())
 	series := 0
 	for _, line := range strings.Split(body, "\n") {
@@ -255,34 +446,87 @@ func TestMetricsHandlerServesInstrumentsWithCardinalityCap(t *testing.T) {
 			series++
 		}
 	}
-	// The limit counts the overflow series, so the 300 sets become 100 series.
-	if series != CardinalityLimit {
-		t.Errorf("ax_test_requests_total has %d series, want %d", series, CardinalityLimit)
+	return series, body
+}
+
+func TestMetricsHandlerServesInstrumentsAndRuntimeMetrics(t *testing.T) {
+	noExport(t)
+	p := initForTest(t)
+
+	// 300 sets stay under the SDK's default limit of 2000.
+	series, body := countSeries(t, p, 300)
+	if series != 300 {
+		t.Errorf("ax_test_requests_total has %d series, want 300", series)
 	}
-	for _, want := range []string{`otel_metric_overflow="true"`, `service_name="ax-server"`, "go_goroutines", "process_cpu_seconds_total"} {
+	for _, want := range []string{`service_name="ax-server"`, "go_goroutines", "process_cpu_seconds_total"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/metrics output has no %s", want)
 		}
 	}
+	if strings.Contains(body, "otel_metric_overflow") {
+		t.Error("/metrics has an overflow series under the default cardinality limit")
+	}
 }
 
-func TestExporterSelected(t *testing.T) {
+func TestCardinalityLimitFollowsEnvironment(t *testing.T) {
+	noExport(t)
+	t.Setenv("OTEL_GO_X_CARDINALITY_LIMIT", "100")
+	p := initForTest(t)
+
+	// The limit counts the overflow series, so the 300 sets become 100 series.
+	series, body := countSeries(t, p, 300)
+	if series != 100 {
+		t.Errorf("ax_test_requests_total has %d series, want 100", series)
+	}
+	if !strings.Contains(body, `otel_metric_overflow="true"`) {
+		t.Error("/metrics has no overflow series")
+	}
+}
+
+func TestResolveExporters(t *testing.T) {
+	known := []string{exporterOTLP, exporterConsole}
+	def := exporters{exporterOTLP: true}
 	tests := []struct {
-		val  string
-		want bool
+		val     string
+		want    string
+		wantErr bool
 	}{
-		{"", true},
-		{"otlp", true},
-		{" OTLP ", true},
-		{"none", false},
-		{"otlp,none", false},
-		{"console", false},
-		{"console,otlp", true},
+		{"", "otlp", false},
+		{" ", "otlp", false},
+		{"otlp", "otlp", false},
+		{" OTLP ", "otlp", false},
+		{"console", "console", false},
+		{"otlp,console", "console,otlp", false},
+		{"none", "none", false},
+		{"none,", "none", true},
+		{"otlp,none", "otlp", true}, // contradictory: keep the default
+		{"otpl", "otlp", true},      // typo: keep the default
+		{"zipkin", "otlp", true},
+		{"zipkin,console", "console", true},
 	}
 	for _, tt := range tests {
-		t.Setenv("OTEL_TEST_EXPORTER", tt.val)
-		if got := exporterSelected(context.Background(), "OTEL_TEST_EXPORTER"); got != tt.want {
-			t.Errorf("exporterSelected(%q) = %v, want %v", tt.val, got, tt.want)
+		got, err := resolveExporters("OTEL_TEST_EXPORTER", tt.val, known, def)
+		if got.String() != tt.want || (err != nil) != tt.wantErr {
+			t.Errorf("resolveExporters(%q) = %s, %v; want %s, error %v", tt.val, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
+func TestAttrValueMatchesJSONKinds(t *testing.T) {
+	tests := []struct {
+		in   slog.Value
+		want attribute.Value
+	}{
+		{slog.StringValue("s"), attribute.StringValue("s")},
+		{slog.IntValue(-3), attribute.Int64Value(-3)},
+		{slog.Uint64Value(math.MaxUint64), attribute.Int64Value(math.MaxInt64)},
+		{slog.Float64Value(1.5), attribute.Float64Value(1.5)},
+		{slog.BoolValue(true), attribute.BoolValue(true)},
+		{slog.DurationValue(time.Second), attribute.Int64Value(int64(time.Second))},
+	}
+	for _, tt := range tests {
+		if got := attrValue(tt.in); got != tt.want {
+			t.Errorf("attrValue(%v) = %v, want %v", tt.in, got.Emit(), tt.want.Emit())
 		}
 	}
 }
@@ -315,8 +559,8 @@ func TestLogHandlerAddsTraceAndSpanIDs(t *testing.T) {
 			}
 			continue
 		}
-		if rec["trace_id"] != sc.TraceID().String() || rec["span_id"] != sc.SpanID().String() {
-			t.Errorf("line %d trace_id=%v span_id=%v, want %s %s", i, rec["trace_id"], rec["span_id"], sc.TraceID(), sc.SpanID())
+		if rec["trace_id"] != sc.TraceID().String() || rec["span_id"] != sc.SpanID().String() || rec["trace_flags"] != "01" {
+			t.Errorf("line %d trace_id=%v span_id=%v trace_flags=%v, want %s %s 01", i, rec["trace_id"], rec["span_id"], rec["trace_flags"], sc.TraceID(), sc.SpanID())
 		}
 	}
 	if !strings.Contains(lines[1], `"component":"test"`) {

@@ -17,8 +17,14 @@
 // identify an actor reuse Agent Substrate's names, so AX and Substrate records
 // join on them.
 //
-// The identity attributes (task ID and name, actor UID, exit code, signal) are
-// unbounded. Put them on spans, logs, and events only, never on metrics.
+// Keep these attributes off metrics:
+//   - The identity attributes (task ID and name, atespace, actor UID) have one
+//     value per task or per user-chosen atespace, so their set of values is
+//     unbounded. Agent Substrate's no-actor-identity rule also keeps ate.atespace
+//     and ate.actor.uid off its metrics.
+//   - The exit code and the signal have a bounded set of values, but they
+//     describe one task's command, so ax-server records them only beside the
+//     task identity, on spans, logs, and events.
 package axattr
 
 import "go.opentelemetry.io/otel/attribute"

@@ -22,8 +22,9 @@ import (
 )
 
 // NewLogHandler wraps h so that a record logged with a context carrying a
-// valid span gets trace_id and span_id attributes, joining log lines to
-// traces. Records logged without such a context pass through unchanged.
+// valid span gets trace_id, span_id, and trace_flags attributes, the fields
+// the OpenTelemetry specification defines for trace context in non-OTLP logs.
+// Records logged without such a context pass through unchanged.
 func NewLogHandler(h slog.Handler) slog.Handler {
 	return traceHandler{h}
 }
@@ -35,7 +36,11 @@ type traceHandler struct {
 func (h traceHandler) Handle(ctx context.Context, r slog.Record) error {
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
 		r = r.Clone()
-		r.AddAttrs(slog.String("trace_id", sc.TraceID().String()), slog.String("span_id", sc.SpanID().String()))
+		r.AddAttrs(
+			slog.String("trace_id", sc.TraceID().String()),
+			slog.String("span_id", sc.SpanID().String()),
+			slog.String("trace_flags", sc.TraceFlags().String()),
+		)
 	}
 	return h.Handler.Handle(ctx, r)
 }
@@ -44,7 +49,7 @@ func (h traceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return traceHandler{h.Handler.WithAttrs(attrs)}
 }
 
-// WithGroup nests later attributes, trace_id and span_id included, under name.
+// WithGroup nests later attributes, the trace context included, under name.
 func (h traceHandler) WithGroup(name string) slog.Handler {
 	return traceHandler{h.Handler.WithGroup(name)}
 }
