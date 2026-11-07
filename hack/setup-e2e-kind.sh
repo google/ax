@@ -13,12 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Sets up a Kind cluster with Substrate (at a configurable branch/ref) and AX
-# deployed for end-to-end testing. Re-running the script reuses the existing
-# cluster and only reinstalls Substrate when the requested commit changes.
+# Sets up a Kind cluster with a released Substrate and AX deployed for
+# end-to-end testing. Substrate is installed from its published release images
+# (SUBSTRATE_IMAGE_REPO); nothing of Substrate is built. The Substrate checkout
+# only supplies the manifests and ate-setup, so it must be a clean checkout of
+# the release tag. Re-running the script reuses the existing cluster and only
+# reinstalls Substrate when the requested release changes.
 #
 # Configurable environment variables:
-#   SUBSTRATE_REF            Branch, tag, commit, or Go module version of substrate (default: version in go.mod)
+#   SUBSTRATE_REF            Substrate release tag, vX.Y.Z or vX.Y.Z-rc.N (default: version in go.mod)
 #   SUBSTRATE_REPO           Git repository URL for substrate (default: https://github.com/agent-substrate/substrate.git)
 #   SUBSTRATE_DIR            Existing substrate checkout (default: ../substrate if present, else clone to .tmp/substrate)
 #   KIND_CLUSTER_NAME        Name of the Kind cluster (default: ax-e2e)
@@ -28,9 +31,7 @@
 #   REGISTRY_ADDR            Local container registry address (default: localhost:5001)
 #   RECREATE_KIND            Set to true to delete and recreate the Kind cluster
 #   FORCE_INSTALL_SUBSTRATE  Set to true to reinstall Substrate even if the commit is unchanged
-#   SUBSTRATE_IMAGE_CACHE_DIR  Host directory backing the local registry's storage. When set,
-#                            Substrate images are published there once per Substrate version and
-#                            later installs reuse them instead of rebuilding from source.
+#   SUBSTRATE_IMAGE_REPO     Registry holding Substrate release images (default: ghcr.io/agent-substrate/substrate)
 
 set -euo pipefail
 export GOWORK=off
@@ -50,11 +51,16 @@ export REGISTRY_ADDR="${REGISTRY_ADDR:-localhost:5001}"
 SUBSTRATE_REPO="${SUBSTRATE_REPO:-https://github.com/agent-substrate/substrate.git}"
 GOARCH="$(go env GOARCH)"
 
-# Default to the Substrate version AX is built against. Go pseudo-versions
-SUBSTRATE_REF="${SUBSTRATE_REF:-$(cd "${REPO_ROOT}" && (go list -m -f '{{.Version}}' go.ate.dev/substrate 2> /dev/null || go list -m -f '{{.Version}}' github.com/agent-substrate/substrate))}"
-if [[ "${SUBSTRATE_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-.*-([0-9a-f]{12})$ ]]; then
-  SUBSTRATE_REF="${BASH_REMATCH[1]}"
+# Default to the Substrate version AX is built against. Only releases have
+# published images, so the ref has to be a release tag.
+SUBSTRATE_REF="${SUBSTRATE_REF:-$(cd "${REPO_ROOT}" && go list -m -f '{{.Version}}' go.ate.dev/substrate)}"
+RELEASE_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'
+if [[ ! "${SUBSTRATE_REF}" =~ ${RELEASE_TAG_RE} ]]; then
+  echo "SUBSTRATE_REF=${SUBSTRATE_REF} is not a Substrate release tag (vX.Y.Z or vX.Y.Z-rc.N);" \
+    "E2E installs only published release images." >&2
+  exit 1
 fi
+SUBSTRATE_IMAGE_REPO="${SUBSTRATE_IMAGE_REPO:-ghcr.io/agent-substrate/substrate}"
 
 # Use an isolated DOCKER_CONFIG by default so expired gcloud credential helpers
 # in ~/.docker/config.json do not break pulling public base images or pushing
@@ -189,97 +195,66 @@ build_and_push() {
   docker inspect --format='{{index .RepoDigests 0}}' "${tag}"
 }
 
-# ensure_cached_registry runs Substrate's local registry container
-# (kind-registry, as created by Substrate's hack/create-kind-cluster.sh) with
-# its storage on SUBSTRATE_IMAGE_CACHE_DIR, so pushed images outlive the
-# container and can be cached between CI runs. create-kind-cluster.sh reuses a
-# running registry, so creating it first is enough.
-ensure_cached_registry() {
-  local name=kind-registry port="${REGISTRY_ADDR##*:}" mounted
-  mounted="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/registry"}}{{.Source}}{{end}}{{end}}' "${name}" 2> /dev/null || true)"
-  if [[ "${mounted}" == "${SUBSTRATE_IMAGE_CACHE_DIR}" ]] &&
-    [[ "$(docker inspect -f '{{.State.Running}}' "${name}" 2> /dev/null)" == "true" ]]; then
-    return 0
-  fi
-  log "Starting registry '${name}' on port ${port} with storage at ${SUBSTRATE_IMAGE_CACHE_DIR}..."
-  docker rm -f "${name}" > /dev/null 2>&1 || true
-  docker run -d --restart=always \
-    --label created-by=agent-substrate \
-    -p "127.0.0.1:${port}:5000" -p "[::1]:${port}:5000" \
-    -v "${SUBSTRATE_IMAGE_CACHE_DIR}:/var/lib/registry" \
-    --network bridge --name "${name}" \
-    registry:3 > /dev/null
-  # Reattach to an existing Kind cluster's network; a new cluster does this itself.
-  if docker network inspect kind > /dev/null 2>&1; then
-    docker network connect kind "${name}" > /dev/null 2>&1 || true
-  fi
-  local _
-  for _ in $(seq 1 30); do
-    curl -fsS -o /dev/null "http://${REGISTRY_ADDR}/v2/" && return 0
-    sleep 1
-  done
-  echo "registry ${name} did not become ready at ${REGISTRY_ADDR}" >&2
-  return 1
-}
-
-# registry_digest prints the digest the local registry holds for image:tag, or
-# fails if it has none.
-registry_digest() {
-  curl -fsSI \
-    -H 'Accept: application/vnd.oci.image.index.v1+json' \
-    -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-    -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
-    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-    "http://${REGISTRY_ADDR}/v2/$1/manifests/$2" 2> /dev/null |
-    tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2; found = 1 } END { exit !found }'
-}
-
-# ensure_substrate_images publishes Substrate's release image set to the local
-# registry under SUBSTRATE_IMAGE_TAG unless it is already there (for example,
-# restored from the CI cache).
-ensure_substrate_images() {
-  local img missing=false
-  for img in ateapi atecontroller atelet atenet "${WORKER_IMAGE}" podcertcontroller objectstore-plugin envoy-dataplane; do
-    registry_digest "${img}" "${SUBSTRATE_IMAGE_TAG}" > /dev/null || { missing=true; break; }
-  done
-  if [[ "${missing}" == "false" ]]; then
-    log "Reusing cached Substrate images (tag ${SUBSTRATE_IMAGE_TAG}) from ${REGISTRY_ADDR}."
-    return 0
-  fi
-  log "Publishing Substrate images (tag ${SUBSTRATE_IMAGE_TAG}) to ${REGISTRY_ADDR}..."
-  (
-    cd "${SUBSTRATE_WORK_DIR}"
-    NO_DEV_ENV=true VERSION="${SUBSTRATE_IMAGE_TAG}" \
-      KO_DOCKER_REPO="${REGISTRY_ADDR}" KO_DEFAULTPLATFORMS="linux/${GOARCH}" \
-      go run ./cmd/ate-setup publish release-images
+# image_digest prints the digest the registry holds for repo:tag, where repo is
+# host/path, or fails if it has none. A registry that answers 401 gets an
+# anonymous pull token, which is enough for public images such as Substrate's
+# releases on ghcr.io.
+image_digest() {
+  local tag="$2" host="${1%%/*}" path="${1#*/}" url headers challenge realm service token
+  url="https://${host}/v2/${path}/manifests/${tag}"
+  local accept=(
+    -H 'Accept: application/vnd.oci.image.index.v1+json'
+    -H 'Accept: application/vnd.oci.image.manifest.v1+json'
+    -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json'
+    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json'
   )
+  headers="$(curl -sSI "${accept[@]}" "${url}" 2> /dev/null | tr -d '\r')" || return 1
+  if [[ "$(head -n1 <<< "${headers}" | awk '{ print $2 }')" == "401" ]]; then
+    challenge="$(awk 'tolower($1) == "www-authenticate:"' <<< "${headers}")"
+    realm="$(sed -nE 's/.*realm="([^"]+)".*/\1/p' <<< "${challenge}")"
+    service="$(sed -nE 's/.*service="([^"]+)".*/\1/p' <<< "${challenge}")"
+    [[ -n "${realm}" ]] || return 1
+    token="$(curl -fsS -G "${realm}" --data-urlencode "service=${service}" \
+      --data-urlencode "scope=repository:${path}:pull" 2> /dev/null |
+      sed -nE 's/.*"(access_)?token" *: *"([^"]+)".*/\2/p')"
+    [[ -n "${token}" ]] || return 1
+    headers="$(curl -fsSI "${accept[@]}" -H "Authorization: Bearer ${token}" "${url}" 2> /dev/null | tr -d '\r')" || return 1
+  fi
+  awk 'tolower($1) == "docker-content-digest:" { print $2; found = 1 } END { exit !found }' <<< "${headers}"
 }
 
 # The WorkerPool's ko:// worker image reference, and the image name Substrate
 # publishes it under (the last element of the import path).
 WORKER_KO_REF="$(awk '$1 == "workerImage:" { print $2; exit }' "${E2E_DIR}/manifests/workerpool.yaml")"
 WORKER_IMAGE="${WORKER_KO_REF##*/}"
+# Every Substrate image the Kind install and the WorkerPool use.
+SUBSTRATE_IMAGES=(ateapi atecontroller atelet atenet "${WORKER_IMAGE}" podcertcontroller objectstore-plugin envoy-dataplane)
 
 SUBSTRATE_WORK_DIR="$(resolve_substrate_dir)"
 SUBSTRATE_COMMIT="$(git -C "${SUBSTRATE_WORK_DIR}" rev-parse HEAD)"
 log "Using Substrate checkout at ${SUBSTRATE_WORK_DIR} (ref=${SUBSTRATE_REF}, commit=${SUBSTRATE_COMMIT:0:12})"
 
-# Pre-built Substrate images need a Substrate that can publish and install
-# them, and a clean checkout so the version tag identifies its contents.
-SUBSTRATE_IMAGE_TAG=""
-if [[ -n "${SUBSTRATE_IMAGE_CACHE_DIR:-}" ]]; then
-  SUBSTRATE_IMAGE_CACHE_DIR="$(mkdir -p "${SUBSTRATE_IMAGE_CACHE_DIR}" && cd "${SUBSTRATE_IMAGE_CACHE_DIR}" && pwd)"
-  if ! grep -q "publish release-images" "${SUBSTRATE_WORK_DIR}/cmd/ate-setup/commands.md" 2> /dev/null; then
-    log "Substrate ${SUBSTRATE_COMMIT:0:12} cannot install pre-built images; building from source."
-  elif [[ -n "$(git -C "${SUBSTRATE_WORK_DIR}" status --porcelain --untracked-files=no)" ]]; then
-    log "Substrate checkout has local changes; building from source instead of using cached images."
-  else
-    # Matches the version a source build stamps (git describe), so tagged
-    # releases keep their version and other commits are named by hash.
-    SUBSTRATE_IMAGE_TAG="$(git -C "${SUBSTRATE_WORK_DIR}" describe --tags --always)"
-    ensure_cached_registry
-  fi
+# The manifests come from the checkout and the images from the release, so the
+# two must be the same release: the tag at HEAD of a clean checkout.
+if ! git -C "${SUBSTRATE_WORK_DIR}" tag --points-at HEAD | grep -qx "${SUBSTRATE_REF}"; then
+  echo "Substrate checkout ${SUBSTRATE_WORK_DIR} is not at tag ${SUBSTRATE_REF}" >&2
+  exit 1
 fi
+if [[ -n "$(git -C "${SUBSTRATE_WORK_DIR}" status --porcelain --untracked-files=no)" ]]; then
+  echo "Substrate checkout ${SUBSTRATE_WORK_DIR} has local changes; E2E installs the unmodified ${SUBSTRATE_REF} release." >&2
+  exit 1
+fi
+if ! grep -q -- "--image-repo" "${SUBSTRATE_WORK_DIR}/cmd/ate-setup/commands.md" 2> /dev/null; then
+  echo "Substrate ${SUBSTRATE_REF} cannot install pre-built images (ate-setup has no --image-repo)." >&2
+  exit 1
+fi
+for img in "${SUBSTRATE_IMAGES[@]}"; do
+  if ! image_digest "${SUBSTRATE_IMAGE_REPO}/${img}" "${SUBSTRATE_REF}" > /dev/null; then
+    echo "${SUBSTRATE_IMAGE_REPO}/${img}:${SUBSTRATE_REF} not found." >&2
+    exit 1
+  fi
+done
+log "Using Substrate ${SUBSTRATE_REF} release images from ${SUBSTRATE_IMAGE_REPO}."
 
 # 1. Ensure the Kind cluster and local registry exist.
 if [[ "${RECREATE_KIND:-false}" == "true" ]] || ! kind get clusters 2> /dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
@@ -301,35 +276,16 @@ if [[ "${FORCE_INSTALL_SUBSTRATE:-false}" == "true" ]] ||
     uninstall_substrate
   fi
 
-  if [[ -d "${SUBSTRATE_WORK_DIR}/cmd/ate-setup" ]]; then
-    install_args=(
-      deploy ate-system
-      --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}"
-      --credential-provider='{"enabled":false}'
-      --ateapi-authz-bootstrap-owners="system:serviceaccount:ate-system:ate-client,system:serviceaccount:${AX_SYSTEM_NAMESPACE}:ax-server"
+  (
+    cd "${SUBSTRATE_WORK_DIR}"
+    ATE_IMAGE_REPO="${SUBSTRATE_IMAGE_REPO}" ATE_IMAGE_TAG="${SUBSTRATE_REF}" \
+      go run ./cmd/ate-setup --kind --kind-cluster-name="${KIND_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG}" \
+      deploy ate-system \
+      --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}" \
+      --credential-provider='{"enabled":false}' \
+      --ateapi-authz-bootstrap-owners="system:serviceaccount:ate-system:ate-client,system:serviceaccount:${AX_SYSTEM_NAMESPACE}:ax-server" \
       --ingress-allowed-spiffe-ids="spiffe://cluster.local/ns/${AX_SYSTEM_NAMESPACE}/sa/ax-server"
-    )
-  else
-    install_args=(--deploy-ate-system --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}")
-    # Older Substrate versions do not have --credential-provider.
-    if grep -q -- "--credential-provider" "${SUBSTRATE_WORK_DIR}/hack/install-ate.sh" 2> /dev/null; then
-      install_args+=(--credential-provider='{"enabled":false}')
-    fi
-  fi
-  install_cmd=()
-  if [[ -f "${SUBSTRATE_WORK_DIR}/hack/install-ate-kind.sh" ]]; then
-    install_cmd=(./hack/install-ate-kind.sh)
-  else
-    install_cmd=(go run ./cmd/ate-setup --kind --kind-cluster-name="${KIND_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG}")
-  fi
-  if [[ -n "${SUBSTRATE_IMAGE_TAG}" ]]; then
-    ensure_substrate_images
-    (cd "${SUBSTRATE_WORK_DIR}" &&
-      ATE_IMAGE_REPO="${REGISTRY_ADDR}" ATE_IMAGE_TAG="${SUBSTRATE_IMAGE_TAG}" \
-        "${install_cmd[@]}" "${install_args[@]}")
-  else
-    (cd "${SUBSTRATE_WORK_DIR}" && "${install_cmd[@]}" "${install_args[@]}")
-  fi
+  )
   k annotate namespace ate-system "substrate-commit=${SUBSTRATE_COMMIT}" --overwrite > /dev/null
 else
   log "Substrate ${SUBSTRATE_COMMIT:0:12} already installed; waiting for ate-api-server..."
@@ -339,20 +295,11 @@ fi
 # 3. Deploy the AX namespace and gVisor WorkerPool.
 log "Deploying namespace '${AX_SYSTEM_NAMESPACE}' and WorkerPool (${AX_WORKER_REPLICAS} gVisor replicas)..."
 render_manifest namespace.yaml | k apply -f -
-if [[ -n "${SUBSTRATE_IMAGE_TAG}" ]]; then
-  # No-op after a fresh install; needed when the install above was skipped.
-  ensure_substrate_images
-  worker_ref="${REGISTRY_ADDR}/${WORKER_IMAGE}:${SUBSTRATE_IMAGE_TAG}@$(registry_digest "${WORKER_IMAGE}" "${SUBSTRATE_IMAGE_TAG}")"
-  render_manifest workerpool.yaml |
-    sed "s|${WORKER_KO_REF}|${worker_ref}|" |
-    k apply -f -
-else
-  (
-    cd "${SUBSTRATE_WORK_DIR}"
-    render_manifest workerpool.yaml |
-      KO_DOCKER_REPO="${REGISTRY_ADDR}" ./hack/run-tool.sh ko resolve --platform="linux/${GOARCH}" -f -
-  ) | k apply -f -
-fi
+worker_digest="$(image_digest "${SUBSTRATE_IMAGE_REPO}/${WORKER_IMAGE}" "${SUBSTRATE_REF}")"
+worker_ref="${SUBSTRATE_IMAGE_REPO}/${WORKER_IMAGE}:${SUBSTRATE_REF}@${worker_digest}"
+render_manifest workerpool.yaml |
+  sed "s|${WORKER_KO_REF}|${worker_ref}|" |
+  k apply -f -
 
 log "Waiting for ax-workers to become Ready..."
 for _ in $(seq 1 60); do

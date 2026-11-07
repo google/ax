@@ -23,12 +23,17 @@ Provision a cluster and run the suite against the Substrate version pinned in `g
 make test-e2e
 ```
 
-Against Substrate `main`, or any branch, tag, or commit:
+Against another Substrate release:
 
 ```bash
-make test-e2e-head
-make test-e2e SUBSTRATE_REF=release-0.4
+make test-e2e SUBSTRATE_REF=v1.0.0-rc.3
 ```
+
+Substrate is never built: it is installed from the release's published images
+in `ghcr.io/agent-substrate/substrate`, so `SUBSTRATE_REF` must be a release tag
+(`vX.Y.Z` or `vX.Y.Z-rc.N`). The Substrate checkout only supplies the manifests
+and `ate-setup`, and must be clean at that tag. Branches, commits, and Go
+pseudo-versions are rejected.
 
 ### Iterating
 
@@ -53,7 +58,7 @@ resolved values the tests need to `.tmp/e2e.env`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SUBSTRATE_REF` | version in `go.mod` | Substrate branch, tag, commit, or Go module version |
+| `SUBSTRATE_REF` | version in `go.mod` | Substrate release tag (`vX.Y.Z` or `vX.Y.Z-rc.N`) |
 | `SUBSTRATE_DIR` | `../substrate` if present | Local Substrate checkout. If its `HEAD` is not `SUBSTRATE_REF`, a detached worktree is created under `.tmp/` |
 | `SUBSTRATE_REPO` | `https://github.com/agent-substrate/substrate.git` | Cloned into `.tmp/substrate` when no local checkout exists |
 | `KIND_CLUSTER_NAME` | `ax-e2e` | Kind cluster name |
@@ -62,7 +67,7 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `AX_WORKER_REPLICAS` | `4` | gVisor worker replicas |
 | `RECREATE_KIND` | `false` | Delete and recreate the Kind cluster |
 | `FORCE_INSTALL_SUBSTRATE` | `false` | Reinstall Substrate even if the requested commit is already installed |
-| `SUBSTRATE_IMAGE_CACHE_DIR` | unset | Host directory for the local registry's storage. When set, Substrate's images are published there once per Substrate version (`git describe`) and installed pre-built afterwards, skipping the Substrate build. CI caches this directory |
+| `SUBSTRATE_IMAGE_REPO` | `ghcr.io/agent-substrate/substrate` | Registry holding Substrate's published release images (for a mirror) |
 | `CLEANUP_KIND` | `false` | `hack/run-e2e-kind.sh` only: delete the cluster on exit |
 | `SKIP_SETUP` | `false` | `hack/run-e2e-kind.sh` only: skip provisioning |
 | `E2E_TIMEOUT` | `30m` | `go test` timeout |

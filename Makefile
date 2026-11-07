@@ -38,7 +38,7 @@ CLAUDE_CODE_BASE_IMAGE ?=
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image deploy deploy-server deploy-postgres apply-example test test-e2e test-e2e-head e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image deploy deploy-server deploy-postgres apply-example test test-e2e e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -151,15 +151,11 @@ test:
 	@echo "==> Running tests..."
 	go test -v ./...
 
-# Provision Kind + Substrate + AX, then run the E2E suite. Substrate defaults to
-# the version in go.mod; override with SUBSTRATE_REF=<branch|tag|commit>.
+# Provision Kind + Substrate + AX, then run the E2E suite. Substrate is installed
+# from its published release images: the version in go.mod, or SUBSTRATE_REF=<release tag>.
 # Pass extra `go test` flags via E2E_ARGS, e.g. E2E_ARGS='-test.run TestE2E_ModelCRUD'.
 test-e2e:
 	./hack/run-e2e-kind.sh $(E2E_ARGS)
-
-# Run the E2E suite against Substrate main.
-test-e2e-head:
-	SUBSTRATE_REF=main ./hack/run-e2e-kind.sh $(E2E_ARGS)
 
 # Provision Kind + Substrate + AX without running tests (accepts SUBSTRATE_REF).
 e2e-setup:
