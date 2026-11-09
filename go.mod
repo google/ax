@@ -8,6 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/client_golang v1.24.1
 	go.ate.dev/substrate v1.0.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.21.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0

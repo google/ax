@@ -220,6 +220,7 @@ ax --context=dev-cluster get tasks
 | `-n`, `--namespace` | Kubernetes namespace where AX is installed | `ax-system` |
 | `--context` | Kubernetes context to target | active `kubectx` / `current-context` |
 | `--server` | Control plane address, bypassing auto-detection | derived from kube context, or `$AX_SERVER` |
+| `--trace` | Trace the command and print its trace ID to stderr. Its RPCs send a sampled W3C `traceparent`, and CLI spans are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Without it, the CLI sends no trace context and ax-server samples on its own | off |
 
 ## License
 

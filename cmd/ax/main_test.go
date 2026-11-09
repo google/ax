@@ -445,6 +445,16 @@ func TestParseGlobalArgs(t *testing.T) {
 				namespace:        "ax-system",
 			},
 		},
+		{
+			name: "trace flag",
+			args: []string{"--trace", "get", "tasks"},
+			want: globalArgs{cmd: "get", args: []string{"tasks"}, atespace: "default", namespace: "ax-system", trace: true},
+		},
+		{
+			name: "trace after -- belongs to the remote command",
+			args: []string{"ssh", "task123", "--", "app", "--trace"},
+			want: globalArgs{cmd: "ssh", args: []string{"task123", "--", "app", "--trace"}, atespace: "default", namespace: "ax-system"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
