@@ -1,0 +1,110 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package ax.v1alpha1;
+
+import "pkg/apis/v1alpha1/common.proto";
+
+option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
+
+message WorkspaceRef {
+  string name = 1;
+  string path = 2;
+}
+
+message Workspace {
+  string api_version = 1;
+  string kind = 2;
+  ObjectMeta metadata = 3;
+  WorkspaceSpec spec = 4;
+}
+
+message WorkspaceSpec {
+  repeated GitRepo git = 1;
+  repeated File files = 2;
+  MCPConfig mcp = 3;
+  SkillsConfig skills = 4;
+}
+
+message GitRepo {
+  string name = 1;
+  string repo = 2;
+  string branch = 3;
+  string dir = 4;
+  int32 depth = 5;
+}
+
+message File {
+  string path = 1;
+  string content = 2;
+}
+
+message MCPConfig {
+  repeated MCPRegistry registries = 1;
+  repeated MCPServer servers = 2;
+}
+
+message MCPRegistry {
+  string provider = 1;
+  string project = 2;
+  string query = 3;
+  repeated MCPServer servers = 4;
+}
+
+message MCPServer {
+  string name = 1;
+  string endpoint = 2;
+  string command = 3;
+  repeated string args = 4;
+}
+
+message SkillsConfig {
+  repeated SkillRegistry registries = 1;
+  string path = 2;
+}
+
+message SkillRegistry {
+  string provider = 1;
+  string project = 2;
+  string query = 3;
+}
+
+// --- RPC Request & Response Messages ---
+
+// Workspaces
+message GetWorkspaceRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message ListWorkspacesRequest {
+  string atespace = 1;
+}
+
+message ListWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+}
+
+message UpdateWorkspaceRequest {
+  Workspace workspace = 1;
+}
+
+message DeleteWorkspaceRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message DeleteWorkspaceResponse {}
