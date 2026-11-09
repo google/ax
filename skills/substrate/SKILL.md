@@ -11,14 +11,14 @@ AX schedules every `Task` as a sandboxed **actor** on
 [Agent Substrate](https://github.com/agent-substrate/substrate). AX owns the
 declarative layer (Task/Workspace/Model, reconciler, CLI); Substrate owns
 isolation, checkpoint/restore, worker placement and in-cluster routing.
-Facts below were verified against `main` on 2026-10-28 — re-check `go.mod`
+Facts below were verified against `main` on 2026-11-06 — re-check `go.mod`
 and `hack/setup-e2e-kind.sh` if they look stale.
 
 ## 1. Module map
 
 | Module | Pinned | Provides | Imported by |
 |---|---|---|---|
-| `go.ate.dev/substrate` | `v1.0.0-rc.1` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume) | `internal/substrate`, `internal/server`, `internal/controller`, `test/e2e` |
+| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume) | `internal/substrate`, `internal/server`, `internal/controller`, `test/e2e` |
 | `github.com/agent-substrate/env` | `v0.0.11-0.20260912052224-4468a200b170` (pseudo-version) | Guest services served inside the sandbox (process exec + file system gRPC) and `proto/ateenv/v1alpha` | `internal/guest`, `internal/metadata` |
 
 There is no `replace` directive for either module. Local hacking against a
@@ -106,7 +106,9 @@ instead. No mocking library is in `go.mod`.
   snapshot bucket (`snapshotsBucket` in `BuildActorTemplate`) can only be used when the
   Substrate cluster has the `PerTemplateSnapshotLocation` preview feature gate enabled;
   otherwise Substrate rejects template creation with
-  `actor_template.snapshot_config.storage_location: Forbidden`.
+  `actor_template.snapshot_config.storage_location: Forbidden`. Since v1.0.0 each path
+  segment may contain only `[A-Za-z0-9_-]` and no segment may be `atespaces`; AX passes
+  the value through unvalidated, so Substrate is the one that rejects it.
 
 ## 5. E2E and the Substrate version pin
 
@@ -115,16 +117,26 @@ instead. No mocking library is in `go.mod`.
 
 | Target | Substrate version | When |
 |---|---|---|
-| `make test-e2e` | exactly `go list -m -f '{{.Version}}' go.ate.dev/substrate` (pseudo-versions reduced to the 12-char commit) | PR CI (`e2e.yml`) |
-| `make test-e2e SUBSTRATE_REF=<branch\|tag\|sha>` | override | local, or `workflow_dispatch` input `substrate_ref` in `e2e.yml` |
-| `make test-e2e-head` | Substrate `main` | nightly schedule in `e2e.yml` |
+| `make test-e2e` | exactly `go list -m -f '{{.Version}}' go.ate.dev/substrate` | PR CI and the nightly schedule (06:00 UTC) in `e2e.yml` |
+| `make test-e2e SUBSTRATE_REF=<release tag>` | override | local, or `workflow_dispatch` input `substrate_ref` in `e2e.yml` |
 | `make e2e-setup` / `e2e-run` / `e2e-cleanup` | same as above | iterate without re-provisioning |
+
+E2E never builds Substrate. `hack/setup-e2e-kind.sh` installs the release's
+published images from `ghcr.io/agent-substrate/substrate/<image>:<tag>`
+(`SUBSTRATE_IMAGE_REPO` to use a mirror) via `ATE_IMAGE_REPO`/`ATE_IMAGE_TAG`,
+and pins the WorkerPool's worker image by digest. It exits early unless:
+
+- `SUBSTRATE_REF` is a release tag, `vX.Y.Z` or `vX.Y.Z-rc.N`. Branches,
+  commits, and Go pseudo-versions are rejected, and there is no run against
+  Substrate `main`.
+- The Substrate checkout is clean and at that tag. It still supplies the
+  manifests and `ate-setup`, so they must match the images.
+- That release's `ate-setup` supports `--image-repo`, and every image the
+  install uses exists under the tag.
 
 Useful env (full list in `test/e2e/README.md`): `SUBSTRATE_DIR` (local
 checkout; a detached worktree is created under `.tmp/` if HEAD ≠ ref),
-`SUBSTRATE_REPO`, `SUBSTRATE_IMAGE_CACHE_DIR` (CI caches built Substrate
-images keyed by the Substrate version, so a version change is a cache miss),
-`E2E_ARGS='-test.run TestE2E_ModelCRUD'`.
+`SUBSTRATE_REPO`, `E2E_ARGS='-test.run TestE2E_ModelCRUD'`.
 
 ## 6. Bumping Substrate
 
@@ -138,5 +150,5 @@ go build ./... && go test ./...                # unit tests compile against the 
 make test-e2e                                  # hack/setup-e2e-kind.sh installs the go.mod version
 ```
 
-`e2e.yml` keys its Substrate image cache on the module version, so the first
-E2E run after a bump rebuilds Substrate.
+`go.ate.dev/substrate` must stay on a release tag: E2E installs that
+release's published images, and a pseudo-version fails E2E setup.
