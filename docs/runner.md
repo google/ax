@@ -139,7 +139,7 @@ For a working example, see [`cmd/runners/claude-code-runner`](../cmd/runners/cla
 
 ### 3. Write a runner from scratch
 
-If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-task-runner`. The `ax.io/v1alpha1` schema is defined in `pkg/apis/v1alpha1/ax.proto`, and [Manifests](manifests.md) walks through every field.
+If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-task-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.
 
 ### Ship it
 

@@ -27,7 +27,7 @@ internal/store/        memory + postgres backends (schema.sql and schema.go chan
 internal/substrate     The only place that talks to the Substrate Control API
 internal/workspace     git clone / inline files / skills dir (MCP is spec-only; agents read it via the metadata server)
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
-pkg/apis/v1alpha1      ax.proto (source of truth) -> *.pb.go (generated), types.go, resources.go
+pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go, resources.go
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 hack/                  E2E provisioning scripts
 docs/                  manifests.md is the user-facing API reference
@@ -54,8 +54,12 @@ Each rule below is enforced by code, CI, or `CONTRIBUTING.md`; the cited
 location is where to look. How-to lives in the skills.
 
 **A. Correctness**
-- `ax.proto` is the source of truth; `*.pb.go` are generated (`DO NOT EDIT`
-  headers). There is no `make generate` target.
+- `pkg/apis/v1alpha1/*.proto` are the source of truth: `ax.proto` is the `AX`
+  service, and the messages are in `common.proto`, `task.proto`,
+  `workspace.proto`, and `model.proto`. `*.pb.go` are generated (`DO NOT EDIT`
+  headers). There is no `make generate` target; run `protoc` from the repo root
+  with `-I .` (imports are repo-root-relative) on all of those files, at the
+  generator versions in the `*.pb.go` headers.
 - `internal/store/postgres/schema.go` loads `schema.sql`; change them together.
 
 **B. Agent Substrate** (details: `/substrate`)
@@ -74,8 +78,9 @@ location is where to look. How-to lives in the skills.
   version (`hack/setup-e2e-kind.sh`).
 
 **C. API surface**
-- A `Task`/`Workspace`/`Model` field is defined in `ax.proto`, mapped in
-  `types.go`, validated in `resources.go`, and documented in `docs/manifests.md`.
+- A `Task`/`Workspace`/`Model` field is defined in that kind's `.proto` file
+  (shared messages in `common.proto`), mapped in `types.go`, validated in
+  `resources.go`, and documented in `docs/manifests.md`.
 
 **D. Hygiene**
 - CI fails on an untidy `go.mod`/`go.sum` (`.github/workflows/go.yml`).
