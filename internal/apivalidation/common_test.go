@@ -99,6 +99,9 @@ func TestValidateObjectMeta(t *testing.T) {
 	if err := apivalidation.ValidateModel(&v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
 		t.Error("ValidateModel accepted an invalid name")
 	}
+	if err := apivalidation.ValidateGateway(&v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateGateway accepted an invalid name")
+	}
 }
 
 func TestValidateResources(t *testing.T) {

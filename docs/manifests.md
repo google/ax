@@ -1,6 +1,6 @@
 # Writing manifests
 
-All four kinds can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
+`Task`, `Workspace`, and `Model` manifests can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
 
 `metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting the task fail later with `ActorCreationFailed`.
 
@@ -44,6 +44,14 @@ A task binds at most one `Workspace` through `spec.workspace`. The binding needs
 The bound `Workspace` must already exist in the task's atespace. Creating a task that binds a missing workspace fails with `FailedPrecondition` and stores nothing. `ax apply` creates documents in file order, so list a `Workspace` before the `Task` that binds it.
 
 To work on content from several sources, put it all in one `Workspace`, for example by listing several repositories under `spec.git` or adding files through `spec.files`.
+
+### Binding a gateway
+
+Not available yet: ax-server rejects a task that sets `spec.gateway` until [Gateways](#gateway) are served.
+
+A task binds at most one `Gateway` through `spec.gateway`, for example `gateway: {name: review-bot-gw}`, and can reach only the external hosts that gateway's rules allow. A task with no `gateway` has no external network access.
+
+The rules are copied onto the task's actor when the task is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
 
 ### Sizing the sandbox
 
@@ -98,6 +106,61 @@ spec:
     path: "/.agents/skills"
 ```
 
+## Gateway
+
+Not available yet: `ax apply` does not accept `kind: Gateway` until Gateways are served. This section describes the manifest.
+
+A `Gateway` lists the external traffic a task may send. Traffic that matches no rule is refused.
+
+```yaml
+apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: review-bot-gw
+  atespace: default
+spec:
+  egress:
+    - https:
+        hostnames: ["api.anthropic.com"]
+        effects:
+          replaceHeaders:
+            - header: x-api-key
+              credentialUri: "ate-secret://k8s.io/default/default/anthropic-creds/api-key"
+    - https:
+        hostnames: ["github.com", "api.github.com", "*.githubusercontent.com"]
+    - tlsPassthrough:
+        hostnames: ["smtp.example.com"]
+        ports:
+          numbers: [465]
+```
+
+Each entry of `spec.egress` is an Agent Substrate `EgressRule` and sets exactly one of:
+
+- `http`: cleartext HTTP to the named hosts, on port 80 unless `ports` is set.
+- `https`: HTTPS to the named hosts, on port 443 unless `ports` is set. The egress gateway intercepts these connections so that it can apply `effects` to each request.
+- `tlsPassthrough`: TLS to the named hosts, forwarded without decryption. `ports` is required. The connection must begin with TLS: a protocol that starts in cleartext and upgrades, such as PostgreSQL's, does not match.
+
+`hostnames` are lowercase DNS names. `*` can stand for the whole leftmost label: `*.example.com` matches `api.example.com`, but not `example.com` or `a.b.example.com`. `ports` is either `numbers: [443, 8443]` or `all: {}`.
+
+### Injecting credentials
+
+`effects.replaceHeaders` adds a credential to matching requests outside the sandbox, so the task never holds it. The task sends the header with any placeholder value, and the egress gateway replaces that value with `prefix` followed by the credential that `credentialUri` names. A request that does not send the header is forwarded unchanged. Only an `https` rule whose hostnames have no wildcard can inject a credential.
+
+`credentialUri` has the form `ate-secret://<provider>/<path>` and is resolved by a credential provider registered with Agent Substrate. For the bundled Kubernetes Secrets provider it is `ate-secret://k8s.io/default/<namespace>/<secret>/<key>`. That provider denies by default: matching requests get a 403 until a cluster admin grants the task's atespace the Secret's namespace in the `k8s-credential-provider-namespace-policy` ConfigMap in `ate-system`. See Substrate's [egress credential injection](https://github.com/agent-substrate/substrate/blob/v1.0.0/docs/guides/egress-credential-injection.md) guide.
+
+### What `ax apply` rejects
+
+`ax apply` rejects a rule that:
+
+- uses `*` alone as a hostname, which would match every host, including hosts inside the cluster;
+- names an IP address;
+- names `localhost` or a name under it, which would be the egress gateway's own: a task reaches its own localhost without a rule;
+- replaces headers in an `http` rule, where the credential would travel in cleartext, or for a wildcard hostname: name each host that gets the credential;
+- is a `tlsPassthrough` rule without `ports`.
+
+A hostname can name a service inside the cluster, such as `git-mcp.default.svc.cluster.local`: the egress gateway resolves it and connects from inside the cluster. Name only the hosts the task should reach.
+
+Substrate checks the rest of a rule's syntax when the rules are copied onto a task's actor.
 
 ## Model
 

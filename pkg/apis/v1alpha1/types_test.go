@@ -553,3 +553,70 @@ func TestUnmarshalYAMLLenient_NormalizesWorkspace(t *testing.T) {
 		t.Errorf("mcp servers = %v, want one named srv", got)
 	}
 }
+
+func TestGateway_RoundTrip(t *testing.T) {
+	gwYAML := `
+apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: review-bot-gw
+  atespace: default
+spec:
+  egress:
+    - https:
+        hostnames: ["api.anthropic.com"]
+        effects:
+          replaceHeaders:
+            - header: x-api-key
+              credentialUri: "ate-secret://k8s.io/default/default/anthropic-creds/api-key"
+    - https:
+        hostnames: ["api.github.com"]
+        effects:
+          replaceHeaders:
+            - header: Authorization
+              prefix: "Bearer "
+              actorJwt:
+                audiences: ["https://api.github.com"]
+                expirationSeconds: 300
+    - http:
+        hostnames: ["mirror.example.com"]
+        ports:
+          numbers: [80, 8080]
+    - tlsPassthrough:
+        hostnames: ["db.example.com"]
+        ports:
+          all: {}
+`
+	var gw v1alpha1.Gateway
+	if err := yaml.Unmarshal([]byte(gwYAML), &gw); err != nil {
+		t.Fatalf("unmarshaling gateway: %v", err)
+	}
+	egress := gw.GetSpec().GetEgress()
+	if len(egress) != 4 {
+		t.Fatalf("expected 4 egress rules, got %d", len(egress))
+	}
+	if got := egress[0].GetHttps().GetEffects().GetReplaceHeaders(); len(got) != 1 || got[0].GetHeader() != "x-api-key" || got[0].GetCredentialUri() != "ate-secret://k8s.io/default/default/anthropic-creds/api-key" {
+		t.Errorf("unexpected rule 0: %+v", egress[0])
+	}
+	if got := egress[1].GetHttps().GetEffects().GetReplaceHeaders(); len(got) != 1 || got[0].GetPrefix() != "Bearer " || got[0].GetActorJwt().GetExpirationSeconds() != 300 {
+		t.Errorf("unexpected rule 1: %+v", egress[1])
+	}
+	if got := egress[2].GetHttp().GetPorts().GetNumbers(); len(got) != 2 || got[1] != 8080 {
+		t.Errorf("unexpected rule 2: %+v", egress[2])
+	}
+	if egress[3].GetTlsPassthrough().GetPorts().GetAll() == nil {
+		t.Errorf("unexpected rule 3: %+v", egress[3])
+	}
+
+	out, err := yaml.Marshal(&gw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again v1alpha1.Gateway
+	if err := yaml.Unmarshal(out, &again); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(&gw, &again) {
+		t.Errorf("gateway round trip changed:\n%s", out)
+	}
+}

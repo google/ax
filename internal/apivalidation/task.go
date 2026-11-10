@@ -40,6 +40,9 @@ func ValidateTask(t *v1alpha1.Task) error {
 			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
 		}
 	}
+	if ref := spec.GetGateway(); ref != nil && ref.GetName() == "" {
+		return errors.New("spec.gateway: name is required")
+	}
 	if err := ValidateTaskConfig(spec); err != nil {
 		return err
 	}
