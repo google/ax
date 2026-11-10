@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
@@ -146,7 +147,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Error(codes.InvalidArgument, "task required")
 	}
 	task := req.Task
-	if err := v1alpha1.ValidateTask(task); err != nil {
+	if err := apivalidation.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if task.Metadata == nil {
@@ -598,92 +599,6 @@ func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1al
 	return ws
 }
 
-// --- Workspaces ---
-
-func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceRequest) (*v1alpha1.Workspace, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing request")
-	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
-	ws, err := s.store.GetWorkspace(ctx, atespace, req.Name)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "workspace %q not found in atespace %q", req.Name, atespace)
-		}
-		return nil, status.Errorf(codes.Internal, "getting workspace: %v", err)
-	}
-	return ws, nil
-}
-
-func (s *Server) ListWorkspaces(ctx context.Context, req *v1alpha1.ListWorkspacesRequest) (*v1alpha1.ListWorkspacesResponse, error) {
-	atespace := ""
-	if req != nil {
-		atespace = req.Atespace
-	}
-	workspaces, err := s.store.ListWorkspaces(ctx, atespace)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "listing workspaces: %v", err)
-	}
-	return &v1alpha1.ListWorkspacesResponse{Workspaces: workspaces}, nil
-}
-
-func (s *Server) UpdateWorkspace(ctx context.Context, req *v1alpha1.UpdateWorkspaceRequest) (*v1alpha1.Workspace, error) {
-	if req == nil || req.Workspace == nil {
-		return nil, status.Error(codes.InvalidArgument, "workspace required")
-	}
-	if err := v1alpha1.ValidateWorkspace(req.Workspace); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	req.Workspace.Metadata = defaultMetadata(req.Workspace.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetWorkspace(ctx, atespace, name)
-		if err != nil {
-			return nil
-		}
-		return existing.GetMetadata()
-	})
-
-	atespace := req.Workspace.Metadata.Atespace
-	wsName := req.Workspace.Metadata.Name
-
-	// Acquire exclusive lock for this workspace
-	unlock, err := s.locker.Lock(ctx, "workspace", atespace, wsName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, wsName, err)
-	}
-	defer unlock()
-
-	if err := s.store.SaveWorkspace(ctx, req.Workspace); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving workspace: %v", err)
-	}
-	return req.Workspace, nil
-}
-
-func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorkspaceRequest) (*v1alpha1.DeleteWorkspaceResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing request")
-	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
-	wsName := req.Name
-
-	// Acquire exclusive lock for this workspace
-	unlock, err := s.locker.Lock(ctx, "workspace", atespace, wsName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, wsName, err)
-	}
-	defer unlock()
-
-	if err := s.store.DeleteWorkspace(ctx, atespace, wsName); err != nil {
-		return nil, status.Errorf(codes.Internal, "deleting workspace: %v", err)
-	}
-	return &v1alpha1.DeleteWorkspaceResponse{}, nil
-}
-
 // --- Models ---
 
 func (s *Server) GetModel(ctx context.Context, req *v1alpha1.GetModelRequest) (*v1alpha1.Model, error) {
@@ -720,7 +635,7 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 	if req == nil || req.Model == nil {
 		return nil, status.Error(codes.InvalidArgument, "model required")
 	}
-	if err := v1alpha1.ValidateModel(req.Model); err != nil {
+	if err := apivalidation.ValidateModel(req.Model); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	req.Model.Metadata = defaultMetadata(req.Model.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
