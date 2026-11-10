@@ -39,6 +39,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 ```bash
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 go mod tidy && git diff --exit-code go.mod go.sum
+make generate                    # format + lint .proto, regenerate *.pb.go (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
 go test ./...                    # ~20 s, 16 packages with tests; Postgres + E2E tiers self-skip
 go vet ./... && gofmt -l .       # not run by CI; both are clean at HEAD
@@ -57,9 +58,8 @@ location is where to look. How-to lives in the skills.
 - `pkg/apis/v1alpha1/*.proto` are the source of truth: `ax.proto` is the `AX`
   service, and the messages are in `common.proto`, `task.proto`,
   `workspace.proto`, and `model.proto`. `*.pb.go` are generated (`DO NOT EDIT`
-  headers). There is no `make generate` target; run `protoc` from the repo root
-  with `-I .` (imports are repo-root-relative) on all of those files, at the
-  generator versions in the `*.pb.go` headers.
+  headers); run `make generate` after editing a `.proto`. Imports are
+  repo-root-relative.
 - `internal/store/postgres/schema.go` loads `schema.sql`; change them together.
 
 **B. Agent Substrate** (details: `/substrate`)
@@ -106,7 +106,7 @@ skill source there. Adding a skill means adding a row above.
 
 ## Definition of done
 
-1. The four CI commands above pass locally.
+1. The five CI commands above pass locally.
 2. Postgres or E2E tier passes if you touched `internal/store/postgres` or
    the E2E paths.
 3. `/sync-contract` has been run against your diff so `AGENTS.md` and `skills/`

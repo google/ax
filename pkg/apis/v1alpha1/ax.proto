@@ -35,7 +35,6 @@ service AX {
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
 
-
   // Workspaces
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
@@ -47,5 +46,4 @@ service AX {
   rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
   rpc UpdateModel(UpdateModelRequest) returns (Model);
   rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
-
 }

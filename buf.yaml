@@ -1,0 +1,31 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: v2
+modules:
+  - path: . # imports are repo-root-relative
+    includes:
+      - pkg/apis
+lint:
+  use:
+    - STANDARD
+  except:
+    - PACKAGE_DIRECTORY_MATCH # package ax.v1alpha1 is in pkg/apis/v1alpha1
+    - SERVICE_SUFFIX # the service is named AX
+    - RPC_RESPONSE_STANDARD_NAME # standard methods return the resource itself
+    - RPC_REQUEST_RESPONSE_UNIQUE # same
+# Not needed while the API is v1alpha1.
+# breaking:
+#   use:
+#     - WIRE_JSON

@@ -38,7 +38,9 @@ CLAUDE_CODE_BASE_IMAGE ?=
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image deploy deploy-server deploy-postgres apply-example test test-e2e e2e-setup e2e-run e2e-cleanup clean
+BUF := go run github.com/bufbuild/buf/cmd/buf@v1.75.0
+
+.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example test test-e2e e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -142,6 +144,16 @@ deploy-server: check-image-repo
 apply-example:
 	@echo "==> Applying example task and resources using bin/ax..."
 	./bin/ax apply -f examples/simple.yaml
+
+## --------------------------------------
+## API Targets
+## --------------------------------------
+
+# Format and lint .proto files, and regenerate the Go code.
+generate:
+	$(BUF) format -w
+	$(BUF) lint
+	$(BUF) generate
 
 ## --------------------------------------
 ## Test & Verification Targets
