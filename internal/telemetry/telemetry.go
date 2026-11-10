@@ -34,10 +34,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/google/ax/internal/telemetry/otelenv"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -134,24 +136,22 @@ func (p *Providers) Shutdown(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// newResource describes the process. OTEL_SERVICE_NAME and
-// OTEL_RESOURCE_ATTRIBUTES override the defaults; the bundled manifests set
-// service.instance.id to the pod UID and add the k8s.* attributes there.
+// newResource describes the process with otelenv.Resource, the rules the ax
+// CLI uses too. OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES override the
+// defaults; the bundled manifests set service.instance.id to the pod UID and
+// add the k8s.* attributes there.
 func newResource(ctx context.Context, serviceName string) (*resource.Resource, error) {
-	attrs := resource.WithAttributes(semconv.ServiceName(serviceName))
-	opts := []resource.Option{resource.WithTelemetrySDK(), resource.WithSchemaURL(semconv.SchemaURL), attrs}
+	var attrs []attribute.KeyValue
 	// Without OTEL_RESOURCE_ATTRIBUTES, the hostname tells replicas apart.
 	if host, err := os.Hostname(); err == nil {
-		opts = append(opts, resource.WithAttributes(semconv.ServiceInstanceID(host)))
+		attrs = append(attrs, semconv.ServiceInstanceID(host))
 	}
-	opts = append(opts, resource.WithFromEnv())
-	res, err := resource.New(ctx, opts...)
-	if errors.Is(err, resource.ErrPartialResource) || errors.Is(err, resource.ErrSchemaURLConflict) {
-		slog.WarnContext(ctx, "partial telemetry resource", "error", err)
-		return res, nil
+	res, err := otelenv.Resource(ctx, serviceName, attrs...)
+	if res == nil {
+		return nil, fmt.Errorf("building telemetry resource: %w", err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("building telemetry resource: %w", err)
+		slog.WarnContext(ctx, "partial telemetry resource", "error", err)
 	}
 	return res, nil
 }
@@ -159,7 +159,7 @@ func newResource(ctx context.Context, serviceName string) (*resource.Resource, e
 func newTracerProvider(ctx context.Context, res *resource.Resource) (*sdktrace.TracerProvider, error) {
 	def := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(DefaultSampleRatio))
 	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res), sdktrace.WithSampler(resolveSampler(ctx, def))}
-	export := resolveExportersEnv(ctx, tracesExporterEnv, []string{exporterOTLP}, exporters{exporterOTLP: true}).has(exporterOTLP)
+	export := resolveExportersEnv(ctx, tracesExporterEnv, []string{otelenv.ExporterOTLP}, otelenv.Exporters{otelenv.ExporterOTLP: true}).Has(otelenv.ExporterOTLP)
 	if export {
 		exp, err := otlptracegrpc.New(ctx)
 		if err != nil {
@@ -195,9 +195,9 @@ func newMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.M
 	}
 	opts := []sdkmetric.Option{sdkmetric.WithResource(res), sdkmetric.WithReader(promReader)}
 
-	selected := resolveExportersEnv(ctx, metricsExporterEnv, []string{exporterOTLP, exporterPrometheus},
-		exporters{exporterOTLP: true, exporterPrometheus: true})
-	push := selected.has(exporterOTLP)
+	selected := resolveExportersEnv(ctx, metricsExporterEnv, []string{otelenv.ExporterOTLP, otelenv.ExporterPrometheus},
+		otelenv.Exporters{otelenv.ExporterOTLP: true, otelenv.ExporterPrometheus: true})
+	push := selected.Has(otelenv.ExporterOTLP)
 	if push {
 		exp, err := otlpmetricgrpc.New(ctx)
 		if err != nil {
@@ -219,9 +219,9 @@ func newMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.M
 // Substrate: events stay on stdout, where they are never lost, until an
 // operator points them at a collector.
 func newLoggerProvider(ctx context.Context, res *resource.Resource) (*sdklog.LoggerProvider, error) {
-	selected := resolveExportersEnv(ctx, logsExporterEnv, []string{exporterOTLP, exporterConsole}, exporters{})
-	console.Store(selected.has(exporterConsole))
-	if !selected.has(exporterOTLP) {
+	selected := resolveExportersEnv(ctx, logsExporterEnv, []string{otelenv.ExporterOTLP, otelenv.ExporterConsole}, otelenv.Exporters{})
+	console.Store(selected.Has(otelenv.ExporterConsole))
+	if !selected.Has(otelenv.ExporterOTLP) {
 		slog.InfoContext(ctx, "OTLP logs export disabled", "exporter", selected.String())
 		return nil, nil
 	}

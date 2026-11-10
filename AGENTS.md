@@ -30,6 +30,7 @@ internal/substrate     The only place that talks to the Substrate Control API
 internal/workspace     git clone / inline files / skills dir (MCP is spec-only; agents read it via the metadata server)
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 internal/telemetry     ax-server's OpenTelemetry setup: OTLP traces, metrics, and events (Emit, stdout fallback), Prometheus /metrics (:9090), JSON slog with trace IDs
+internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTEL_*_EXPORTER parsing and the resource
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
@@ -44,7 +45,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~20 s, 19 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~20 s, 20 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:
