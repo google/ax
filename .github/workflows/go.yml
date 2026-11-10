@@ -53,6 +53,12 @@ jobs:
         go mod tidy
         git diff --exit-code go.mod go.sum
 
+    - name: Verify API
+      run: |
+        make generate
+        git diff --exit-code
+        test -z "$(git ls-files --others --exclude-standard)"
+
     - name: Build local binaries
       run: |
         go build -v ./cmd/ax
