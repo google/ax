@@ -22,9 +22,10 @@ import (
 	"log"
 	"net"
 	"os"
-	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"go.opentelemetry.io/otel"
@@ -120,13 +121,53 @@ func (keptSpans) Shutdown(context.Context) error { return nil }
 
 func newKeptSpans() keptSpans { return keptSpans{tracetest.NewInMemoryExporter()} }
 
-// failingExporter fails to shut down, as an exporter does when its collector
-// is unreachable.
+// failingExporter fails to export, as an exporter does when its collector is
+// unreachable.
 type failingExporter struct{}
 
-func (failingExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error { return nil }
-func (failingExporter) Shutdown(context.Context) error {
-	return errors.New("context deadline exceeded")
+func (failingExporter) ExportSpans(context.Context, []sdktrace.ReadOnlySpan) error {
+	return errors.New("traces export: connection refused")
+}
+func (failingExporter) Shutdown(context.Context) error { return nil }
+
+// blockingExporter exports until the context ends, as an exporter does when
+// its collector accepts the connection but never answers.
+type blockingExporter struct{}
+
+func (blockingExporter) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (blockingExporter) Shutdown(context.Context) error { return nil }
+
+// countingExporter counts its export calls and keeps the spans.
+type countingExporter struct {
+	mu    sync.Mutex
+	calls int
+	spans []sdktrace.ReadOnlySpan
+}
+
+func (e *countingExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.calls++
+	e.spans = append(e.spans, spans...)
+	return nil
+}
+func (e *countingExporter) Shutdown(context.Context) error { return nil }
+
+// closedAddr returns a local address that nothing listens on.
+func closedAddr(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return addr
 }
 
 // traceparent returns the fields of the single traceparent header in md.
@@ -274,12 +315,65 @@ func TestCommandTraceRecordsError(t *testing.T) {
 	}
 }
 
-func TestEndWarnsWhenExportFails(t *testing.T) {
-	var stderr bytes.Buffer
-	newCommandTrace("get", failingExporter{}, &stderr).end(nil)
+func TestEndExportsSpansOnce(t *testing.T) {
+	exporter := &countingExporter{}
+	ct := newCommandTrace("get", exporter, io.Discard)
+	ct.startStep("resolve ax-server address")(nil)
+	if exporter.calls != 0 {
+		t.Fatalf("exported %d times before the command ended, want 0", exporter.calls)
+	}
 
-	if want := "Warning: could not export the command trace: context deadline exceeded\n"; stderr.String() != want {
-		t.Errorf("stderr = %q, want %q", stderr.String(), want)
+	ct.end(nil)
+	ct.end(errors.New("a second end has no effect"))
+	if exporter.calls != 1 || len(exporter.spans) != 2 {
+		t.Errorf("exported %d times with %d spans, want one export of the command and resolve spans", exporter.calls, len(exporter.spans))
+	}
+}
+
+func TestEndWarnsWhenExportFails(t *testing.T) {
+	tests := []struct{ endpoint, want string }{
+		{"", "Warning: could not export the command trace: traces export: connection refused\n"},
+		{"http://collector:4317", "Warning: could not export the command trace to http://collector:4317: traces export: connection refused\n"},
+	}
+	for _, tt := range tests {
+		var stderr bytes.Buffer
+		ct := newCommandTrace("get", failingExporter{}, &stderr)
+		ct.endpoint = tt.endpoint
+		ct.end(nil)
+		if stderr.String() != tt.want {
+			t.Errorf("stderr = %q, want %q", stderr.String(), tt.want)
+		}
+	}
+}
+
+func TestEndWithinLimitsTheWait(t *testing.T) {
+	var stderr bytes.Buffer
+	start := time.Now()
+	newCommandTrace("ssh", blockingExporter{}, &stderr).endWithin(nil, interruptFlushTimeout)
+
+	if elapsed := time.Since(start); elapsed >= traceShutdownTimeout/2 {
+		t.Errorf("endWithin(%v) took %v", interruptFlushTimeout, elapsed)
+	}
+	if !strings.Contains(stderr.String(), context.DeadlineExceeded.Error()) {
+		t.Errorf("stderr = %q, want a deadline warning", stderr.String())
+	}
+}
+
+func TestUnreachableCollectorFailsFast(t *testing.T) {
+	clearOTelEnv(t)
+	endpoint := "http://" + closedAddr(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint)
+
+	var stderr bytes.Buffer
+	start := time.Now()
+	startCommandTrace("get", true, &stderr).end(nil)
+
+	// With retries the exporter would wait out the whole limit.
+	if elapsed := time.Since(start); elapsed >= traceShutdownTimeout/2 {
+		t.Errorf("end took %v with an unreachable collector, want a fast failure", elapsed)
+	}
+	if want := "Warning: could not export the command trace to " + endpoint + ": "; !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr = %q, want a warning that starts with %q", stderr.String(), want)
 	}
 }
 
@@ -328,31 +422,38 @@ func TestStreamRPCJoinsCommandTrace(t *testing.T) {
 	}
 }
 
-func TestResolveExporters(t *testing.T) {
-	known := []string{"otlp"}
-	def := []string{"otlp"}
+func TestEnvSpanExporter(t *testing.T) {
+	const general, traces = "http://collector:4317", "http://traces-collector:4317"
 	tests := []struct {
-		value   string
-		want    []string
-		wantErr bool
+		name         string
+		env          map[string]string
+		wantEndpoint string // empty: no exporter
+		wantWarning  bool
 	}{
-		{value: "", want: def},
-		{value: "  ", want: def},
-		{value: "otlp", want: []string{"otlp"}},
-		{value: " OTLP ", want: []string{"otlp"}},
-		{value: "none", want: nil},
-		{value: " None ", want: nil},
-		{value: "otlp,console", want: []string{"otlp"}, wantErr: true},
-		{value: "otlp,", want: []string{"otlp"}, wantErr: true},
-		{value: "console", want: def, wantErr: true},
-		{value: "none,otlp", want: def, wantErr: true},
-		{value: "none,console", want: nil, wantErr: true},
+		{name: "no endpoint"},
+		{name: "endpoint", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": general}, wantEndpoint: general},
+		{name: "traces endpoint wins", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": general, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": traces}, wantEndpoint: traces},
+		{name: "exporter none", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": general, "OTEL_TRACES_EXPORTER": " None "}},
+		{name: "unknown exporter keeps otlp", env: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": general, "OTEL_TRACES_EXPORTER": "otpl"}, wantEndpoint: general, wantWarning: true},
 	}
 	for _, tt := range tests {
-		got, err := resolveExporters("OTEL_TRACES_EXPORTER", tt.value, known, def)
-		if !slices.Equal(got, tt.want) || (err != nil) != tt.wantErr {
-			t.Errorf("resolveExporters(%q) = %q, %v; want %q, error %v", tt.value, got, err, tt.want, tt.wantErr)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			clearOTelEnv(t)
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+			var stderr bytes.Buffer
+			exporter, endpoint := envSpanExporter(&stderr)
+			if exporter != nil {
+				defer exporter.Shutdown(context.Background())
+			}
+			if (exporter != nil) != (tt.wantEndpoint != "") || endpoint != tt.wantEndpoint {
+				t.Errorf("envSpanExporter = %v, %q; want an exporter for %q", exporter, endpoint, tt.wantEndpoint)
+			}
+			if got := strings.HasPrefix(stderr.String(), "Warning: "); got != tt.wantWarning {
+				t.Errorf("stderr = %q, want a warning: %v", stderr.String(), tt.wantWarning)
+			}
+		})
 	}
 }
 

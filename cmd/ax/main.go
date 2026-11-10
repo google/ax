@@ -1200,7 +1200,7 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 	defer signal.Stop(rawSigs)
 	sigs := escalateInterrupts(rawSigs, interruptExitWindow, func() {
 		fmt.Fprintln(os.Stderr, "\nax ssh: interrupted twice, exiting")
-		activeTrace.end(errors.New("ax ssh: interrupted twice"))
+		activeTrace.endWithin(errors.New("ax ssh: interrupted twice"), interruptFlushTimeout)
 		os.Exit(130)
 	})
 
