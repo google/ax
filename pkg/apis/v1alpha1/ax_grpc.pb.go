@@ -43,6 +43,11 @@ const (
 	AX_ListWorkspaces_FullMethodName  = "/ax.v1alpha1.AX/ListWorkspaces"
 	AX_UpdateWorkspace_FullMethodName = "/ax.v1alpha1.AX/UpdateWorkspace"
 	AX_DeleteWorkspace_FullMethodName = "/ax.v1alpha1.AX/DeleteWorkspace"
+	AX_GetGateway_FullMethodName      = "/ax.v1alpha1.AX/GetGateway"
+	AX_ListGateways_FullMethodName    = "/ax.v1alpha1.AX/ListGateways"
+	AX_CreateGateway_FullMethodName   = "/ax.v1alpha1.AX/CreateGateway"
+	AX_UpdateGateway_FullMethodName   = "/ax.v1alpha1.AX/UpdateGateway"
+	AX_DeleteGateway_FullMethodName   = "/ax.v1alpha1.AX/DeleteGateway"
 	AX_GetModel_FullMethodName        = "/ax.v1alpha1.AX/GetModel"
 	AX_ListModels_FullMethodName      = "/ax.v1alpha1.AX/ListModels"
 	AX_UpdateModel_FullMethodName     = "/ax.v1alpha1.AX/UpdateModel"
@@ -67,6 +72,12 @@ type AXClient interface {
 	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
 	UpdateWorkspace(ctx context.Context, in *UpdateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error)
+	// Gateways
+	GetGateway(ctx context.Context, in *GetGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
+	ListGateways(ctx context.Context, in *ListGatewaysRequest, opts ...grpc.CallOption) (*ListGatewaysResponse, error)
+	CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
+	UpdateGateway(ctx context.Context, in *UpdateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
+	DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*DeleteGatewayResponse, error)
 	// Models
 	GetModel(ctx context.Context, in *GetModelRequest, opts ...grpc.CallOption) (*Model, error)
 	ListModels(ctx context.Context, in *ListModelsRequest, opts ...grpc.CallOption) (*ListModelsResponse, error)
@@ -182,6 +193,56 @@ func (c *aXClient) DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceReque
 	return out, nil
 }
 
+func (c *aXClient) GetGateway(ctx context.Context, in *GetGatewayRequest, opts ...grpc.CallOption) (*Gateway, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Gateway)
+	err := c.cc.Invoke(ctx, AX_GetGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) ListGateways(ctx context.Context, in *ListGatewaysRequest, opts ...grpc.CallOption) (*ListGatewaysResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListGatewaysResponse)
+	err := c.cc.Invoke(ctx, AX_ListGateways_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Gateway)
+	err := c.cc.Invoke(ctx, AX_CreateGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) UpdateGateway(ctx context.Context, in *UpdateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Gateway)
+	err := c.cc.Invoke(ctx, AX_UpdateGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*DeleteGatewayResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteGatewayResponse)
+	err := c.cc.Invoke(ctx, AX_DeleteGateway_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *aXClient) GetModel(ctx context.Context, in *GetModelRequest, opts ...grpc.CallOption) (*Model, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Model)
@@ -240,6 +301,12 @@ type AXServer interface {
 	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
 	UpdateWorkspace(context.Context, *UpdateWorkspaceRequest) (*Workspace, error)
 	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error)
+	// Gateways
+	GetGateway(context.Context, *GetGatewayRequest) (*Gateway, error)
+	ListGateways(context.Context, *ListGatewaysRequest) (*ListGatewaysResponse, error)
+	CreateGateway(context.Context, *CreateGatewayRequest) (*Gateway, error)
+	UpdateGateway(context.Context, *UpdateGatewayRequest) (*Gateway, error)
+	DeleteGateway(context.Context, *DeleteGatewayRequest) (*DeleteGatewayResponse, error)
 	// Models
 	GetModel(context.Context, *GetModelRequest) (*Model, error)
 	ListModels(context.Context, *ListModelsRequest) (*ListModelsResponse, error)
@@ -284,6 +351,21 @@ func (UnimplementedAXServer) UpdateWorkspace(context.Context, *UpdateWorkspaceRe
 }
 func (UnimplementedAXServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteWorkspace not implemented")
+}
+func (UnimplementedAXServer) GetGateway(context.Context, *GetGatewayRequest) (*Gateway, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetGateway not implemented")
+}
+func (UnimplementedAXServer) ListGateways(context.Context, *ListGatewaysRequest) (*ListGatewaysResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListGateways not implemented")
+}
+func (UnimplementedAXServer) CreateGateway(context.Context, *CreateGatewayRequest) (*Gateway, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateGateway not implemented")
+}
+func (UnimplementedAXServer) UpdateGateway(context.Context, *UpdateGatewayRequest) (*Gateway, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateGateway not implemented")
+}
+func (UnimplementedAXServer) DeleteGateway(context.Context, *DeleteGatewayRequest) (*DeleteGatewayResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteGateway not implemented")
 }
 func (UnimplementedAXServer) GetModel(context.Context, *GetModelRequest) (*Model, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetModel not implemented")
@@ -498,6 +580,96 @@ func _AX_DeleteWorkspace_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AX_GetGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGatewayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).GetGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_GetGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).GetGateway(ctx, req.(*GetGatewayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_ListGateways_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListGatewaysRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).ListGateways(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_ListGateways_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).ListGateways(ctx, req.(*ListGatewaysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_CreateGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateGatewayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).CreateGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_CreateGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).CreateGateway(ctx, req.(*CreateGatewayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_UpdateGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateGatewayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).UpdateGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_UpdateGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).UpdateGateway(ctx, req.(*UpdateGatewayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_DeleteGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteGatewayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).DeleteGateway(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_DeleteGateway_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).DeleteGateway(ctx, req.(*DeleteGatewayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AX_GetModel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetModelRequest)
 	if err := dec(in); err != nil {
@@ -616,6 +788,26 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteWorkspace",
 			Handler:    _AX_DeleteWorkspace_Handler,
+		},
+		{
+			MethodName: "GetGateway",
+			Handler:    _AX_GetGateway_Handler,
+		},
+		{
+			MethodName: "ListGateways",
+			Handler:    _AX_ListGateways_Handler,
+		},
+		{
+			MethodName: "CreateGateway",
+			Handler:    _AX_CreateGateway_Handler,
+		},
+		{
+			MethodName: "UpdateGateway",
+			Handler:    _AX_UpdateGateway_Handler,
+		},
+		{
+			MethodName: "DeleteGateway",
+			Handler:    _AX_DeleteGateway_Handler,
 		},
 		{
 			MethodName: "GetModel",

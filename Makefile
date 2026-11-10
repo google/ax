@@ -149,11 +149,15 @@ apply-example:
 ## API Targets
 ## --------------------------------------
 
-# Format and lint .proto files, and regenerate the Go code.
+# Format and lint .proto files, and regenerate the Go code. buf reads imported
+# Agent Substrate protos from the Go module cache.
 generate:
-	$(BUF) format -w
-	$(BUF) lint
-	$(BUF) generate
+	go mod download go.ate.dev/substrate
+	mkdir -p .tmp/buf
+	ln -sfn "$$(go list -m -f '{{.Dir}}' go.ate.dev/substrate)" .tmp/buf/substrate
+	$(BUF) format -w --path pkg/apis
+	$(BUF) lint --path pkg/apis
+	$(BUF) generate --path pkg/apis
 
 ## --------------------------------------
 ## Test & Verification Targets

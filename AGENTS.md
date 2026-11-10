@@ -61,9 +61,12 @@ location is where to look. How-to lives in the skills.
 **A. Correctness**
 - `pkg/apis/v1alpha1/*.proto` are the source of truth: `ax.proto` is the `AX`
   service, and the messages are in `common.proto`, `task.proto`,
-  `workspace.proto`, and `model.proto`. `*.pb.go` are generated (`DO NOT EDIT`
-  headers); run `make generate` after editing a `.proto`. Imports are
-  repo-root-relative.
+  `workspace.proto`, `model.proto`, and `gateway.proto`. `*.pb.go` are
+  generated (`DO NOT EDIT` headers); run `make generate` after editing a
+  `.proto`. Imports are repo-root-relative, except imports of Agent Substrate's
+  `api/ateapi/v1/ateapi.proto`: `make generate` links that module from the Go
+  module cache into `.tmp/buf/substrate` for buf (`buf.yaml`). `.tmp/substrate`
+  is the E2E scripts' Substrate clone.
 - `internal/store/postgres/schema.go` loads `schema.sql`; change them together.
 
 **B. Agent Substrate** (details: `/substrate`)

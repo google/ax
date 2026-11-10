@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package ax.v1alpha1;
 
+import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/model.proto";
 import "pkg/apis/v1alpha1/task.proto";
 import "pkg/apis/v1alpha1/workspace.proto";
@@ -25,7 +26,7 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 // AX defines the core control plane gRPC service for autonomous agent orchestration.
 service AX {
   // Manifests are parsed by the client (see `ax apply`) and submitted through the
-  // typed Update* RPCs below; the server never receives raw YAML.
+  // typed RPCs below; the server never receives raw YAML.
 
   // Tasks
   rpc GetTask(GetTaskRequest) returns (Task);
@@ -40,6 +41,13 @@ service AX {
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (Workspace);
   rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+
+  // Gateways
+  rpc GetGateway(GetGatewayRequest) returns (Gateway);
+  rpc ListGateways(ListGatewaysRequest) returns (ListGatewaysResponse);
+  rpc CreateGateway(CreateGatewayRequest) returns (Gateway);
+  rpc UpdateGateway(UpdateGatewayRequest) returns (Gateway);
+  rpc DeleteGateway(DeleteGatewayRequest) returns (DeleteGatewayResponse);
 
   // Models
   rpc GetModel(GetModelRequest) returns (Model);
