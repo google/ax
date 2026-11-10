@@ -29,7 +29,7 @@ internal/workspace     git clone / inline files / skills dir (MCP is spec-only; 
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go, resources.go
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
-hack/                  E2E provisioning scripts
+hack/                  E2E provisioning scripts; tools/buf/go.mod pins buf for `make generate`
 docs/                  manifests.md is the user-facing API reference
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
 ```

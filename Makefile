@@ -38,7 +38,7 @@ CLAUDE_CODE_BASE_IMAGE ?=
 # Prefer podman, fall back to docker.
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
-BUF := go run github.com/bufbuild/buf/cmd/buf@v1.75.0
+BUF := go tool -modfile=hack/tools/buf/go.mod buf
 
 .PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example test test-e2e e2e-setup e2e-run e2e-cleanup clean
 
