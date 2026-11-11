@@ -129,7 +129,7 @@ type TaskSpec struct {
 	// config is free-form, runner-defined configuration. AX stores it and
 	// hands it to the runner as-is, as part of the Task in AX_TASK_YAML and
 	// the task metadata endpoint. The control plane only checks that it is an
-	// object within MaxTaskConfigSize; it does not validate or interpret it.
+	// object within 16 KiB; it does not validate or interpret it.
 	// It is stored in plain text and shown by `ax get task`, so it must not
 	// hold secrets.
 	Config        *structpb.Struct `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
