@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1alpha1
+package resources
 
 import (
 	"errors"
@@ -22,38 +22,8 @@ import (
 	"strconv"
 )
 
-// Resource requirements.
-//
-// spec.resources.limits is copied onto the Substrate ActorTemplate, which
-// enforces the same rules as below: cpu and memory only, each quantity greater
-// than zero, and a cpu limit below 1000 cores. Checking them here means a bad
-// value fails at apply time instead of when the template is created.
-// Substrate sizes a sandbox by limits alone, so requests are rejected rather
-// than accepted and ignored.
-
 // MaxCPULimitCores is the exclusive upper bound Substrate places on a cpu limit.
 const MaxCPULimitCores = 1000
-
-// ValidateResources reports the first problem with a task's resource
-// requirements. A nil or empty value is valid: omitted cpu and memory limits
-// default to 1 CPU (1000m) and 512Mi when the ActorTemplate is built.
-func ValidateResources(reqs *ResourcesSpec) error {
-	if req := reqs.GetRequests(); req.GetCpu() != "" || req.GetMemory() != "" {
-		return errors.New("spec.resources.requests: not supported, only spec.resources.limits is applied to the sandbox")
-	}
-	limits := reqs.GetLimits()
-	if cpu := limits.GetCpu(); cpu != "" {
-		if _, err := ParseCPUMillicores(cpu); err != nil {
-			return fmt.Errorf("spec.resources.limits.cpu: %w", err)
-		}
-	}
-	if memory := limits.GetMemory(); memory != "" {
-		if _, err := ParseMemoryBytes(memory); err != nil {
-			return fmt.Errorf("spec.resources.limits.memory: %w", err)
-		}
-	}
-	return nil
-}
 
 // ParseCPUMillicores parses a Kubernetes CPU quantity string into millicores,
 // rounding up sub-millicore fractions.

@@ -12,14 +12,94 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package v1alpha1_test
+package apivalidation_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
+
+func TestValidateName(t *testing.T) {
+	valid := []string{
+		"a",
+		"0",
+		"task123",
+		"my-task",
+		"a-b-c",
+		"123-abc",
+		strings.Repeat("a", 63),
+	}
+	for _, name := range valid {
+		if err := apivalidation.ValidateName(name); err != nil {
+			t.Errorf("ValidateName(%q) = %v, want nil", name, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"Task-With-Caps",
+		"my_task",
+		"my.task",
+		"-leading-dash",
+		"trailing-dash-",
+		"with space",
+		"tab\tchar",
+		"ünïcödé",
+		"slash/name",
+		strings.Repeat("a", 64),
+	}
+	for _, name := range invalid {
+		if err := apivalidation.ValidateName(name); err == nil {
+			t.Errorf("ValidateName(%q) = nil, want error", name)
+		}
+	}
+}
+
+func TestValidateObjectMeta(t *testing.T) {
+	tests := []struct {
+		name    string
+		meta    *v1alpha1.ObjectMeta
+		wantErr string
+	}{
+		{name: "nil metadata", wantErr: "metadata.name"},
+		{name: "missing name", meta: &v1alpha1.ObjectMeta{Atespace: "default"}, wantErr: `metadata.name: invalid value ""`},
+		{name: "name only", meta: &v1alpha1.ObjectMeta{Name: "task123"}},
+		{name: "name and atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team-a"}},
+		{name: "uppercase name", meta: &v1alpha1.ObjectMeta{Name: "Task-With-Caps"}, wantErr: `metadata.name: invalid value "Task-With-Caps"`},
+		{name: "underscore in name", meta: &v1alpha1.ObjectMeta{Name: "my_task"}, wantErr: "metadata.name"},
+		{name: "name too long", meta: &v1alpha1.ObjectMeta{Name: strings.Repeat("x", 64)}, wantErr: "metadata.name"},
+		{name: "uppercase atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "Default"}, wantErr: `metadata.atespace: invalid value "Default"`},
+		{name: "dotted atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team.a"}, wantErr: "metadata.atespace"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := apivalidation.ValidateObjectMeta(tt.meta)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+
+	// Every kind is validated the same way.
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateTask accepted an invalid name")
+	}
+	if err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateWorkspace accepted an invalid name")
+	}
+	if err := apivalidation.ValidateModel(&v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
+		t.Error("ValidateModel accepted an invalid name")
+	}
+}
 
 func TestValidateResources(t *testing.T) {
 	limits := func(cpu, memory string) *v1alpha1.ResourcesSpec {
@@ -71,7 +151,7 @@ func TestValidateResources(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := v1alpha1.ValidateResources(tt.reqs)
+			err := apivalidation.ValidateResources(tt.reqs)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -86,60 +166,11 @@ func TestValidateResources(t *testing.T) {
 
 	// ValidateTask runs the same check, so ax apply rejects bad limits up front.
 	meta := &v1alpha1.ObjectMeta{Name: "task", Atespace: "default"}
-	err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("abc", "")}})
+	err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("abc", "")}})
 	if err == nil || !strings.Contains(err.Error(), "spec.resources.limits.cpu") {
 		t.Fatalf("ValidateTask error = %v, want cpu limit error", err)
 	}
-	if err := v1alpha1.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("2", "4Gi")}}); err != nil {
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("2", "4Gi")}}); err != nil {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
-	}
-}
-
-func TestParseCPUMillicores(t *testing.T) {
-	tests := []struct {
-		input   string
-		want    int64
-		wantErr bool
-	}{
-		{"2", 2000, false},
-		{"500m", 500, false},
-		{"1.5", 1500, false},
-		{"1n", 1, false}, // ceiling to 1m
-		{"0", 0, true},
-		{"1000", 0, true},
-	}
-	for _, tt := range tests {
-		got, err := v1alpha1.ParseCPUMillicores(tt.input)
-		if (err != nil) != tt.wantErr {
-			t.Errorf("ParseCPUMillicores(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
-			continue
-		}
-		if !tt.wantErr && got != tt.want {
-			t.Errorf("ParseCPUMillicores(%q) = %d, want %d", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestParseMemoryBytes(t *testing.T) {
-	tests := []struct {
-		input   string
-		want    int64
-		wantErr bool
-	}{
-		{"4Gi", 4 << 30, false},
-		{"512Mi", 512 << 20, false},
-		{"500M", 500_000_000, false},
-		{"1u", 1, false}, // ceiling to 1 byte
-		{"0Gi", 0, true},
-	}
-	for _, tt := range tests {
-		got, err := v1alpha1.ParseMemoryBytes(tt.input)
-		if (err != nil) != tt.wantErr {
-			t.Errorf("ParseMemoryBytes(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
-			continue
-		}
-		if !tt.wantErr && got != tt.want {
-			t.Errorf("ParseMemoryBytes(%q) = %d, want %d", tt.input, got, tt.want)
-		}
 	}
 }

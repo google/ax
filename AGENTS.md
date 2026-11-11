@@ -21,7 +21,9 @@ reconciler or server.
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
+internal/apivalidation Manifest admission validation (common, task, workspace, model); server-side only
 internal/controller    TaskReconciler: Substrate side of task suspend/resume/delete; reconciler_test.go is the test template
+internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
@@ -29,7 +31,7 @@ internal/workspace     git clone / inline files / skills dir (MCP is spec-only; 
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 internal/telemetry     ax-server's OpenTelemetry setup: OTLP traces, metrics, and events (Emit, stdout fallback), Prometheus /metrics (:9090), JSON slog with trace IDs
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
-pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go, resources.go
+pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 hack/                  E2E provisioning scripts; tools/buf/go.mod pins buf for `make generate`
 docs/                  manifests.md is the user-facing API reference
@@ -43,7 +45,7 @@ export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-down
 go mod tidy && git diff --exit-code go.mod go.sum
 make generate                    # format + lint .proto, regenerate *.pb.go (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~20 s, 17 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~20 s, 19 packages with tests; Postgres + E2E tiers self-skip
 go vet ./... && gofmt -l .       # not run by CI; both are clean at HEAD
 ```
 
@@ -82,7 +84,7 @@ location is where to look. How-to lives in the skills.
 **C. API surface**
 - A `Task`/`Workspace`/`Model` field is defined in that kind's `.proto` file
   (shared messages in `common.proto`), mapped in `types.go`, validated in
-  `resources.go`, and documented in `docs/manifests.md`.
+  `internal/apivalidation`, and documented in `docs/manifests.md`.
 
 **D. Hygiene**
 - CI fails on an untidy `go.mod`/`go.sum` (`.github/workflows/go.yml`).

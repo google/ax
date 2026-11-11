@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
@@ -203,7 +204,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 
 	// Resource limits are enforced by the per-task template, so they are checked
 	// here as well as at apply time: a task must never run without limits it asked for.
-	if err := v1alpha1.ValidateResources(task.Spec.Resources); err != nil {
+	if err := apivalidation.ValidateResources(task.Spec.Resources); err != nil {
 		r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 		return fmt.Errorf("validating resources: %w", err)
 	}

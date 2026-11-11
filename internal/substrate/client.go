@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/google/ax/internal/resources"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
@@ -300,7 +301,7 @@ const (
 
 // ResourceLimits translates a Task's resource limits into the Substrate
 // ActorTemplate resources block. Substrate sizes a sandbox by limits alone
-// (requests are rejected by v1alpha1.ValidateResources). It returns nil when no
+// (requests are rejected by apivalidation.ValidateResources). It returns nil when no
 // limit is set so the template uses the default sandbox limits.
 func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements {
 	limits := reqs.GetLimits()
@@ -314,12 +315,12 @@ func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements
 		MemoryBytes:   DefaultMemoryBytes,
 	}
 	if cpuStr != "" {
-		if cpu, err := v1alpha1.ParseCPUMillicores(cpuStr); err == nil {
+		if cpu, err := resources.ParseCPUMillicores(cpuStr); err == nil {
 			out.CpuMillicores = cpu
 		}
 	}
 	if memStr != "" {
-		if mem, err := v1alpha1.ParseMemoryBytes(memStr); err == nil {
+		if mem, err := resources.ParseMemoryBytes(memStr); err == nil {
 			out.MemoryBytes = mem
 		}
 	}
