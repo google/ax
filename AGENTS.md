@@ -10,8 +10,8 @@ and an index of skills. Procedures, background, and troubleshooting live in
 ## What this is
 
 Declarative, Kubernetes-shaped orchestrator for sandboxed agent tasks on
-[Agent Substrate](https://github.com/agent-substrate/substrate). Three
-primitives — `Task`, `Workspace`, `Model` (`ax.io/v1alpha1`) — and a
+[Agent Substrate](https://github.com/agent-substrate/substrate). Four
+primitives — `Task`, `Workspace`, `Model`, `Gateway` (`ax.io/v1alpha1`) — and a
 `kubectl`-like CLI. `DESIGN.md` explains why; read it before touching the
 reconciler or server.
 
@@ -21,7 +21,7 @@ reconciler or server.
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
-internal/apivalidation Manifest admission validation (common, task, workspace, model); server-side only
+internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskReconciler: Substrate side of task suspend/resume/delete; reconciler_test.go is the test template
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
@@ -61,9 +61,12 @@ location is where to look. How-to lives in the skills.
 **A. Correctness**
 - `pkg/apis/v1alpha1/*.proto` are the source of truth: `ax.proto` is the `AX`
   service, and the messages are in `common.proto`, `task.proto`,
-  `workspace.proto`, and `model.proto`. `*.pb.go` are generated (`DO NOT EDIT`
-  headers); run `make generate` after editing a `.proto`. Imports are
-  repo-root-relative.
+  `workspace.proto`, `model.proto`, and `gateway.proto`. `*.pb.go` are
+  generated (`DO NOT EDIT` headers); run `make generate` after editing a
+  `.proto`. Imports are repo-root-relative, except imports of Agent Substrate's
+  `api/ateapi/v1/ateapi.proto`: `make generate` links that module from the Go
+  module cache into `.tmp/buf/substrate` for buf (`buf.yaml`). `.tmp/substrate`
+  is the E2E scripts' Substrate clone.
 - `internal/store/postgres/schema.go` loads `schema.sql`; change them together.
 
 **B. Agent Substrate** (details: `/substrate`)
@@ -82,9 +85,9 @@ location is where to look. How-to lives in the skills.
   version (`hack/setup-e2e-kind.sh`).
 
 **C. API surface**
-- A `Task`/`Workspace`/`Model` field is defined in that kind's `.proto` file
-  (shared messages in `common.proto`), mapped in `types.go`, validated in
-  `internal/apivalidation`, and documented in `docs/manifests.md`.
+- A `Task`/`Workspace`/`Model`/`Gateway` field is defined in that kind's
+  `.proto` file (shared messages in `common.proto`), mapped in `types.go`,
+  validated in `internal/apivalidation`, and documented in `docs/manifests.md`.
 
 **D. Hygiene**
 - CI fails on an untidy `go.mod`/`go.sum` (`.github/workflows/go.yml`).

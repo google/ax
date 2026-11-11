@@ -302,6 +302,27 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}
 }
 
+// Gateways are not served yet. A task is immutable, so one that binds a
+// gateway is rejected instead of being saved with a binding nothing applies.
+func TestCreateTask_RejectsGatewayBinding(t *testing.T) {
+	st := memory.NewStore()
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	ctx := context.Background()
+
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "bound"},
+		Spec: &v1alpha1.TaskSpec{
+			Gateway: &v1alpha1.GatewayRef{Name: "gw"},
+		},
+	}})
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("expected Unimplemented for a gateway binding, got %v", err)
+	}
+	if _, err := st.GetTask(ctx, "default", "bound"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected the task not to be saved, got %v", err)
+	}
+}
+
 type failGetWorkspaceStore struct {
 	store.Store
 	err error

@@ -52,6 +52,12 @@ func TestValidateTask(t *testing.T) {
 			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "rel"}},
 			wantErr: "spec.workspace: path \"rel\" must be absolute",
 		},
+		{name: "gateway", spec: &v1alpha1.TaskSpec{Gateway: &v1alpha1.GatewayRef{Name: "gw"}}},
+		{
+			name:    "nameless gateway",
+			spec:    &v1alpha1.TaskSpec{Gateway: &v1alpha1.GatewayRef{}},
+			wantErr: "spec.gateway: name is required",
+		},
 		{
 			name: "config",
 			spec: &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"suite": "swe", "shard": map[string]any{"index": 7}})},

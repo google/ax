@@ -17,6 +17,9 @@ modules:
   - path: . # imports are repo-root-relative
     includes:
       - pkg/apis
+  - path: .tmp/buf/substrate # go.ate.dev/substrate; run `make generate` once to link it
+    includes:
+      - .tmp/buf/substrate/api/ateapi/v1
 lint:
   use:
     - STANDARD

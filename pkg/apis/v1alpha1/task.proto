@@ -18,6 +18,7 @@ package ax.v1alpha1;
 
 import "google/protobuf/struct.proto";
 import "pkg/apis/v1alpha1/common.proto";
+import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/workspace.proto";
 
 option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
@@ -50,6 +51,12 @@ message TaskSpec {
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
   google.protobuf.Struct config = 7;
+  // gateway binds the Gateway whose rules allow the task's external network
+  // traffic. Rules are copied onto the actor when the task is created (later
+  // edits or deletes of the gateway don't change existing tasks, and binding a
+  // missing gateway fails). A task without a Gateway has no external network
+  // access.
+  GatewayRef gateway = 12;
 }
 
 message EnvVar {

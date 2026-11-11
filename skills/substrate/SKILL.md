@@ -18,7 +18,7 @@ and `hack/setup-e2e-kind.sh` if they look stale.
 
 | Module | Pinned | Provides | Imported by |
 |---|---|---|---|
-| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume) | `internal/substrate`, `internal/server`, `internal/controller`, `test/e2e` |
+| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume, egress rules) | `internal/substrate`, `internal/server`, `internal/controller`, `internal/apivalidation`, `test/e2e`, `pkg/apis/v1alpha1` (its `.proto` files import `ateapi.proto`) |
 | `github.com/agent-substrate/env` | `v0.0.11-0.20260912052224-4468a200b170` (pseudo-version) | Guest services served inside the sandbox (process exec + file system gRPC) and `proto/ateenv/v1alpha` | `internal/guest`, `internal/metadata` |
 
 There is no `replace` directive for either module. Local hacking against a
@@ -147,9 +147,18 @@ What the repo mechanically requires when `go.ate.dev/substrate` or
 ```bash
 go get go.ate.dev/substrate@vX.Y.Z            # and/or github.com/agent-substrate/env@<sha>
 go mod tidy                                    # CI diffs go.mod/go.sum
+make generate                                  # buf reads ateapi.proto from the new version
 go build ./... && go test ./...                # unit tests compile against the new ateapipb
 make test-e2e                                  # hack/setup-e2e-kind.sh installs the go.mod version
 ```
 
 `go.ate.dev/substrate` must stay on a release tag: E2E installs that
 release's published images, and a pseudo-version fails E2E setup.
+
+`Gateway.spec.egress` is Substrate's `EgressRule`, so a bump can change what
+users may write in a Gateway. Diff the egress messages in
+`api/ateapi/v1/ateapi.proto` between the two versions. If the new version adds
+a rule kind besides `http`, `https`, and `tlsPassthrough`, `ValidateGateway`
+(`internal/apivalidation/gateway.go`) rejects rules of that kind until its
+checks cover it. `docs/manifests.md` links to Substrate's egress credential
+injection guide at the pinned version.

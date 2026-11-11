@@ -150,6 +150,11 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := apivalidation.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Tasks are immutable, so a task saved now would keep a gateway binding
+	// that nothing applies.
+	if task.GetSpec().GetGateway() != nil {
+		return nil, status.Error(codes.Unimplemented, "spec.gateway is not supported yet")
+	}
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}

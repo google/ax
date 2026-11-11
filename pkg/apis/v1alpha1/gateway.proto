@@ -1,0 +1,84 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package ax.v1alpha1;
+
+// Agent Substrate's Control API (go.ate.dev/substrate). Run `make generate`
+// once so that buf can find it.
+import "api/ateapi/v1/ateapi.proto";
+import "pkg/apis/v1alpha1/common.proto";
+
+option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
+
+// GatewayRef binds a Task to at most one Gateway in the same atespace.
+message GatewayRef {
+  string name = 1;
+}
+
+// Gateway is a reusable top-level connectivity wrapper for Tasks.
+// Keeping Gateway in ax.v1alpha1 lets users define a policy once and reuse it
+// across Tasks while reserving GatewaySpec for future AX-level ergonomics
+// (e.g. opt-in auto_expand over Model/Workspace endpoints or shorthands).
+message Gateway {
+  string api_version = 1;
+  string kind = 2;
+  ObjectMeta metadata = 3;
+  GatewaySpec spec = 4;
+}
+
+message GatewaySpec {
+  // Outbound allowlist rules imported directly from Agent Substrate's
+  // ateapi.v1 (http, https with effects.replace_headers, tls_passthrough).
+  // Copied into the bound task actor's EgressPolicy at task creation; later
+  // edits or deletes of the Gateway do not change existing tasks.
+  //
+  // NOTE: Inbound policy (ingress) is intentionally omitted while upstream
+  // Agent Substrate settles enforcement granularity (per-actor vs.
+  // per-atespace; see agent-substrate/substrate#431) and AX evaluates its
+  // ingress model. Once settled, GatewaySpec will import Substrate's ingress
+  // proto directly.
+  repeated substrate.ateapi.v1.EgressRule egress = 1;
+}
+
+// --- RPC Request & Response Messages ---
+
+message GetGatewayRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message ListGatewaysRequest {
+  string atespace = 1;
+}
+
+message ListGatewaysResponse {
+  repeated Gateway gateways = 1;
+}
+
+message CreateGatewayRequest {
+  Gateway gateway = 1;
+}
+
+message UpdateGatewayRequest {
+  Gateway gateway = 1;
+}
+
+message DeleteGatewayRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message DeleteGatewayResponse {}

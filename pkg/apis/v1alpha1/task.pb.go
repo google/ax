@@ -132,7 +132,13 @@ type TaskSpec struct {
 	// object within 16 KiB; it does not validate or interpret it.
 	// It is stored in plain text and shown by `ax get task`, so it must not
 	// hold secrets.
-	Config        *structpb.Struct `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	Config *structpb.Struct `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	// gateway binds the Gateway whose rules allow the task's external network
+	// traffic. Rules are copied onto the actor when the task is created (later
+	// edits or deletes of the gateway don't change existing tasks, and binding a
+	// missing gateway fails). A task without a Gateway has no external network
+	// access.
+	Gateway       *GatewayRef `protobuf:"bytes,12,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,6 +218,13 @@ func (x *TaskSpec) GetDebug() bool {
 func (x *TaskSpec) GetConfig() *structpb.Struct {
 	if x != nil {
 		return x.Config
+	}
+	return nil
+}
+
+func (x *TaskSpec) GetGateway() *GatewayRef {
+	if x != nil {
+		return x.Gateway
 	}
 	return nil
 }
@@ -742,14 +755,14 @@ var File_pkg_apis_v1alpha1_task_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\n" +
-	"\x1cpkg/apis/v1alpha1/task.proto\x12\vax.v1alpha1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1epkg/apis/v1alpha1/common.proto\x1a!pkg/apis/v1alpha1/workspace.proto\"\xcc\x01\n" +
+	"\x1cpkg/apis/v1alpha1/task.proto\x12\vax.v1alpha1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\x1a!pkg/apis/v1alpha1/workspace.proto\"\xcc\x01\n" +
 	"\x04Task\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x12)\n" +
 	"\x04spec\x18\x04 \x01(\v2\x15.ax.v1alpha1.TaskSpecR\x04spec\x12/\n" +
-	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\x9b\x02\n" +
+	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xce\x02\n" +
 	"\bTaskSpec\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12%\n" +
@@ -757,7 +770,8 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\tresources\x18\x04 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x127\n" +
 	"\tworkspace\x18\x05 \x01(\v2\x19.ax.v1alpha1.WorkspaceRefR\tworkspace\x12\x14\n" +
 	"\x05debug\x18\x06 \x01(\bR\x05debug\x12/\n" +
-	"\x06config\x18\a \x01(\v2\x17.google.protobuf.StructR\x06config\"2\n" +
+	"\x06config\x18\a \x01(\v2\x17.google.protobuf.StructR\x06config\x121\n" +
+	"\agateway\x18\f \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"\x9d\x01\n" +
@@ -822,7 +836,8 @@ var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(*ResourcesSpec)(nil),      // 13: ax.v1alpha1.ResourcesSpec
 	(*WorkspaceRef)(nil),       // 14: ax.v1alpha1.WorkspaceRef
 	(*structpb.Struct)(nil),    // 15: google.protobuf.Struct
-	(*Condition)(nil),          // 16: ax.v1alpha1.Condition
+	(*GatewayRef)(nil),         // 16: ax.v1alpha1.GatewayRef
+	(*Condition)(nil),          // 17: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
 	12, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
@@ -832,14 +847,15 @@ var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
 	13, // 4: ax.v1alpha1.TaskSpec.resources:type_name -> ax.v1alpha1.ResourcesSpec
 	14, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
 	15, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
-	16, // 7: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	0,  // 8: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	0,  // 9: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	16, // 7: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	17, // 8: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	0,  // 9: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	0,  // 10: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	11, // [11:11] is the sub-list for method output_type
+	11, // [11:11] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }
@@ -848,6 +864,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 		return
 	}
 	file_pkg_apis_v1alpha1_common_proto_init()
+	file_pkg_apis_v1alpha1_gateway_proto_init()
 	file_pkg_apis_v1alpha1_workspace_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{

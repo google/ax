@@ -32,6 +32,7 @@ const (
 	KindTask      = "Task"
 	KindWorkspace = "Workspace"
 	KindModel     = "Model"
+	KindGateway   = "Gateway"
 
 	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 	DefaultSystemNamespace = "ax-system"
@@ -308,6 +309,9 @@ func (w *Workspace) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, 
 
 func (m *Model) MarshalYAML() (any, error)        { return marshalYAML(m) }
 func (m *Model) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, m, normalizeModel) }
+
+func (g *Gateway) MarshalYAML() (any, error)        { return marshalYAML(g) }
+func (g *Gateway) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, g, nil) }
 
 // Workspace binding.
 //
