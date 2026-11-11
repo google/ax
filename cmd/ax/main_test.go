@@ -44,7 +44,7 @@ func TestApplyAtespace(t *testing.T) {
 	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
 		t.Fatalf("building CLI: %v\n%s", err, output)
 	}
-	for _, kind := range []string{"Task", "Workspace", "Model"} {
+	for _, kind := range []string{"Task", "Workspace", "Gateway", "Model"} {
 		for _, tc := range []struct {
 			name             string
 			manifestAtespace string
@@ -117,6 +117,9 @@ func TestApplyAtespace(t *testing.T) {
 						meta, getErr = resource.GetMetadata(), err
 					case "Workspace":
 						resource, err := s.GetWorkspace(ctx, atespace, "example")
+						meta, getErr = resource.GetMetadata(), err
+					case "Gateway":
+						resource, err := s.GetGateway(ctx, atespace, "example")
 						meta, getErr = resource.GetMetadata(), err
 					case "Model":
 						resource, err := s.GetModel(ctx, atespace, "example")
@@ -219,6 +222,9 @@ func TestRunGetResourceAliases(t *testing.T) {
 		if err := s.SaveWorkspace(context.Background(), &v1alpha1.Workspace{Metadata: meta}); err != nil {
 			t.Fatal(err)
 		}
+		if err := s.SaveGateway(context.Background(), &v1alpha1.Gateway{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
 		if err := s.SaveModel(context.Background(), &v1alpha1.Model{Metadata: meta}); err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +238,7 @@ func TestRunGetResourceAliases(t *testing.T) {
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
-	for _, resource := range []string{"task", "workspace", "model"} {
+	for _, resource := range []string{"task", "workspace", "gateway", "model"} {
 		for _, alias := range []string{resource, resource + "s"} {
 			for _, tc := range []struct {
 				name         string
