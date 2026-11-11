@@ -47,11 +47,11 @@ To work on content from several sources, put it all in one `Workspace`, for exam
 
 ### Binding a gateway
 
-Not available yet: ax-server rejects a task that sets `spec.gateway` until [Gateways](#gateway) are served.
+Not available yet: ax-server rejects a task that sets `spec.gateway` until gateway rules are enforced.
 
 A task binds at most one `Gateway` through `spec.gateway`, for example `gateway: {name: review-bot-gw}`, and can reach only the external hosts that gateway's rules allow. A task with no `gateway` has no external network access.
 
-The rules are copied onto the task's actor when the task is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
+A task gets a copy of the gateway's rules when it is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
 
 ### Sizing the sandbox
 
@@ -160,7 +160,7 @@ Each entry of `spec.egress` is an Agent Substrate `EgressRule` and sets exactly 
 
 A hostname can name a service inside the cluster, such as `git-mcp.default.svc.cluster.local`: the egress gateway resolves it and connects from inside the cluster. Name only the hosts the task should reach.
 
-Substrate checks the rest of a rule's syntax when the rules are copied onto a task's actor.
+Substrate checks the rest of a rule's syntax when a task that binds the gateway is created.
 
 ## Model
 

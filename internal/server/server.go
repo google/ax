@@ -152,6 +152,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	// Tasks are immutable, so a task saved now would keep a gateway binding
 	// that nothing applies.
+	// TODO: Drop this check once gateway rules are enforced.
 	if task.GetSpec().GetGateway() != nil {
 		return nil, status.Error(codes.Unimplemented, "spec.gateway is not supported yet")
 	}

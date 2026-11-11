@@ -39,6 +39,7 @@ type MemoryStore struct {
 	tasks      map[string]*v1alpha1.Task
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
+	gateways   map[string]*v1alpha1.Gateway
 }
 
 // NewStore creates a new in-memory Store.
@@ -47,6 +48,7 @@ func NewStore() *MemoryStore {
 		tasks:      make(map[string]*v1alpha1.Task),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
+		gateways:   make(map[string]*v1alpha1.Gateway),
 	}
 }
 
@@ -274,6 +276,64 @@ func (s *MemoryStore) DeleteWorkspace(ctx context.Context, atespace, name string
 	defer s.mu.Unlock()
 
 	delete(s.workspaces, taskKey(atespace, name))
+	return nil
+}
+
+func (s *MemoryStore) SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error {
+	if gw.Metadata == nil {
+		gw.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	if gw.Metadata.Name == "" {
+		return errors.New("gateway name is required")
+	}
+	if gw.Metadata.Atespace == "" {
+		gw.Metadata.Atespace = "default"
+	}
+	if gw.ApiVersion == "" {
+		gw.ApiVersion = v1alpha1.APIVersion
+	}
+	if gw.Kind == "" {
+		gw.Kind = v1alpha1.KindGateway
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := clone(gw)
+	s.gateways[metaKey(gw.Metadata)] = cp
+	return nil
+}
+
+func (s *MemoryStore) GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	gw, ok := s.gateways[taskKey(atespace, name)]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	cp := clone(gw)
+	return cp, nil
+}
+
+func (s *MemoryStore) ListGateways(ctx context.Context, atespace string) ([]*v1alpha1.Gateway, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*v1alpha1.Gateway
+	for _, gw := range s.gateways {
+		if atespace == "" || atespace == "*" || gw.Metadata.Atespace == atespace {
+			cp := clone(gw)
+			result = append(result, cp)
+		}
+	}
+	sortByKey(result)
+	return result, nil
+}
+
+func (s *MemoryStore) DeleteGateway(ctx context.Context, atespace, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.gateways, taskKey(atespace, name))
 	return nil
 }
 

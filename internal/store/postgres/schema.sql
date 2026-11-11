@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS workspaces (
 );
 CREATE INDEX IF NOT EXISTS workspaces_atespace_saved_at_idx ON workspaces (atespace, saved_at DESC, name);
 
+CREATE TABLE IF NOT EXISTS gateways (
+    atespace text        NOT NULL,
+    name     text        NOT NULL,
+    data     jsonb       NOT NULL,
+    saved_at timestamptz NOT NULL,
+    PRIMARY KEY (atespace, name)
+);
+CREATE INDEX IF NOT EXISTS gateways_atespace_saved_at_idx ON gateways (atespace, saved_at DESC, name);
+
 CREATE TABLE IF NOT EXISTS models (
     atespace text        NOT NULL,
     name     text        NOT NULL,
