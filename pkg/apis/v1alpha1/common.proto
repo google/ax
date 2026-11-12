@@ -28,7 +28,6 @@ message ObjectMeta {
 }
 
 message ResourcesSpec {
-  ResourceList requests = 1;
   ResourceList limits = 2;
 }
 
@@ -43,4 +42,18 @@ message Condition {
   google.protobuf.Timestamp update_time = 3;
   string reason = 4;
   string message = 5;
+}
+
+// Profile defines the compute environment that maps 1:1 to a shared Substrate
+// ActorTemplate (ax-<sha256[:16]>) within an atespace.
+message Profile {
+  // Container image (Substrate requires @sha256 digest pinning on templates).
+  string image = 1;
+  // Sandbox compute resource limits (CPU and memory).
+  ResourcesSpec resources = 2;
+  // Optional name of an existing Substrate ActorTemplate in the same atespace
+  // used to seed omitted fields at creation time. Explicit fields on this
+  // Profile override the seed template. AX still creates and manages its own
+  // content-addressed ActorTemplate (ax-<sha256[:16]>).
+  string ate_actor_template = 3;
 }

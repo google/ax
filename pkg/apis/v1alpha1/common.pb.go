@@ -99,7 +99,6 @@ func (x *ObjectMeta) GetCreateTime() *timestamppb.Timestamp {
 
 type ResourcesSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Requests      *ResourceList          `protobuf:"bytes,1,opt,name=requests,proto3" json:"requests,omitempty"`
 	Limits        *ResourceList          `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -133,13 +132,6 @@ func (x *ResourcesSpec) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ResourcesSpec.ProtoReflect.Descriptor instead.
 func (*ResourcesSpec) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ResourcesSpec) GetRequests() *ResourceList {
-	if x != nil {
-		return x.Requests
-	}
-	return nil
 }
 
 func (x *ResourcesSpec) GetLimits() *ResourceList {
@@ -277,6 +269,74 @@ func (x *Condition) GetMessage() string {
 	return ""
 }
 
+// Profile defines the compute environment that maps 1:1 to a shared Substrate
+// ActorTemplate (ax-<sha256[:16]>) within an atespace.
+type Profile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Container image (Substrate requires @sha256 digest pinning on templates).
+	Image string `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
+	// Sandbox compute resource limits (CPU and memory).
+	Resources *ResourcesSpec `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
+	// Optional name of an existing Substrate ActorTemplate in the same atespace
+	// used to seed omitted fields at creation time. Explicit fields on this
+	// Profile override the seed template. AX still creates and manages its own
+	// content-addressed ActorTemplate (ax-<sha256[:16]>).
+	AteActorTemplate string `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *Profile) Reset() {
+	*x = Profile{}
+	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Profile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Profile) ProtoMessage() {}
+
+func (x *Profile) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Profile.ProtoReflect.Descriptor instead.
+func (*Profile) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_common_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Profile) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *Profile) GetResources() *ResourcesSpec {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
+}
+
+func (x *Profile) GetAteActorTemplate() string {
+	if x != nil {
+		return x.AteActorTemplate
+	}
+	return ""
+}
+
 var File_pkg_apis_v1alpha1_common_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
@@ -287,9 +347,8 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\batespace\x18\x02 \x01(\tR\batespace\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"y\n" +
-	"\rResourcesSpec\x125\n" +
-	"\brequests\x18\x01 \x01(\v2\x19.ax.v1alpha1.ResourceListR\brequests\x121\n" +
+	"createTime\"B\n" +
+	"\rResourcesSpec\x121\n" +
 	"\x06limits\x18\x02 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
 	"\fResourceList\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
@@ -300,7 +359,11 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\vupdate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessageB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\amessage\x18\x05 \x01(\tR\amessage\"\x87\x01\n" +
+	"\aProfile\x12\x14\n" +
+	"\x05image\x18\x01 \x01(\tR\x05image\x128\n" +
+	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12,\n" +
+	"\x12ate_actor_template\x18\x03 \x01(\tR\x10ateActorTemplateB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_common_proto_rawDescOnce sync.Once
@@ -314,19 +377,20 @@ func file_pkg_apis_v1alpha1_common_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_pkg_apis_v1alpha1_common_proto_goTypes = []any{
 	(*ObjectMeta)(nil),            // 0: ax.v1alpha1.ObjectMeta
 	(*ResourcesSpec)(nil),         // 1: ax.v1alpha1.ResourcesSpec
 	(*ResourceList)(nil),          // 2: ax.v1alpha1.ResourceList
 	(*Condition)(nil),             // 3: ax.v1alpha1.Condition
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(*Profile)(nil),               // 4: ax.v1alpha1.Profile
+	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
 }
 var file_pkg_apis_v1alpha1_common_proto_depIdxs = []int32{
-	4, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
-	2, // 1: ax.v1alpha1.ResourcesSpec.requests:type_name -> ax.v1alpha1.ResourceList
-	2, // 2: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
-	4, // 3: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
+	5, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
+	2, // 1: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
+	5, // 2: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
+	1, // 3: ax.v1alpha1.Profile.resources:type_name -> ax.v1alpha1.ResourcesSpec
 	4, // [4:4] is the sub-list for method output_type
 	4, // [4:4] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name
@@ -345,7 +409,7 @@ func file_pkg_apis_v1alpha1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_common_proto_rawDesc), len(file_pkg_apis_v1alpha1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

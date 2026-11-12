@@ -51,7 +51,7 @@ const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"ResumeTask\x12\x1e.ax.v1alpha1.ResumeTaskRequest\x1a\x11.ax.v1alpha1.Task\x12H\n" +
 	"\fGetWorkspace\x12 .ax.v1alpha1.GetWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12Y\n" +
 	"\x0eListWorkspaces\x12\".ax.v1alpha1.ListWorkspacesRequest\x1a#.ax.v1alpha1.ListWorkspacesResponse\x12N\n" +
-	"\x0fUpdateWorkspace\x12#.ax.v1alpha1.UpdateWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12\\\n" +
+	"\x0fCreateWorkspace\x12#.ax.v1alpha1.CreateWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12\\\n" +
 	"\x0fDeleteWorkspace\x12#.ax.v1alpha1.DeleteWorkspaceRequest\x1a$.ax.v1alpha1.DeleteWorkspaceResponse\x12B\n" +
 	"\n" +
 	"GetGateway\x12\x1e.ax.v1alpha1.GetGatewayRequest\x1a\x14.ax.v1alpha1.Gateway\x12S\n" +
@@ -74,7 +74,7 @@ var file_pkg_apis_v1alpha1_ax_proto_goTypes = []any{
 	(*ResumeTaskRequest)(nil),       // 5: ax.v1alpha1.ResumeTaskRequest
 	(*GetWorkspaceRequest)(nil),     // 6: ax.v1alpha1.GetWorkspaceRequest
 	(*ListWorkspacesRequest)(nil),   // 7: ax.v1alpha1.ListWorkspacesRequest
-	(*UpdateWorkspaceRequest)(nil),  // 8: ax.v1alpha1.UpdateWorkspaceRequest
+	(*CreateWorkspaceRequest)(nil),  // 8: ax.v1alpha1.CreateWorkspaceRequest
 	(*DeleteWorkspaceRequest)(nil),  // 9: ax.v1alpha1.DeleteWorkspaceRequest
 	(*GetGatewayRequest)(nil),       // 10: ax.v1alpha1.GetGatewayRequest
 	(*ListGatewaysRequest)(nil),     // 11: ax.v1alpha1.ListGatewaysRequest
@@ -107,7 +107,7 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	5,  // 5: ax.v1alpha1.AX.ResumeTask:input_type -> ax.v1alpha1.ResumeTaskRequest
 	6,  // 6: ax.v1alpha1.AX.GetWorkspace:input_type -> ax.v1alpha1.GetWorkspaceRequest
 	7,  // 7: ax.v1alpha1.AX.ListWorkspaces:input_type -> ax.v1alpha1.ListWorkspacesRequest
-	8,  // 8: ax.v1alpha1.AX.UpdateWorkspace:input_type -> ax.v1alpha1.UpdateWorkspaceRequest
+	8,  // 8: ax.v1alpha1.AX.CreateWorkspace:input_type -> ax.v1alpha1.CreateWorkspaceRequest
 	9,  // 9: ax.v1alpha1.AX.DeleteWorkspace:input_type -> ax.v1alpha1.DeleteWorkspaceRequest
 	10, // 10: ax.v1alpha1.AX.GetGateway:input_type -> ax.v1alpha1.GetGatewayRequest
 	11, // 11: ax.v1alpha1.AX.ListGateways:input_type -> ax.v1alpha1.ListGatewaysRequest
@@ -126,7 +126,7 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	19, // 24: ax.v1alpha1.AX.ResumeTask:output_type -> ax.v1alpha1.Task
 	22, // 25: ax.v1alpha1.AX.GetWorkspace:output_type -> ax.v1alpha1.Workspace
 	23, // 26: ax.v1alpha1.AX.ListWorkspaces:output_type -> ax.v1alpha1.ListWorkspacesResponse
-	22, // 27: ax.v1alpha1.AX.UpdateWorkspace:output_type -> ax.v1alpha1.Workspace
+	22, // 27: ax.v1alpha1.AX.CreateWorkspace:output_type -> ax.v1alpha1.Workspace
 	24, // 28: ax.v1alpha1.AX.DeleteWorkspace:output_type -> ax.v1alpha1.DeleteWorkspaceResponse
 	25, // 29: ax.v1alpha1.AX.GetGateway:output_type -> ax.v1alpha1.Gateway
 	26, // 30: ax.v1alpha1.AX.ListGateways:output_type -> ax.v1alpha1.ListGatewaysResponse

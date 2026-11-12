@@ -26,6 +26,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const defaultPageLimit = 50
+
 // clone returns a deep copy of a protobuf message so stored resources are never
 // shared with callers. Copying the struct by value is unsafe: generated messages
 // embed internal state, including a mutex.
@@ -58,6 +60,23 @@ func sortByKey[T interface{ GetMetadata() *v1alpha1.ObjectMeta }](items []T) {
 	sort.Slice(items, func(i, j int) bool {
 		return metaKey(items[i].GetMetadata()) < metaKey(items[j].GetMetadata())
 	})
+}
+
+func paginate[T any](items []T, limit, offset int64) []T {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= int64(len(items)) {
+		return []T{}
+	}
+	if limit <= 0 {
+		limit = defaultPageLimit
+	}
+	remaining := int64(len(items)) - offset
+	if limit > remaining {
+		limit = remaining
+	}
+	return items[offset : offset+limit]
 }
 
 func metaKey(m *v1alpha1.ObjectMeta) string {
@@ -128,18 +147,7 @@ func (s *MemoryStore) ListTasks(ctx context.Context, atespace string, limit, off
 		}
 	}
 	sortByKey(result)
-
-	if offset >= int64(len(result)) {
-		return []*v1alpha1.Task{}, nil
-	}
-	end := offset + limit
-	if limit <= 0 {
-		end = offset + 50
-	}
-	if end > int64(len(result)) {
-		end = int64(len(result))
-	}
-	return result[offset:end], nil
+	return paginate(result, limit, offset), nil
 }
 
 func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error {
@@ -256,7 +264,7 @@ func (s *MemoryStore) GetWorkspace(ctx context.Context, atespace, name string) (
 	return cp, nil
 }
 
-func (s *MemoryStore) ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha1.Workspace, error) {
+func (s *MemoryStore) ListWorkspaces(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Workspace, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -268,7 +276,7 @@ func (s *MemoryStore) ListWorkspaces(ctx context.Context, atespace string) ([]*v
 		}
 	}
 	sortByKey(result)
-	return result, nil
+	return paginate(result, limit, offset), nil
 }
 
 func (s *MemoryStore) DeleteWorkspace(ctx context.Context, atespace, name string) error {

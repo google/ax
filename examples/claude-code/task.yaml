@@ -44,17 +44,18 @@ metadata:
   name: itsdangerous
   atespace: default
 spec:
-  git:
-    - name: origin
-      repo: "https://github.com/pallets/itsdangerous.git"
-      branch: "main"
-  files:
-    - path: "CLAUDE.md"
-      content: |
-        # Working in this repo
-        - Pure-Python library. Install with `pip install -e . pytest`, test with `pytest`.
-        - Keep changes small and focused; do not add runtime dependencies.
-        - Do not push or open pull requests. Leave changes in the working tree.
+  setup:
+    git:
+      - name: origin
+        repo: "https://github.com/pallets/itsdangerous.git"
+        ref: "main"
+    files:
+      - path: "CLAUDE.md"
+        content: |
+          # Working in this repo
+          - Pure-Python library. Install with `pip install -e . pytest`, test with `pytest`.
+          - Keep changes small and focused; do not add runtime dependencies.
+          - Do not push or open pull requests. Leave changes in the working tree.
   # MCP servers declared here are passed to Claude Code with --mcp-config.
   # mcp:
   #   servers:

@@ -42,7 +42,7 @@ func fullTask() *v1alpha1.Task {
 			Command: []string{"sh", "-c", "true"},
 			Env:     []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
 			Resources: &v1alpha1.ResourcesSpec{
-				Requests: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
+				Limits: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
 			},
 			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace"},
 			Debug:     true,
@@ -188,28 +188,54 @@ metadata:
   name: full-ws
   atespace: default
 spec:
-  git:
-    - name: origin
-      repo: "https://github.com/chalk/chalk.git"
-      branch: "main"
-      dir: chalk
-      depth: 1
   mcp:
     registries:
       - provider: google
         query: "mcp.tags:build"
-  skills:
-    registries:
-      - provider: google
-        query: "skills.tags:golang"
-    path: "/.agents/skills"
+    servers:
+      - name: github-mcp
+        endpoint: "https://api.githubcopilot.com/mcp"
+        gateway:
+          name: github-creds
+  profile:
+    image: "us-docker.pkg.dev/proj/img@sha256:deadbeef"
+    resources:
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+    ateActorTemplate: base-tmpl
+  setup:
+    git:
+      - name: origin
+        repo: "https://github.com/chalk/chalk.git"
+        dir: chalk
+        depth: 1
+        ref: "main"
+    files:
+      - path: AGENTS.md
+        content: "# Rules\n"
+    skills:
+      registries:
+        - provider: google
+          query: "skills.tags:golang"
+      path: "/.agents/skills"
+    commands:
+      - "go mod download"
+    gateway:
+      name: setup-egress
+status:
+  phase: Ready
 `
 	var ws v1alpha1.Workspace
 	if err := yaml.Unmarshal([]byte(wsYAML), &ws); err != nil {
 		t.Fatalf("unmarshaling workspace: %v", err)
 	}
-	if ws.Spec.Git[0].Depth != 1 || ws.Spec.Skills.Path != "/.agents/skills" {
-		t.Fatalf("unexpected workspace: %+v", ws.Spec)
+	setup := ws.GetSpec().GetSetup()
+	if setup.GetGit()[0].GetDepth() != 1 || setup.GetGit()[0].GetRef() != "main" || setup.GetSkills().GetPath() != "/.agents/skills" {
+		t.Fatalf("unexpected workspace setup: %+v", setup)
+	}
+	if got := ws.GetStatus().GetPhase(); got != "Ready" {
+		t.Fatalf("status.phase = %q, want Ready", got)
 	}
 
 	out, err := yaml.Marshal(&ws)
@@ -222,6 +248,31 @@ spec:
 	}
 	if !proto.Equal(&ws, &again) {
 		t.Errorf("workspace round trip changed:\n%s", out)
+	}
+}
+
+func TestWorkspace_RejectsRemovedLegacyFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{name: "top_level_git", src: "kind: Workspace\nspec:\n  git:\n    - repo: https://example.com/r.git\n", wantErr: "git"},
+		{name: "top_level_files", src: "kind: Workspace\nspec:\n  files:\n    - path: a.txt\n", wantErr: "files"},
+		{name: "top_level_skills", src: "kind: Workspace\nspec:\n  skills:\n    path: /.ax/skills\n", wantErr: "skills"},
+		{name: "git_branch_instead_of_ref", src: "kind: Workspace\nspec:\n  setup:\n    git:\n      - repo: https://example.com/r.git\n        branch: main\n", wantErr: "branch"},
+		{name: "resources_requests", src: "kind: Workspace\nspec:\n  profile:\n    resources:\n      requests:\n        cpu: 500m\n", wantErr: "requests"},
+		{name: "profile_snapshot_fidelity", src: "kind: Workspace\nspec:\n  profile:\n    snapshotFidelity: ROOTFS\n", wantErr: "snapshotFidelity"},
+		{name: "profile_worker_selector", src: "kind: Workspace\nspec:\n  profile:\n    workerSelector:\n      pool: gpu\n", wantErr: "workerSelector"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var ws v1alpha1.Workspace
+			err := yaml.Unmarshal([]byte(tc.src), &ws)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("yaml.Unmarshal() error = %v, want containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 
@@ -334,6 +385,13 @@ func TestTaskSpec_WorkspacePath(t *testing.T) {
 				t.Errorf("WorkspacePath() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTask_ResourcesRequestsRejected_YAML(t *testing.T) {
+	var task v1alpha1.Task
+	if err := yaml.Unmarshal([]byte("apiVersion: ax.io/v1alpha1\nkind: Task\nmetadata:\n  name: t\nspec:\n  resources:\n    requests:\n      cpu: 500m\n"), &task); err == nil {
+		t.Fatal("expected unknown field error for removed spec.resources.requests")
 	}
 }
 
@@ -484,24 +542,26 @@ kind: Workspace
 metadata:
   name: files-demo
 spec:
-  files:
-    - path: AGENTS.md
-      content: "# Agent Guidelines\nFollow best practices."
-    - path: README.md
-      content: "# Demo Workspace\nWelcome!"
+  setup:
+    files:
+      - path: AGENTS.md
+        content: "# Agent Guidelines\nFollow best practices."
+      - path: README.md
+        content: "# Demo Workspace\nWelcome!"
 `
 	var ws v1alpha1.Workspace
 	if err := yaml.Unmarshal([]byte(wsYAML), &ws); err != nil {
 		t.Fatalf("unmarshaling workspace: %v", err)
 	}
-	if len(ws.GetSpec().GetFiles()) != 2 {
-		t.Fatalf("expected 2 files, got %d", len(ws.GetSpec().GetFiles()))
+	files := ws.GetSpec().GetSetup().GetFiles()
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(files))
 	}
-	if ws.GetSpec().GetFiles()[0].GetPath() != "AGENTS.md" || ws.GetSpec().GetFiles()[0].GetContent() != "# Agent Guidelines\nFollow best practices." {
-		t.Errorf("unexpected file 0: %+v", ws.GetSpec().GetFiles()[0])
+	if files[0].GetPath() != "AGENTS.md" || files[0].GetContent() != "# Agent Guidelines\nFollow best practices." {
+		t.Errorf("unexpected file 0: %+v", files[0])
 	}
-	if ws.GetSpec().GetFiles()[1].GetPath() != "README.md" {
-		t.Errorf("unexpected file 1: %+v", ws.GetSpec().GetFiles()[1])
+	if files[1].GetPath() != "README.md" {
+		t.Errorf("unexpected file 1: %+v", files[1])
 	}
 
 	out, err := yaml.Marshal(&ws)

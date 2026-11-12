@@ -39,7 +39,7 @@ service AX {
   // Workspaces
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
-  rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (Workspace);
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace);
   rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
 
   // Gateways

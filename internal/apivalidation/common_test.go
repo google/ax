@@ -125,16 +125,6 @@ func TestValidateResources(t *testing.T) {
 		{name: "decimal SI memory", reqs: limits("", "512M")},
 		{name: "binary SI memory", reqs: limits("", "1Ti")},
 		{name: "small units", reqs: limits("1n", "1u")},
-		{
-			name:    "requests are not supported",
-			reqs:    &v1alpha1.ResourcesSpec{Requests: &v1alpha1.ResourceList{Cpu: "500m"}, Limits: &v1alpha1.ResourceList{Cpu: "2"}},
-			wantErr: "spec.resources.requests: not supported",
-		},
-		{
-			name:    "memory request alone",
-			reqs:    &v1alpha1.ResourcesSpec{Requests: &v1alpha1.ResourceList{Memory: "1Gi"}},
-			wantErr: "spec.resources.requests: not supported",
-		},
 		{name: "cpu zero", reqs: limits("0", ""), wantErr: `spec.resources.limits.cpu: "0" must be greater than zero`},
 		{name: "cpu zero millicores", reqs: limits("0m", ""), wantErr: "must be greater than zero"},
 		{name: "cpu negative", reqs: limits("-1", ""), wantErr: "must be greater than zero"},

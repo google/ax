@@ -51,8 +51,8 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 | RPC | Description |
 |---|---|
 | `GetWorkspace` | Get a workspace by atespace and name. |
-| `ListWorkspaces` | List workspaces in an atespace. |
-| `UpdateWorkspace` | Create or update a workspace. |
+| `ListWorkspaces` | List workspaces in an atespace, with pagination. |
+| `CreateWorkspace` | Create a workspace (workspaces are immutable once created; re-applying an identical spec is idempotent). |
 | `DeleteWorkspace` | Delete a workspace. |
 
 **Gateways**
