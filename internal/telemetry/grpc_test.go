@@ -18,20 +18,26 @@ import (
 	"context"
 	"net"
 	"slices"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -53,32 +59,39 @@ func (s *recordingAX) ListTasks(ctx context.Context, _ *v1alpha1.ListTasksReques
 	return &v1alpha1.ListTasksResponse{}, nil
 }
 
-// useTestProviders installs global providers that record every span and keep
-// metrics for collection, with the RPC duration views.
+// useTestProviders installs global providers that record all spans and keep
+// metrics for collection, with the RPC duration views. The cleanup installs
+// no-op providers. It does not restore the old global value, because that
+// value is a delegate that stays bound to the first provider set.
 func useTestProviders(t *testing.T) (*tracetest.SpanRecorder, *sdkmetric.ManualReader) {
 	t.Helper()
 	spans := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(spans))
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithView(rpcDurationViews()...))
-	prevTP, prevMP := otel.GetTracerProvider(), otel.GetMeterProvider()
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
 	t.Cleanup(func() {
-		otel.SetTracerProvider(prevTP)
-		otel.SetMeterProvider(prevMP)
+		otel.SetTracerProvider(tracenoop.NewTracerProvider())
+		otel.SetMeterProvider(metricnoop.NewMeterProvider())
 		_ = tp.Shutdown(context.Background())
 		_ = mp.Shutdown(context.Background())
 	})
 	return spans, reader
 }
 
-// startAX serves the AX API with ServerStatsHandler and returns its address.
+// startAX serves the AX API and the gRPC health service with
+// ServerStatsHandler, and returns the server address. The health service is
+// registered after the handler is built, as a service added later would be.
 func startAX(t *testing.T) (string, <-chan rpcSeen) {
 	t.Helper()
 	seen := make(chan rpcSeen, 4)
-	srv := grpc.NewServer(grpc.StatsHandler(ServerStatsHandler(&v1alpha1.AX_ServiceDesc)))
+	var srv *grpc.Server
+	srv = grpc.NewServer(grpc.StatsHandler(ServerStatsHandler(func() map[string]grpc.ServiceInfo {
+		return srv.GetServiceInfo()
+	})))
 	v1alpha1.RegisterAXServer(srv, &recordingAX{seen: seen})
+	healthpb.RegisterHealthServer(srv, health.NewServer())
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -98,13 +111,31 @@ func dial(t *testing.T, addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 	return conn
 }
 
-func spanNamed(spans []sdktrace.ReadOnlySpan, name string) sdktrace.ReadOnlySpan {
-	for _, s := range spans {
-		if s.Name() == name {
-			return s
+// waitForSpans returns the ended spans once n of them match, or fails after a
+// deadline. gRPC ends the server span after it writes the status, so the span
+// can end after the client call returns.
+func waitForSpans(t *testing.T, rec *tracetest.SpanRecorder, n int, match func(sdktrace.ReadOnlySpan) bool) []sdktrace.ReadOnlySpan {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var got []sdktrace.ReadOnlySpan
+		for _, s := range rec.Ended() {
+			if match(s) {
+				got = append(got, s)
+			}
 		}
+		if len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("got %d matching spans after 5 s, want %d; all spans: %d", len(got), n, len(rec.Ended()))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	return nil
+}
+
+func named(name string, kind trace.SpanKind) func(sdktrace.ReadOnlySpan) bool {
+	return func(s sdktrace.ReadOnlySpan) bool { return s.Name() == name && s.SpanKind() == kind }
 }
 
 func TestServerStatsHandlerJoinsCallerTraceAndDropsBaggage(t *testing.T) {
@@ -129,32 +160,47 @@ func TestServerStatsHandlerJoinsCallerTraceAndDropsBaggage(t *testing.T) {
 	if got.baggage.Len() != 0 {
 		t.Errorf("handler saw baggage %q, want none", got.baggage.String())
 	}
-	server := spanNamed(spans.Ended(), "ax.v1alpha1.AX/ListTasks")
-	if server == nil {
-		t.Fatalf("no ListTasks server span; got %d spans", len(spans.Ended()))
-	}
-	if server.SpanKind() != trace.SpanKindServer {
-		t.Errorf("span kind = %v, want server", server.SpanKind())
-	}
+	server := waitForSpans(t, spans, 1, named("ax.v1alpha1.AX/ListTasks", trace.SpanKindServer))[0]
 	if !server.Parent().IsRemote() || server.Parent().SpanID().String() != spanID {
 		t.Errorf("server span parent = %v, want the caller's remote span %s", server.Parent(), spanID)
 	}
 }
 
+func TestServerStatsHandlerRecordsLaterRegisteredServices(t *testing.T) {
+	spans, _ := useTestProviders(t)
+	addr, _ := startAX(t)
+
+	if _, err := healthpb.NewHealthClient(dial(t, addr)).Check(context.Background(), &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	waitForSpans(t, spans, 1, named("grpc.health.v1.Health/Check", trace.SpanKindServer))
+}
+
 func TestServerStatsHandlerSkipsUnknownMethods(t *testing.T) {
 	spans, reader := useTestProviders(t)
 	addr, _ := startAX(t)
+	conn := dial(t, addr)
 
 	const unknown = "/attacker.Service/Method1234"
-	err := dial(t, addr).Invoke(context.Background(), unknown, &emptypb.Empty{}, &emptypb.Empty{})
+	err := conn.Invoke(context.Background(), unknown, &emptypb.Empty{}, &emptypb.Empty{})
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("Invoke(%s) = %v, want Unimplemented", unknown, err)
 	}
-	for _, s := range spans.Ended() {
-		t.Errorf("unexpected span %q for an unknown method", s.Name())
+	// A known call after the unknown one: once its point exists, the unknown
+	// call has ended too, so its span or point would be in the results.
+	if _, err := v1alpha1.NewAXClient(conn).ListTasks(context.Background(), &v1alpha1.ListTasksRequest{}); err != nil {
+		t.Fatal(err)
 	}
-	for _, dp := range histogramPoints(t, reader, "rpc.server.call.duration") {
-		t.Errorf("unexpected rpc.server.call.duration point %v for an unknown method", dp.Attributes.ToSlice())
+	waitForSpans(t, spans, 1, named("ax.v1alpha1.AX/ListTasks", trace.SpanKindServer))
+	for _, s := range spans.Ended() {
+		if s.Name() != "ax.v1alpha1.AX/ListTasks" {
+			t.Errorf("unexpected span %q for an unknown method", s.Name())
+		}
+	}
+	for _, dp := range waitForPoints(t, reader, "rpc.server.call.duration", 1) {
+		if v, _ := dp.Attributes.Value("rpc.method"); v.AsString() != "ax.v1alpha1.AX/ListTasks" {
+			t.Errorf("unexpected rpc.server.call.duration point %v for an unknown method", dp.Attributes.ToSlice())
+		}
 	}
 }
 
@@ -185,18 +231,8 @@ func TestClientStatsHandlerPropagatesSpanWithoutBaggage(t *testing.T) {
 		t.Errorf("server saw baggage %q, want none", got.baggage.String())
 	}
 
-	var clientSpan, serverSpan sdktrace.ReadOnlySpan
-	for _, s := range spans.Ended() {
-		switch {
-		case s.Name() == "ax.v1alpha1.AX/ListTasks" && s.SpanKind() == trace.SpanKindClient:
-			clientSpan = s
-		case s.Name() == "ax.v1alpha1.AX/ListTasks" && s.SpanKind() == trace.SpanKindServer:
-			serverSpan = s
-		}
-	}
-	if clientSpan == nil || serverSpan == nil {
-		t.Fatalf("want a client and a server ListTasks span, got %d spans", len(spans.Ended()))
-	}
+	clientSpan := waitForSpans(t, spans, 1, named("ax.v1alpha1.AX/ListTasks", trace.SpanKindClient))[0]
+	serverSpan := waitForSpans(t, spans, 1, named("ax.v1alpha1.AX/ListTasks", trace.SpanKindServer))[0]
 	if clientSpan.Parent().SpanID() != parent.SpanContext().SpanID() {
 		t.Errorf("client span parent = %s, want the reconcile span", clientSpan.Parent().SpanID())
 	}
@@ -204,17 +240,45 @@ func TestClientStatsHandlerPropagatesSpanWithoutBaggage(t *testing.T) {
 		t.Errorf("server span parent = %s, want the client span %s", serverSpan.Parent().SpanID(), clientSpan.SpanContext().SpanID())
 	}
 
+	// otelgrpc records the duration after it ends the span, so wait for the
+	// points too.
+	wantKeys := []string{"rpc.method", "rpc.response.status_code", "rpc.system.name"}
 	for _, name := range []string{"rpc.server.call.duration", "rpc.client.call.duration"} {
-		points := histogramPoints(t, reader, name)
+		points := waitForPoints(t, reader, name, 1)
 		if len(points) != 1 {
 			t.Fatalf("%s: got %d points, want 1", name, len(points))
 		}
-		if !slices.Equal(points[0].Bounds, RPCDurationBuckets) {
-			t.Errorf("%s bounds = %v, want %v", name, points[0].Bounds, RPCDurationBuckets)
+		if !slices.Equal(points[0].Bounds, rpcDurationBuckets) {
+			t.Errorf("%s bounds = %v, want %v", name, points[0].Bounds, rpcDurationBuckets)
+		}
+		var keys []string
+		for _, kv := range points[0].Attributes.ToSlice() {
+			keys = append(keys, string(kv.Key))
+		}
+		sort.Strings(keys)
+		if !slices.Equal(keys, wantKeys) {
+			t.Errorf("%s labels = %v, want %v", name, keys, wantKeys)
 		}
 		if v, _ := points[0].Attributes.Value(attribute.Key("rpc.method")); v.AsString() != "ax.v1alpha1.AX/ListTasks" {
 			t.Errorf("%s rpc.method = %q, want ax.v1alpha1.AX/ListTasks", name, v.AsString())
 		}
+	}
+}
+
+// waitForPoints returns the points of the named histogram once there are at
+// least n, or fails after a deadline.
+func waitForPoints(t *testing.T, reader *sdkmetric.ManualReader, name string, n int) []metricdata.HistogramDataPoint[float64] {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		points := histogramPoints(t, reader, name)
+		if len(points) >= n {
+			return points
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s: got %d points after 5 s, want %d", name, len(points), n)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

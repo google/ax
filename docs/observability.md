@@ -97,22 +97,49 @@ folded into one series labelled `otel_metric_overflow="true"`, so an
 unbounded label cannot exhaust memory. `/metrics` also serves the Go runtime
 and process metrics (`go_*`, `process_*`); they are not pushed over OTLP.
 
-ax-server records `rpc.server.call.duration` for the AX RPCs it serves and
-`rpc.client.call.duration` for its calls to Substrate, labelled
-`rpc.system.name`, `rpc.method`, and `rpc.response.status_code`. Their buckets
-are 0.01, 0.05, 0.1, 0.5, 1, 5, 15, and 60 seconds, because a resume can wait
-tens of seconds for a snapshot restore or workspace readiness.
+ax-server records `rpc.server.call.duration` for the AX RPCs that it serves.
+It records `rpc.client.call.duration` for its calls to Substrate. Both
+histograms have three labels: `rpc.system.name`, `rpc.method`, and
+`rpc.response.status_code`. ax-server removes the `server.address` and
+`server.port` labels that otelgrpc adds to the client histogram, because
+their values are peer IP addresses.
+
+The buckets are 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 15, 20, 30, and 60
+seconds. A resume can wait for a snapshot restore and for the 15-second
+workspace readiness timeout. Thus the buckets go to 60 seconds, with
+boundaries on each side of 15 seconds.
+
+`OTEL_SEMCONV_STABILITY_OPT_IN=rpc/dup` makes otelgrpc also record the old
+histograms, `rpc.server.duration` and `rpc.client.duration`, in milliseconds.
+These buckets do not apply to them, so their buckets stop at 10 seconds.
 
 ## Traces
 
-ax-server records a server span for each AX RPC it serves and a client span
-for each call it makes to Substrate. Reconciles run inside the RPC, so
-`CreateActor` and `ResumeActor` appear under the `CreateTask` or `ResumeTask`
-span. A caller's `traceparent` makes the server span its child, and ax-server
-sends `traceparent` on to Substrate, which also samples ParentBased. `baggage`
-is neither read nor sent. A call to a method ax-server does not serve still
-gets an error but no span or metric, so a client cannot create span names or
-`rpc.method` values at will.
+ax-server records a server span for each AX RPC that it serves. It records a
+client span for each call that it makes to Substrate. Reconciles run inside
+the RPC, so `CreateActor` and `ResumeActor` show under the `CreateTask` or
+`ResumeTask` span.
+
+- **Trace context:** the server span is a child of the caller's
+  `traceparent`. ax-server sends `traceparent` to Substrate, which also
+  samples ParentBased. ax-server does not read or send `baggage`.
+- **Sampling by the caller:** a caller that sends a sampled `traceparent`
+  makes ax-server and Substrate record the call, so the 10% ratio does not
+  apply to it. `ax --trace` needs this behavior. ax-server has no
+  authentication yet, so it trusts this flag from all callers.
+- **Unknown methods:** a call to a method that ax-server does not serve
+  gets an error. It does not get a span or a metric point. Thus a client
+  cannot make new span names or new `rpc.method` values.
+- **Errors:** a Substrate call that does not return `OK` has the span status
+  `Error`, also when the code is an expected result. For example, a delete
+  polls `GetActor` until it returns `NotFound`.
+
+`deploy/ax-server.yaml` sets `OTEL_TRACES_EXPORTER: none`, so ax-server
+exports no spans by default. ax-server still sends its span IDs to
+Substrate. If Substrate exports its spans, your backend then shows Substrate
+spans whose parent spans are missing. To see the full trace, set an OTLP
+endpoint and remove that line, as [Connect a collector](#connect-a-collector)
+shows.
 
 ## CLI traces
 
@@ -134,9 +161,10 @@ The CLI exports once, when the command ends, and waits at most 2 seconds.
 It does not retry. If the export fails, the CLI prints a warning that names
 the endpoint and gives the error.
 
-ax-server reads `traceparent`, so each AX RPC of a `--trace` command is a
-server span under the CLI's client span, and one trace runs from the CLI
-through ax-server to Substrate.
+ax-server reads `traceparent`. Thus each AX RPC of a `--trace` command is a
+server span under the client span of the CLI. If ax-server exports its spans
+(see [Traces](#traces)), one trace goes from the CLI through ax-server to
+Substrate.
 
 ## Attribute names
 

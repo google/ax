@@ -74,8 +74,10 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 		locker:     locker,
 		reconciler: reconciler,
 		substrate:  reconciler.Client(),
-		grpcServer: grpc.NewServer(grpc.StatsHandler(telemetry.ServerStatsHandler(&v1alpha1.AX_ServiceDesc))),
 	}
+	srv.grpcServer = grpc.NewServer(grpc.StatsHandler(telemetry.ServerStatsHandler(func() map[string]grpc.ServiceInfo {
+		return srv.grpcServer.GetServiceInfo()
+	})))
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
 	return srv
 }

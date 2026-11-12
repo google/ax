@@ -15,58 +15,75 @@
 package telemetry
 
 import (
+	"sync"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats"
 )
 
-// RPCDurationBuckets are the histogram boundaries, in seconds, of
-// rpc.server.call.duration and rpc.client.call.duration. otelgrpc's own
-// boundaries stop at 10 s, but a resume that restores a snapshot or waits for
-// workspace readiness can run for tens of seconds.
-var RPCDurationBuckets = []float64{0.01, 0.05, 0.1, 0.5, 1, 5, 15, 60}
+// rpcDurationBuckets are the histogram boundaries, in seconds, of
+// rpc.server.call.duration and rpc.client.call.duration. The otelgrpc
+// boundaries stop at 10 s. A resume can wait for a snapshot restore and for
+// the 15 s workspace readiness timeout, so the boundaries go to 60 s, with
+// boundaries on each side of 15 s.
+var rpcDurationBuckets = []float64{0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 15, 20, 30, 60}
 
-// rpcDurationViews applies RPCDurationBuckets to the RPC duration histograms.
+// rpcDurationViews applies rpcDurationBuckets to the RPC duration histograms.
+// The client view also removes server.address and server.port. otelgrpc sets
+// them from the peer IP address, which adds one series for each Substrate
+// replica that answers.
 func rpcDurationViews() []sdkmetric.View {
-	var views []sdkmetric.View
-	for _, name := range []string{"rpc.server.call.duration", "rpc.client.call.duration"} {
-		views = append(views, sdkmetric.NewView(
-			sdkmetric.Instrument{Name: name},
-			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{Boundaries: RPCDurationBuckets}},
-		))
+	buckets := sdkmetric.AggregationExplicitBucketHistogram{Boundaries: rpcDurationBuckets}
+	return []sdkmetric.View{
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "rpc.server.call.duration"},
+			sdkmetric.Stream{Aggregation: buckets},
+		),
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "rpc.client.call.duration"},
+			sdkmetric.Stream{
+				Aggregation:     buckets,
+				AttributeFilter: attribute.NewDenyKeysFilter("server.address", "server.port"),
+			},
+		),
 	}
-	return views
 }
 
-// ServerStatsHandler traces and measures the RPCs a gRPC server serves, with
-// the global tracer and meter providers. A caller's traceparent becomes the
-// parent of the server span; baggage is never read.
+// ServerStatsHandler traces and measures the RPCs that a gRPC server serves.
+// It uses the global tracer and meter providers. The server span is a child of
+// the caller's traceparent. The handler does not read baggage.
 //
-// Only methods of services are recorded. otelgrpc puts the method name a
-// client sends into the span name and rpc.method, so recording unknown names
-// would let any client create spans and metric series at will. Calls to other
-// methods still propagate trace context but produce no span or measurement.
-func ServerStatsHandler(services ...*grpc.ServiceDesc) stats.Handler {
-	known := make(map[string]bool)
-	for _, sd := range services {
-		for _, m := range sd.Methods {
-			known["/"+sd.ServiceName+"/"+m.MethodName] = true
+// services returns the services of the server. The handler records only the
+// methods of these services. otelgrpc copies the method name from the client
+// into the span name and into rpc.method. Thus, if the handler recorded
+// unknown names, a client could make new span names and metric series. A call
+// to another method still propagates the trace context, but it makes no span
+// and no measurement. The handler reads services on the first RPC, after the
+// server has registered all its services.
+func ServerStatsHandler(services func() map[string]grpc.ServiceInfo) stats.Handler {
+	known := sync.OnceValue(func() map[string]bool {
+		methods := make(map[string]bool)
+		for name, info := range services() {
+			for _, m := range info.Methods {
+				methods["/"+name+"/"+m.Name] = true
+			}
 		}
-		for _, s := range sd.Streams {
-			known["/"+sd.ServiceName+"/"+s.StreamName] = true
-		}
-	}
+		return methods
+	})
 	return otelgrpc.NewServerHandler(
 		otelgrpc.WithPropagators(propagation.TraceContext{}),
-		otelgrpc.WithFilter(func(info *stats.RPCTagInfo) bool { return known[info.FullMethodName] }),
+		otelgrpc.WithFilter(func(info *stats.RPCTagInfo) bool { return known()[info.FullMethodName] }),
 	)
 }
 
-// ClientStatsHandler traces and measures the RPCs a gRPC client makes, with the
-// global tracer and meter providers. Each call is a client span under the span
-// in its context and sends that trace context as traceparent, never baggage.
+// ClientStatsHandler traces and measures the RPCs that a gRPC client makes. It
+// uses the global tracer and meter providers. Each call is a client span under
+// the span in its context. The handler sends that trace context as
+// traceparent. It does not send baggage.
 func ClientStatsHandler() stats.Handler {
 	return otelgrpc.NewClientHandler(otelgrpc.WithPropagators(propagation.TraceContext{}))
 }

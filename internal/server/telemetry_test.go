@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store/memory"
@@ -28,6 +29,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -38,9 +40,10 @@ import (
 func TestHandlerTracesRPCs(t *testing.T) {
 	spans := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.NeverSample())), sdktrace.WithSpanProcessor(spans))
-	prev := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
-	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	// Restoring the old global value would keep its delegate bound to tp, so
+	// install a no-op provider instead.
+	t.Cleanup(func() { otel.SetTracerProvider(noop.NewTracerProvider()) })
 
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -74,6 +77,13 @@ func TestHandlerTracesRPCs(t *testing.T) {
 		}
 	}
 
+	// gRPC ends the server span after it writes the status, so the span can
+	// end after the client call returns. An unsampled span never reaches the
+	// recorder, so once the sampled span is there, the count is final.
+	deadline := time.Now().Add(5 * time.Second)
+	for len(spans.Ended()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	ended := spans.Ended()
 	if len(ended) != 1 {
 		t.Fatalf("got %d spans, want one for the sampled caller only", len(ended))
