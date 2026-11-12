@@ -84,13 +84,13 @@ metadata:
   name: default-workspace
   atespace: default
 spec:
-  profile:
-    image: "ghcr.io/my-org/my-agent-image@sha256:..."
-    resources:
-      limits:
-        cpu: "2"
-        memory: "4Gi"
-    # ateActorTemplate: "base-tmpl"  # optional seed ActorTemplate in the same atespace
+  # profile:                         # not available yet: rejected until snapshot pre-warming is wired
+  #   image: "ghcr.io/my-org/my-agent-image@sha256:..."
+  #   resources:
+  #     limits:
+  #       cpu: "2"
+  #       memory: "4Gi"
+  #   ateActorTemplate: "base-tmpl"  # optional seed ActorTemplate in the same atespace
 
   setup:
     git:
@@ -113,7 +113,7 @@ spec:
       path: "/workspace/.ax/skills"  # optional; defaults to <workspace>/.ax/skills
     commands:
       - "npm ci --prefer-offline"
-    # gateway:                       # not available yet until Gateways are served
+    # gateway:                       # not available yet: rejected until workspace gateways are enforced
     #   name: build-egress
 
   mcp:
@@ -124,8 +124,6 @@ spec:
     servers:
       - name: git-tools
         endpoint: "http://git-mcp.default.svc.cluster.local:8080/mcp"
-        # gateway:                   # not available yet until Gateways are served
-        #   name: git-mcp-egress
       - name: local-stdio
         command: "git-mcp"
         args: ["--repo", "/workspace"]
@@ -133,14 +131,14 @@ spec:
 
 ### Workspace fields
 
-- **`spec.profile`** defines the default sandbox compute profile (`image`, `resources.limits`, and optional `ateActorTemplate` in the same atespace). *Not available yet: snapshot pre-warming and task inheritance of `spec.profile` are not wired in the controller yet.*
+- **`spec.profile`** defines the default sandbox compute profile (`image`, `resources.limits`, and optional `ateActorTemplate` in the same atespace). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
 - **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).
   - `skills`: skill registries (`provider`, `project`, `query`) and optional destination `path` (defaults to `<workspace>/.ax/skills`).
-  - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace after git/files/skills complete. A non-zero exit aborts workspace setup without recording the initialization marker.
-  - `gateway`: optional `Gateway` binding for setup-time network egress (*not available yet: ax-server rejects `spec.setup.gateway` until [Gateways](#gateway) are served*).
-- **`spec.mcp`** declares static `servers` (remote `endpoint` with optional `gateway`, or local `command`/`args`) and `registries` (`provider`, `project`, `query`) read by agents through the in-sandbox metadata server (*setting `gateway` on an MCP server is rejected until Gateways are served*).
+  - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace after git/files/skills complete (5m timeout per command). A non-zero exit or timeout aborts workspace setup without recording the initialization marker.
+  - `gateway`: optional `Gateway` binding for setup-time network egress (*not available yet: ax-server rejects `spec.setup.gateway` until workspace gateways are enforced*).
+- **`spec.mcp`** declares static `servers` (remote `endpoint` or local `command`/`args`) and `registries` (`provider`, `project`, `query`) read by agents through the in-sandbox metadata server.
 
 ## Gateway
 

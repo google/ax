@@ -78,7 +78,7 @@ func TestCreateWorkspace_Immutability(t *testing.T) {
 	}
 }
 
-func TestCreateWorkspace_RejectsUnsupportedGateway(t *testing.T) {
+func TestCreateWorkspace_RejectsUnimplementedFields(t *testing.T) {
 	srv := newWorkspaceTestServer(t)
 
 	tests := []struct {
@@ -86,6 +86,17 @@ func TestCreateWorkspace_RejectsUnsupportedGateway(t *testing.T) {
 		spec      *v1alpha1.WorkspaceSpec
 		wantField string
 	}{
+		{
+			name: "profile",
+			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{
+					Resources: &v1alpha1.ResourcesSpec{
+						Limits: &v1alpha1.ResourceList{Cpu: "1", Memory: "512Mi"},
+					},
+				},
+			},
+			wantField: "spec.profile is not supported yet",
+		},
 		{
 			name: "setup_gateway",
 			spec: &v1alpha1.WorkspaceSpec{
@@ -95,26 +106,13 @@ func TestCreateWorkspace_RejectsUnsupportedGateway(t *testing.T) {
 			},
 			wantField: "spec.setup.gateway is not supported yet",
 		},
-		{
-			name: "mcp_server_gateway",
-			spec: &v1alpha1.WorkspaceSpec{
-				Mcp: &v1alpha1.MCPConfig{
-					Servers: []*v1alpha1.MCPServer{{
-						Name:     "gh",
-						Endpoint: "https://example.com/mcp",
-						Gateway:  &v1alpha1.GatewayRef{Name: "gh-gw"},
-					}},
-				},
-			},
-			wantField: "spec.mcp.servers[0].gateway is not supported yet",
-		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
 				Workspace: &v1alpha1.Workspace{
-					Metadata: &v1alpha1.ObjectMeta{Name: "gw-ws"},
+					Metadata: &v1alpha1.ObjectMeta{Name: "unimpl-ws"},
 					Spec:     tc.spec,
 				},
 			})

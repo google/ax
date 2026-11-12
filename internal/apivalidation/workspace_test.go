@@ -45,7 +45,7 @@ func TestValidateWorkspace_Valid(t *testing.T) {
 					Gateway:  &v1alpha1.GatewayRef{Name: "build-gw"},
 				},
 				Mcp: &v1alpha1.MCPConfig{
-					Servers: []*v1alpha1.MCPServer{{Name: "gh", Endpoint: "https://example.com/mcp", Gateway: &v1alpha1.GatewayRef{Name: "gh-gw"}}},
+					Servers: []*v1alpha1.MCPServer{{Name: "gh", Endpoint: "https://example.com/mcp"}},
 				},
 			},
 		},
@@ -254,15 +254,6 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 				},
 			},
 			wantErr: "spec.setup.gateway.name",
-		},
-		{
-			name: "invalid_mcp_gateway",
-			spec: &v1alpha1.WorkspaceSpec{
-				Mcp: &v1alpha1.MCPConfig{
-					Servers: []*v1alpha1.MCPServer{{Name: "s", Gateway: &v1alpha1.GatewayRef{Name: ""}}},
-				},
-			},
-			wantErr: "spec.mcp.servers[0].gateway.name",
 		},
 	}
 	for _, tc := range tests {

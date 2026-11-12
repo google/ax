@@ -16,12 +16,14 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -32,6 +34,9 @@ const (
 	DefaultAXDir = "/ax"
 	// InitializedMarkerFilename is the base name of the marker file written after a successful maiden run.
 	InitializedMarkerFilename = "initialized"
+	// defaultSetupCommandTimeout bounds a single spec.setup.commands entry so a
+	// hung command fails setup instead of leaving the workspace unready forever.
+	defaultSetupCommandTimeout = 5 * time.Minute
 	// markerDirName is the directory under the workspace that holds the marker and default skills.
 	markerDirName       = ".ax"
 	defaultSkillsSubdir = "skills"
@@ -176,7 +181,7 @@ func setupSkills(_ context.Context, skills *v1alpha1.SkillsConfig, targetPath st
 }
 
 // runSetupCommands executes deterministic setup commands sequentially inside
-// targetPath. The first failing command aborts setup.
+// targetPath. The first failing or timed-out command aborts setup.
 func runSetupCommands(ctx context.Context, commands []string, targetPath string) (int, error) {
 	ran := 0
 	for i, cmdStr := range commands {
@@ -184,9 +189,7 @@ func runSetupCommands(ctx context.Context, commands []string, targetPath string)
 			continue
 		}
 		slog.Info("running workspace setup command", "index", i, "command", cmdStr, "dir", targetPath)
-		cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
-		cmd.Dir = targetPath
-		out, err := cmd.CombinedOutput()
+		out, err := runSetupCommandWithTimeout(ctx, cmdStr, targetPath, defaultSetupCommandTimeout)
 		if err != nil {
 			if len(out) > maxCommandOutputInError {
 				out = out[len(out)-maxCommandOutputInError:]
@@ -200,6 +203,31 @@ func runSetupCommands(ctx context.Context, commands []string, targetPath string)
 		ran++
 	}
 	return ran, nil
+}
+
+func runSetupCommandWithTimeout(ctx context.Context, cmdStr, targetPath string, timeout time.Duration) ([]byte, error) {
+	cmdCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	cmd := exec.CommandContext(cmdCtx, "sh", "-c", cmdStr)
+	cmd.Dir = targetPath
+	// Put the shell in its own process group so cancelling on timeout kills
+	// backgrounded children holding stdout/stderr open instead of hanging.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = time.Second
+
+	out, err := cmd.CombinedOutput()
+	if err != nil && errors.Is(cmdCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		return out, fmt.Errorf("timed out after %s: %w", timeout, cmdCtx.Err())
+	}
+	return out, err
 }
 
 // MarkerName returns the maiden-run marker file name for a workspace mounted at

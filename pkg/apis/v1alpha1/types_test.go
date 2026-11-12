@@ -195,8 +195,6 @@ spec:
     servers:
       - name: github-mcp
         endpoint: "https://api.githubcopilot.com/mcp"
-        gateway:
-          name: github-creds
   profile:
     image: "us-docker.pkg.dev/proj/img@sha256:deadbeef"
     resources:

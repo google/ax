@@ -581,10 +581,8 @@ type MCPServer struct {
 	// Server URL/endpoint for remote HTTP/SSE MCP servers.
 	Endpoint string `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
 	// Command and arguments for local stdio MCP servers.
-	Command string   `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
-	Args    []string `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
-	// Optional credential header injection for remote MCP endpoints.
-	Gateway       *GatewayRef `protobuf:"bytes,5,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	Command       string   `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	Args          []string `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -643,13 +641,6 @@ func (x *MCPServer) GetCommand() string {
 func (x *MCPServer) GetArgs() []string {
 	if x != nil {
 		return x.Args
-	}
-	return nil
-}
-
-func (x *MCPServer) GetGateway() *GatewayRef {
-	if x != nil {
-		return x.Gateway
 	}
 	return nil
 }
@@ -1163,13 +1154,12 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x14\n" +
 	"\x05query\x18\x03 \x01(\tR\x05query\x120\n" +
-	"\aservers\x18\x04 \x03(\v2\x16.ax.v1alpha1.MCPServerR\aservers\"\x9c\x01\n" +
+	"\aservers\x18\x04 \x03(\v2\x16.ax.v1alpha1.MCPServerR\aservers\"i\n" +
 	"\tMCPServer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\bendpoint\x18\x02 \x01(\tR\bendpoint\x12\x18\n" +
 	"\acommand\x18\x03 \x01(\tR\acommand\x12\x12\n" +
-	"\x04args\x18\x04 \x03(\tR\x04args\x121\n" +
-	"\agateway\x18\x05 \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\"^\n" +
+	"\x04args\x18\x04 \x03(\tR\x04args\"^\n" +
 	"\fSkillsConfig\x12:\n" +
 	"\n" +
 	"registries\x18\x01 \x03(\v2\x1a.ax.v1alpha1.SkillRegistryR\n" +
@@ -1254,16 +1244,15 @@ var file_pkg_apis_v1alpha1_workspace_proto_depIdxs = []int32{
 	7,  // 10: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
 	8,  // 11: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
 	8,  // 12: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
-	20, // 13: ax.v1alpha1.MCPServer.gateway:type_name -> ax.v1alpha1.GatewayRef
-	10, // 14: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
-	21, // 15: ax.v1alpha1.WorkspaceStatus.conditions:type_name -> ax.v1alpha1.Condition
-	1,  // 16: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
-	1,  // 17: ax.v1alpha1.CreateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	10, // 13: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
+	21, // 14: ax.v1alpha1.WorkspaceStatus.conditions:type_name -> ax.v1alpha1.Condition
+	1,  // 15: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
+	1,  // 16: ax.v1alpha1.CreateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_workspace_proto_init() }

@@ -35,10 +35,7 @@ func ValidateWorkspace(w *v1alpha1.Workspace) error {
 	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {
 		return err
 	}
-	if err := validateSetup(spec.GetSetup()); err != nil {
-		return err
-	}
-	return validateMCP(spec.GetMcp())
+	return validateSetup(spec.GetSetup())
 }
 
 func validateSetup(setup *v1alpha1.WorkspaceSetup) error {
@@ -109,25 +106,6 @@ func validateSetupFile(field string, f *v1alpha1.File) error {
 func validateSkills(skills *v1alpha1.SkillsConfig) error {
 	if p := skills.GetPath(); p != "" && !filepath.IsAbs(p) && escapesWorkspaceRoot(p) {
 		return fmt.Errorf("spec.setup.skills.path: %q must not escape the workspace root", p)
-	}
-	return nil
-}
-
-func validateMCP(mcp *v1alpha1.MCPConfig) error {
-	if mcp == nil {
-		return nil
-	}
-	for i, srv := range mcp.GetServers() {
-		if err := validateGatewayRef(fmt.Sprintf("spec.mcp.servers[%d].gateway", i), srv.GetGateway()); err != nil {
-			return err
-		}
-	}
-	for i, reg := range mcp.GetRegistries() {
-		for j, srv := range reg.GetServers() {
-			if err := validateGatewayRef(fmt.Sprintf("spec.mcp.registries[%d].servers[%d].gateway", i, j), srv.GetGateway()); err != nil {
-				return err
-			}
-		}
 	}
 	return nil
 }

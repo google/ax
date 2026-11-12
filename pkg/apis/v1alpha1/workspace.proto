@@ -114,8 +114,6 @@ message MCPServer {
   // Command and arguments for local stdio MCP servers.
   string command = 3;
   repeated string args = 4;
-  // Optional credential header injection for remote MCP endpoints.
-  GatewayRef gateway = 5;
 }
 
 message SkillsConfig {

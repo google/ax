@@ -86,11 +86,6 @@ metadata:
   name: {{.Name}}
   atespace: {{.Atespace}}
 spec:
-  profile:
-    resources:
-      limits:
-        cpu: "1"
-        memory: "512Mi"
   setup:
     git:
     - name: origin
@@ -136,7 +131,7 @@ func TestE2E_WorkspaceCRUD(t *testing.T) {
 	assertContains(t, "'ax get workspace'", env.mustRunAX(t, ns, "get", "workspace", name),
 		"e2e-v1", "local-mcp", "config/settings.json")
 	assertContains(t, "'ax describe workspace'", env.mustRunAX(t, ns, "describe", "workspace", name),
-		"local-mcp", ".agents/skills", "v1.0.0", "cpu=1 memory=512Mi")
+		"local-mcp", ".agents/skills", "v1.0.0")
 
 	assertContains(t, "'ax delete workspace'", env.mustRunAX(t, ns, "delete", "workspace", name), "deleted")
 	_, err = env.AXClient.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: name, Atespace: ns})

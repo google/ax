@@ -17,7 +17,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/store"
@@ -77,9 +76,9 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	if err := apivalidation.ValidateWorkspace(req.Workspace); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Workspaces are immutable, so a workspace saved now would keep a gateway
-	// binding that nothing enforces yet.
-	if field := firstWorkspaceGatewayField(req.Workspace.GetSpec()); field != "" {
+	// Workspaces are immutable, so a workspace saved now would keep a profile or
+	// gateway binding that nothing enforces yet.
+	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); field != "" {
 		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
 	}
 
@@ -147,27 +146,16 @@ func workspaceSpecEqual(a, b *v1alpha1.WorkspaceSpec) bool {
 	return proto.Equal(a, b)
 }
 
-// TODO: Remove once Workspace gateway enforcement is wired: attach
-// spec.setup.gateway egress on setup actors, and resolve spec.mcp.registries
-// plus spec.mcp.*.gateway credential headers dynamically on task wakeup.
-func firstWorkspaceGatewayField(spec *v1alpha1.WorkspaceSpec) string {
+// TODO: Drop this check once workspace profiles and gateways are enforced.
+func firstUnimplementedWorkspaceField(spec *v1alpha1.WorkspaceSpec) string {
 	if spec == nil {
 		return ""
 	}
+	if spec.GetProfile() != nil {
+		return "spec.profile"
+	}
 	if spec.GetSetup().GetGateway() != nil {
 		return "spec.setup.gateway"
-	}
-	for i, srv := range spec.GetMcp().GetServers() {
-		if srv.GetGateway() != nil {
-			return fmt.Sprintf("spec.mcp.servers[%d].gateway", i)
-		}
-	}
-	for i, reg := range spec.GetMcp().GetRegistries() {
-		for j, srv := range reg.GetServers() {
-			if srv.GetGateway() != nil {
-				return fmt.Sprintf("spec.mcp.registries[%d].servers[%d].gateway", i, j)
-			}
-		}
 	}
 	return ""
 }
