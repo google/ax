@@ -26,8 +26,10 @@ When you start on an issue or pull request, assign yourself to it, so others kno
 
 ### Merging
 
-- **Pull requests from project members:** The author merges once the pull request is approved and CI is green. The author knows when a change is ready, and is the one who rebases when pull requests have to land in order.
-- **Pull requests from external contributors:** The reviewer who approves also merges, since external contributors cannot merge.
+Pull requests to `main` land through the [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue). Once a pull request is approved and its checks pass, select **Merge when ready**. The queue tests it on top of the latest `main` and any pull requests ahead of it, then squash-merges it if `build-and-test` passes. If the check fails, the pull request is removed from the queue; fix it and add it again.
+
+- **Pull requests from project members:** The author adds the pull request to the queue. The author knows when a change is ready.
+- **Pull requests from external contributors:** The reviewer who approves also adds it to the queue, since external contributors cannot merge.
 
 ---
 
