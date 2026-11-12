@@ -101,6 +101,9 @@ location is where to look. How-to lives in the skills.
   Assign yourself to the issue or PR you pick up.
 - Rulesets are edited only through `.github/rulesets/*.json`, never in the
   GitHub UI alone; `.github/workflows/rulesets.yml` fails daily on drift.
+- Only `main` and `release-X.Y` are long-lived branches; only repo admins
+  create `vX.Y.Z[-pre]` tags (`protect-tags.json`). `go.yml` runs on both
+  `main` and `release-*`.
 
 ## Skills — load before coding
 
