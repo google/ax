@@ -39,8 +39,9 @@ CLAUDE_CODE_BASE_IMAGE ?=
 CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
 BUF := go tool -modfile=hack/tools/buf/go.mod buf
+GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
 
-.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example test test-e2e e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -162,6 +163,13 @@ generate:
 ## --------------------------------------
 ## Test & Verification Targets
 ## --------------------------------------
+
+# Presubmit checks. Updates generated code, go.mod and formatting in place; CI
+# runs this and then requires a clean tree.
+verify: generate
+	go mod tidy
+	go fmt ./...
+	$(GOLANGCI_LINT) run ./...
 
 test:
 	@echo "==> Running tests..."

@@ -529,7 +529,7 @@ func TestAttrValueMatchesJSONKinds(t *testing.T) {
 	}
 	for _, tt := range tests {
 		if got := attrValue(tt.in); got != tt.want {
-			t.Errorf("attrValue(%v) = %v, want %v", tt.in, got.Emit(), tt.want.Emit())
+			t.Errorf("attrValue(%v) = %v, want %v", tt.in, got.String(), tt.want.String())
 		}
 	}
 }
