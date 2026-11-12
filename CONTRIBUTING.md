@@ -12,6 +12,21 @@ You (or your employer) retain the copyright to your contribution; this simply gi
 
 If you or your current employer have already signed the Google CLA (even if it was for a different project), you probably don't need to do it again. Visit <https://cla.developers.google.com/> to see your current agreements or sign a new one.
 
+### First-Time Contributors
+
+AX uses a vouch system. Open source runs on trust, and AI tools make it easy to produce changes that look plausible but that the author does not fully understand. A short introduction lets us trust each other before code is reviewed. It is also how we get to know the people who want to help.
+
+If you have not contributed before:
+
+1. Open a discussion in the [Vouch Request](https://github.com/google/ax/discussions/new?category=vouch-request) category. Say what you want to change and why.
+2. Keep it short, and write it in your own words.
+3. A maintainer replies and, if approved, adds your GitHub handle to [`.github/VOUCHED.td`](.github/VOUCHED.td).
+4. Once you are listed, open pull requests as usual.
+
+Pull requests from contributors who are not vouched for may be closed. Collaborators with write access are exempt. Repeated low-quality or rule-breaking contributions can lead to denouncement, which closes all future issues and pull requests from that account.
+
+You must be able to explain every line of your change without AI tools. Using AI assistance is fine.
+
 ### Community Guidelines
 
 This project follows [Google's Open Source Community Guidelines](https://opensource.google/conduct/).

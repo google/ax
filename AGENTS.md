@@ -97,6 +97,9 @@ location is where to look. How-to lives in the skills.
 **E. Process** (`CONTRIBUTING.md`)
 - One approving review + green `build-and-test` to merge; a push after
   approval needs a fresh approval. Assign yourself to the issue or PR you pick up.
+- Pull requests from external contributors need a vouch: their handle must be in
+  `.github/VOUCHED.td` (`.github/workflows/vouch-check-pr.yml`, `CONTRIBUTING.md`).
+  Write-access collaborators and bots are exempt.
 
 ## Skills — load before coding
 
