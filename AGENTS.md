@@ -34,6 +34,8 @@ internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTE
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
+hack/                  E2E provisioning scripts; apply-rulesets.sh; tools/buf/go.mod pins buf for `make generate`
+.github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
 hack/                  E2E provisioning scripts; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
 docs/                  manifests.md is the user-facing API reference
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
@@ -95,9 +97,11 @@ location is where to look. How-to lives in the skills.
 - Every checked-in `.go`, `.sh`, `Makefile`, and `Dockerfile` carries the
   Apache-2.0 header (copy from `Makefile`).
 
-**E. Process** (`CONTRIBUTING.md`)
+**E. Process** (`CONTRIBUTING.md`, `.github/rulesets/`)
 - One approving review + green `build-and-test` to merge; a push after
   approval needs a fresh approval. Assign yourself to the issue or PR you pick up.
+- Rulesets are edited only through `.github/rulesets/*.json`, never in the
+  GitHub UI alone; `.github/workflows/rulesets.yml` fails daily on drift.
 
 ## Skills — load before coding
 
