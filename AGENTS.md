@@ -98,6 +98,8 @@ location is where to look. How-to lives in the skills.
 **E. Process** (`CONTRIBUTING.md`, `.github/rulesets/`)
 - One approving review + green `build-and-test` to merge; pushing to an
   approved PR dismisses the approval (`dismiss_stale_reviews_on_push`).
+  PRs to `main` land only through the merge queue, so every workflow whose
+  check is required must trigger on `merge_group` (`go.yml` does).
   Assign yourself to the issue or PR you pick up.
 - Rulesets are edited only through `.github/rulesets/*.json`, never in the
   GitHub UI alone; `.github/workflows/rulesets.yml` fails daily on drift.
