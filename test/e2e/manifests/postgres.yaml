@@ -95,3 +95,24 @@ spec:
       name: postgres
   selector:
     app.kubernetes.io/name: ax-postgres
+---
+# Only ax-server may connect to the database.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-postgres
+  namespace: ${AX_SYSTEM_NAMESPACE}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ax-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ax-server
+      ports:
+        - protocol: TCP
+          port: 5432

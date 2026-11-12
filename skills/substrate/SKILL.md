@@ -56,6 +56,7 @@ All Control API traffic goes through this package. It encapsulates:
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`) |
+| pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
 
 Why it matters: tasks never get a Service/Ingress. Every request to a task is
