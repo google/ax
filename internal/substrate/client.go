@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -368,6 +369,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	if snapshotsBucket != "" {
 		snapCfg.StorageLocation = snapshotsBucket
 	}
+	trustBundleDir, trustBundleFile := path.Split(v1alpha1.EgressTrustBundlePath)
 
 	return &ateapipb.ActorTemplate{
 		Metadata: &ateapipb.ResourceMetadata{
@@ -388,11 +390,26 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			VolumeMounts: []*ateapipb.VolumeMount{{
 				Name:      "workspace",
 				MountPath: "/workspace",
+			}, {
+				Name:      "egress-trust-bundle",
+				MountPath: path.Clean(trustBundleDir),
 			}},
 		}},
 		Volumes: []*ateapipb.Volume{{
 			Name:       "workspace",
 			DurableDir: &ateapipb.DurableDirVolumeSource{},
+		}, {
+			// Mounted for every task, with or without a gateway, so that TLS
+			// verifies whether or not something on the way out intercepts it.
+			Name: "egress-trust-bundle",
+			SystemInfo: &ateapipb.SystemInfoVolumeSource{
+				DataSources: []*ateapipb.SystemInfoDataSource{{
+					TrustBundle: &ateapipb.TrustBundleDataSource{
+						Names: []string{"egress-mitm.ate.dev", "system-roots.ate.dev"},
+						Path:  trustBundleFile,
+					},
+				}},
+			},
 		}},
 		SnapshotConfig: snapCfg,
 		Resources: &ateapipb.ResourceRequirements{

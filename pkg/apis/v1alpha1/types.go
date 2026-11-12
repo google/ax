@@ -322,6 +322,10 @@ func (g *Gateway) UnmarshalYAML(n *yaml.Node) error { return unmarshalYAML(n, g,
 // with no workspace gets an empty directory there.
 const DefaultWorkspacePath = "/workspace"
 
+// EgressTrustBundlePath is the file in a task's sandbox that holds the CA
+// certificates to trust for outbound TLS, including the egress gateway's.
+const EgressTrustBundlePath = "/run/ate/egress-trust-bundle/trust-bundle.pem"
+
 // WorkspacePath returns the task command's working directory: the bound
 // workspace's path when set, otherwise DefaultWorkspacePath.
 func (s *TaskSpec) WorkspacePath() string {
