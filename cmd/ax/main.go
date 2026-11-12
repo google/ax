@@ -208,15 +208,18 @@ Usage:
   ax [command] [flags]
 
 Available Commands:
-  apply -f <file>         Apply resources (tasks, workspaces, models) from a file or stdin
+  apply -f <file>         Apply resources (tasks, workspaces, gateways, models) from a file or stdin
   get tasks               List tasks
   get task <name>         Get a specific task
   get workspaces          List workspaces
   get workspace <name>    Get a specific workspace
+  get gateways            List gateways
+  get gateway <name>      Get a specific gateway
   get models              List models
   get model <name>        Get a specific model
   describe task <name>    Show detailed information about a task
   describe workspace <name> Show detailed information about a workspace
+  describe gateway <name> Show detailed information about a gateway
   describe model <name>   Show detailed information about a model
   ssh <task-name> [-- cmd] Run a command or shell inside the running task container
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
@@ -224,6 +227,7 @@ Available Commands:
   resume task <name>      Resume execution of a suspended task
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace
+  delete gateway <name>   Delete a gateway
   delete model <name>     Delete a model
   ctx, context            Show active Kubernetes context and AX connection
   tunnel <list|stop>      Manage background tunnels to Kubernetes clusters
@@ -337,6 +341,27 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		res, err := client.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &ws})
 		return head.Kind, res.GetMetadata().GetName(), outcome, err
 
+	case v1alpha1.KindGateway:
+		var gw v1alpha1.Gateway
+		if err := doc.Decode(&gw); err != nil {
+			return "", "", "", err
+		}
+		if err := setApplyAtespace(gw.Metadata, atespace); err != nil {
+			return "", "", "", err
+		}
+		existing, err := client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: gw.GetMetadata().GetAtespace(), Name: gw.GetMetadata().GetName()})
+		outcome, err := applyOutcome(err, existing.GetSpec(), gw.GetSpec())
+		if err != nil {
+			return "", "", "", err
+		}
+		var res *v1alpha1.Gateway
+		if outcome == "created" {
+			res, err = client.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &gw})
+		} else {
+			res, err = client.UpdateGateway(ctx, &v1alpha1.UpdateGatewayRequest{Gateway: &gw})
+		}
+		return head.Kind, res.GetMetadata().GetName(), outcome, err
+
 	case v1alpha1.KindModel:
 		var m v1alpha1.Model
 		if err := doc.Decode(&m); err != nil {
@@ -356,7 +381,7 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 	case "":
 		return "", "", "", errors.New("missing kind")
 	default:
-		return "", "", "", fmt.Errorf("unsupported kind %q (expected Task, Workspace, or Model)", head.Kind)
+		return "", "", "", fmt.Errorf("unsupported kind %q (expected Task, Workspace, Gateway, or Model)", head.Kind)
 	}
 }
 
@@ -509,6 +534,46 @@ func runGet(serverURL, atespace string, args []string) error {
 		return yaml.NewEncoder(os.Stdout).Encode(ws)
 	}
 
+	if (resource == "gateways" || resource == "gateway") && len(args) == 1 {
+		resp, err := client.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: atespace})
+		if err != nil {
+			return fmt.Errorf("listing gateways: %w", err)
+		}
+
+		gateways := resp.Gateways
+
+		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
+		fmt.Fprintln(w, "NAME\tATESPACE\tEGRESS-RULES")
+		for _, gw := range gateways {
+			ruleCount := "0"
+			if gw.Spec != nil {
+				ruleCount = fmt.Sprintf("%d", len(gw.Spec.Egress))
+			}
+			name := ""
+			gwAtespace := ""
+			if gw.Metadata != nil {
+				name = gw.Metadata.Name
+				gwAtespace = gw.Metadata.Atespace
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\n",
+				name,
+				gwAtespace,
+				ruleCount,
+			)
+		}
+		return w.Flush()
+	}
+
+	if (resource == "gateway" || resource == "gateways") && len(args) >= 2 {
+		name := args[1]
+		gw, err := client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: atespace, Name: name})
+		if err != nil {
+			return fmt.Errorf("getting gateway %q: %w", name, err)
+		}
+
+		return yaml.NewEncoder(os.Stdout).Encode(gw)
+	}
+
 	if (resource == "models" || resource == "model") && len(args) == 1 {
 		resp, err := client.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: atespace})
 		if err != nil {
@@ -557,7 +622,7 @@ func runGet(serverURL, atespace string, args []string) error {
 
 func runDescribe(serverURL, atespace string, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax describe <task|workspace|model> <name>")
+		return fmt.Errorf("usage: ax describe <task|workspace|gateway|model> <name>")
 	}
 	kind := strings.ToLower(args[0])
 	name := args[1]
@@ -606,6 +671,39 @@ func runDescribe(serverURL, atespace string, args []string) error {
 					fmt.Printf("Secret Key:         %s\n", m.Spec.SecretKey.Key)
 				} else if m.Spec.SecretKey.Name != "" {
 					fmt.Printf("Secret Key:         %s\n", m.Spec.SecretKey.Name)
+				}
+			}
+		}
+		return nil
+	}
+
+	if kind == "gateway" || kind == "gateways" {
+		gw, err := client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: atespace, Name: name})
+		if err != nil {
+			return fmt.Errorf("getting gateway %q: %w", name, err)
+		}
+
+		gwName := ""
+		gwAtespace := ""
+		if gw.Metadata != nil {
+			gwName = gw.Metadata.Name
+			gwAtespace = gw.Metadata.Atespace
+		}
+		fmt.Printf("Name:         %s\n", gwName)
+		fmt.Printf("Atespace:     %s\n", gwAtespace)
+		if gw.Spec != nil {
+			if len(gw.Spec.Egress) > 0 {
+				fmt.Println("Egress Rules:")
+				for _, rule := range gw.Spec.Egress {
+					if rule.Http != nil {
+						fmt.Printf("  - http: %s\n", strings.Join(rule.Http.Hostnames, ", "))
+					}
+					if rule.Https != nil {
+						fmt.Printf("  - https: %s\n", strings.Join(rule.Https.Hostnames, ", "))
+					}
+					if rule.TlsPassthrough != nil {
+						fmt.Printf("  - tlsPassthrough: %s\n", strings.Join(rule.TlsPassthrough.Hostnames, ", "))
+					}
 				}
 			}
 		}
@@ -733,7 +831,7 @@ func runDescribe(serverURL, atespace string, args []string) error {
 // runDelete removes one resource by kind and name.
 func runDelete(serverURL, atespace string, args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: ax delete <task|workspace|model> <name>")
+		return fmt.Errorf("usage: ax delete <task|workspace|gateway|model> <name>")
 	}
 	kind, err := normalizeKind(args[0])
 	if err != nil {
@@ -766,6 +864,8 @@ func deleteResource(ctx context.Context, client v1alpha1.AXClient, kind, atespac
 		_, err = client.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Atespace: atespace, Name: name})
 	case v1alpha1.KindWorkspace:
 		_, err = client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: atespace, Name: name})
+	case v1alpha1.KindGateway:
+		_, err = client.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Atespace: atespace, Name: name})
 	case v1alpha1.KindModel:
 		_, err = client.DeleteModel(ctx, &v1alpha1.DeleteModelRequest{Atespace: atespace, Name: name})
 	default:
@@ -787,12 +887,14 @@ func normalizeKind(kind string) (string, error) {
 		return v1alpha1.KindTask, nil
 	case "workspace":
 		return v1alpha1.KindWorkspace, nil
+	case "gateway":
+		return v1alpha1.KindGateway, nil
 	case "model":
 		return v1alpha1.KindModel, nil
 	case "":
 		return "", errors.New("missing kind")
 	default:
-		return "", fmt.Errorf("unsupported kind %q (expected task, workspace, or model)", kind)
+		return "", fmt.Errorf("unsupported kind %q (expected task, workspace, gateway, or model)", kind)
 	}
 }
 

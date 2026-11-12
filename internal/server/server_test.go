@@ -109,6 +109,12 @@ func TestServerGRPC(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("UpdateModel failed: %v", err)
 	}
+	if _, err := client.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{
+		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-gw"},
+		Spec:     &v1alpha1.GatewaySpec{},
+	}}); err != nil {
+		t.Fatalf("CreateGateway failed: %v", err)
+	}
 	if _, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-task"},
 		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
@@ -192,6 +198,23 @@ func TestServerGRPC(t *testing.T) {
 		t.Fatalf("expected 1 workspace in list, got %d", len(listWorkspacesResp.Workspaces))
 	}
 
+	// 6. Gateways
+	gw, err := client.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: "default", Name: "grpc-gw"})
+	if err != nil {
+		t.Fatalf("GetGateway failed: %v", err)
+	}
+	if gw.Metadata.Name != "grpc-gw" {
+		t.Errorf("expected gateway 'grpc-gw', got %s", gw.Metadata.Name)
+	}
+
+	listGatewaysResp, err := client.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: "default"})
+	if err != nil {
+		t.Fatalf("ListGateways failed: %v", err)
+	}
+	if len(listGatewaysResp.Gateways) != 1 {
+		t.Fatalf("expected 1 gateway in list, got %d", len(listGatewaysResp.Gateways))
+	}
+
 	// 7. Models
 	model, err := client.GetModel(ctx, &v1alpha1.GetModelRequest{Atespace: "default", Name: "grpc-model"})
 	if err != nil {
@@ -218,6 +241,9 @@ func TestServerGRPC(t *testing.T) {
 	}
 	if _, err := client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: "default", Name: "grpc-ws"}); err != nil {
 		t.Fatalf("DeleteWorkspace failed: %v", err)
+	}
+	if _, err := client.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Atespace: "default", Name: "grpc-gw"}); err != nil {
+		t.Fatalf("DeleteGateway failed: %v", err)
 	}
 	if _, err := client.DeleteModel(ctx, &v1alpha1.DeleteModelRequest{Atespace: "default", Name: "grpc-model"}); err != nil {
 		t.Fatalf("DeleteModel failed: %v", err)
@@ -249,6 +275,9 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 		if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("UpdateWorkspace(%v): got %v, want InvalidArgument", meta, err)
 		}
+		if _, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("CreateGateway(%v): got %v, want InvalidArgument", meta, err)
+		}
 		if _, err := srv.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: &v1alpha1.Model{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("UpdateModel(%v): got %v, want InvalidArgument", meta, err)
 		}
@@ -266,6 +295,9 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 	}
 	if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws-1"}}}); err != nil {
 		t.Errorf("UpdateWorkspace: %v", err)
+	}
+	if _, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "gw-1"}}}); err != nil {
+		t.Errorf("CreateGateway: %v", err)
 	}
 	if _, err := srv.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "gemini"}}}); err != nil {
 		t.Errorf("UpdateModel: %v", err)
@@ -302,8 +334,9 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}
 }
 
-// Gateways are not served yet. A task is immutable, so one that binds a
-// gateway is rejected instead of being saved with a binding nothing applies.
+// A gateway's rules are not applied to tasks yet. A task is immutable, so one
+// that binds a gateway is rejected instead of being saved with a binding
+// nothing applies.
 func TestCreateTask_RejectsGatewayBinding(t *testing.T) {
 	st := memory.NewStore()
 	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
@@ -419,6 +452,46 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 				t.Errorf("template has AX_WORKSPACE_YAML = %v, want %v", gotWorkspace, tc.wantWorkspace)
 			}
 		})
+	}
+}
+
+// CreateGateway makes a new gateway and UpdateGateway replaces an existing
+// one; neither does the other's work.
+func TestServer_CreateAndUpdateGateway(t *testing.T) {
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	ctx := context.Background()
+	gateway := func(hostname string) *v1alpha1.Gateway {
+		return &v1alpha1.Gateway{
+			Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+			Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+				Https: &ateapipb.HttpsRule{Hostnames: []string{hostname}},
+			}}},
+		}
+	}
+
+	if _, err := srv.UpdateGateway(ctx, &v1alpha1.UpdateGatewayRequest{Gateway: gateway("a.example.com")}); status.Code(err) != codes.NotFound {
+		t.Fatalf("UpdateGateway before create: got %v, want NotFound", err)
+	}
+	created, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: gateway("a.example.com")})
+	if err != nil {
+		t.Fatalf("CreateGateway: %v", err)
+	}
+	if _, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: gateway("b.example.com")}); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("CreateGateway again: got %v, want AlreadyExists", err)
+	}
+	if _, err := srv.UpdateGateway(ctx, &v1alpha1.UpdateGatewayRequest{Gateway: gateway("b.example.com")}); err != nil {
+		t.Fatalf("UpdateGateway: %v", err)
+	}
+
+	got, err := srv.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Name: "gw"})
+	if err != nil {
+		t.Fatalf("GetGateway: %v", err)
+	}
+	if hostname := got.GetSpec().GetEgress()[0].GetHttps().GetHostnames()[0]; hostname != "b.example.com" {
+		t.Errorf("hostname after update = %q, want b.example.com", hostname)
+	}
+	if !got.GetMetadata().GetCreateTime().AsTime().Equal(created.GetMetadata().GetCreateTime().AsTime()) {
+		t.Errorf("expected CreateTime to be preserved across update")
 	}
 }
 

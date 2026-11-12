@@ -40,6 +40,11 @@ type Store interface {
 	ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha1.Workspace, error)
 	DeleteWorkspace(ctx context.Context, atespace, name string) error
 
+	SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error
+	GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error)
+	ListGateways(ctx context.Context, atespace string) ([]*v1alpha1.Gateway, error)
+	DeleteGateway(ctx context.Context, atespace, name string) error
+
 	SaveModel(ctx context.Context, model *v1alpha1.Model) error
 	GetModel(ctx context.Context, atespace, name string) (*v1alpha1.Model, error)
 	ListModels(ctx context.Context, atespace string) ([]*v1alpha1.Model, error)

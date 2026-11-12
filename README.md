@@ -170,13 +170,19 @@ ax ssh task123                        # interactive shell (task needs spec.debug
 ax ssh task123 -- ls -la /workspace   # one-off command
 ax ssh task123 -- python3 main.py
 
-# Workspaces and models follow the same pattern
+# Workspaces, gateways, and models follow the same pattern
 
 ax get workspaces
 # NAME                ATESPACE   GIT-REPOS   MCP-SERVERS
 # default-workspace   default    1           1
 ax describe workspace default-workspace
 ax delete workspace default-workspace
+
+ax get gateways
+# NAME            ATESPACE   EGRESS-RULES
+# review-bot-gw   default    3
+ax describe gateway review-bot-gw
+ax delete gateway review-bot-gw
 
 ax get models
 # NAME            ATESPACE   PROVIDER   MODEL

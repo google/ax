@@ -1,6 +1,6 @@
 # Writing manifests
 
-`Task`, `Workspace`, and `Model` manifests can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
+All four kinds can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
 
 `metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting the task fail later with `ActorCreationFailed`.
 
@@ -47,11 +47,11 @@ To work on content from several sources, put it all in one `Workspace`, for exam
 
 ### Binding a gateway
 
-Not available yet: ax-server rejects a task that sets `spec.gateway` until [Gateways](#gateway) are served.
+Not available yet: ax-server rejects a task that sets `spec.gateway` until gateway rules are enforced.
 
 A task binds at most one `Gateway` through `spec.gateway`, for example `gateway: {name: review-bot-gw}`, and can reach only the external hosts that gateway's rules allow. A task with no `gateway` has no external network access.
 
-The rules are copied onto the task's actor when the task is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
+A task gets a copy of the gateway's rules when it is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
 
 ### Sizing the sandbox
 
@@ -108,9 +108,7 @@ spec:
 
 ## Gateway
 
-Not available yet: `ax apply` does not accept `kind: Gateway` until Gateways are served. This section describes the manifest.
-
-A `Gateway` lists the external traffic a task may send. Traffic that matches no rule is refused.
+A `Gateway` lists the external traffic a task may send. Traffic that matches no rule is refused. A task [cannot bind a gateway yet](#binding-a-gateway).
 
 ```yaml
 apiVersion: ax.io/v1alpha1
@@ -160,7 +158,7 @@ Each entry of `spec.egress` is an Agent Substrate `EgressRule` and sets exactly 
 
 A hostname can name a service inside the cluster, such as `git-mcp.default.svc.cluster.local`: the egress gateway resolves it and connects from inside the cluster. Name only the hosts the task should reach.
 
-Substrate checks the rest of a rule's syntax when the rules are copied onto a task's actor.
+Substrate checks the rest of a rule's syntax when a task that binds the gateway is created.
 
 ## Model
 

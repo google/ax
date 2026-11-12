@@ -44,7 +44,7 @@ func openTest(t *testing.T, opts Options) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE tasks, workspaces, models, locks`); err != nil {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE tasks, workspaces, gateways, models, locks`); err != nil {
 		t.Fatalf("truncating tables: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
@@ -54,7 +54,7 @@ func openTest(t *testing.T, opts Options) *Store {
 func TestCreateSchemaConcurrent(t *testing.T) {
 	s := openTest(t, Options{})
 	ctx := context.Background()
-	if _, err := s.pool.Exec(ctx, `DROP TABLE tasks, workspaces, models, locks`); err != nil {
+	if _, err := s.pool.Exec(ctx, `DROP TABLE tasks, workspaces, gateways, models, locks`); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate several replicas starting at once.
@@ -120,6 +120,14 @@ func TestListNewestFirst(t *testing.T) {
 	}
 	if list, err := s.ListWorkspaces(ctx, "*"); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "w2" {
 		t.Errorf("ListWorkspaces = %v, %v; want w2 first", list, err)
+	}
+	for _, g := range []string{"g1", "g2"} {
+		if err := s.SaveGateway(ctx, &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: g}}); err != nil {
+			t.Fatalf("SaveGateway: %v", err)
+		}
+	}
+	if list, err := s.ListGateways(ctx, "*"); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "g2" {
+		t.Errorf("ListGateways = %v, %v; want g2 first", list, err)
 	}
 	for _, m := range []string{"m1", "m2"} {
 		if err := s.SaveModel(ctx, &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: m}}); err != nil {
