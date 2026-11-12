@@ -26,6 +26,7 @@ import (
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
@@ -73,7 +74,7 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 		locker:     locker,
 		reconciler: reconciler,
 		substrate:  reconciler.Client(),
-		grpcServer: grpc.NewServer(),
+		grpcServer: grpc.NewServer(grpc.StatsHandler(telemetry.ServerStatsHandler(&v1alpha1.AX_ServiceDesc))),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
 	return srv

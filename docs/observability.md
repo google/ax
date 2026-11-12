@@ -97,6 +97,23 @@ folded into one series labelled `otel_metric_overflow="true"`, so an
 unbounded label cannot exhaust memory. `/metrics` also serves the Go runtime
 and process metrics (`go_*`, `process_*`); they are not pushed over OTLP.
 
+ax-server records `rpc.server.call.duration` for the AX RPCs it serves and
+`rpc.client.call.duration` for its calls to Substrate, labelled
+`rpc.system.name`, `rpc.method`, and `rpc.response.status_code`. Their buckets
+are 0.01, 0.05, 0.1, 0.5, 1, 5, 15, and 60 seconds, because a resume can wait
+tens of seconds for a snapshot restore or workspace readiness.
+
+## Traces
+
+ax-server records a server span for each AX RPC it serves and a client span
+for each call it makes to Substrate. Reconciles run inside the RPC, so
+`CreateActor` and `ResumeActor` appear under the `CreateTask` or `ResumeTask`
+span. A caller's `traceparent` makes the server span its child, and ax-server
+sends `traceparent` on to Substrate, which also samples ParentBased. `baggage`
+is neither read nor sent. A call to a method ax-server does not serve still
+gets an error but no span or metric, so a client cannot create span names or
+`rpc.method` values at will.
+
 ## CLI traces
 
 `ax --trace <command>` traces one command. The CLI prints the trace ID to
@@ -117,11 +134,9 @@ The CLI exports once, when the command ends, and waits at most 2 seconds.
 It does not retry. If the export fails, the CLI prints a warning that names
 the endpoint and gives the error.
 
-ax-server does not read `traceparent` yet, so for now the trace has only the
-CLI spans. A later change for [#13](https://github.com/google/ax/issues/13)
-adds the `otelgrpc` server handler to ax-server, and ax-server spans then
-join the CLI trace.
-<!-- TODO(#13): update this paragraph when ax-server reads traceparent. -->
+ax-server reads `traceparent`, so each AX RPC of a `--trace` command is a
+server span under the CLI's client span, and one trace runs from the CLI
+through ax-server to Substrate.
 
 ## Attribute names
 

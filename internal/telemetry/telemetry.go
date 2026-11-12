@@ -193,7 +193,7 @@ func newMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.M
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating Prometheus exporter: %w", err)
 	}
-	opts := []sdkmetric.Option{sdkmetric.WithResource(res), sdkmetric.WithReader(promReader)}
+	opts := []sdkmetric.Option{sdkmetric.WithResource(res), sdkmetric.WithReader(promReader), sdkmetric.WithView(rpcDurationViews()...)}
 
 	selected := resolveExportersEnv(ctx, metricsExporterEnv, []string{otelenv.ExporterOTLP, otelenv.ExporterPrometheus},
 		otelenv.Exporters{otelenv.ExporterOTLP: true, otelenv.ExporterPrometheus: true})
