@@ -96,8 +96,9 @@ location is where to look. How-to lives in the skills.
   Apache-2.0 header (copy from `Makefile`).
 
 **E. Process** (`CONTRIBUTING.md`, `.github/rulesets/`)
-- One approving review + green `build-and-test` to merge; a push after
-  approval needs a fresh approval. Assign yourself to the issue or PR you pick up.
+- One approving review + green `build-and-test` to merge; pushing to an
+  approved PR dismisses the approval (`dismiss_stale_reviews_on_push`).
+  Assign yourself to the issue or PR you pick up.
 - Rulesets are edited only through `.github/rulesets/*.json`, never in the
   GitHub UI alone; `.github/workflows/rulesets.yml` fails daily on drift.
 

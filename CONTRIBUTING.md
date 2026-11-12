@@ -20,7 +20,7 @@ This project follows [Google's Open Source Community Guidelines](https://opensou
 
 All submissions, including submissions by project members, require review. We use GitHub pull requests for this purpose. Consult [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more information on using pull requests.
 
-Every pull request to `main` needs one approving review and a passing `build-and-test` check before it can be merged. A push after an approval needs a fresh approval. These rules are enforced by the repository rulesets in [`.github/rulesets/`](.github/rulesets); see [docs/rulesets.md](docs/rulesets.md) for how to change them.
+Every pull request to `main` needs one approving review and a passing `build-and-test` check before it can be merged. Pushing a commit to an approved pull request dismisses the approval; after pushing, use **Re-request review** so the reviewer approves the final commits. These rules are enforced by the repository rulesets in [`.github/rulesets/`](.github/rulesets); see [docs/rulesets.md](docs/rulesets.md) for how to change them.
 
 When you start on an issue or pull request, assign yourself to it, so others know it is being worked on.
 

@@ -9,7 +9,7 @@ reviewed and recorded like any other change.
 
 | Ruleset | Applies to | Rules |
 |---|---|---|
-| [`protect-main`](../.github/rulesets/protect-main.json) | `main` (`~DEFAULT_BRANCH`) | No deletion or force-push. Changes go through a pull request with 1 approving review, merged by squash or rebase. The `build-and-test` check must pass. |
+| [`protect-main`](../.github/rulesets/protect-main.json) | `main` (`~DEFAULT_BRANCH`) | No deletion or force-push. Changes go through a pull request with 1 approving review, merged by squash or rebase. Pushing a new commit dismisses existing approvals. The `build-and-test` check must pass. |
 
 The JSON files are the source of truth. If this table and a file disagree, the
 file wins.
