@@ -24,8 +24,9 @@ import (
 )
 
 // ValidateGateway reports the first problem with a gateway that would make it
-// unusable. Agent Substrate checks the rest of each egress rule later, when
-// the rules are copied onto the actor of a task that binds the gateway.
+// unusable. It is called by the API server before saving. Agent Substrate
+// checks the rest of each egress rule later, when a task that binds the
+// gateway is created.
 //
 // TODO: Validate everything that Substrate validates.
 func ValidateGateway(g *v1alpha1.Gateway) error {

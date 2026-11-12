@@ -35,6 +35,7 @@ pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.g
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 hack/                  E2E provisioning scripts; apply-rulesets.sh; tools/buf/go.mod pins buf for `make generate`
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
+hack/                  E2E provisioning scripts; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
 docs/                  manifests.md is the user-facing API reference
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
 ```
@@ -43,11 +44,9 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 
 ```bash
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
-go mod tidy && git diff --exit-code go.mod go.sum
-make generate                    # format + lint .proto, regenerate *.pb.go (CI asserts no diff)
+make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
 go test ./...                    # ~20 s, 19 packages with tests; Postgres + E2E tiers self-skip
-go vet ./... && gofmt -l .       # not run by CI; both are clean at HEAD
 ```
 
 Opt-in tiers:
@@ -91,7 +90,9 @@ location is where to look. How-to lives in the skills.
   validated in `internal/apivalidation`, and documented in `docs/manifests.md`.
 
 **D. Hygiene**
-- CI fails on an untidy `go.mod`/`go.sum` (`.github/workflows/go.yml`).
+- CI runs `make verify` and fails if it changes a file (stale generated code,
+  untidy `go.mod`/`go.sum`, unformatted Go) or golangci-lint reports a finding
+  (`.github/workflows/go.yml`, `.golangci.yaml`).
 - Every checked-in `.go`, `.sh`, `Makefile`, and `Dockerfile` carries the
   Apache-2.0 header (copy from `Makefile`).
 
@@ -116,7 +117,7 @@ skill source there. Adding a skill means adding a row above.
 
 ## Definition of done
 
-1. The five CI commands above pass locally.
+1. The three CI commands above pass locally.
 2. Postgres or E2E tier passes if you touched `internal/store/postgres` or
    the E2E paths.
 3. `/sync-contract` has been run against your diff so `AGENTS.md` and `skills/`

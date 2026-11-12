@@ -109,6 +109,7 @@ type table string
 const (
 	tasksTable      table = "tasks"
 	workspacesTable table = "workspaces"
+	gatewaysTable   table = "gateways"
 	modelsTable     table = "models"
 )
 
@@ -312,6 +313,46 @@ func (s *Store) ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha
 // DeleteWorkspace removes a workspace. Deleting a missing workspace is not an error.
 func (s *Store) DeleteWorkspace(ctx context.Context, atespace, name string) error {
 	return s.delete(ctx, workspacesTable, atespace, name)
+}
+
+// --- Gateways ---
+
+// SaveGateway stores or replaces a gateway.
+func (s *Store) SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error {
+	if gw.Metadata == nil {
+		gw.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	if gw.Metadata.Name == "" {
+		return errors.New("gateway name is required")
+	}
+	gw.Metadata.Atespace = defaultAtespace(gw.Metadata.Atespace)
+	if gw.ApiVersion == "" {
+		gw.ApiVersion = v1alpha1.APIVersion
+	}
+	if gw.Kind == "" {
+		gw.Kind = v1alpha1.KindGateway
+	}
+	return s.save(ctx, gatewaysTable, gw.Metadata, gw)
+}
+
+// GetGateway retrieves a gateway by atespace and name.
+func (s *Store) GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error) {
+	var gw v1alpha1.Gateway
+	if err := s.get(ctx, gatewaysTable, atespace, name, &gw); err != nil {
+		return nil, err
+	}
+	return &gw, nil
+}
+
+// ListGateways lists gateways in an atespace, or across all atespaces when
+// atespace is "" or "*", most recently saved first.
+func (s *Store) ListGateways(ctx context.Context, atespace string) ([]*v1alpha1.Gateway, error) {
+	return list(ctx, s, gatewaysTable, atespace, 0, 0, func() *v1alpha1.Gateway { return &v1alpha1.Gateway{} })
+}
+
+// DeleteGateway removes a gateway. Deleting a missing gateway is not an error.
+func (s *Store) DeleteGateway(ctx context.Context, atespace, name string) error {
+	return s.delete(ctx, gatewaysTable, atespace, name)
 }
 
 // --- Models ---

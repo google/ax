@@ -55,6 +55,16 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 | `UpdateWorkspace` | Create or update a workspace. |
 | `DeleteWorkspace` | Delete a workspace. |
 
+**Gateways**
+
+| RPC | Description |
+|---|---|
+| `GetGateway` | Get a gateway by atespace and name. |
+| `ListGateways` | List gateways in an atespace. |
+| `CreateGateway` | Create a gateway (fails if it already exists). |
+| `UpdateGateway` | Update a gateway (fails if it does not exist). |
+| `DeleteGateway` | Delete a gateway. |
+
 **Models**
 
 | RPC | Description |

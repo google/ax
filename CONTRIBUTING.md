@@ -120,9 +120,8 @@ make deploy
    ```
 
 4. **Make changes and verify**:
+   - Run checks: `make verify`, and commit the files it updates (generated code, `go.mod`/`go.sum`, formatting)
    - Run tests: `make test`
-   - Ensure clean modules: `go mod tidy` and verify with `git diff --exit-code go.mod go.sum`
-   - After editing a `.proto` file: `make generate`
    - Build binaries: `make build`
 
 5. **Commit and open a PR**:

@@ -187,6 +187,45 @@ func taskManifest(t *testing.T, atespace, name string, debug bool) string {
 	return renderYAML(t, debugTaskManifest, map[string]any{"Name": name, "Atespace": atespace, "Debug": debug})
 }
 
+const gatewayCRUDManifest = `apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: {{.Name}}
+  atespace: {{.Atespace}}
+spec:
+  egress:
+  - https:
+      hostnames:
+      - {{.Host}}
+`
+
+// TestE2E_GatewayCRUD verifies the same apply / get / describe / delete
+// lifecycle as TestE2E_WorkspaceCRUD for a Gateway.
+func TestE2E_GatewayCRUD(t *testing.T) {
+	ns := defaultAtespace
+	name := uniqueName("gw-crud")
+	env.deleteOnCleanup(t, ns, "gateway", name)
+
+	manifest := func(host string) string {
+		return renderYAML(t, gatewayCRUDManifest, map[string]string{"Name": name, "Atespace": ns, "Host": host})
+	}
+	ref := "gateway.ax.io/" + name
+
+	assertContains(t, "first apply", env.apply(t, ns, manifest("a.example.com")), ref+" created")
+	assertContains(t, "identical re-apply", env.apply(t, ns, manifest("a.example.com")), ref+" unchanged")
+	assertContains(t, "modified apply", env.apply(t, ns, manifest("b.example.com")), ref+" configured")
+
+	assertContains(t, "'ax get gateways'", env.mustRunAX(t, ns, "get", "gateways"), name)
+	assertContains(t, "'ax get gateway'", env.mustRunAX(t, ns, "get", "gateway", name), "b.example.com")
+	assertContains(t, "'ax describe gateway'", env.mustRunAX(t, ns, "describe", "gateway", name), "https: b.example.com")
+
+	env.mustRunAX(t, ns, "delete", "gateway", name)
+	_, err := env.AXClient.GetGateway(t.Context(), &v1alpha1.GetGatewayRequest{Name: name, Atespace: ns})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("GetGateway after delete: got %v, want NotFound", err)
+	}
+}
+
 // TestE2E_TaskLifecycleAndSubstrateSync verifies that a Task and its Substrate
 // resources stay in sync across its lifecycle:
 //   - A new Task starts Suspended and is immutable.
