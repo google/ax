@@ -467,4 +467,3 @@ func TestSetupWorkspace_RefusesLinkedMarkerDir(t *testing.T) {
 		t.Errorf("marker was written through a linked .ax directory")
 	}
 }
-

@@ -489,6 +489,7 @@ func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, task
 		}
 		slog.Info("deleting Substrate actor template for task", "atespace", atespace, "task", taskName, "template", name)
 		var delErr error
+	Retry:
 		for attempt := 0; attempt < 5; attempt++ {
 			delErr = r.client.DeleteActorTemplate(ctx, atespace, name)
 			if delErr == nil || status.Code(delErr) == codes.NotFound {
@@ -498,7 +499,7 @@ func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, task
 			select {
 			case <-ctx.Done():
 				delErr = ctx.Err()
-				break
+				break Retry
 			case <-time.After(500 * time.Millisecond):
 			}
 		}
