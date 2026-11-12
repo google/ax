@@ -35,6 +35,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const defaultPageLimit = 50
+
 var unmarshalOpts = protojson.UnmarshalOptions{DiscardUnknown: true}
 
 // Options configures the Postgres backend.
@@ -235,7 +237,7 @@ func (s *Store) GetTask(ctx context.Context, atespace, name string) (*v1alpha1.T
 // defaults to 50.
 func (s *Store) ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = defaultPageLimit
 	}
 	return list(ctx, s, tasksTable, atespace, limit, offset, func() *v1alpha1.Task { return &v1alpha1.Task{} })
 }
@@ -305,9 +307,12 @@ func (s *Store) GetWorkspace(ctx context.Context, atespace, name string) (*v1alp
 }
 
 // ListWorkspaces lists workspaces in an atespace, or across all atespaces when
-// atespace is "" or "*", most recently saved first.
-func (s *Store) ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha1.Workspace, error) {
-	return list(ctx, s, workspacesTable, atespace, 0, 0, func() *v1alpha1.Workspace { return &v1alpha1.Workspace{} })
+// atespace is "" or "*", most recently saved first. A limit <= 0 defaults to 50.
+func (s *Store) ListWorkspaces(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Workspace, error) {
+	if limit <= 0 {
+		limit = defaultPageLimit
+	}
+	return list(ctx, s, workspacesTable, atespace, limit, offset, func() *v1alpha1.Workspace { return &v1alpha1.Workspace{} })
 }
 
 // DeleteWorkspace removes a workspace. Deleting a missing workspace is not an error.

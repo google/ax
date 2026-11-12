@@ -167,8 +167,13 @@ func newHarness(t *testing.T) *harness {
 	workspace.AXDir = filepath.Join(dir, "ax")
 	t.Cleanup(func() { workspace.AXDir = origAXDir })
 
+	wsPath := filepath.Join(dir, "workspace")
+	origWSDir := runner.DefaultWorkspacePath
+	runner.DefaultWorkspacePath = wsPath
+	t.Cleanup(func() { runner.DefaultWorkspacePath = origWSDir })
+
 	h := &harness{
-		wsPath:   filepath.Join(dir, "workspace"),
+		wsPath:   wsPath,
 		finished: make(chan struct{}),
 		exited:   make(chan runner.CommandExit, 1),
 	}
@@ -292,5 +297,28 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "name: code") {
 		t.Errorf("workspace endpoint should serve the bound workspace:\n%s", body)
+	}
+}
+
+func TestRun_SetupFailureAbortsBeforeStartingCommand(t *testing.T) {
+	h := newHarness(t)
+	ranMarker := filepath.Join(t.TempDir(), "command-ran")
+
+	h.cfg.Workspace = &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Setup: &v1alpha1.WorkspaceSetup{
+				Commands: []string{"echo setup-boom >&2 && exit 9"},
+			},
+		},
+	}
+	h.task.Spec.Command = []string{"sh", "-c", "touch " + ranMarker}
+
+	err := runner.Run(t.Context(), h.cfg)
+	if err == nil || !strings.Contains(err.Error(), "setup-boom") {
+		t.Fatalf("Run() = %v, want setup error containing %q", err, "setup-boom")
+	}
+	if _, statErr := os.Stat(ranMarker); !os.IsNotExist(statErr) {
+		t.Fatalf("spec.command started despite workspace setup failure")
 	}
 }

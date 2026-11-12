@@ -86,24 +86,26 @@ metadata:
   name: {{.Name}}
   atespace: {{.Atespace}}
 spec:
-  git:
-  - name: origin
-    repo: {{.Repo}}
-    branch: v1.0.0
-  files:
-  - path: config/settings.json
-    content: '{"env":"{{.Env}}"}'
+  setup:
+    git:
+    - name: origin
+      repo: {{.Repo}}
+      ref: v1.0.0
+    files:
+    - path: config/settings.json
+      content: '{"env":"{{.Env}}"}'
+    skills:
+      path: /workspace/.agents/skills
   mcp:
     servers:
     - name: local-mcp
       endpoint: http://localhost:9000
-  skills:
-    path: /workspace/.agents/skills
 `
 
 // TestE2E_WorkspaceCRUD verifies the Workspace lifecycle through the CLI:
-// `ax apply` reports created / unchanged / configured, `ax get` and
-// `ax describe` show the updated spec, and `ax delete` removes it.
+// `ax apply` creates the Workspace, returns unchanged on identical re-apply,
+// rejects spec mutations as immutable, surfaces the spec in `ax get` and
+// `ax describe`, and removes it via `ax delete`.
 func TestE2E_WorkspaceCRUD(t *testing.T) {
 	ns := defaultAtespace
 	name := uniqueName("ws-crud")
@@ -118,16 +120,21 @@ func TestE2E_WorkspaceCRUD(t *testing.T) {
 
 	assertContains(t, "first apply", env.apply(t, ns, manifest("e2e-v1")), ref+" created")
 	assertContains(t, "identical re-apply", env.apply(t, ns, manifest("e2e-v1")), ref+" unchanged")
-	assertContains(t, "modified apply", env.apply(t, ns, manifest("e2e-v2")), ref+" configured")
+
+	out, err := env.runAX(ns, "apply", "-f", writeManifest(t, manifest("e2e-v2")))
+	if err == nil {
+		t.Fatalf("expected modifying an existing workspace to fail as immutable, got:\n%s", out)
+	}
+	assertContains(t, "modified apply", out, "already exists and is immutable")
 
 	assertContains(t, "'ax get workspaces'", env.mustRunAX(t, ns, "get", "workspaces"), name)
 	assertContains(t, "'ax get workspace'", env.mustRunAX(t, ns, "get", "workspace", name),
-		"e2e-v2", "local-mcp", "config/settings.json")
+		"e2e-v1", "local-mcp", "config/settings.json")
 	assertContains(t, "'ax describe workspace'", env.mustRunAX(t, ns, "describe", "workspace", name),
-		"local-mcp", ".agents/skills")
+		"local-mcp", ".agents/skills", "v1.0.0")
 
 	assertContains(t, "'ax delete workspace'", env.mustRunAX(t, ns, "delete", "workspace", name), "deleted")
-	_, err := env.AXClient.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: name, Atespace: ns})
+	_, err = env.AXClient.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: name, Atespace: ns})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetWorkspace after delete: got %v, want NotFound", err)
 	}
@@ -319,9 +326,10 @@ metadata:
   name: {{.Workspace}}
   atespace: {{.Atespace}}
 spec:
-  files:
-  - path: hello.txt
-    content: "hello from workspace"
+  setup:
+    files:
+    - path: hello.txt
+      content: "hello from workspace"
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
@@ -416,16 +424,19 @@ metadata:
   name: {{.GitWorkspace}}
   atespace: {{.Atespace}}
 spec:
-  git:
-  - name: sample
-    dir: "."
-    repo: {{.Repo}}
-    branch: v1.0.0
-  files:
-  - path: overlay/config.yaml
-    content: "mode: git-plus-overlay"
-  skills:
-    path: /workspace/primary/.agents/skills
+  setup:
+    git:
+    - name: sample
+      dir: "."
+      repo: {{.Repo}}
+      ref: v1.0.0
+    files:
+    - path: overlay/config.yaml
+      content: "mode: git-plus-overlay"
+    skills:
+      path: /workspace/primary/.agents/skills
+    commands:
+    - "echo setup-cmd-ok > setup-cmd.txt"
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
@@ -463,6 +474,7 @@ func TestE2E_WorkspaceSetup_FilesAndGit(t *testing.T) {
 pwd
 cat /workspace/primary/app.py
 cat /workspace/primary/overlay/config.yaml
+cat /workspace/primary/setup-cmd.txt
 test -d /workspace/primary/.agents/skills && echo SKILLS_DIR_OK
 test -f /workspace/primary/.git/.ax/initialized && echo MARKERS_OK
 `)
@@ -470,6 +482,7 @@ test -f /workspace/primary/.git/.ax/initialized && echo MARKERS_OK
 		"/workspace/primary",
 		"hello from git repo v1",
 		"mode: git-plus-overlay",
+		"setup-cmd-ok",
 		"SKILLS_DIR_OK",
 		"MARKERS_OK",
 	)
@@ -481,9 +494,10 @@ metadata:
   name: {{.Workspace}}
   atespace: {{.Atespace}}
 spec:
-  files:
-  - path: seed.txt
-    content: "initial-seed"
+  setup:
+    files:
+    - path: seed.txt
+      content: "initial-seed"
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task

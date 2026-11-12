@@ -346,7 +346,7 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err != nil {
 			return "", "", "", err
 		}
-		res, err := client.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &ws})
+		res, err := client.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
 		return head.Kind, res.GetMetadata().GetName(), outcome, err
 
 	case v1alpha1.KindGateway:
@@ -503,31 +503,10 @@ func runGet(serverURL, atespace string, args []string) error {
 			return fmt.Errorf("listing workspaces: %w", err)
 		}
 
-		workspaces := resp.Workspaces
-
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
 		fmt.Fprintln(w, "NAME\tATESPACE\tGIT-REPOS\tMCP-SERVERS")
-		for _, ws := range workspaces {
-			gitCount := "0"
-			mcpCount := "0"
-			if ws.Spec != nil {
-				gitCount = fmt.Sprintf("%d", len(ws.Spec.Git))
-				if ws.Spec.Mcp != nil {
-					mcpCount = fmt.Sprintf("%d", len(ws.Spec.Mcp.Servers))
-				}
-			}
-			name := ""
-			wsAtespace := ""
-			if ws.Metadata != nil {
-				name = ws.Metadata.Name
-				wsAtespace = ws.Metadata.Atespace
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-				name,
-				wsAtespace,
-				gitCount,
-				mcpCount,
-			)
+		for _, ws := range resp.Workspaces {
+			printWorkspaceRow(w, ws)
 		}
 		return w.Flush()
 	}
@@ -723,56 +702,7 @@ func runDescribe(serverURL, atespace string, args []string) error {
 		if err != nil {
 			return fmt.Errorf("getting workspace %q: %w", name, err)
 		}
-
-		wsName := ""
-		wsAtespace := ""
-		if ws.Metadata != nil {
-			wsName = ws.Metadata.Name
-			wsAtespace = ws.Metadata.Atespace
-		}
-		fmt.Printf("Name:         %s\n", wsName)
-		fmt.Printf("Atespace:     %s\n", wsAtespace)
-		if ws.Spec != nil {
-			if len(ws.Spec.Git) > 0 {
-				fmt.Println("Git Repositories:")
-				for _, g := range ws.Spec.Git {
-					branch := g.Branch
-					if branch == "" {
-						branch = "main"
-					}
-					fmt.Printf("  - %s (%s, branch: %s)\n", g.Name, g.Repo, branch)
-				}
-			}
-			if ws.Spec.Mcp != nil {
-				if len(ws.Spec.Mcp.Registries) > 0 {
-					fmt.Println("MCP Registries:")
-					for _, r := range ws.Spec.Mcp.Registries {
-						fmt.Printf("  - Provider: %s, Query: %q\n", r.Provider, r.Query)
-					}
-				}
-				if len(ws.Spec.Mcp.Servers) > 0 {
-					fmt.Println("MCP Servers:")
-					for _, s := range ws.Spec.Mcp.Servers {
-						if s.Endpoint != "" {
-							fmt.Printf("  - %s: %s\n", s.Name, s.Endpoint)
-						} else {
-							fmt.Printf("  - %s: %s %v\n", s.Name, s.Command, s.Args)
-						}
-					}
-				}
-			}
-			if ws.Spec.Skills != nil {
-				if len(ws.Spec.Skills.Registries) > 0 {
-					fmt.Println("Skill Registries:")
-					for _, r := range ws.Spec.Skills.Registries {
-						fmt.Printf("  - Provider: %s, Query: %q\n", r.Provider, r.Query)
-					}
-				}
-				if ws.Spec.Skills.Path != "" {
-					fmt.Printf("Skills Path:      %s\n", ws.Spec.Skills.Path)
-				}
-			}
-		}
+		describeWorkspace(os.Stdout, ws)
 		return nil
 	}
 

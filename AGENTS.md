@@ -27,7 +27,7 @@ internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
-internal/workspace     git clone / inline files / skills dir (MCP is spec-only; agents read it via the metadata server)
+internal/workspace     spec.setup execution (git clone / inline files / skills dir / commands; MCP is read via metadata server)
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 internal/telemetry     ax-server's OpenTelemetry setup: OTLP traces, metrics, and events (Emit, stdout fallback), Prometheus /metrics (:9090), JSON slog with trace IDs
 internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTEL_*_EXPORTER parsing and the resource
@@ -47,7 +47,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~20 s, 20 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~20 s, 21 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:
@@ -75,8 +75,8 @@ location is where to look. How-to lives in the skills.
   `ateapipb.NewControlClient`; new Control API calls go there.
 - `api.ate-system.svc`, `atenet-router.ate-system.svc`, and namespace
   `ate-system` are hard-coded across 10 files (list in `/substrate`).
-- Substrate rejects tag-only images; `spec.image` must be digest-pinned
-  (`docs/manifests.md`, `TemplateCreationFailed`).
+- Substrate rejects tag-only images; `spec.image` / `profile.image` must be
+  digest-pinned (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
   (`internal/metadata/server.go`, `cmd/ax/main.go`).
 - Unit tests run against in-process fakes: `mockControlServer`

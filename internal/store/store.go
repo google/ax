@@ -37,7 +37,7 @@ type Store interface {
 
 	SaveWorkspace(ctx context.Context, ws *v1alpha1.Workspace) error
 	GetWorkspace(ctx context.Context, atespace, name string) (*v1alpha1.Workspace, error)
-	ListWorkspaces(ctx context.Context, atespace string) ([]*v1alpha1.Workspace, error)
+	ListWorkspaces(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Workspace, error)
 	DeleteWorkspace(ctx context.Context, atespace, name string) error
 
 	SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error

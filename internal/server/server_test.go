@@ -97,11 +97,11 @@ func TestServerGRPC(t *testing.T) {
 
 	// 1. Create one resource of each kind through the typed RPCs. Metadata is left
 	// partially empty to exercise server-side defaulting.
-	if _, err := client.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
+	if _, err := client.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-ws"},
 		Spec:     &v1alpha1.WorkspaceSpec{},
 	}}); err != nil {
-		t.Fatalf("UpdateWorkspace failed: %v", err)
+		t.Fatalf("CreateWorkspace failed: %v", err)
 	}
 	if _, err := client.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: &v1alpha1.Model{
 		Metadata: &v1alpha1.ObjectMeta{Name: "grpc-model"},
@@ -272,8 +272,8 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("CreateTask(%v): got %v, want InvalidArgument", meta, err)
 		}
-		if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
-			t.Errorf("UpdateWorkspace(%v): got %v, want InvalidArgument", meta, err)
+		if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("CreateWorkspace(%v): got %v, want InvalidArgument", meta, err)
 		}
 		if _, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: meta}}); status.Code(err) != codes.InvalidArgument {
 			t.Errorf("CreateGateway(%v): got %v, want InvalidArgument", meta, err)
@@ -293,8 +293,8 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Metadata: good}}); err != nil {
 		t.Errorf("CreateTask(%v): %v", good, err)
 	}
-	if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws-1"}}}); err != nil {
-		t.Errorf("UpdateWorkspace: %v", err)
+	if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws-1"}}}); err != nil {
+		t.Errorf("CreateWorkspace: %v", err)
 	}
 	if _, err := srv.CreateGateway(ctx, &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "gw-1"}}}); err != nil {
 		t.Errorf("CreateGateway: %v", err)
@@ -318,10 +318,10 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 		t.Fatalf("expected InvalidArgument for a nameless workspace binding, got %v", err)
 	}
 
-	if _, err := srv.UpdateWorkspace(ctx, &v1alpha1.UpdateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
+	if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "a"},
 	}}); err != nil {
-		t.Fatalf("UpdateWorkspace: %v", err)
+		t.Fatalf("CreateWorkspace: %v", err)
 	}
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},

@@ -35,7 +35,7 @@ spec:
 
 ### Image references
 
-Substrate requires `spec.image` to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the task's ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
+Substrate requires `spec.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
 
 ### Binding a workspace
 
@@ -43,7 +43,7 @@ A task binds at most one `Workspace` through `spec.workspace`. The binding needs
 
 The bound `Workspace` must already exist in the task's atespace. Creating a task that binds a missing workspace fails with `FailedPrecondition` and stores nothing. `ax apply` creates documents in file order, so list a `Workspace` before the `Task` that binds it.
 
-To work on content from several sources, put it all in one `Workspace`, for example by listing several repositories under `spec.git` or adding files through `spec.files`.
+To work on content from several sources, put it all in one `Workspace`, for example by listing several repositories under `spec.setup.git` or adding files through `spec.setup.files`.
 
 ### Binding a gateway
 
@@ -75,6 +75,8 @@ curl -s "$AX_METADATA_URL/metadata/v1alpha1/ax/task" | yq .spec.config
 
 ## Workspace
 
+Workspaces are **immutable** once created (`CreateWorkspace`): re-applying an identical manifest succeeds as `unchanged`, while modifying an existing Workspace fails with `FailedPrecondition`. To evolve an environment cleanly, create a new Workspace name (for example `backend-ws-v2`) and delete the old one once tasks drain.
+
 ```yaml
 apiVersion: ax.io/v1alpha1
 kind: Workspace
@@ -82,29 +84,61 @@ metadata:
   name: default-workspace
   atespace: default
 spec:
-  git:
-    - name: origin
-      repo: "https://github.com/chalk/chalk.git"
-      branch: "main"
-  files:
-    - path: "AGENTS.md"
-      content: |
-        # Project Guidelines
-        - Run `go test ./...` before submitting changes.
-        - Keep dependencies minimal.
+  # profile:                         # not available yet: rejected until snapshot pre-warming is wired
+  #   image: "ghcr.io/my-org/my-agent-image@sha256:..."
+  #   resources:
+  #     limits:
+  #       cpu: "2"
+  #       memory: "4Gi"
+  #   ateActorTemplate: "base-tmpl"  # optional seed ActorTemplate in the same atespace
+
+  setup:
+    git:
+      - name: origin
+        repo: "https://github.com/chalk/chalk.git"
+        ref: "main"                  # branch, tag, or commit SHA (defaults to "main")
+        dir: "."                     # relative to workspace root (defaults to repo basename)
+        depth: 1                     # optional shallow clone depth (>= 0)
+    files:
+      - path: "AGENTS.md"
+        content: |
+          # Project Guidelines
+          - Run `npm test` before submitting changes.
+          - Keep dependencies minimal.
+    skills:
+      registries:
+        - provider: google
+          project: my-gcp-project
+          query: "skills.tags:nodejs"
+      path: "/workspace/.ax/skills"  # optional; defaults to <workspace>/.ax/skills
+    commands:
+      - "npm ci --prefer-offline"
+    # gateway:                       # not available yet: rejected until workspace gateways are enforced
+    #   name: build-egress
+
   mcp:
     registries:
       - provider: google
+        project: my-gcp-project
         query: "mcp.tags:build"
     servers:
       - name: git-tools
-        endpoint: "http://git-mcp.default.svc.cluster.local:8080"
-  skills:
-    registries:
-      - provider: google
-        query: "skills.tags:nodejs"
-    path: "/.agents/skills"
+        endpoint: "http://git-mcp.default.svc.cluster.local:8080/mcp"
+      - name: local-stdio
+        command: "git-mcp"
+        args: ["--repo", "/workspace"]
 ```
+
+### Workspace fields
+
+- **`spec.profile`** defines the default sandbox compute profile (`image`, `resources.limits`, and optional `ateActorTemplate` in the same atespace). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
+- **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
+  - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
+  - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).
+  - `skills`: skill registries (`provider`, `project`, `query`) and optional destination `path` (defaults to `<workspace>/.ax/skills`).
+  - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace after git/files/skills complete (5m timeout per command). A non-zero exit or timeout aborts workspace setup without recording the initialization marker.
+  - `gateway`: optional `Gateway` binding for setup-time network egress (*not available yet: ax-server rejects `spec.setup.gateway` until workspace gateways are enforced*).
+- **`spec.mcp`** declares static `servers` (remote `endpoint` or local `command`/`args`) and `registries` (`provider`, `project`, `query`) read by agents through the in-sandbox metadata server.
 
 ## Gateway
 

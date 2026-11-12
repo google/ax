@@ -17,34 +17,77 @@ syntax = "proto3";
 package ax.v1alpha1;
 
 import "pkg/apis/v1alpha1/common.proto";
+import "pkg/apis/v1alpha1/gateway.proto";
 
 option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 
+// WorkspaceRef binds a Task to a Workspace in the same atespace.
 message WorkspaceRef {
   string name = 1;
+  // Optional mount / working directory path inside the sandbox.
+  // Defaults to "/workspace" when omitted.
   string path = 2;
 }
 
+// Workspace defines a pre-warmed, shareable environment recipe and its cached
+// snapshots across one or more compute Profiles.
 message Workspace {
   string api_version = 1;
   string kind = 2;
   ObjectMeta metadata = 3;
   WorkspaceSpec spec = 4;
+  WorkspaceStatus status = 5;
 }
 
 message WorkspaceSpec {
-  repeated GitRepo git = 1;
-  repeated File files = 2;
+  // Runtime MCP capability definitions shared across tasks in this Workspace.
+  // Resolved dynamically by ax-server on every Task wakeup (create/resume) and
+  // delivered to the runner rather than baked into an immutable snapshot.
   MCPConfig mcp = 3;
-  SkillsConfig skills = 4;
+
+  // Default compute profile (image, resources, ate_actor_template) used to
+  // pre-warm the initial workspace snapshot upon Workspace creation. Tasks
+  // binding this Workspace inherit profile unless overridden at task level.
+  Profile profile = 5;
+
+  // Setup steps executed once in a setup actor and captured into the workspace
+  // snapshot.
+  WorkspaceSetup setup = 6;
+}
+
+// WorkspaceSetup groups deterministic environment preparation steps whose
+// results are persisted on disk/memory in the workspace snapshot.
+message WorkspaceSetup {
+  // Git repositories cloned during setup. On task wakeup from a snapshot, the
+  // runner fetches remote refs to keep HEAD fresh.
+  repeated GitRepo git = 1;
+
+  // Small inline files written relative to the workspace root (e.g. AGENTS.md).
+  repeated File files = 2;
+
+  // Skills fetched from registries into /workspace/.ax/skills/.
+  SkillsConfig skills = 3;
+
+  // Deterministic dependency installation commands executed in order
+  // (e.g. "npm ci", "pip install -r requirements.txt", "go mod download").
+  repeated string commands = 4;
+
+  // Optional Gateway granted ONLY to the temporary setup actor during pre-warm
+  // (e.g. private git repo credentials, package registries). Task actors never
+  // inherit setup.gateway and must explicitly bind their own gateway.
+  GatewayRef gateway = 5;
 }
 
 message GitRepo {
   string name = 1;
+  // HTTPS repository URL (SSH is unsupported through the egress gateway).
   string repo = 2;
-  string branch = 3;
+  // Checkout directory relative to the workspace root (defaults to "." when set
+  // explicitly, or derived from name / repo URL when omitted).
   string dir = 4;
   int32 depth = 5;
+  // Target branch, tag, or commit SHA to check out (defaults to "main").
+  string ref = 6;
 }
 
 message File {
@@ -66,13 +109,16 @@ message MCPRegistry {
 
 message MCPServer {
   string name = 1;
+  // Server URL/endpoint for remote HTTP/SSE MCP servers.
   string endpoint = 2;
+  // Command and arguments for local stdio MCP servers.
   string command = 3;
   repeated string args = 4;
 }
 
 message SkillsConfig {
   repeated SkillRegistry registries = 1;
+  // Optional destination path; defaults to <workspace>/.ax/skills when omitted.
   string path = 2;
 }
 
@@ -80,6 +126,17 @@ message SkillRegistry {
   string provider = 1;
   string project = 2;
   string query = 3;
+}
+
+message WorkspaceStatus {
+  // Lifecycle phase: Preparing | Ready | Failed.
+  string phase = 1;
+
+  // Conditions such as SetupComplete and SnapshotReady.
+  repeated Condition conditions = 2;
+
+  // Error recorded from the most recent failed setup attempt, if any.
+  string last_setup_error = 3;
 }
 
 // --- RPC Request & Response Messages ---
@@ -92,13 +149,16 @@ message GetWorkspaceRequest {
 
 message ListWorkspacesRequest {
   string atespace = 1;
+  int64 limit = 2;
+  int64 offset = 3;
 }
 
 message ListWorkspacesResponse {
   repeated Workspace workspaces = 1;
 }
 
-message UpdateWorkspaceRequest {
+// CreateWorkspaceRequest creates an immutable Workspace resource.
+message CreateWorkspaceRequest {
   Workspace workspace = 1;
 }
 

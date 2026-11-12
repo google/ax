@@ -67,26 +67,52 @@ func ValidateObjectMeta(meta *v1alpha1.ObjectMeta) error {
 // enforces the same rules as below: cpu and memory only, each quantity greater
 // than zero, and a cpu limit below 1000 cores. Checking them here means a bad
 // value fails at apply time instead of when the template is created.
-// Substrate sizes a sandbox by limits alone, so requests are rejected rather
-// than accepted and ignored.
 
 // ValidateResources reports the first problem with a task's resource
 // requirements. A nil or empty value is valid: omitted cpu and memory limits
 // default to 1 CPU (1000m) and 512Mi when the ActorTemplate is built.
 func ValidateResources(reqs *v1alpha1.ResourcesSpec) error {
-	if req := reqs.GetRequests(); req.GetCpu() != "" || req.GetMemory() != "" {
-		return errors.New("spec.resources.requests: not supported, only spec.resources.limits is applied to the sandbox")
-	}
+	return validateResources("spec.resources", reqs)
+}
+
+// TODO: Once TaskSpec migrates to spec.profile, drop the field parameter
+// and hardcode "spec.profile.resources".
+func validateResources(field string, reqs *v1alpha1.ResourcesSpec) error {
 	limits := reqs.GetLimits()
 	if cpu := limits.GetCpu(); cpu != "" {
 		if _, err := resources.ParseCPUMillicores(cpu); err != nil {
-			return fmt.Errorf("spec.resources.limits.cpu: %w", err)
+			return fmt.Errorf("%s.limits.cpu: %w", field, err)
 		}
 	}
 	if memory := limits.GetMemory(); memory != "" {
 		if _, err := resources.ParseMemoryBytes(memory); err != nil {
-			return fmt.Errorf("spec.resources.limits.memory: %w", err)
+			return fmt.Errorf("%s.limits.memory: %w", field, err)
 		}
+	}
+	return nil
+}
+
+func validateProfile(field string, p *v1alpha1.Profile) error {
+	if p == nil {
+		return nil
+	}
+	if err := validateResources(field+".resources", p.GetResources()); err != nil {
+		return err
+	}
+	if seed := p.GetAteActorTemplate(); seed != "" {
+		if err := ValidateName(seed); err != nil {
+			return fmt.Errorf("%s.ateActorTemplate: invalid value %q: %w", field, seed, err)
+		}
+	}
+	return nil
+}
+
+func validateGatewayRef(field string, ref *v1alpha1.GatewayRef) error {
+	if ref == nil {
+		return nil
+	}
+	if err := ValidateName(ref.GetName()); err != nil {
+		return fmt.Errorf("%s.name: invalid value %q: %w", field, ref.GetName(), err)
 	}
 	return nil
 }

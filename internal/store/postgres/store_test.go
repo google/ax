@@ -118,8 +118,11 @@ func TestListNewestFirst(t *testing.T) {
 			t.Fatalf("SaveWorkspace: %v", err)
 		}
 	}
-	if list, err := s.ListWorkspaces(ctx, "*"); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "w2" {
+	if list, err := s.ListWorkspaces(ctx, "*", 50, 0); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "w2" {
 		t.Errorf("ListWorkspaces = %v, %v; want w2 first", list, err)
+	}
+	if page, err := s.ListWorkspaces(ctx, "*", 1, 1); err != nil || len(page) != 1 || page[0].GetMetadata().GetName() != "w1" {
+		t.Errorf("ListWorkspaces(limit=1, offset=1) = %v, %v; want [w1]", page, err)
 	}
 	for _, g := range []string{"g1", "g2"} {
 		if err := s.SaveGateway(ctx, &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: g}}); err != nil {

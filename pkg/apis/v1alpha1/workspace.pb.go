@@ -35,10 +35,13 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// WorkspaceRef binds a Task to a Workspace in the same atespace.
 type WorkspaceRef struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Optional mount / working directory path inside the sandbox.
+	// Defaults to "/workspace" when omitted.
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -87,12 +90,15 @@ func (x *WorkspaceRef) GetPath() string {
 	return ""
 }
 
+// Workspace defines a pre-warmed, shareable environment recipe and its cached
+// snapshots across one or more compute Profiles.
 type Workspace struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	Spec          *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	Status        *WorkspaceStatus       `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -155,12 +161,26 @@ func (x *Workspace) GetSpec() *WorkspaceSpec {
 	return nil
 }
 
+func (x *Workspace) GetStatus() *WorkspaceStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
 type WorkspaceSpec struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Git           []*GitRepo             `protobuf:"bytes,1,rep,name=git,proto3" json:"git,omitempty"`
-	Files         []*File                `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
-	Mcp           *MCPConfig             `protobuf:"bytes,3,opt,name=mcp,proto3" json:"mcp,omitempty"`
-	Skills        *SkillsConfig          `protobuf:"bytes,4,opt,name=skills,proto3" json:"skills,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Runtime MCP capability definitions shared across tasks in this Workspace.
+	// Resolved dynamically by ax-server on every Task wakeup (create/resume) and
+	// delivered to the runner rather than baked into an immutable snapshot.
+	Mcp *MCPConfig `protobuf:"bytes,3,opt,name=mcp,proto3" json:"mcp,omitempty"`
+	// Default compute profile (image, resources, ate_actor_template) used to
+	// pre-warm the initial workspace snapshot upon Workspace creation. Tasks
+	// binding this Workspace inherit profile unless overridden at task level.
+	Profile *Profile `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Setup steps executed once in a setup actor and captured into the workspace
+	// snapshot.
+	Setup         *WorkspaceSetup `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -195,20 +215,6 @@ func (*WorkspaceSpec) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *WorkspaceSpec) GetGit() []*GitRepo {
-	if x != nil {
-		return x.Git
-	}
-	return nil
-}
-
-func (x *WorkspaceSpec) GetFiles() []*File {
-	if x != nil {
-		return x.Files
-	}
-	return nil
-}
-
 func (x *WorkspaceSpec) GetMcp() *MCPConfig {
 	if x != nil {
 		return x.Mcp
@@ -216,27 +222,125 @@ func (x *WorkspaceSpec) GetMcp() *MCPConfig {
 	return nil
 }
 
-func (x *WorkspaceSpec) GetSkills() *SkillsConfig {
+func (x *WorkspaceSpec) GetProfile() *Profile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *WorkspaceSpec) GetSetup() *WorkspaceSetup {
+	if x != nil {
+		return x.Setup
+	}
+	return nil
+}
+
+// WorkspaceSetup groups deterministic environment preparation steps whose
+// results are persisted on disk/memory in the workspace snapshot.
+type WorkspaceSetup struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Git repositories cloned during setup. On task wakeup from a snapshot, the
+	// runner fetches remote refs to keep HEAD fresh.
+	Git []*GitRepo `protobuf:"bytes,1,rep,name=git,proto3" json:"git,omitempty"`
+	// Small inline files written relative to the workspace root (e.g. AGENTS.md).
+	Files []*File `protobuf:"bytes,2,rep,name=files,proto3" json:"files,omitempty"`
+	// Skills fetched from registries into /workspace/.ax/skills/.
+	Skills *SkillsConfig `protobuf:"bytes,3,opt,name=skills,proto3" json:"skills,omitempty"`
+	// Deterministic dependency installation commands executed in order
+	// (e.g. "npm ci", "pip install -r requirements.txt", "go mod download").
+	Commands []string `protobuf:"bytes,4,rep,name=commands,proto3" json:"commands,omitempty"`
+	// Optional Gateway granted ONLY to the temporary setup actor during pre-warm
+	// (e.g. private git repo credentials, package registries). Task actors never
+	// inherit setup.gateway and must explicitly bind their own gateway.
+	Gateway       *GatewayRef `protobuf:"bytes,5,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WorkspaceSetup) Reset() {
+	*x = WorkspaceSetup{}
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceSetup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceSetup) ProtoMessage() {}
+
+func (x *WorkspaceSetup) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceSetup.ProtoReflect.Descriptor instead.
+func (*WorkspaceSetup) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *WorkspaceSetup) GetGit() []*GitRepo {
+	if x != nil {
+		return x.Git
+	}
+	return nil
+}
+
+func (x *WorkspaceSetup) GetFiles() []*File {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *WorkspaceSetup) GetSkills() *SkillsConfig {
 	if x != nil {
 		return x.Skills
 	}
 	return nil
 }
 
+func (x *WorkspaceSetup) GetCommands() []string {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+func (x *WorkspaceSetup) GetGateway() *GatewayRef {
+	if x != nil {
+		return x.Gateway
+	}
+	return nil
+}
+
 type GitRepo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
-	Dir           string                 `protobuf:"bytes,4,opt,name=dir,proto3" json:"dir,omitempty"`
-	Depth         int32                  `protobuf:"varint,5,opt,name=depth,proto3" json:"depth,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// HTTPS repository URL (SSH is unsupported through the egress gateway).
+	Repo string `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	// Checkout directory relative to the workspace root (defaults to "." when set
+	// explicitly, or derived from name / repo URL when omitted).
+	Dir   string `protobuf:"bytes,4,opt,name=dir,proto3" json:"dir,omitempty"`
+	Depth int32  `protobuf:"varint,5,opt,name=depth,proto3" json:"depth,omitempty"`
+	// Target branch, tag, or commit SHA to check out (defaults to "main").
+	Ref           string `protobuf:"bytes,6,opt,name=ref,proto3" json:"ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GitRepo) Reset() {
 	*x = GitRepo{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[3]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -248,7 +352,7 @@ func (x *GitRepo) String() string {
 func (*GitRepo) ProtoMessage() {}
 
 func (x *GitRepo) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[3]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -261,7 +365,7 @@ func (x *GitRepo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitRepo.ProtoReflect.Descriptor instead.
 func (*GitRepo) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{3}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GitRepo) GetName() string {
@@ -274,13 +378,6 @@ func (x *GitRepo) GetName() string {
 func (x *GitRepo) GetRepo() string {
 	if x != nil {
 		return x.Repo
-	}
-	return ""
-}
-
-func (x *GitRepo) GetBranch() string {
-	if x != nil {
-		return x.Branch
 	}
 	return ""
 }
@@ -299,6 +396,13 @@ func (x *GitRepo) GetDepth() int32 {
 	return 0
 }
 
+func (x *GitRepo) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
 type File struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -309,7 +413,7 @@ type File struct {
 
 func (x *File) Reset() {
 	*x = File{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -321,7 +425,7 @@ func (x *File) String() string {
 func (*File) ProtoMessage() {}
 
 func (x *File) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -334,7 +438,7 @@ func (x *File) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use File.ProtoReflect.Descriptor instead.
 func (*File) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{4}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *File) GetPath() string {
@@ -361,7 +465,7 @@ type MCPConfig struct {
 
 func (x *MCPConfig) Reset() {
 	*x = MCPConfig{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +477,7 @@ func (x *MCPConfig) String() string {
 func (*MCPConfig) ProtoMessage() {}
 
 func (x *MCPConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +490,7 @@ func (x *MCPConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPConfig.ProtoReflect.Descriptor instead.
 func (*MCPConfig) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{5}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *MCPConfig) GetRegistries() []*MCPRegistry {
@@ -415,7 +519,7 @@ type MCPRegistry struct {
 
 func (x *MCPRegistry) Reset() {
 	*x = MCPRegistry{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -427,7 +531,7 @@ func (x *MCPRegistry) String() string {
 func (*MCPRegistry) ProtoMessage() {}
 
 func (x *MCPRegistry) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -440,7 +544,7 @@ func (x *MCPRegistry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPRegistry.ProtoReflect.Descriptor instead.
 func (*MCPRegistry) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{6}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *MCPRegistry) GetProvider() string {
@@ -472,18 +576,20 @@ func (x *MCPRegistry) GetServers() []*MCPServer {
 }
 
 type MCPServer struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Endpoint      string                 `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
-	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
-	Args          []string               `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Server URL/endpoint for remote HTTP/SSE MCP servers.
+	Endpoint string `protobuf:"bytes,2,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	// Command and arguments for local stdio MCP servers.
+	Command       string   `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	Args          []string `protobuf:"bytes,4,rep,name=args,proto3" json:"args,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MCPServer) Reset() {
 	*x = MCPServer{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +601,7 @@ func (x *MCPServer) String() string {
 func (*MCPServer) ProtoMessage() {}
 
 func (x *MCPServer) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +614,7 @@ func (x *MCPServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MCPServer.ProtoReflect.Descriptor instead.
 func (*MCPServer) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{7}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MCPServer) GetName() string {
@@ -540,16 +646,17 @@ func (x *MCPServer) GetArgs() []string {
 }
 
 type SkillsConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Registries    []*SkillRegistry       `protobuf:"bytes,1,rep,name=registries,proto3" json:"registries,omitempty"`
-	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Registries []*SkillRegistry       `protobuf:"bytes,1,rep,name=registries,proto3" json:"registries,omitempty"`
+	// Optional destination path; defaults to <workspace>/.ax/skills when omitted.
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SkillsConfig) Reset() {
 	*x = SkillsConfig{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +668,7 @@ func (x *SkillsConfig) String() string {
 func (*SkillsConfig) ProtoMessage() {}
 
 func (x *SkillsConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,7 +681,7 @@ func (x *SkillsConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillsConfig.ProtoReflect.Descriptor instead.
 func (*SkillsConfig) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{8}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SkillsConfig) GetRegistries() []*SkillRegistry {
@@ -602,7 +709,7 @@ type SkillRegistry struct {
 
 func (x *SkillRegistry) Reset() {
 	*x = SkillRegistry{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +721,7 @@ func (x *SkillRegistry) String() string {
 func (*SkillRegistry) ProtoMessage() {}
 
 func (x *SkillRegistry) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +734,7 @@ func (x *SkillRegistry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillRegistry.ProtoReflect.Descriptor instead.
 func (*SkillRegistry) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{9}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SkillRegistry) GetProvider() string {
@@ -651,6 +758,69 @@ func (x *SkillRegistry) GetQuery() string {
 	return ""
 }
 
+type WorkspaceStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Lifecycle phase: Preparing | Ready | Failed.
+	Phase string `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	// Conditions such as SetupComplete and SnapshotReady.
+	Conditions []*Condition `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// Error recorded from the most recent failed setup attempt, if any.
+	LastSetupError string `protobuf:"bytes,3,opt,name=last_setup_error,json=lastSetupError,proto3" json:"last_setup_error,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *WorkspaceStatus) Reset() {
+	*x = WorkspaceStatus{}
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceStatus) ProtoMessage() {}
+
+func (x *WorkspaceStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceStatus.ProtoReflect.Descriptor instead.
+func (*WorkspaceStatus) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *WorkspaceStatus) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *WorkspaceStatus) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+func (x *WorkspaceStatus) GetLastSetupError() string {
+	if x != nil {
+		return x.LastSetupError
+	}
+	return ""
+}
+
 // Workspaces
 type GetWorkspaceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -662,7 +832,7 @@ type GetWorkspaceRequest struct {
 
 func (x *GetWorkspaceRequest) Reset() {
 	*x = GetWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +844,7 @@ func (x *GetWorkspaceRequest) String() string {
 func (*GetWorkspaceRequest) ProtoMessage() {}
 
 func (x *GetWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +857,7 @@ func (x *GetWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{10}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetWorkspaceRequest) GetAtespace() string {
@@ -707,13 +877,15 @@ func (x *GetWorkspaceRequest) GetName() string {
 type ListWorkspacesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	Limit         int64                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListWorkspacesRequest) Reset() {
 	*x = ListWorkspacesRequest{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -725,7 +897,7 @@ func (x *ListWorkspacesRequest) String() string {
 func (*ListWorkspacesRequest) ProtoMessage() {}
 
 func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -738,7 +910,7 @@ func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkspacesRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{11}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListWorkspacesRequest) GetAtespace() string {
@@ -746,6 +918,20 @@ func (x *ListWorkspacesRequest) GetAtespace() string {
 		return x.Atespace
 	}
 	return ""
+}
+
+func (x *ListWorkspacesRequest) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListWorkspacesRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
 }
 
 type ListWorkspacesResponse struct {
@@ -757,7 +943,7 @@ type ListWorkspacesResponse struct {
 
 func (x *ListWorkspacesResponse) Reset() {
 	*x = ListWorkspacesResponse{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -769,7 +955,7 @@ func (x *ListWorkspacesResponse) String() string {
 func (*ListWorkspacesResponse) ProtoMessage() {}
 
 func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -782,7 +968,7 @@ func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkspacesResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkspacesResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{12}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListWorkspacesResponse) GetWorkspaces() []*Workspace {
@@ -792,28 +978,29 @@ func (x *ListWorkspacesResponse) GetWorkspaces() []*Workspace {
 	return nil
 }
 
-type UpdateWorkspaceRequest struct {
+// CreateWorkspaceRequest creates an immutable Workspace resource.
+type CreateWorkspaceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Workspace     *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateWorkspaceRequest) Reset() {
-	*x = UpdateWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[13]
+func (x *CreateWorkspaceRequest) Reset() {
+	*x = CreateWorkspaceRequest{}
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateWorkspaceRequest) String() string {
+func (x *CreateWorkspaceRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateWorkspaceRequest) ProtoMessage() {}
+func (*CreateWorkspaceRequest) ProtoMessage() {}
 
-func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[13]
+func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,12 +1011,12 @@ func (x *UpdateWorkspaceRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateWorkspaceRequest.ProtoReflect.Descriptor instead.
-func (*UpdateWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{13}
+// Deprecated: Use CreateWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *UpdateWorkspaceRequest) GetWorkspace() *Workspace {
+func (x *CreateWorkspaceRequest) GetWorkspace() *Workspace {
 	if x != nil {
 		return x.Workspace
 	}
@@ -846,7 +1033,7 @@ type DeleteWorkspaceRequest struct {
 
 func (x *DeleteWorkspaceRequest) Reset() {
 	*x = DeleteWorkspaceRequest{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -858,7 +1045,7 @@ func (x *DeleteWorkspaceRequest) String() string {
 func (*DeleteWorkspaceRequest) ProtoMessage() {}
 
 func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -871,7 +1058,7 @@ func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{14}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DeleteWorkspaceRequest) GetAtespace() string {
@@ -896,7 +1083,7 @@ type DeleteWorkspaceResponse struct {
 
 func (x *DeleteWorkspaceResponse) Reset() {
 	*x = DeleteWorkspaceResponse{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -908,7 +1095,7 @@ func (x *DeleteWorkspaceResponse) String() string {
 func (*DeleteWorkspaceResponse) ProtoMessage() {}
 
 func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -921,34 +1108,40 @@ func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkspaceResponse.ProtoReflect.Descriptor instead.
 func (*DeleteWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{15}
+	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{17}
 }
 
 var File_pkg_apis_v1alpha1_workspace_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"!pkg/apis/v1alpha1/workspace.proto\x12\vax.v1alpha1\x1a\x1epkg/apis/v1alpha1/common.proto\"6\n" +
+	"!pkg/apis/v1alpha1/workspace.proto\x12\vax.v1alpha1\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\"6\n" +
 	"\fWorkspaceRef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\xa5\x01\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\xdb\x01\n" +
 	"\tWorkspace\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x12.\n" +
-	"\x04spec\x18\x04 \x01(\v2\x1a.ax.v1alpha1.WorkspaceSpecR\x04spec\"\xbd\x01\n" +
-	"\rWorkspaceSpec\x12&\n" +
+	"\x04spec\x18\x04 \x01(\v2\x1a.ax.v1alpha1.WorkspaceSpecR\x04spec\x124\n" +
+	"\x06status\x18\x05 \x01(\v2\x1c.ax.v1alpha1.WorkspaceStatusR\x06status\"\x9c\x01\n" +
+	"\rWorkspaceSpec\x12(\n" +
+	"\x03mcp\x18\x03 \x01(\v2\x16.ax.v1alpha1.MCPConfigR\x03mcp\x12.\n" +
+	"\aprofile\x18\x05 \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x121\n" +
+	"\x05setup\x18\x06 \x01(\v2\x1b.ax.v1alpha1.WorkspaceSetupR\x05setup\"\xe3\x01\n" +
+	"\x0eWorkspaceSetup\x12&\n" +
 	"\x03git\x18\x01 \x03(\v2\x14.ax.v1alpha1.GitRepoR\x03git\x12'\n" +
-	"\x05files\x18\x02 \x03(\v2\x11.ax.v1alpha1.FileR\x05files\x12(\n" +
-	"\x03mcp\x18\x03 \x01(\v2\x16.ax.v1alpha1.MCPConfigR\x03mcp\x121\n" +
-	"\x06skills\x18\x04 \x01(\v2\x19.ax.v1alpha1.SkillsConfigR\x06skills\"q\n" +
+	"\x05files\x18\x02 \x03(\v2\x11.ax.v1alpha1.FileR\x05files\x121\n" +
+	"\x06skills\x18\x03 \x01(\v2\x19.ax.v1alpha1.SkillsConfigR\x06skills\x12\x1a\n" +
+	"\bcommands\x18\x04 \x03(\tR\bcommands\x121\n" +
+	"\agateway\x18\x05 \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\"k\n" +
 	"\aGitRepo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
-	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x10\n" +
+	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x10\n" +
 	"\x03dir\x18\x04 \x01(\tR\x03dir\x12\x14\n" +
-	"\x05depth\x18\x05 \x01(\x05R\x05depth\"4\n" +
+	"\x05depth\x18\x05 \x01(\x05R\x05depth\x12\x10\n" +
+	"\x03ref\x18\x06 \x01(\tR\x03ref\"4\n" +
 	"\x04File\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\"w\n" +
@@ -975,17 +1168,25 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\rSkillRegistry\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\x12\x14\n" +
-	"\x05query\x18\x03 \x01(\tR\x05query\"E\n" +
+	"\x05query\x18\x03 \x01(\tR\x05query\"\x89\x01\n" +
+	"\x0fWorkspaceStatus\x12\x14\n" +
+	"\x05phase\x18\x01 \x01(\tR\x05phase\x126\n" +
+	"\n" +
+	"conditions\x18\x02 \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
+	"conditions\x12(\n" +
+	"\x10last_setup_error\x18\x03 \x01(\tR\x0elastSetupError\"E\n" +
 	"\x13GetWorkspaceRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"3\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"a\n" +
 	"\x15ListWorkspacesRequest\x12\x1a\n" +
-	"\batespace\x18\x01 \x01(\tR\batespace\"P\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x03R\x05limit\x12\x16\n" +
+	"\x06offset\x18\x03 \x01(\x03R\x06offset\"P\n" +
 	"\x16ListWorkspacesResponse\x126\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x16.ax.v1alpha1.WorkspaceR\n" +
 	"workspaces\"N\n" +
-	"\x16UpdateWorkspaceRequest\x124\n" +
+	"\x16CreateWorkspaceRequest\x124\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x16.ax.v1alpha1.WorkspaceR\tworkspace\"H\n" +
 	"\x16DeleteWorkspaceRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
@@ -1004,44 +1205,54 @@ func file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_workspace_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_pkg_apis_v1alpha1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_pkg_apis_v1alpha1_workspace_proto_goTypes = []any{
 	(*WorkspaceRef)(nil),            // 0: ax.v1alpha1.WorkspaceRef
 	(*Workspace)(nil),               // 1: ax.v1alpha1.Workspace
 	(*WorkspaceSpec)(nil),           // 2: ax.v1alpha1.WorkspaceSpec
-	(*GitRepo)(nil),                 // 3: ax.v1alpha1.GitRepo
-	(*File)(nil),                    // 4: ax.v1alpha1.File
-	(*MCPConfig)(nil),               // 5: ax.v1alpha1.MCPConfig
-	(*MCPRegistry)(nil),             // 6: ax.v1alpha1.MCPRegistry
-	(*MCPServer)(nil),               // 7: ax.v1alpha1.MCPServer
-	(*SkillsConfig)(nil),            // 8: ax.v1alpha1.SkillsConfig
-	(*SkillRegistry)(nil),           // 9: ax.v1alpha1.SkillRegistry
-	(*GetWorkspaceRequest)(nil),     // 10: ax.v1alpha1.GetWorkspaceRequest
-	(*ListWorkspacesRequest)(nil),   // 11: ax.v1alpha1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),  // 12: ax.v1alpha1.ListWorkspacesResponse
-	(*UpdateWorkspaceRequest)(nil),  // 13: ax.v1alpha1.UpdateWorkspaceRequest
-	(*DeleteWorkspaceRequest)(nil),  // 14: ax.v1alpha1.DeleteWorkspaceRequest
-	(*DeleteWorkspaceResponse)(nil), // 15: ax.v1alpha1.DeleteWorkspaceResponse
-	(*ObjectMeta)(nil),              // 16: ax.v1alpha1.ObjectMeta
+	(*WorkspaceSetup)(nil),          // 3: ax.v1alpha1.WorkspaceSetup
+	(*GitRepo)(nil),                 // 4: ax.v1alpha1.GitRepo
+	(*File)(nil),                    // 5: ax.v1alpha1.File
+	(*MCPConfig)(nil),               // 6: ax.v1alpha1.MCPConfig
+	(*MCPRegistry)(nil),             // 7: ax.v1alpha1.MCPRegistry
+	(*MCPServer)(nil),               // 8: ax.v1alpha1.MCPServer
+	(*SkillsConfig)(nil),            // 9: ax.v1alpha1.SkillsConfig
+	(*SkillRegistry)(nil),           // 10: ax.v1alpha1.SkillRegistry
+	(*WorkspaceStatus)(nil),         // 11: ax.v1alpha1.WorkspaceStatus
+	(*GetWorkspaceRequest)(nil),     // 12: ax.v1alpha1.GetWorkspaceRequest
+	(*ListWorkspacesRequest)(nil),   // 13: ax.v1alpha1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil),  // 14: ax.v1alpha1.ListWorkspacesResponse
+	(*CreateWorkspaceRequest)(nil),  // 15: ax.v1alpha1.CreateWorkspaceRequest
+	(*DeleteWorkspaceRequest)(nil),  // 16: ax.v1alpha1.DeleteWorkspaceRequest
+	(*DeleteWorkspaceResponse)(nil), // 17: ax.v1alpha1.DeleteWorkspaceResponse
+	(*ObjectMeta)(nil),              // 18: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),                 // 19: ax.v1alpha1.Profile
+	(*GatewayRef)(nil),              // 20: ax.v1alpha1.GatewayRef
+	(*Condition)(nil),               // 21: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_workspace_proto_depIdxs = []int32{
-	16, // 0: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	18, // 0: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	2,  // 1: ax.v1alpha1.Workspace.spec:type_name -> ax.v1alpha1.WorkspaceSpec
-	3,  // 2: ax.v1alpha1.WorkspaceSpec.git:type_name -> ax.v1alpha1.GitRepo
-	4,  // 3: ax.v1alpha1.WorkspaceSpec.files:type_name -> ax.v1alpha1.File
-	5,  // 4: ax.v1alpha1.WorkspaceSpec.mcp:type_name -> ax.v1alpha1.MCPConfig
-	8,  // 5: ax.v1alpha1.WorkspaceSpec.skills:type_name -> ax.v1alpha1.SkillsConfig
-	6,  // 6: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
-	7,  // 7: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
-	7,  // 8: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
-	9,  // 9: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
-	1,  // 10: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
-	1,  // 11: ax.v1alpha1.UpdateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	11, // 2: ax.v1alpha1.Workspace.status:type_name -> ax.v1alpha1.WorkspaceStatus
+	6,  // 3: ax.v1alpha1.WorkspaceSpec.mcp:type_name -> ax.v1alpha1.MCPConfig
+	19, // 4: ax.v1alpha1.WorkspaceSpec.profile:type_name -> ax.v1alpha1.Profile
+	3,  // 5: ax.v1alpha1.WorkspaceSpec.setup:type_name -> ax.v1alpha1.WorkspaceSetup
+	4,  // 6: ax.v1alpha1.WorkspaceSetup.git:type_name -> ax.v1alpha1.GitRepo
+	5,  // 7: ax.v1alpha1.WorkspaceSetup.files:type_name -> ax.v1alpha1.File
+	9,  // 8: ax.v1alpha1.WorkspaceSetup.skills:type_name -> ax.v1alpha1.SkillsConfig
+	20, // 9: ax.v1alpha1.WorkspaceSetup.gateway:type_name -> ax.v1alpha1.GatewayRef
+	7,  // 10: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
+	8,  // 11: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
+	8,  // 12: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
+	10, // 13: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
+	21, // 14: ax.v1alpha1.WorkspaceStatus.conditions:type_name -> ax.v1alpha1.Condition
+	1,  // 15: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
+	1,  // 16: ax.v1alpha1.CreateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_workspace_proto_init() }
@@ -1050,13 +1261,14 @@ func file_pkg_apis_v1alpha1_workspace_proto_init() {
 		return
 	}
 	file_pkg_apis_v1alpha1_common_proto_init()
+	file_pkg_apis_v1alpha1_gateway_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_workspace_proto_rawDesc), len(file_pkg_apis_v1alpha1_workspace_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -33,17 +34,16 @@ const (
 	DefaultAXDir = "/ax"
 	// InitializedMarkerFilename is the base name of the marker file written after a successful maiden run.
 	InitializedMarkerFilename = "initialized"
-	// markerDirName is the directory under the workspace that holds the marker.
-	markerDirName = ".ax"
+	// defaultSetupCommandTimeout bounds a single spec.setup.commands entry so a
+	// hung command fails setup instead of leaving the workspace unready forever.
+	defaultSetupCommandTimeout = 5 * time.Minute
+	// markerDirName is the directory under the workspace that holds the marker and default skills.
+	markerDirName       = ".ax"
+	defaultSkillsSubdir = "skills"
 
 	defaultWorkspacePath = "/workspace"
-	defaultBranch        = "main"
-	defaultRepoDirName   = "repo"
 
-	gitSuccessLog = "git-success.log"
-	gitErrorLog   = "git-error.log"
-	gitRetries    = 5
-	gitRetryDelay = 2 * time.Second
+	maxCommandOutputInError = 2048
 
 	dirPerm  = 0o755
 	filePerm = 0o644
@@ -54,19 +54,29 @@ const (
 var AXDir = DefaultAXDir
 
 // SetupResult contains details about the workspace maiden initialization.
+//
+// TODO: Once workspace setup runs only in dedicated setup mode rather than on
+// every task container boot, drop IsMaidenRun and simplify or remove SetupResult.
 type SetupResult struct {
 	WorkspacePath string
 	ClonedRepos   []string
 	SkillsMounted string
+	CommandsRun   int
 	IsMaidenRun   bool
 }
 
-// SetupWorkspace prepares the workspace directory on its maiden run: it clones the
-// declared Git repositories and creates the skills path. A marker file under the workspace
-// (see workspaceMarkerPath) records a completed maiden run so subsequent calls are no-ops.
+// SetupWorkspace prepares targetPath according to WorkspaceSpec.setup on its
+// maiden run:
+//  1. Clone declared Git repositories at their target ref.
+//  2. Write inline setup files.
+//  3. Create the skills directory.
+//  4. Run setup commands sequentially.
 //
-// Git failures are logged and recorded under AXDir but do not abort setup. The marker
-// is withheld in that case so the next start retries the clone.
+// A marker file under targetPath (see workspaceMarkerPath) records a completed
+// maiden run so subsequent calls are no-ops.
+//
+// Any failure during maiden setup omits the marker and returns an error so
+// callers do not mark the workspace ready and the next start retries setup.
 func SetupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, targetPath string) (*SetupResult, error) {
 	if targetPath == "" {
 		targetPath = defaultWorkspacePath
@@ -96,170 +106,128 @@ func SetupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, targetPath stri
 	// container that still has AXDir does not rerun setup over the agent's edits.
 	if data, err := os.ReadFile(filepath.Join(AXDir, MarkerName(targetPath))); err == nil && legacyOwnedBy(data, ws) {
 		slog.Info("migrating legacy workspace marker", "path", targetPath)
-		writeMarker(workspaceMarkerPath(targetPath), ws)
+		if err := writeMarker(workspaceMarkerPath(targetPath), ws); err != nil {
+			return res, fmt.Errorf("writing initialization marker: %w", err)
+		}
 		return res, nil
 	}
 
 	slog.Info("executing workspace maiden run setup", "path", targetPath)
 	res.IsMaidenRun = true
 
-	gitOK := true
-	if ws != nil && ws.Spec != nil {
-		writeFiles(ws.Spec.Files, targetPath)
-		res.ClonedRepos, gitOK = cloneRepos(ctx, ws.Spec.Git, targetPath)
-		res.SkillsMounted = setupSkills(ws.Spec.Skills)
+	if setup := ws.GetSpec().GetSetup(); setup != nil {
+		cloned, err := cloneRepos(ctx, setup.GetGit(), targetPath)
+		res.ClonedRepos = cloned
+		if err != nil {
+			return res, err
+		}
+
+		if err := writeFiles(setup.GetFiles(), targetPath); err != nil {
+			return res, err
+		}
+
+		skillsPath, err := setupSkills(ctx, setup.GetSkills(), targetPath)
+		if err != nil {
+			return res, err
+		}
+		res.SkillsMounted = skillsPath
+
+		ran, err := runSetupCommands(ctx, setup.GetCommands(), targetPath)
+		res.CommandsRun = ran
+		if err != nil {
+			return res, err
+		}
 	}
 
-	if !gitOK {
-		slog.Warn("maiden run workspace setup completed with errors; marker omitted to allow retry", "path", targetPath)
-		return res, nil
+	finalMarker := workspaceMarkerPath(targetPath)
+	if markerLinked(finalMarker) {
+		return res, fmt.Errorf("marker path %s is a symbolic link; refusing to trust or write it", finalMarker)
 	}
-
-	writeMarker(workspaceMarkerPath(targetPath), ws)
+	if err := writeMarker(finalMarker, ws); err != nil {
+		return res, fmt.Errorf("writing initialization marker %s: %w", finalMarker, err)
+	}
 	slog.Info("maiden run workspace setup completed successfully", "path", targetPath)
 	return res, nil
 }
 
-// cloneRepos fetches each declared repository into the workspace. It returns the
-// repositories that succeeded and whether every clone succeeded.
-func cloneRepos(ctx context.Context, repos []*v1alpha1.GitRepo, targetPath string) ([]string, bool) {
-	var cloned []string
-	ok := true
-	for _, repo := range repos {
-		if repo == nil || repo.Repo == "" {
+// setupSkills creates the skills directory if declared or if registries are
+// configured, returning its resolved path.
+func setupSkills(_ context.Context, skills *v1alpha1.SkillsConfig, targetPath string) (string, error) {
+	if skills == nil {
+		return "", nil
+	}
+	dest := skills.GetPath()
+	switch {
+	case dest == "":
+		if len(skills.GetRegistries()) == 0 {
+			return "", nil
+		}
+		dest = filepath.Join(targetPath, markerDirName, defaultSkillsSubdir)
+	case !filepath.IsAbs(dest):
+		if !isRelativeWithinRoot(dest) {
+			return "", fmt.Errorf("skills path %q escapes workspace %s", dest, targetPath)
+		}
+		dest = filepath.Join(targetPath, dest)
+	}
+	if err := os.MkdirAll(dest, dirPerm); err != nil {
+		return "", fmt.Errorf("creating skills dir %s: %w", dest, err)
+	}
+	if len(skills.GetRegistries()) > 0 {
+		// TODO: Fetch and materialize SKILL.md bundles from external skill
+		// registries (using the setup actor's setup.gateway egress policy) into dest.
+		slog.Info("prepared skills directory; registry skill download not implemented yet", "path", dest, "registries", len(skills.GetRegistries()))
+	}
+	return dest, nil
+}
+
+// runSetupCommands executes deterministic setup commands sequentially inside
+// targetPath. The first failing or timed-out command aborts setup.
+func runSetupCommands(ctx context.Context, commands []string, targetPath string) (int, error) {
+	ran := 0
+	for i, cmdStr := range commands {
+		if strings.TrimSpace(cmdStr) == "" {
 			continue
 		}
-
-		dest := cloneDestination(repo, targetPath)
-		if err := os.MkdirAll(dest, dirPerm); err != nil {
-			slog.Warn("failed to create destination dir", "dir", dest, "error", err)
-		}
-
-		branch := repo.Branch
-		if branch == "" {
-			branch = defaultBranch
-		}
-
-		slog.Info("initializing and fetching git repo", "repo", repo.Repo, "branch", branch, "dir", dest, "depth", repo.Depth)
-		out, err := retry(ctx, gitRetries, gitRetryDelay, func() ([]byte, error) {
-			return fetchRepo(ctx, dest, repo.Repo, branch, repo.Depth)
-		})
+		slog.Info("running workspace setup command", "index", i, "command", cmdStr, "dir", targetPath)
+		out, err := runSetupCommandWithTimeout(ctx, cmdStr, targetPath, defaultSetupCommandTimeout)
 		if err != nil {
-			ok = false
-			slog.Warn("git fetch error (continuing setup)", "repo", repo.Repo, "error", err, "output", string(out))
-			writeStateFile(gitErrorLog, fmt.Appendf(nil, "error: %v\noutput: %s\n", err, out))
-			continue
+			if len(out) > maxCommandOutputInError {
+				out = out[len(out)-maxCommandOutputInError:]
+			}
+			snippet := strings.ToValidUTF8(strings.TrimSpace(string(out)), "")
+			if snippet != "" {
+				return ran, fmt.Errorf("running setup.commands[%d] (%q): %s: %w", i, cmdStr, snippet, err)
+			}
+			return ran, fmt.Errorf("running setup.commands[%d] (%q): %w", i, cmdStr, err)
 		}
-
-		cloned = append(cloned, repo.Repo)
-		writeStateFile(gitSuccessLog, out)
+		ran++
 	}
-	return cloned, ok
+	return ran, nil
 }
 
-// cloneDestination resolves where a repository is checked out.
-//
-// An explicit Dir wins: "." means the workspace root, an absolute path is used as-is,
-// and anything else is relative to the workspace. Otherwise the directory is named after
-// the repository's Name, unless that is empty or a generic placeholder such as "origin",
-// in which case the name is derived from the repository URL.
-func cloneDestination(repo *v1alpha1.GitRepo, targetPath string) string {
-	if repo.Dir != "" {
-		switch {
-		case repo.Dir == ".":
-			return targetPath
-		case filepath.IsAbs(repo.Dir):
-			return repo.Dir
-		default:
-			return filepath.Join(targetPath, repo.Dir)
-		}
+func runSetupCommandWithTimeout(ctx context.Context, cmdStr, targetPath string, timeout time.Duration) ([]byte, error) {
+	cmdCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
 
-	name := repo.Name
-	if name == "" || name == defaultRepoDirName || name == "origin" {
-		if derived := RepoDirName(repo.Repo); derived != "" {
-			name = derived
-		} else if name == "" {
-			name = defaultRepoDirName
-		}
+	cmd := exec.CommandContext(cmdCtx, "sh", "-c", cmdStr)
+	cmd.Dir = targetPath
+	// Put the shell in its own process group so cancelling on timeout kills
+	// backgrounded children holding stdout/stderr open instead of hanging.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
-	return filepath.Join(targetPath, name)
-}
+	cmd.WaitDelay = time.Second
 
-// fetchRepo initializes dir as a git repository pointed at repoURL, fetches branch,
-// and checks it out. If depth > 0, it performs a shallow fetch. It is idempotent so it
-// can be retried against a partially initialized directory. Arguments are passed
-// directly to git, never through a shell.
-func fetchRepo(ctx context.Context, dir, repoURL, branch string, depth int32) ([]byte, error) {
-	var combined []byte
-	run := func(args ...string) error {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = dir
-		out, err := cmd.CombinedOutput()
-		combined = append(combined, out...)
-		if err != nil {
-			return fmt.Errorf("git %s: %w", args[0], err)
-		}
-		return nil
-	}
-
-	if err := run("init"); err != nil {
-		return combined, err
-	}
-	// A retry lands on an already initialized directory, so fall back to updating the remote.
-	if err := run("remote", "add", "origin", repoURL); err != nil {
-		if err := run("remote", "set-url", "origin", repoURL); err != nil {
-			return combined, err
-		}
-	}
-	fetchArgs := []string{"fetch"}
-	if depth > 0 {
-		fetchArgs = append(fetchArgs, fmt.Sprintf("--depth=%d", depth))
-	}
-	fetchArgs = append(fetchArgs, "origin", branch)
-	if err := run(fetchArgs...); err != nil {
-		return combined, err
-	}
-	if err := run("checkout", "-f", "FETCH_HEAD"); err != nil {
-		return combined, err
-	}
-	return combined, nil
-}
-
-// retry runs op up to attempts times, waiting delay between failures. It stops early
-// when ctx is done and never sleeps after the final attempt.
-func retry(ctx context.Context, attempts int, delay time.Duration, op func() ([]byte, error)) ([]byte, error) {
-	var (
-		out []byte
-		err error
-	)
-	for attempt := 1; attempt <= attempts; attempt++ {
-		out, err = op()
-		if err == nil {
-			return out, nil
-		}
-		if attempt == attempts {
-			break
-		}
-		slog.Warn("git operation failed, will retry", "attempt", attempt, "max", attempts, "error", err, "output", string(out))
-		select {
-		case <-ctx.Done():
-			return out, errors.Join(err, ctx.Err())
-		case <-time.After(delay):
-		}
+	out, err := cmd.CombinedOutput()
+	if err != nil && errors.Is(cmdCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		return out, fmt.Errorf("timed out after %s: %w", timeout, cmdCtx.Err())
 	}
 	return out, err
-}
-
-// setupSkills creates the skills directory if one is declared and returns its path.
-func setupSkills(skills *v1alpha1.SkillsConfig) string {
-	if skills == nil || skills.Path == "" {
-		return ""
-	}
-	if err := os.MkdirAll(skills.Path, dirPerm); err != nil {
-		slog.Warn("creating skills dir", "path", skills.Path, "error", err)
-	}
-	return skills.Path
 }
 
 // MarkerName returns the maiden-run marker file name for a workspace mounted at
@@ -287,19 +255,16 @@ func workspaceMarkerPath(targetPath string) string {
 }
 
 // writeMarker records a completed maiden run.
-func writeMarker(path string, ws *v1alpha1.Workspace) {
+func writeMarker(path string, ws *v1alpha1.Workspace) error {
 	name := "unknown"
 	if ws != nil && ws.GetMetadata() != nil && ws.GetMetadata().GetName() != "" {
 		name = ws.GetMetadata().GetName()
 	}
 	content := fmt.Sprintf("workspace: %s\ninitialized_at: %s\n", name, time.Now().UTC().Format(time.RFC3339))
 	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
-		slog.Warn("failed to create initialized marker directory", "path", path, "error", err)
-		return
+		return err
 	}
-	if err := os.WriteFile(path, []byte(content), filePerm); err != nil {
-		slog.Warn("failed to write initialized marker file", "path", path, "error", err)
-	}
+	return os.WriteFile(path, []byte(content), filePerm)
 }
 
 // writeStateFile writes a diagnostic file under AXDir, logging rather than failing on error.
@@ -310,40 +275,37 @@ func writeStateFile(name string, data []byte) {
 	}
 }
 
-// RepoDirName extracts the repository name from a git URL or local path.
-// For example "https://github.com/chalk/chalk.git" yields "chalk".
-func RepoDirName(repoURL string) string {
-	trimmed := strings.TrimSuffix(strings.TrimSpace(repoURL), "/")
-	trimmed = strings.TrimSuffix(trimmed, ".git")
-	idx := strings.LastIndexAny(trimmed, "/:")
-	if idx < 0 {
-		return trimmed
-	}
-	return trimmed[idx+1:]
-}
-
 // writeFiles writes inlined files into the workspace directory.
-func writeFiles(files []*v1alpha1.File, targetPath string) {
+func writeFiles(files []*v1alpha1.File, targetPath string) error {
 	for _, f := range files {
-		if f == nil || f.GetPath() == "" {
+		if f == nil || strings.TrimSpace(f.GetPath()) == "" {
 			continue
 		}
-		var dest string
-		if filepath.IsAbs(f.GetPath()) {
-			dest = f.GetPath()
-		} else {
-			dest = filepath.Join(targetPath, f.GetPath())
+		rel := f.GetPath()
+		if strings.HasSuffix(rel, "/") || filepath.Clean(rel) == "." {
+			return fmt.Errorf("workspace file path %q must name a file, not a directory", rel)
 		}
+		if !isRelativeWithinRoot(rel) {
+			return fmt.Errorf("workspace file path %q must be relative to workspace %s", rel, targetPath)
+		}
+		dest := filepath.Join(targetPath, rel)
 		if err := os.MkdirAll(filepath.Dir(dest), dirPerm); err != nil {
-			slog.Warn("failed to create directory for workspace file", "path", dest, "error", err)
-			continue
+			return fmt.Errorf("creating directory for workspace file %s: %w", dest, err)
 		}
 		if err := os.WriteFile(dest, []byte(f.GetContent()), filePerm); err != nil {
-			slog.Warn("failed to write workspace file", "path", dest, "error", err)
-			continue
+			return fmt.Errorf("writing workspace file %s: %w", dest, err)
 		}
 		slog.Info("wrote inlined workspace file", "path", dest)
 	}
+	return nil
+}
+
+func isRelativeWithinRoot(p string) bool {
+	if filepath.IsAbs(p) {
+		return false
+	}
+	clean := filepath.ToSlash(filepath.Clean(p))
+	return clean != ".." && !strings.HasPrefix(clean, "../")
 }
 
 // markerLinked reports whether the marker's directory or the marker itself is a symbolic

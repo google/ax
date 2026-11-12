@@ -19,14 +19,15 @@ kind: Workspace
 metadata:
   name: golang
 spec:
-  git:
-    - repo: https://github.com/golang/go.git
-      branch: "my-fix"
-  files:
-    - path: "AGENTS.md"
-      content: |
-        - Run `go test` to ensure that tests are passing.
-        - Do not modify the public API.
+  setup:
+    git:
+      - repo: https://github.com/golang/go.git
+        ref: "my-fix"
+    files:
+      - path: "AGENTS.md"
+        content: |
+          - Run `go test` to ensure that tests are passing.
+          - Do not modify the public API.
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task

@@ -41,7 +41,7 @@ const (
 	AX_ResumeTask_FullMethodName      = "/ax.v1alpha1.AX/ResumeTask"
 	AX_GetWorkspace_FullMethodName    = "/ax.v1alpha1.AX/GetWorkspace"
 	AX_ListWorkspaces_FullMethodName  = "/ax.v1alpha1.AX/ListWorkspaces"
-	AX_UpdateWorkspace_FullMethodName = "/ax.v1alpha1.AX/UpdateWorkspace"
+	AX_CreateWorkspace_FullMethodName = "/ax.v1alpha1.AX/CreateWorkspace"
 	AX_DeleteWorkspace_FullMethodName = "/ax.v1alpha1.AX/DeleteWorkspace"
 	AX_GetGateway_FullMethodName      = "/ax.v1alpha1.AX/GetGateway"
 	AX_ListGateways_FullMethodName    = "/ax.v1alpha1.AX/ListGateways"
@@ -70,7 +70,7 @@ type AXClient interface {
 	// Workspaces
 	GetWorkspace(ctx context.Context, in *GetWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
-	UpdateWorkspace(ctx context.Context, in *UpdateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
+	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error)
 	// Gateways
 	GetGateway(ctx context.Context, in *GetGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
@@ -173,10 +173,10 @@ func (c *aXClient) ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest
 	return out, nil
 }
 
-func (c *aXClient) UpdateWorkspace(ctx context.Context, in *UpdateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error) {
+func (c *aXClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Workspace)
-	err := c.cc.Invoke(ctx, AX_UpdateWorkspace_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, AX_CreateWorkspace_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ type AXServer interface {
 	// Workspaces
 	GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error)
 	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
-	UpdateWorkspace(context.Context, *UpdateWorkspaceRequest) (*Workspace, error)
+	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*Workspace, error)
 	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error)
 	// Gateways
 	GetGateway(context.Context, *GetGatewayRequest) (*Gateway, error)
@@ -346,8 +346,8 @@ func (UnimplementedAXServer) GetWorkspace(context.Context, *GetWorkspaceRequest)
 func (UnimplementedAXServer) ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWorkspaces not implemented")
 }
-func (UnimplementedAXServer) UpdateWorkspace(context.Context, *UpdateWorkspaceRequest) (*Workspace, error) {
-	return nil, status.Error(codes.Unimplemented, "method UpdateWorkspace not implemented")
+func (UnimplementedAXServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*Workspace, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
 }
 func (UnimplementedAXServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteWorkspace not implemented")
@@ -544,20 +544,20 @@ func _AX_ListWorkspaces_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AX_UpdateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateWorkspaceRequest)
+func _AX_CreateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWorkspaceRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AXServer).UpdateWorkspace(ctx, in)
+		return srv.(AXServer).CreateWorkspace(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AX_UpdateWorkspace_FullMethodName,
+		FullMethod: AX_CreateWorkspace_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AXServer).UpdateWorkspace(ctx, req.(*UpdateWorkspaceRequest))
+		return srv.(AXServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -782,8 +782,8 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AX_ListWorkspaces_Handler,
 		},
 		{
-			MethodName: "UpdateWorkspace",
-			Handler:    _AX_UpdateWorkspace_Handler,
+			MethodName: "CreateWorkspace",
+			Handler:    _AX_CreateWorkspace_Handler,
 		},
 		{
 			MethodName: "DeleteWorkspace",

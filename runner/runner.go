@@ -43,14 +43,15 @@ const (
 	// DefaultMetadataPort is the loopback port for the metadata endpoints when
 	// Config.MetadataPort is zero.
 	DefaultMetadataPort = 8099
-	// DefaultWorkspacePath is the command's working directory unless the task's
-	// workspace binding sets a path.
-	DefaultWorkspacePath = v1alpha1.DefaultWorkspacePath
 
 	// stopGracePeriod is how long a running task command gets to exit after
 	// SIGTERM before it is killed during shutdown.
 	stopGracePeriod = 10 * time.Second
 )
+
+// DefaultWorkspacePath is the command's working directory unless the task's
+// workspace binding sets a path. Tests override it to stay under a temp dir.
+var DefaultWorkspacePath = v1alpha1.DefaultWorkspacePath
 
 // Config controls a single Run.
 type Config struct {
@@ -90,8 +91,7 @@ type CommandExit struct {
 // cancelled a running command is sent SIGTERM, given a grace period, and then
 // killed.
 //
-// Workspace setup failures are logged but do not abort the run; the task simply
-// never reports ready. Run returns an error only when the runner itself cannot
+// Run returns an error when workspace setup fails or the runner itself cannot
 // start, for example when the metadata server or the command fails to launch.
 func Run(ctx context.Context, cfg Config) error {
 	port := cfg.Port
@@ -103,7 +103,10 @@ func Run(ctx context.Context, cfg Config) error {
 		metadataPort = DefaultMetadataPort
 	}
 	ref := cfg.Task.GetSpec().GetWorkspace()
-	wsPath := cfg.Task.GetSpec().WorkspacePath()
+	wsPath := ref.GetPath()
+	if wsPath == "" {
+		wsPath = DefaultWorkspacePath
+	}
 	slog.Info("initializing AX task runner", "port", port, "workspace", ref.GetName(), "wsPath", wsPath)
 
 	metaServer := metadata.NewServer(port, cfg.Task, cfg.Workspace, metadata.ServerOptions{
@@ -124,11 +127,10 @@ func Run(ctx context.Context, cfg Config) error {
 	}()
 
 	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath); err != nil {
-		slog.Error("workspace maiden run setup failed", "workspace", ref.GetName(), "path", wsPath, "error", err)
-	} else {
-		metaServer.SetWorkspaceReady(true)
-		slog.Info("workspace maiden run setup marked ready", "path", wsPath)
+		return fmt.Errorf("setting up workspace %q: %w", ref.GetName(), err)
 	}
+	metaServer.SetWorkspaceReady(true)
+	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 
 	cmdArgs := cfg.Task.GetSpec().GetCommand()
 	if len(cmdArgs) == 0 {

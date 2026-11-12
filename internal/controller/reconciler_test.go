@@ -795,7 +795,6 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			{Limits: &v1alpha1.ResourceList{Cpu: "0"}},
 			{Limits: &v1alpha1.ResourceList{Cpu: "1000"}},
 			{Limits: &v1alpha1.ResourceList{Memory: "-4Gi"}},
-			{Requests: &v1alpha1.ResourceList{Cpu: "500m"}, Limits: &v1alpha1.ResourceList{Cpu: "2"}},
 		} {
 			task := newTask("bad-limits", reqs)
 			if err := reconciler.Suspend(ctx, task, nil); err == nil {
