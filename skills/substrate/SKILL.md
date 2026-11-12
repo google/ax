@@ -118,7 +118,7 @@ instead. No mocking library is in `go.mod`.
 
 | Target | Substrate version | When |
 |---|---|---|
-| `make test-e2e` | exactly `go list -m -f '{{.Version}}' go.ate.dev/substrate` | PR CI and the nightly schedule (06:00 UTC) in `e2e.yml` |
+| `make test-e2e` | exactly `go list -m -f '{{.Version}}' go.ate.dev/substrate` | PR CI (skipped when only `paths-ignore` files change, e.g. docs) and the nightly schedule (06:00 UTC) in `e2e.yml` |
 | `make test-e2e SUBSTRATE_REF=<release tag>` | override | local, or `workflow_dispatch` input `substrate_ref` in `e2e.yml` |
 | `make e2e-setup` / `e2e-run` / `e2e-cleanup` | same as above | iterate without re-provisioning |
 

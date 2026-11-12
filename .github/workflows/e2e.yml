@@ -15,10 +15,28 @@
 name: E2E
 
 on:
+  # Skip changes that can't affect the E2E result: docs, images, agent skills
+  # and repo settings. The nightly run below still covers main. E2E is not a
+  # required check; if it becomes one, replace paths-ignore with a job-level
+  # filter, or a skipped run leaves the required check pending forever.
   push:
     branches: [ main ]
+    paths-ignore: &skip-paths
+    - '**.md'
+    - 'docs/**'
+    - 'assets/**'
+    - 'skills/**'
+    - '.agents/**'
+    - '.claude/**'
+    - '.gemini/**'
+    - 'LICENSE'
+    - '.github/CODEOWNERS'
+    - '.github/rulesets/**'
+    - '.github/workflows/rulesets.yml'
+    - 'hack/apply-rulesets.sh'
   pull_request:
     branches: [ main ]
+    paths-ignore: *skip-paths
   # Nightly run against the Substrate release in go.mod, so breakage from
   # outside this repo (Kind, runner images, ghcr.io) shows up without a PR.
   schedule:
