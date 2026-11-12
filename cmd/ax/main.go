@@ -94,15 +94,18 @@ func main() {
 		}
 	}
 
+	activeTrace = startCommandTrace(cmd, opts.trace, os.Stderr)
+
 	// Resolve the AX server URL (auto-tunneling to active kube context if not explicitly set)
+	endResolve := activeTrace.startStep("resolve ax-server address")
 	serverURL, err := tunnel.EnsureServerURL(tunnel.Options{
 		ServerURL: explicitServer,
 		Context:   kubeContext,
 		Namespace: axNamespace,
 	})
+	endResolve(err)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		os.Exit(finish(activeTrace, err, os.Stderr))
 	}
 
 	switch cmd {
@@ -125,14 +128,14 @@ func main() {
 	case "ssh":
 		err = runSSH(serverURL, atespace, kubeContext, axNamespace, cleanArgs)
 	default:
+		activeTrace.end(fmt.Errorf("unknown command %q", cmd))
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		printUsage()
 		os.Exit(1)
 	}
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	if code := finish(activeTrace, err, os.Stderr); code != 0 {
+		os.Exit(code)
 	}
 }
 
@@ -146,6 +149,7 @@ type globalArgs struct {
 	server           string
 	kubeContext      string
 	namespace        string
+	trace            bool
 }
 
 // parseGlobalArgs extracts the command name and the global flags from args. It
@@ -192,6 +196,8 @@ func parseGlobalArgs(args []string) globalArgs {
 			}
 		} else if strings.HasPrefix(arg, "--namespace=") {
 			g.namespace = strings.TrimPrefix(arg, "--namespace=")
+		} else if arg == "--trace" {
+			g.trace = true
 		} else if g.cmd == "" && !strings.HasPrefix(arg, "-") {
 			g.cmd = arg
 		} else {
@@ -237,13 +243,15 @@ Flags:
   -a, --atespace string       Task atespace scope (default: "default")
   -n, --namespace string      Kubernetes namespace where AX is installed (default: "ax-system")
   --context string            Kubernetes context (defaults to active kubectx / current-context)
-  --server string             AX API server address (default: auto-detected from kube context or $AX_SERVER)`)
+  --server string             AX API server address (default: auto-detected from kube context or $AX_SERVER)
+  --trace                     Trace this command and print its trace ID to stderr`)
 }
 
 func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {
 	target := strings.TrimPrefix(serverURL, "http://")
 	target = strings.TrimPrefix(target, "https://")
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, activeTrace.dialOptions()...)
+	conn, err := grpc.NewClient(target, opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connecting to %s: %w", target, err)
 	}
@@ -1192,6 +1200,7 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 	defer signal.Stop(rawSigs)
 	sigs := escalateInterrupts(rawSigs, interruptExitWindow, func() {
 		fmt.Fprintln(os.Stderr, "\nax ssh: interrupted twice, exiting")
+		activeTrace.endWithin(errors.New("ax ssh: interrupted twice"), interruptFlushTimeout)
 		os.Exit(130)
 	})
 
@@ -1207,7 +1216,7 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 	}
 
 	if exitCode != 0 {
-		os.Exit(exitCode)
+		return exitCodeError{code: exitCode}
 	}
 
 	return nil

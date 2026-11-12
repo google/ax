@@ -483,35 +483,6 @@ func TestCardinalityLimitFollowsEnvironment(t *testing.T) {
 	}
 }
 
-func TestResolveExporters(t *testing.T) {
-	known := []string{exporterOTLP, exporterConsole}
-	def := exporters{exporterOTLP: true}
-	tests := []struct {
-		val     string
-		want    string
-		wantErr bool
-	}{
-		{"", "otlp", false},
-		{" ", "otlp", false},
-		{"otlp", "otlp", false},
-		{" OTLP ", "otlp", false},
-		{"console", "console", false},
-		{"otlp,console", "console,otlp", false},
-		{"none", "none", false},
-		{"none,", "none", true},
-		{"otlp,none", "otlp", true}, // contradictory: keep the default
-		{"otpl", "otlp", true},      // typo: keep the default
-		{"zipkin", "otlp", true},
-		{"zipkin,console", "console", true},
-	}
-	for _, tt := range tests {
-		got, err := resolveExporters("OTEL_TEST_EXPORTER", tt.val, known, def)
-		if got.String() != tt.want || (err != nil) != tt.wantErr {
-			t.Errorf("resolveExporters(%q) = %s, %v; want %s, error %v", tt.val, got, err, tt.want, tt.wantErr)
-		}
-	}
-}
-
 func TestAttrValueMatchesJSONKinds(t *testing.T) {
 	ts := time.Date(2026, 11, 6, 21, 0, 0, 123, time.UTC)
 	tests := []struct {

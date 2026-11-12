@@ -97,6 +97,32 @@ folded into one series labelled `otel_metric_overflow="true"`, so an
 unbounded label cannot exhaust memory. `/metrics` also serves the Go runtime
 and process metrics (`go_*`, `process_*`); they are not pushed over OTLP.
 
+## CLI traces
+
+`ax --trace <command>` traces one command. The CLI prints the trace ID to
+stderr, and every AX RPC of the command sends a sampled W3C `traceparent`.
+Each RPC is a client span under the command span, and resolving the
+ax-server address, which can start a port-forward, is a child span too.
+Without `--trace`, the CLI creates no tracer and sends no trace context, so
+ax-server's own sampler decides for CLI traffic.
+
+The CLI exports its spans over OTLP/gRPC only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set
+in your shell. This is unlike ax-server, which exports by default and uses
+the SDK default `localhost:4317` when no endpoint is set. The spans have
+`service.name=ax`. `OTEL_TRACES_EXPORTER`, `OTEL_SERVICE_NAME`, and
+`OTEL_RESOURCE_ATTRIBUTES` follow the same rules as for ax-server.
+
+The CLI exports once, when the command ends, and waits at most 2 seconds.
+It does not retry. If the export fails, the CLI prints a warning that names
+the endpoint and gives the error.
+
+ax-server does not read `traceparent` yet, so for now the trace has only the
+CLI spans. A later change for [#13](https://github.com/google/ax/issues/13)
+adds the `otelgrpc` server handler to ax-server, and ax-server spans then
+join the CLI trace.
+<!-- TODO(#13): update this paragraph when ax-server reads traceparent. -->
+
 ## Attribute names
 
 Spans, events, and log attributes use the names in

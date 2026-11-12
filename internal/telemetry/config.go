@@ -18,12 +18,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"maps"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/google/ax/internal/telemetry/otelenv"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -37,78 +36,16 @@ const (
 	tracesSamplerArgEnv = "OTEL_TRACES_SAMPLER_ARG"
 )
 
-// The names the OTEL_*_EXPORTER variables use. none selects the empty set; it
-// is not an exporter.
-const (
-	exporterOTLP       = "otlp"
-	exporterConsole    = "console"
-	exporterPrometheus = "prometheus"
-	exporterNone       = "none"
-)
-
-// exporters is the set of exporters an OTEL_*_EXPORTER variable selects. The
-// empty set is none.
-type exporters map[string]bool
-
-func (e exporters) has(name string) bool { return e[name] }
-
-// String lists the names in order, or none.
-func (e exporters) String() string {
-	if len(e) == 0 {
-		return exporterNone
-	}
-	return strings.Join(slices.Sorted(maps.Keys(e)), ",")
-}
-
-// resolveExportersEnv reads env and applies resolveExporters. A problem with
-// the value is logged, not returned: a telemetry setting never stops startup.
-func resolveExportersEnv(ctx context.Context, env string, known []string, def exporters) exporters {
+// resolveExportersEnv reads env and applies otelenv.ResolveExporters, the rules
+// the ax CLI uses too. A problem with the value is logged, not returned: a
+// telemetry setting never stops startup.
+func resolveExportersEnv(ctx context.Context, env string, known []string, def otelenv.Exporters) otelenv.Exporters {
 	value := os.Getenv(env)
-	got, err := resolveExporters(env, value, known, def)
+	got, err := otelenv.ResolveExporters(env, value, known, def)
 	if err != nil {
 		slog.WarnContext(ctx, "invalid OpenTelemetry exporter setting", "variable", env, "value", value, "using", got.String(), "error", err)
 	}
 	return got
-}
-
-// resolveExporters reads value as a comma-separated exporter list, as the
-// OpenTelemetry specification allows. Names are trimmed and lowercased; empty
-// and unknown names are skipped with an error, and the rest apply. A value
-// that is empty, names no known exporter, or lists none with an exporter
-// keeps def, as the specification asks for a setting it cannot use. The
-// returned set is the one to use even when err is not nil.
-func resolveExporters(env, value string, known []string, def exporters) (exporters, error) {
-	// Unset and empty read the same, because templated manifests can render
-	// an empty variable.
-	if strings.TrimSpace(value) == "" {
-		return maps.Clone(def), nil
-	}
-	got := exporters{}
-	none := false
-	var skipped []string
-	for item := range strings.SplitSeq(value, ",") {
-		switch name := strings.ToLower(strings.TrimSpace(item)); {
-		case name == exporterNone:
-			none = true
-		case slices.Contains(known, name):
-			got[name] = true
-		default:
-			skipped = append(skipped, name)
-		}
-	}
-	var skipErr error
-	if len(skipped) > 0 {
-		skipErr = fmt.Errorf("%s: skipped empty or unknown exporters %q", env, skipped)
-	}
-	switch {
-	case none && len(got) > 0:
-		return maps.Clone(def), fmt.Errorf("%s %q lists none with an exporter", env, value)
-	case none:
-		return exporters{}, skipErr
-	case len(got) == 0:
-		return maps.Clone(def), fmt.Errorf("%s %q names no known exporter", env, value)
-	}
-	return got, skipErr
 }
 
 // resolveSampler applies OTEL_TRACES_SAMPLER and OTEL_TRACES_SAMPLER_ARG on top
