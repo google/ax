@@ -31,6 +31,16 @@ import (
 	"github.com/google/ax/runner"
 )
 
+// Run links git-askpass to the running program, here the test binary. Package
+// runner answers under that name before main starts; if it ever does not,
+// fail git's prompt instead of running the tests again from inside a test.
+func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == "git-askpass" {
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
 func TestRun_StartsTaskCommandWithInjectedEnv(t *testing.T) {
 	h := newHarness(t)
 	outFile := filepath.Join(t.TempDir(), "out.txt")
@@ -118,6 +128,72 @@ func TestRun_WithoutCommandWaitsForContext(t *testing.T) {
 
 	h.cancel()
 	h.waitFinished(t, 5*time.Second)
+}
+
+// The runner points the CA variables at the bundle when it exists and has git
+// ask the runner for credentials, which are a placeholder, except where the
+// task sets the variable.
+func TestRun_SetsDefaultEnv(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "trust-bundle.pem")
+	if err := os.WriteFile(bundle, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name     string
+		caBundle string
+		env      []*v1alpha1.EnvVar
+		want     string // SSL_CERT_FILE, GIT_SSL_CAINFO, GIT_TERMINAL_PROMPT, git's password
+	}{
+		{name: "defaults", caBundle: bundle, want: bundle + "|" + bundle + "|0|password=ax-placeholder"},
+		{name: "bundle missing", caBundle: bundle + ".missing", want: "||0|password=ax-placeholder"},
+		{
+			name:     "set by the task",
+			caBundle: bundle,
+			env: []*v1alpha1.EnvVar{
+				{Name: "SSL_CERT_FILE", Value: "/task/ca.pem"},
+				{Name: "GIT_ASKPASS", Value: "true"}, // answers with nothing
+			},
+			want: "/task/ca.pem|" + bundle + "|0|password=",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range []string{
+				"SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO",
+				"GIT_ASKPASS", "GIT_TERMINAL_PROMPT",
+			} {
+				t.Setenv(name, "") // restores the variable when the test ends
+				os.Unsetenv(name)
+			}
+			h := newHarness(t)
+			// A link left by an earlier run is replaced.
+			if err := os.MkdirAll(workspace.AXDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("/stale", filepath.Join(workspace.AXDir, "git-askpass")); err != nil {
+				t.Fatal(err)
+			}
+			outFile := filepath.Join(t.TempDir(), "out.txt")
+			h.cfg.CABundle = tc.caBundle
+			h.task.Spec.Env = tc.env
+			h.task.Spec.Command = []string{"sh", "-c", `echo "$SSL_CERT_FILE|$GIT_SSL_CAINFO|$GIT_TERMINAL_PROMPT|$(printf 'protocol=https\nhost=git.example\n\n' | git credential fill 2>/dev/null | grep password)" > ` + outFile}
+
+			if exit := h.runUntilCommandExits(t); exit.Err != nil {
+				t.Fatalf("unexpected exit: %+v", exit)
+			}
+			out, err := os.ReadFile(outFile)
+			if err != nil {
+				t.Fatalf("command did not write its output: %v", err)
+			}
+			got := strings.TrimSpace(string(out))
+			if got != tc.want {
+				t.Errorf("command's environment = %q, want %q", got, tc.want)
+			}
+			// ax ssh sessions get the runner's own environment, which must agree.
+			if caFile := strings.Split(tc.want, "|")[0]; os.Getenv("SSL_CERT_FILE") != caFile {
+				t.Errorf("runner's SSL_CERT_FILE = %q, want %q", os.Getenv("SSL_CERT_FILE"), caFile)
+			}
+		})
+	}
 }
 
 func TestRun_DefaultsWithoutTask(t *testing.T) {

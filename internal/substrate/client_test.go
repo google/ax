@@ -225,6 +225,16 @@ func TestBuildActorTemplate(t *testing.T) {
 		t.Errorf("expected PreferredFidelity VOLUMES, got %v", snapCfg.GetPreferredFidelity())
 	}
 
+	// Every task gets the trust bundle, mounted where the runner looks for it.
+	trustMount, trustVolume := container.GetVolumeMounts()[1], tmpl.GetVolumes()[1]
+	bundle := trustVolume.GetSystemInfo().GetDataSources()[0].GetTrustBundle()
+	if trustMount.GetName() != trustVolume.GetName() || trustMount.GetMountPath()+"/"+bundle.GetPath() != v1alpha1.EgressTrustBundlePath {
+		t.Errorf("trust bundle is mounted at %s/%s, want %s", trustMount.GetMountPath(), bundle.GetPath(), v1alpha1.EgressTrustBundlePath)
+	}
+	if names := bundle.GetNames(); len(names) != 2 || names[0] != "egress-mitm.ate.dev" || names[1] != "system-roots.ate.dev" {
+		t.Errorf("unexpected trust bundles: %v", names)
+	}
+
 	// When snapshotsBucket is explicitly provided, StorageLocation is set.
 	tmplWithBucket := BuildActorTemplate("", "test-tmpl", "", nil, nil, "gs://ate-snapshots/ax/", nil)
 	if tmplWithBucket.GetSnapshotConfig().GetStorageLocation() != "gs://ate-snapshots/ax/" {

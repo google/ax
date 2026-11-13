@@ -4,8 +4,9 @@ Every task container starts with `ax-task-runner` as PID 1. On boot it:
 
 1. Loads the `Task` and every bound `Workspace` spec.
 2. Starts its servers: probes and guest management on port 80, and the metadata endpoints on `127.0.0.1:8099`.
-3. On the first run, prepares each workspace at its own path, in binding order: clones Git repos and sets up the skills path. The task reports not-ready until every workspace has finished.
-4. Starts `spec.command` as a child process, with the first workspace as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
+3. Sets the variables described under [Outbound TLS and credentials](#outbound-tls-and-credentials), which its own Git clones use too.
+4. On the first run, prepares each workspace at its own path, in binding order: clones Git repos and sets up the skills path. The task reports not-ready until every workspace has finished.
+5. Starts `spec.command` as a child process, with the first workspace as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
 
 The runner stays up as PID 1 whether or not the command is still running, so the metadata server keeps answering and `ax ssh` still works after the command has exited. Its exit code is logged. When the sandbox is stopped or suspended, the runner sends the command's process group `SIGTERM`, waits ten seconds, and then kills whatever is left.
 
@@ -44,3 +45,14 @@ When a task sets `spec.debug: true`, port 80 also serves the [Agent Substrate gu
 | Variable | Value |
 |---|---|
 | `AX_METADATA_URL` | Base URL of the metadata server, `http://127.0.0.1:8099` by default |
+
+## Outbound TLS and credentials
+
+The runner sets the variables below for every task, unless the task's `spec.env` sets them.
+
+| Variable | Value |
+|---|---|
+| `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO` | `/run/ate/egress-trust-bundle/trust-bundle.pem`, when that file exists. It holds public CA certificates and the egress gateway's, so HTTPS that the gateway intercepts still verifies. |
+| `GIT_ASKPASS`, `GIT_TERMINAL_PROMPT` | `/ax/git-askpass`, a link to the runner, and `0`. When an HTTPS remote demands credentials, git gets a placeholder from that program instead of prompting, for a [Gateway](manifests.md#injecting-credentials) rule to replace. Public repositories are fetched without credentials. |
+
+The runner sets no API key or token variable, because many tools choose a provider by which of them is set. When a Gateway rule injects a credential for a tool, set the variable that tool reads to any placeholder in `spec.env` or in the image, for example `ANTHROPIC_API_KEY=placeholder`.

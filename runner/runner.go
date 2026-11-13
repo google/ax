@@ -20,9 +20,13 @@
 // process until it is told to stop, so the sandbox remains inspectable after
 // the command has finished. The ax-task-runner binary is a thin wrapper around
 // [Run]; custom images can embed the same behavior by calling it directly.
+//
+// A program that imports this package also answers git's credential prompts
+// when it is started as git-askpass, the link [Run] makes for git.
 package runner
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -67,6 +71,11 @@ type Config struct {
 	// Workspace is the Workspace resource the task's spec.workspace refers to.
 	// Nil sets up an empty working directory instead.
 	Workspace *v1alpha1.Workspace
+	// CABundle is a file of CA certificates to trust for outbound TLS. If it
+	// exists, the CA environment variables that common tools read are pointed
+	// at it, unless the task sets them. Empty means
+	// v1alpha1.EgressTrustBundlePath.
+	CABundle string
 	// OnCommandExit, when set, is called once the task command has exited.
 	OnCommandExit func(CommandExit)
 }
@@ -121,6 +130,7 @@ func Run(ctx context.Context, cfg Config) error {
 	for _, e := range cfg.Task.GetSpec().GetEnv() {
 		_ = os.Setenv(e.GetName(), e.GetValue())
 	}
+	setDefaultEnv(cfg.Task, cmp.Or(cfg.CABundle, v1alpha1.EgressTrustBundlePath), linkGitAskpass(workspace.AXDir))
 	defer func() {
 		slog.Info("shutting down metadata server")
 		_ = metaServer.Stop(context.Background())

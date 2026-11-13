@@ -100,6 +100,17 @@ instead. No mocking library is in `go.mod`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.
+- Trust bundle: `BuildActorTemplate` mounts `egress-mitm.ate.dev` and
+  `system-roots.ate.dev` at `v1alpha1.EgressTrustBundlePath` for every task,
+  and the runner points the CA variables at it (`runner/env.go`). A
+  Substrate install that lacks either bundle blocks actor startup.
+- Credential injection replaces a header only on requests that carry it. The
+  runner supplies a placeholder only for git: `GIT_ASKPASS` is
+  `/ax/git-askpass`, a link to the running program, and package `runner`
+  answers from `init` when a program that imports it is started under that
+  name (`runner/env.go`). It sets no API key variable, because tools choose a
+  provider by which key is set: a task sets its own placeholders in
+  `spec.env`. A Gateway's spec is never passed into the sandbox.
 - Readiness: Substrate and the reconciler probe the runner on port 80
   (`/healthz`, `/readyz?check=workspace`, served by `internal/metadata`);
   `/readyz` is 503 until all workspaces are materialized (`docs/sandbox.md`).

@@ -18,6 +18,7 @@ The control plane does not run `spec.command` as the container entrypoint. It al
 | `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
 | `spec.env` entries | Each one set directly in the container environment |
 | Volume | A durable directory mounted at `/workspace` |
+| CA bundle | `/run/ate/egress-trust-bundle/trust-bundle.pem`: the CA certificates to trust for outbound TLS, including the egress gateway's |
 | Readiness probe | `GET /readyz` on port 80 |
 
 Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-task-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.command` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
@@ -43,6 +44,8 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/metadata/v1alpha1/ax/workspace` | Return the bound `Workspace` as `application/yaml`, or `404` when there is none. Optional, as above. |
 
 **Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, materialize `spec.setup` (clone Git repos from `spec.setup.git` at their `ref`, write `spec.setup.files`, create `spec.setup.skills.path`, and run `spec.setup.commands`). A task with no binding gets an empty `/workspace`. Record that setup happened on the durable volume, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `<workspace>/.ax/initialized` (or `<workspace>/.git/.ax/initialized` for root Git checkouts).
+
+**Make outbound TLS and credentials work.** The egress gateway intercepts HTTPS that a `Gateway` rule allows, so point the CA variables your tools read (`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`) at the CA bundle when it exists. It replaces a credential header only on requests that already carry it. Tasks set placeholders for their tools in `spec.env`; the default runner adds one for git (see [Outbound TLS and credentials](sandbox.md#outbound-tls-and-credentials)).
 
 **Run the command and supervise it.** Start `spec.command` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
