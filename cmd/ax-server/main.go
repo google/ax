@@ -28,9 +28,13 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/server"
+	"github.com/google/ax/internal/store"
+	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/substrate/substratetest"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -104,32 +108,54 @@ func main() {
 		"defaultTaskImage", defaultTaskImage,
 	)
 
-	openCtx, openCancel := context.WithTimeout(context.Background(), time.Minute)
-	backend, err := postgres.Open(openCtx, storeURL, postgres.Options{})
-	openCancel()
-	if err != nil {
-		slog.Error("opening store", "store", describeStore(storeURL), "error", err)
-		os.Exit(1)
+	var (
+		backend store.Store
+		locker  lock.Locker
+	)
+	if storeURL == "memory" {
+		backend = memory.NewStore()
+		locker = lock.NewMemoryLocker()
+	} else {
+		openCtx, openCancel := context.WithTimeout(context.Background(), time.Minute)
+		pgStore, err := postgres.Open(openCtx, storeURL, postgres.Options{})
+		openCancel()
+		if err != nil {
+			slog.Error("opening store", "store", describeStore(storeURL), "error", err)
+			os.Exit(1)
+		}
+		backend = pgStore
+		locker = pgStore
 	}
 	defer backend.Close()
 
-	subClient, err := substrate.NewClientWithOptions(substrate.ClientOptions{
-		Target:      substrateEndpoint,
-		Authority:   substrateAuthority,
-		TokenFile:   substrateTokenFile,
-		CAFile:      substrateCAFile,
-		InsecureTLS: substrateInsecureTLS,
-		Plaintext:   substratePlaintext,
-	})
-	if err != nil {
-		slog.Error("initializing substrate client", "error", err)
-		os.Exit(1)
+	var subClient *substrate.Client
+	if substrateEndpoint == "memory" {
+		memSub, cleanup, err := substratetest.NewStandaloneServer()
+		if err != nil {
+			slog.Error("initializing in-memory substrate server", "error", err)
+			os.Exit(1)
+		}
+		defer cleanup()
+		subClient = memSub.Client()
+	} else {
+		subClient, err = substrate.NewClientWithOptions(substrate.ClientOptions{
+			Target:      substrateEndpoint,
+			Authority:   substrateAuthority,
+			TokenFile:   substrateTokenFile,
+			CAFile:      substrateCAFile,
+			InsecureTLS: substrateInsecureTLS,
+			Plaintext:   substratePlaintext,
+		})
+		if err != nil {
+			slog.Error("initializing substrate client", "error", err)
+			os.Exit(1)
+		}
+		defer subClient.Close()
 	}
-	defer subClient.Close()
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
 	srv := server.NewServer(backend, reconciler, server.Options{
-		Locker: backend,
+		Locker: locker,
 	})
 
 	httpServer := &http.Server{

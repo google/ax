@@ -64,6 +64,17 @@ type Server struct {
 // NewServer starts a Server with nothing in it. It stops when the test ends.
 func NewServer(tb testing.TB) *Server {
 	tb.Helper()
+	s, cleanup, err := NewStandaloneServer()
+	if err != nil {
+		tb.Fatalf("substratetest: %v", err)
+	}
+	tb.Cleanup(cleanup)
+	return s
+}
+
+// NewStandaloneServer starts an in-memory Agent Substrate Control API server
+// without requiring a testing.TB (useful for local CLI demos).
+func NewStandaloneServer() (*Server, func(), error) {
 	s := &Server{
 		atespaces: make(map[string]*ateapipb.Atespace),
 		templates: make(map[string]*ateapipb.ActorTemplate),
@@ -71,19 +82,22 @@ func NewServer(tb testing.TB) *Server {
 	}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		tb.Fatalf("listen: %v", err)
+		return nil, nil, err
 	}
 	grpcServer := grpc.NewServer()
 	ateapipb.RegisterControlServer(grpcServer, s)
 	go func() { _ = grpcServer.Serve(lis) }()
-	tb.Cleanup(grpcServer.Stop)
 	c, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		tb.Fatalf("substrate client: %v", err)
+		grpcServer.Stop()
+		return nil, nil, err
 	}
-	tb.Cleanup(func() { _ = c.Close() })
 	s.client = c
-	return s
+	cleanup := func() {
+		_ = c.Close()
+		grpcServer.Stop()
+	}
+	return s, cleanup, nil
 }
 
 // Client returns a client connected to s.

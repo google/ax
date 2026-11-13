@@ -1,0 +1,20 @@
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: root-triage
+  atespace: default
+spec:
+  image: gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  goal: "Investigate flaky payment test"
+  retry:
+    maxRetries: 2
+---
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: child-fixer
+  atespace: default
+spec:
+  image: gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  parentTaskId: root-triage
+  goal: "Author regression fix for payment test"

@@ -17,12 +17,15 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
@@ -34,6 +37,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// MaxTaskDepth is the maximum allowed parent-child task lineage depth.
+const MaxTaskDepth = 5
 
 // Options configures the AX API Server.
 type Options struct {
@@ -158,6 +164,9 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
+	if task.Spec == nil {
+		task.Spec = &v1alpha1.TaskSpec{}
+	}
 	atespace := task.Metadata.Atespace
 	if atespace == "" {
 		atespace = "default"
@@ -174,6 +183,9 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	existing, err := s.getTask(ctx, atespace, taskName)
 	if err == nil {
+		if task.Spec.SessionId == "" && existing.GetSpec().GetSessionId() != "" {
+			task.Spec.SessionId = existing.GetSpec().GetSessionId()
+		}
 		if existing.GetStatus().GetPhase() != v1alpha1.PhasePending || !proto.Equal(existing.GetSpec(), task.GetSpec()) {
 			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
 		}
@@ -181,6 +193,47 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
+	}
+
+	// Validate parent lineage, enforce MaxTaskDepth, and inherit session_id.
+	if parentID := task.GetSpec().GetParentTaskId(); parentID != "" {
+		if parentID == taskName {
+			return nil, status.Errorf(codes.InvalidArgument, "task %q cannot be its own parent", taskName)
+		}
+		depth := 0
+		currParentID := parentID
+		var directParent *v1alpha1.Task
+		visited := map[string]bool{taskName: true}
+		for currParentID != "" {
+			if visited[currParentID] {
+				return nil, status.Errorf(codes.InvalidArgument, "cycle detected in parent_task_id lineage at %q", currParentID)
+			}
+			visited[currParentID] = true
+			depth++
+			if depth > MaxTaskDepth {
+				return nil, status.Errorf(codes.FailedPrecondition, "task lineage depth %d exceeds maximum depth of %d", depth, MaxTaskDepth)
+			}
+			anc, err := s.getTask(ctx, atespace, currParentID)
+			if errors.Is(err, store.ErrNotFound) {
+				if directParent == nil {
+					return nil, status.Errorf(codes.FailedPrecondition, "parent task %q not found in atespace %q", currParentID, atespace)
+				}
+				break
+			}
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "getting parent task %q: %v", currParentID, err)
+			}
+			if directParent == nil {
+				directParent = anc
+			}
+			currParentID = anc.GetSpec().GetParentTaskId()
+		}
+		if task.Spec.SessionId == "" && directParent.GetSpec().GetSessionId() != "" {
+			task.Spec.SessionId = directParent.GetSpec().GetSessionId()
+		}
+	}
+	if task.Spec.SessionId == "" {
+		task.Spec.SessionId = fmt.Sprintf("sess-%s-%d", taskName, time.Now().UnixNano())
 	}
 
 	// Tasks are immutable, so a task created before its Workspace would keep
@@ -196,12 +249,14 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		}
 	}
 
+	now := time.Now()
 	if task.Metadata.CreateTime == nil {
-		task.Metadata.CreateTime = timestamppb.Now()
+		task.Metadata.CreateTime = timestamppb.New(now)
 	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
+	_, _ = lifecycle.CreateTask(task.Spec, task.Status, now)
 	// The task is Pending until its actor exists.
 	task.Status.Phase = v1alpha1.PhasePending
 	if err := s.saveTask(ctx, task); err != nil {
@@ -233,32 +288,46 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	}
 	taskName := req.Name
 
-	// Acquire exclusive lock for this task
-	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
-	}
-	defer unlock()
-
-	task, err := s.getTask(ctx, atespace, taskName)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
+	if err := func() error {
+		// Acquire exclusive lock for this task
+		unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+		if err != nil {
+			return status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
 		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
+		defer unlock()
 
-	// Mark the task as terminating while actor cleanup is in progress.
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.Phase = v1alpha1.PhaseTerminating
-	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
-		return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
-	}
+		task, err := s.getTask(ctx, atespace, taskName)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
+			}
+			return status.Errorf(codes.Internal, "getting task: %v", err)
+		}
 
-	if err := s.deleteTask(ctx, atespace, taskName); err != nil {
+		// Mark the task as terminating while actor cleanup is in progress.
+		if task.Status == nil {
+			task.Status = &v1alpha1.TaskStatus{}
+		}
+		task.Status.Phase = v1alpha1.PhaseTerminating
+		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
+			return status.Errorf(codes.Internal, "updating task status: %v", err)
+		}
+
+		return s.deleteTask(ctx, atespace, taskName)
+	}(); err != nil {
 		return nil, err
+	}
+
+	// Cascade deletion to child tasks linked via spec.parent_task_id.
+	if tasks, err := s.listTasks(ctx, atespace, 1000, 0); err == nil {
+		for _, child := range tasks {
+			if child.GetSpec().GetParentTaskId() == taskName {
+				_, _ = s.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{
+					Atespace: atespace,
+					Name:     child.GetMetadata().GetName(),
+				})
+			}
+		}
 	}
 	return &v1alpha1.DeleteTaskResponse{}, nil
 }
@@ -290,6 +359,9 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
+	if lifecycle.IsTerminal(task.Status.State) {
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot suspend task %q in terminal state %s", taskName, task.Status.State)
+	}
 
 	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
 		// Store nothing: the actor keeps its state on Substrate, and a stored
@@ -299,6 +371,7 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		}
 		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 	}
+	_, _ = lifecycle.SuspendTask(task.Status, time.Now())
 	// Clear any Pending or Failed left by an earlier failure, so reads take the
 	// phase from the actor. This also clears the Terminating left by a failed
 	// DeleteTask, which cancels that deletion.
@@ -339,10 +412,14 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
+	if lifecycle.IsTerminal(task.Status.State) {
+		return nil, status.Errorf(codes.FailedPrecondition, "cannot resume task %q in terminal state %s", taskName, task.Status.State)
+	}
 
 	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
+	_, _ = lifecycle.ResumeTask(task.Status, time.Now())
 	// Clear any Pending or Failed left by an earlier failure, so reads take the
 	// phase from the actor. This also clears the Terminating left by a failed
 	// DeleteTask, which cancels that deletion.
@@ -353,6 +430,73 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 
 	// Report the actor as it is now, as GetTask would.
 	s.applyActor(ctx, task)
+	return task, nil
+}
+
+func (s *Server) CancelTask(ctx context.Context, req *v1alpha1.CancelTaskRequest) (*v1alpha1.Task, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing request")
+	}
+	atespace := req.Atespace
+	if atespace == "" {
+		atespace = "default"
+	}
+	taskName := req.Name
+
+	task, err := func() (*v1alpha1.Task, error) {
+		unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+		if err != nil {
+			return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+		}
+		defer unlock()
+
+		task, err := s.getTask(ctx, atespace, taskName)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
+			}
+			return nil, status.Errorf(codes.Internal, "getting task: %v", err)
+		}
+		if task.Status == nil {
+			task.Status = &v1alpha1.TaskStatus{}
+		}
+		if task.Status.State == v1alpha1.TaskState_TASK_STATE_CANCELLED {
+			return task, nil
+		}
+		if lifecycle.IsTerminal(task.Status.State) {
+			return nil, status.Errorf(codes.FailedPrecondition, "cannot cancel task %q in terminal state %s", taskName, task.Status.State)
+		}
+
+		if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+			if substrate.IsTransientError(err) {
+				return nil, status.Errorf(codes.Unavailable, "suspending cancelled task on substrate: %v", err)
+			}
+			return nil, status.Errorf(codes.Internal, "suspending cancelled task on substrate: %v", err)
+		}
+		if _, err := lifecycle.CancelTask(task.Status, time.Now()); err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "cancelling task %q: %v", taskName, err)
+		}
+		if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
+			return nil, status.Errorf(codes.Internal, "updating task status: %v", err)
+		}
+		s.applyActor(ctx, task)
+		return task, nil
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	// Cascade cancellation to active child tasks in the same atespace.
+	if tasks, err := s.listTasks(ctx, atespace, 1000, 0); err == nil {
+		for _, child := range tasks {
+			if child.GetSpec().GetParentTaskId() == taskName && !lifecycle.IsTerminal(child.GetStatus().GetState()) {
+				_, _ = s.CancelTask(ctx, &v1alpha1.CancelTaskRequest{
+					Atespace: atespace,
+					Name:     child.GetMetadata().GetName(),
+				})
+			}
+		}
+	}
 	return task, nil
 }
 
@@ -471,28 +615,45 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	st := task.Status
 	st.Actor = ""
 	st.WorkerIp = ""
+	if lifecycle.IsStickyState(st.State) {
+		st.Phase = lifecycle.PhaseFromState(st.State)
+	}
 
 	switch {
 	case err != nil:
 		slog.Warn("could not read task actor", "atespace", task.GetMetadata().GetAtespace(), "task", task.GetMetadata().GetName(), "error", err)
-		if !v1alpha1.IsAXPhase(st.Phase) {
+		if !v1alpha1.IsAXPhase(st.Phase) && !lifecycle.IsStickyState(st.State) {
 			st.Phase = v1alpha1.PhaseUnknown
 			setReady(task, "Unknown", v1alpha1.ReasonSubstrateUnavailable, err.Error())
 		}
 	case actor == nil:
 		// A task that finished provisioning always has an actor, so a missing one
 		// was removed outside AX.
-		if !v1alpha1.IsAXPhase(st.Phase) {
+		if !v1alpha1.IsAXPhase(st.Phase) && !lifecycle.IsStickyState(st.State) {
 			st.Phase = v1alpha1.PhaseFailed
 			setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
 		}
 	default:
 		st.Actor = actor.GetMetadata().GetName()
 		st.WorkerIp = substrate.WorkerIP(actor)
+		if lifecycle.IsStickyState(st.State) {
+			if !hasReadyCondition(task) {
+				setReady(task, "False", st.Phase, "Task is "+strings.ToLower(st.Phase))
+			}
+			return
+		}
 		if v1alpha1.IsAXPhase(st.Phase) {
 			return
 		}
 		state := actor.GetStatus().GetState()
+		if st.State == v1alpha1.TaskState_TASK_STATE_QUEUED && state == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+			st.Phase = v1alpha1.PhasePending
+			setReady(task, "False", "Queued", "Task is queued and waiting to start")
+			return
+		}
+		if state == ateapipb.ActorState_ACTOR_STATE_RUNNING && (st.State == v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || st.State == v1alpha1.TaskState_TASK_STATE_QUEUED) {
+			st.State = v1alpha1.TaskState_TASK_STATE_WORKING
+		}
 		st.Phase = actorPhase(state)
 		switch st.Phase {
 		case v1alpha1.PhaseRunning:
@@ -512,6 +673,15 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			setReady(task, "False", st.Phase, message)
 		}
 	}
+}
+
+func hasReadyCondition(task *v1alpha1.Task) bool {
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == v1alpha1.ConditionReady {
+			return true
+		}
+	}
+	return false
 }
 
 // actorPhase maps an actor's state to the task's phase.
@@ -577,7 +747,10 @@ func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	}
 	out.Actor = ""
 	out.WorkerIp = ""
-	if !v1alpha1.IsAXPhase(out.Phase) {
+	if lifecycle.IsStickyState(out.State) && out.Phase == "" {
+		out.Phase = lifecycle.PhaseFromState(out.State)
+	}
+	if !v1alpha1.IsAXPhase(out.Phase) && !lifecycle.IsStickyState(out.State) {
 		out.Phase = ""
 		conds := out.Conditions[:0]
 		for _, c := range out.Conditions {

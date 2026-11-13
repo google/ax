@@ -16,12 +16,60 @@ syntax = "proto3";
 
 package ax.v1alpha1;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "pkg/apis/v1alpha1/common.proto";
 import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/workspace.proto";
 
 option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
+
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_IDLE = 1;
+  TASK_STATE_WORKING = 2;
+  TASK_STATE_REQUIRES_ACTION = 3;
+  TASK_STATE_COMPLETED = 4;
+  TASK_STATE_FAILED = 5;
+  TASK_STATE_CANCELLED = 6;
+  TASK_STATE_QUEUED = 7;
+  TASK_STATE_SUSPENDED = 8;
+  TASK_STATE_SUSPENDING = 9;
+}
+
+enum TaskResult {
+  TASK_RESULT_UNSPECIFIED = 0;
+  TASK_RESULT_SUCCEEDED = 1;
+  TASK_RESULT_FAILED = 2;
+  TASK_RESULT_CANCELLED = 3;
+  TASK_RESULT_UNVERIFIED = 4;
+}
+
+message TaskOutcome {
+  TaskResult result = 1;
+  int32 exit_code = 10;
+  string output = 11;
+  google.protobuf.Struct structured_output = 12;
+}
+
+message StatusDetail {
+  string reason = 1;
+  string detail = 2;
+}
+
+message RetryConfig {
+  int32 max_retries = 1;
+  google.protobuf.Duration initial_backoff = 2;
+  google.protobuf.Duration max_backoff = 3;
+  double backoff_multiplier = 4;
+}
+
+message Budget {
+  int64 max_total_tokens = 1;
+  int64 max_tool_calls = 2;
+  google.protobuf.Duration max_wallclock = 3;
+}
 
 message Task {
   string api_version = 1;
@@ -51,12 +99,18 @@ message TaskSpec {
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
   google.protobuf.Struct config = 7;
+  string goal = 8;
+  RetryConfig retry = 9;
+  Budget budget = 10;
   // gateway binds the Gateway whose rules allow the task's external network
   // traffic. Rules are copied onto the actor when the task is created (later
   // edits or deletes of the gateway don't change existing tasks, and binding a
   // missing gateway fails). A task without a Gateway has no external network
   // access.
   GatewayRef gateway = 12;
+  string session_id = 13;
+  string parent_task_id = 14;
+  bool suspend = 16;
 }
 
 message EnvVar {
@@ -71,6 +125,14 @@ message TaskStatus {
   // json_name keeps the established `workerIP` spelling in YAML and JSON.
   string worker_ip = 4 [json_name = "workerIP"];
   repeated Condition conditions = 7;
+  TaskState state = 8;
+  StatusDetail status_detail = 9;
+  TaskOutcome outcome = 10;
+  int32 attempt = 11;
+  string parent_task_id = 14;
+  google.protobuf.Timestamp start_time = 18;
+  google.protobuf.Timestamp end_time = 19;
+  google.protobuf.Duration working_duration = 20;
 }
 
 // --- RPC Request & Response Messages ---
@@ -108,6 +170,11 @@ message SuspendTaskRequest {
 }
 
 message ResumeTaskRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message CancelTaskRequest {
   string atespace = 1;
   string name = 2;
 }

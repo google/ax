@@ -35,6 +35,7 @@ service AX {
   rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
+  rpc CancelTask(CancelTaskRequest) returns (Task);
 
   // Workspaces
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);

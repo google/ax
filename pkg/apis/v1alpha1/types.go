@@ -44,6 +44,12 @@ const (
 	// PhaseFailed marks a task that AX could not provision or operate, or whose
 	// actor crashed or disappeared.
 	PhaseFailed = "Failed"
+	// PhaseCompleted marks a task whose command exited with code 0.
+	PhaseCompleted = "Completed"
+	// PhaseCancelled marks a task that was cancelled by the user or via parent cascade.
+	PhaseCancelled = "Cancelled"
+	// PhaseIdle marks a multi-turn task that is parked between interactive turns.
+	PhaseIdle = "Idle"
 	// PhaseTerminating marks a task whose deletion has been requested and whose
 	// actor is being torn down. The record disappears once cleanup completes.
 	PhaseTerminating = "Terminating"
@@ -122,7 +128,7 @@ const (
 // from the actor on Agent Substrate when the task is fetched.
 func IsAXPhase(phase string) bool {
 	switch phase {
-	case PhasePending, PhaseFailed, PhaseTerminating:
+	case PhasePending, PhaseFailed, PhaseCompleted, PhaseCancelled, PhaseIdle, PhaseTerminating:
 		return true
 	}
 	return false

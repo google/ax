@@ -120,6 +120,8 @@ func main() {
 		err = runSuspend(serverURL, atespace, cleanArgs)
 	case "resume":
 		err = runResume(serverURL, atespace, cleanArgs)
+	case "cancel":
+		err = runCancel(serverURL, atespace, cleanArgs)
 	case "delete":
 		err = runDelete(serverURL, atespace, cleanArgs)
 	case "ssh":
@@ -222,6 +224,7 @@ Available Commands:
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
   suspend task <name>     Suspend execution of a task and checkpoint state
   resume task <name>      Resume execution of a suspended task
+  cancel task <name>      Cancel a task (and cascade to active child tasks)
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace
   delete model <name>     Delete a model
@@ -694,7 +697,32 @@ func runDescribe(serverURL, atespace string, args []string) error {
 
 	fmt.Printf("Name:         %s\n", taskName)
 	fmt.Printf("Atespace:     %s\n", taskAtespace)
+	if task.Status != nil && task.Status.State != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
+		fmt.Printf("State:        %s\n", task.Status.State.String())
+	}
 	fmt.Printf("Phase:        %s\n", phase)
+	if task.Status != nil {
+		if task.Status.GetStatusDetail().GetReason() != "" {
+			fmt.Printf("Reason:       %s\n", task.Status.GetStatusDetail().GetReason())
+		}
+		if task.Status.GetOutcome() != nil && task.Status.GetOutcome().GetResult() != v1alpha1.TaskResult_TASK_RESULT_UNSPECIFIED {
+			fmt.Printf("Outcome:      %s\n", task.Status.GetOutcome().GetResult().String())
+		}
+		if task.Status.Attempt > 0 {
+			fmt.Printf("Attempt:      %d\n", task.Status.Attempt)
+		}
+	}
+	if task.Spec != nil {
+		if task.Spec.SessionId != "" {
+			fmt.Printf("Session ID:   %s\n", task.Spec.SessionId)
+		}
+		if task.Spec.ParentTaskId != "" {
+			fmt.Printf("Parent Task:  %s\n", task.Spec.ParentTaskId)
+		}
+		if task.Spec.Goal != "" {
+			fmt.Printf("Goal:         %s\n", task.Spec.Goal)
+		}
+	}
 	fmt.Printf("Actor:        %s\n", actor)
 	fmt.Printf("Worker IP:    %s\n", workerIP)
 	if task.Spec != nil {
@@ -887,6 +915,37 @@ func runResume(serverURL, atespace string, args []string) error {
 	}
 
 	fmt.Printf("task.ax.io/%s resumed\n", name)
+	return nil
+}
+
+func runCancel(serverURL, atespace string, args []string) error {
+	name := ""
+	if len(args) == 1 {
+		name = args[0]
+	} else if len(args) >= 2 {
+		if args[0] == "task" || args[0] == "tasks" {
+			name = args[1]
+		} else {
+			name = args[0]
+		}
+	} else {
+		return fmt.Errorf("usage: ax cancel task <name>")
+	}
+
+	client, conn, err := getAXClient(serverURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleRPCTimeout)
+	defer cancel()
+
+	if _, err := client.CancelTask(ctx, &v1alpha1.CancelTaskRequest{Atespace: atespace, Name: name}); err != nil {
+		return fmt.Errorf("cancelling task: %w", err)
+	}
+
+	fmt.Printf("task.ax.io/%s cancelled\n", name)
 	return nil
 }
 

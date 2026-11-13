@@ -39,6 +39,7 @@ const (
 	AX_DeleteTask_FullMethodName      = "/ax.v1alpha1.AX/DeleteTask"
 	AX_SuspendTask_FullMethodName     = "/ax.v1alpha1.AX/SuspendTask"
 	AX_ResumeTask_FullMethodName      = "/ax.v1alpha1.AX/ResumeTask"
+	AX_CancelTask_FullMethodName      = "/ax.v1alpha1.AX/CancelTask"
 	AX_GetWorkspace_FullMethodName    = "/ax.v1alpha1.AX/GetWorkspace"
 	AX_ListWorkspaces_FullMethodName  = "/ax.v1alpha1.AX/ListWorkspaces"
 	AX_UpdateWorkspace_FullMethodName = "/ax.v1alpha1.AX/UpdateWorkspace"
@@ -67,6 +68,7 @@ type AXClient interface {
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
 	SuspendTask(ctx context.Context, in *SuspendTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	// Workspaces
 	GetWorkspace(ctx context.Context, in *GetWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
@@ -147,6 +149,16 @@ func (c *aXClient) ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts .
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Task)
 	err := c.cc.Invoke(ctx, AX_ResumeTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *aXClient) CancelTask(ctx context.Context, in *CancelTaskRequest, opts ...grpc.CallOption) (*Task, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Task)
+	err := c.cc.Invoke(ctx, AX_CancelTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +308,7 @@ type AXServer interface {
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
 	SuspendTask(context.Context, *SuspendTaskRequest) (*Task, error)
 	ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error)
+	CancelTask(context.Context, *CancelTaskRequest) (*Task, error)
 	// Workspaces
 	GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error)
 	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
@@ -339,6 +352,9 @@ func (UnimplementedAXServer) SuspendTask(context.Context, *SuspendTaskRequest) (
 }
 func (UnimplementedAXServer) ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResumeTask not implemented")
+}
+func (UnimplementedAXServer) CancelTask(context.Context, *CancelTaskRequest) (*Task, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelTask not implemented")
 }
 func (UnimplementedAXServer) GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetWorkspace not implemented")
@@ -504,6 +520,24 @@ func _AX_ResumeTask_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AXServer).ResumeTask(ctx, req.(*ResumeTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AX_CancelTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AXServer).CancelTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AX_CancelTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AXServer).CancelTask(ctx, req.(*CancelTaskRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -772,6 +806,10 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResumeTask",
 			Handler:    _AX_ResumeTask_Handler,
+		},
+		{
+			MethodName: "CancelTask",
+			Handler:    _AX_CancelTask_Handler,
 		},
 		{
 			MethodName: "GetWorkspace",
