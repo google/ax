@@ -21,7 +21,6 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
 
 func TestMergeProfile(t *testing.T) {
@@ -105,8 +104,8 @@ func TestResolveProfileTemplate(t *testing.T) {
 	if err := apivalidation.ValidateName(n1); err != nil {
 		t.Fatalf("template name %q is not a valid RFC 1123 name: %v", n1, err)
 	}
-	if tmpl1.GetSnapshotConfig().GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS {
-		t.Errorf("fidelity = %v, want SNAPSHOT_FIDELITY_ROOTFS", tmpl1.GetSnapshotConfig().GetPreferredFidelity())
+	if tmpl1.GetSnapshotConfig().GetPreferredFidelity() != controller.DefaultProfileSnapshotFidelity {
+		t.Errorf("fidelity = %v, want %v", tmpl1.GetSnapshotConfig().GetPreferredFidelity(), controller.DefaultProfileSnapshotFidelity)
 	}
 
 	// Omitted CPU/memory equivalent to Substrate's defaults (1000m, 512Mi) hash identically.

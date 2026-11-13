@@ -256,6 +256,16 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 			wantErr: "cannot be combined with image or resources",
 		},
 		{
+			name: "ate_actor_template_combined_with_resources",
+			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{
+					AteActorTemplate: "base-template",
+					Resources:        &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
+				},
+			},
+			wantErr: "cannot be combined with image or resources",
+		},
+		{
 			name: "invalid_setup_gateway",
 			spec: &v1alpha1.WorkspaceSpec{
 				Setup: &v1alpha1.WorkspaceSetup{

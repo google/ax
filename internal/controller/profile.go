@@ -72,12 +72,16 @@ func applyProfile(dst, src *v1alpha1.Profile) {
 	}
 }
 
+// DefaultProfileSnapshotFidelity is the Substrate snapshot fidelity configured
+// on AX-managed Profile ActorTemplates so rootfs package installs from
+// workspace setup commands survive snapshots.
+const DefaultProfileSnapshotFidelity = ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS
+
 type profile struct {
 	image         string
 	cpuMillicores int64
 	memoryBytes   int64
-	// Defaults to SNAPSHOT_FIDELITY_ROOTFS so rootfs package installs from
-	// spec.setup.commands survive workspace snapshots.
+	// Defaults to DefaultProfileSnapshotFidelity (SNAPSHOT_FIDELITY_ROOTFS).
 	snapshotFidelity ateapipb.SnapshotFidelity
 }
 
@@ -142,7 +146,7 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage st
 		image:            image,
 		cpuMillicores:    cpuMillicores,
 		memoryBytes:      memoryBytes,
-		snapshotFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS,
+		snapshotFidelity: DefaultProfileSnapshotFidelity,
 	}
 	name := resolved.templateName(runnerImage)
 

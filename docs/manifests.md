@@ -132,7 +132,7 @@ spec:
 
 ### Workspace fields
 
-- **`spec.profile`** defines the default sandbox compute profile (`image` and `resources.limits`, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
+- **`spec.profile`** defines the default sandbox compute profile (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
 - **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).

@@ -270,7 +270,10 @@ func (x *Condition) GetMessage() string {
 }
 
 // Profile defines the compute environment that maps 1:1 to a shared Substrate
-// ActorTemplate (ax-<sha256[:16]>) within an atespace.
+// ActorTemplate (ax-<sha256[:16]>) within an atespace. AX-managed templates
+// synthesized from a Profile default to ROOTFS snapshot fidelity
+// (SNAPSHOT_FIDELITY_ROOTFS) so root filesystem changes made during workspace
+// setup persist across snapshots.
 type Profile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Container image (Substrate requires @sha256 digest pinning on templates).
