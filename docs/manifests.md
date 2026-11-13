@@ -1,6 +1,6 @@
 # Writing manifests
 
-All four kinds can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
+The three supported kinds, `Task`, `Workspace`, and `Model`, can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task. [`examples/claude-code/task.yaml`](../examples/claude-code/task.yaml) shows a Task that runs Claude Code headlessly against a cloned repository.
 
 `metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting the task fail later with `ActorCreationFailed`.
 
@@ -15,7 +15,7 @@ metadata:
   name: task123
   atespace: default
 spec:
-  image: "ghcr.io/my-org/my-agent-image"
+  image: "ghcr.io/my-org/my-agent-image@sha256:<digest>"
   command: ["python", "agent.py"]
   env:
     - name: ENVIRONMENT
@@ -196,10 +196,14 @@ Substrate checks the rest of a rule's syntax when a task that binds the gateway 
 
 ## Model
 
-For Google models, store the API key and set `provider: google`.
+Only `google` is implemented as a model provider. Other providers are accepted when applying a `Model`, but generation fails with an `unsupported provider` error.
+
+`Model` resources configure AX's model client (`default-model` in the atespace by default). These resources do not configure the provider or model used by arbitrary agent frameworks inside a Task image.
+
+Store the Google API key in a Kubernetes Secret in the same namespace as the Model's `metadata.atespace`, and set `provider: google`.
 
 ```bash
-kubectl create secret generic gemini-api-secret --from-literal=GEMINI_API_KEY="AIzaSy..."
+kubectl create secret generic gemini-api-secret --namespace default --from-literal=GEMINI_API_KEY="<your-api-key>"
 ```
 
 Then reference it from the `Model`:
@@ -216,26 +220,4 @@ spec:
   secretKey:
     name: gemini-api-secret
     key: GEMINI_API_KEY
-```
-
-For Anthropic models, store the key the same way and set `provider: anthropic`.
-
-```bash
-kubectl create secret generic anthropic-api-secret --from-literal=ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-```yaml
-apiVersion: ax.io/v1alpha1
-kind: Model
-metadata:
-  name: claude-model
-  atespace: default
-spec:
-  provider: anthropic
-  model: claude-opus-5
-  secretKey:
-    name: anthropic-api-secret
-    key: ANTHROPIC_API_KEY
-  parameters:
-    maxTokens: 16000
 ```
