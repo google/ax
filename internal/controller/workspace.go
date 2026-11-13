@@ -22,25 +22,29 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 )
 
-// maxTagWorkspacePrefix leaves room for "ws-" (3) + "-" (1) + 8-char ws hash
-// + "-" (1) + 16-char tag hash within apivalidation.MaxNameLength (63).
-const maxTagWorkspacePrefix = apivalidation.MaxNameLength - len("ws-") - 1 - 8 - 1 - 16
+const (
+	maxUint64Digits = 20
+	// maxTagWorkspacePrefix leaves room for "ws-" (3) + "-" (1) + 8-char ws
+	// hash + "-" (1) + 16-char template hash + "-r" (2) + up to 20 revision
+	// digits within apivalidation.MaxNameLength (63).
+	maxTagWorkspacePrefix = apivalidation.MaxNameLength - len("ws-") - 1 - 8 - 1 - 16 - len("-r") - maxUint64Digits
+)
 
 // WorkspaceTagName returns a deterministic RFC 1123 Substrate Tag name
-// ("ws-<prefix>-<8hex(ws)>-<16hex(ws+tpl+rev)>") for (workspaceName,
+// ("ws-<prefix>-<8hex(ws)>-<16hex(tpl)>-r<revision>") for (workspaceName,
 // templateName, revision).
 //
 // Substrate Tags cannot repoint their snapshot in place (UpdateTag does not
 // change the underlying snapshot, and DeleteTag invalidates unsuspended
 // running Actors created from that Tag), so refreshing a Workspace snapshot
-// mints a new Tag under an incremented revision while keeping the
+// mints a new Tag under an incremented "-r<revision>" suffix while keeping the
 // "ws-<prefix>-<8hex(ws)>-" owner prefix intact.
 //
 // TODO: Persist the active snapshot revision on Workspace and increment it
 // once periodic or on-demand snapshot refresh is implemented.
 func WorkspaceTagName(workspaceName, templateName string, revision uint64) string {
 	wsSum := sha256.Sum256([]byte(workspaceName))
-	tagSum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d", workspaceName, templateName, revision))
+	tplSum := sha256.Sum256([]byte(templateName))
 	prefix := strings.TrimRight(workspaceName[:min(len(workspaceName), maxTagWorkspacePrefix)], "-")
-	return fmt.Sprintf("ws-%s-%x-%x", prefix, wsSum[:4], tagSum[:8])
+	return fmt.Sprintf("ws-%s-%x-%x-r%d", prefix, wsSum[:4], tplSum[:8], revision)
 }

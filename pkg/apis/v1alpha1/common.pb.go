@@ -282,7 +282,12 @@ type Profile struct {
 	Resources *ResourcesSpec `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
 	// Optional name of an existing Substrate ActorTemplate in the same atespace
 	// to use directly instead of generating an AX-managed template. Mutually
-	// exclusive with image and resources.
+	// exclusive with image and resources. Because AX does not synthesize or
+	// mutate a user-supplied template, it must already satisfy the AX sandbox
+	// contract (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup
+	// probe on port 80, durable /workspace volume, and the egress-trust-bundle
+	// SystemInfo mount at /run/ate/egress-trust-bundle/trust-bundle.pem when
+	// outbound HTTPS traverses a Gateway).
 	AteActorTemplate string `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache

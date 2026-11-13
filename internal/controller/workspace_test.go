@@ -15,6 +15,7 @@
 package controller_test
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -28,16 +29,20 @@ func TestWorkspaceTagName(t *testing.T) {
 
 	short1 := controller.WorkspaceTagName("my-repo-env", tpl1, 1)
 	short2 := controller.WorkspaceTagName("my-repo-env", tpl2, 1)
-	refreshed := controller.WorkspaceTagName("my-repo-env", tpl1, 2)
+	refreshed := controller.WorkspaceTagName("my-repo-env", tpl1, 12)
 	if err := apivalidation.ValidateName(short1); err != nil {
 		t.Fatalf("short tag %q invalid: %v", short1, err)
 	}
-	if short1 == refreshed {
-		t.Errorf("incrementing revision did not change tag name: %q", short1)
+	if !strings.HasSuffix(short1, "-r1") || !strings.HasSuffix(refreshed, "-r12") {
+		t.Fatalf("unexpected revision suffixes: %q, %q", short1, refreshed)
 	}
-	// Tags for the same Workspace across templates and revisions share the
-	// exact "ws-<prefix>-<8hex(ws)>-" owner prefix.
-	wsOwnerPrefix := func(tag string) string { return tag[:len(tag)-16] }
+	// Tags for the same Workspace across templates and multi-digit revisions
+	// share the exact "ws-<prefix>-<8hex(ws)>-" owner prefix.
+	wsOwnerPrefix := func(tag string) string {
+		revSep := strings.LastIndexByte(tag, '-')
+		tplSep := strings.LastIndexByte(tag[:revSep], '-')
+		return tag[:tplSep+1]
+	}
 	if wsOwnerPrefix(short1) != wsOwnerPrefix(short2) || wsOwnerPrefix(short1) != wsOwnerPrefix(refreshed) {
 		t.Errorf("same workspace produced different owner prefixes: %q, %q, %q", short1, short2, refreshed)
 	}
@@ -45,12 +50,12 @@ func TestWorkspaceTagName(t *testing.T) {
 	longWS1 := strings.Repeat("a", 62) + "1"
 	longWS2 := strings.Repeat("a", 62) + "2"
 	tag1 := controller.WorkspaceTagName(longWS1, tpl1, 1)
-	tag2 := controller.WorkspaceTagName(longWS2, tpl1, 1)
+	tag2 := controller.WorkspaceTagName(longWS2, tpl1, math.MaxUint64)
 	if err := apivalidation.ValidateName(tag1); err != nil {
 		t.Fatalf("long tag1 %q invalid: %v", tag1, err)
 	}
 	if err := apivalidation.ValidateName(tag2); err != nil {
-		t.Fatalf("long tag2 %q invalid: %v", tag2, err)
+		t.Fatalf("long tag2 %q invalid at MaxUint64: %v", tag2, err)
 	}
 	if wsOwnerPrefix(tag1) == wsOwnerPrefix(tag2) {
 		t.Errorf("distinct 63-char workspace names collided on owner prefix: %q vs %q", tag1, tag2)

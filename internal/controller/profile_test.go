@@ -24,11 +24,15 @@ import (
 )
 
 func TestMergeProfile(t *testing.T) {
-	empty := controller.MergeProfile(nil, nil)
+	empty, err := controller.MergeProfile(nil, nil)
+	if err != nil {
+		t.Fatalf("MergeProfile(nil, nil): %v", err)
+	}
 	if empty.GetImage() != "" || empty.GetResources() != nil || empty.GetAteActorTemplate() != "" {
 		t.Fatalf("MergeProfile(nil, nil) = %+v, want empty Profile", empty)
 	}
 
+	// Scenario 1a: base uses image, override sets resources only -> inherits base image.
 	base := &v1alpha1.Profile{
 		Image: "ws/image@sha256:aaa",
 		Resources: &v1alpha1.ResourcesSpec{
@@ -41,7 +45,10 @@ func TestMergeProfile(t *testing.T) {
 		},
 	}
 
-	merged := controller.MergeProfile(base, override)
+	merged, err := controller.MergeProfile(base, override)
+	if err != nil {
+		t.Fatalf("MergeProfile(image base, resources override): %v", err)
+	}
 	if merged.GetImage() != "ws/image@sha256:aaa" {
 		t.Errorf("inherited image = %q, want ws/image@sha256:aaa", merged.GetImage())
 	}
@@ -58,18 +65,47 @@ func TestMergeProfile(t *testing.T) {
 		t.Error("MergeProfile mutated base.Resources")
 	}
 
-	// Base AteActorTemplate is inherited when override is nil or empty, and
-	// cleared when override sets explicit image/resources.
-	inheritedTpl := controller.MergeProfile(&v1alpha1.Profile{AteActorTemplate: "gpu-base"}, &v1alpha1.Profile{})
-	if inheritedTpl.GetAteActorTemplate() != "gpu-base" {
-		t.Errorf("inherited AteActorTemplate = %q, want gpu-base", inheritedTpl.GetAteActorTemplate())
+	// Scenario 1b: base omits image/ateActorTemplate, override sets resources only -> allowed (uses server default image).
+	defaultImgWithLimits, err := controller.MergeProfile(nil, override)
+	if err != nil || defaultImgWithLimits.GetResources().GetLimits().GetMemory() != "16Gi" {
+		t.Fatalf("MergeProfile(nil, resources override) = (%+v, %v), want 16Gi with nil err", defaultImgWithLimits, err)
 	}
-	overriddenByImage := controller.MergeProfile(
+
+	// Scenario 2: base uses AteActorTemplate, override is empty or switches AteActorTemplate.
+	inheritedTpl, err := controller.MergeProfile(&v1alpha1.Profile{AteActorTemplate: "gpu-base"}, &v1alpha1.Profile{})
+	if err != nil || inheritedTpl.GetAteActorTemplate() != "gpu-base" {
+		t.Fatalf("inherited AteActorTemplate = (%+v, %v), want gpu-base", inheritedTpl, err)
+	}
+	switchedTpl, err := controller.MergeProfile(
 		&v1alpha1.Profile{AteActorTemplate: "gpu-base"},
-		&v1alpha1.Profile{Image: "task/image@sha256:bbb"},
+		&v1alpha1.Profile{AteActorTemplate: "tpu-base"},
 	)
-	if overriddenByImage.GetAteActorTemplate() != "" || overriddenByImage.GetImage() != "task/image@sha256:bbb" {
+	if err != nil || switchedTpl.GetAteActorTemplate() != "tpu-base" {
+		t.Fatalf("switched AteActorTemplate = (%+v, %v), want tpu-base", switchedTpl, err)
+	}
+
+	// Scenario 3: base uses AteActorTemplate, override sets explicit image (+ optional resources) -> replaces template.
+	overriddenByImage, err := controller.MergeProfile(
+		&v1alpha1.Profile{AteActorTemplate: "gpu-base"},
+		&v1alpha1.Profile{
+			Image:     "task/image@sha256:bbb",
+			Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "8Gi"}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("MergeProfile(template base, image override): %v", err)
+	}
+	if overriddenByImage.GetAteActorTemplate() != "" || overriddenByImage.GetImage() != "task/image@sha256:bbb" ||
+		overriddenByImage.GetResources().GetLimits().GetMemory() != "8Gi" {
 		t.Errorf("overriddenByImage = %+v", overriddenByImage)
+	}
+
+	// Scenario 4: base uses AteActorTemplate, override sets resources only -> rejected instead of silently dropping template.
+	if _, err := controller.MergeProfile(
+		&v1alpha1.Profile{AteActorTemplate: "gpu-base"},
+		&v1alpha1.Profile{Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "8Gi"}}},
+	); err == nil {
+		t.Fatal("expected error when overriding resources without image on an ateActorTemplate base, got nil")
 	}
 }
 
