@@ -107,6 +107,9 @@ const (
 	// ReasonActorCreationFailed: Ready is False; the actor could not be
 	// created.
 	ReasonActorCreationFailed = "ActorCreationFailed"
+	// ReasonGatewayBindingFailed: Ready is False; the task could not get its
+	// gateway's rules, for example because Agent Substrate rejected one.
+	ReasonGatewayBindingFailed = "GatewayBindingFailed"
 	// ReasonActorResumeFailed: Ready is False; the actor could not be resumed.
 	ReasonActorResumeFailed = "ActorResumeFailed"
 

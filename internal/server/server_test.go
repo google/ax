@@ -334,28 +334,6 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}
 }
 
-// A gateway's rules are not applied to tasks yet. A task is immutable, so one
-// that binds a gateway is rejected instead of being saved with a binding
-// nothing applies.
-func TestCreateTask_RejectsGatewayBinding(t *testing.T) {
-	st := memory.NewStore()
-	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
-	ctx := context.Background()
-
-	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "bound"},
-		Spec: &v1alpha1.TaskSpec{
-			Gateway: &v1alpha1.GatewayRef{Name: "gw"},
-		},
-	}})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("expected Unimplemented for a gateway binding, got %v", err)
-	}
-	if _, err := st.GetTask(ctx, "default", "bound"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("expected the task not to be saved, got %v", err)
-	}
-}
-
 type failGetWorkspaceStore struct {
 	store.Store
 	err error
@@ -455,8 +433,277 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 	}
 }
 
+type failGetGatewayStore struct {
+	store.Store
+	err error
+}
+
+func (f *failGetGatewayStore) GetGateway(context.Context, string, string) (*v1alpha1.Gateway, error) {
+	return nil, f.err
+}
+
+// A task gets its Gateway's rules when it is created, so CreateTask must not
+// save or provision a task whose Gateway does not exist.
+func TestCreateTask_RequiresBoundGateway(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		taskAtespace string
+		gwAtespace   string // atespace that has the "gw" Gateway; empty if none does
+		getErr       error
+		wantCode     codes.Code
+		wantMsg      string
+	}{
+		{name: "missing", wantCode: codes.FailedPrecondition, wantMsg: `gateway "gw" not found in atespace "default"`},
+		{name: "store error", getErr: errors.New("store unavailable"), wantCode: codes.Internal, wantMsg: `getting gateway "gw": store unavailable`},
+		{name: "present", taskAtespace: "team-a", gwAtespace: "team-a", wantCode: codes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			mem := memory.NewStore()
+			var st store.Store = mem
+			if tc.getErr != nil {
+				st = &failGetGatewayStore{Store: mem, err: tc.getErr}
+			}
+			const credentialURI = "ate-secret://k8s.io/default/default/token/value"
+			if tc.gwAtespace != "" {
+				if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
+					Metadata: &v1alpha1.ObjectMeta{Atespace: tc.gwAtespace, Name: "gw"},
+					Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{Https: &ateapipb.HttpsRule{
+						Hostnames: []string{"api.example.com"},
+						Effects: &ateapipb.HttpRuleEffects{ReplaceHeaders: []*ateapipb.CredentialHeader{{
+							Header:        "Authorization",
+							CredentialUri: credentialURI,
+						}}},
+					}}}},
+				}); err != nil {
+					t.Fatalf("SaveGateway: %v", err)
+				}
+			}
+			sub := substratetest.NewServer(t)
+			srv := server.NewServer(st, newTestReconciler(sub))
+
+			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
+				Spec:     &v1alpha1.TaskSpec{Image: "alpine", Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+			}})
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("CreateTask: got %v, want %v", err, tc.wantCode)
+			}
+			if !strings.Contains(status.Convert(err).Message(), tc.wantMsg) {
+				t.Errorf("CreateTask error = %q, want it to contain %q", status.Convert(err).Message(), tc.wantMsg)
+			}
+
+			atespace := cmp.Or(tc.taskAtespace, "default")
+			_, getErr := mem.GetTask(ctx, atespace, "task")
+			actor, hasActor := sub.Actor(atespace, "task")
+			if tc.wantCode != codes.OK {
+				if !errors.Is(getErr, store.ErrNotFound) {
+					t.Errorf("stored task after rejection: got %v, want ErrNotFound", getErr)
+				}
+				if hasActor {
+					t.Errorf("rejected task has actor %v, want none", actor)
+				}
+				return
+			}
+			if getErr != nil {
+				t.Fatalf("stored task: %v", getErr)
+			}
+			policy, _ := sub.EgressPolicy(atespace, "task")
+			if rules := policy.GetRules(); len(rules) != 1 || rules[0].GetHttps().GetEffects().GetReplaceHeaders()[0].GetCredentialUri() != credentialURI {
+				t.Errorf("actor's rules = %v, want the gateway's", rules)
+			}
+			// The credential URI must not be passed into the sandbox.
+			ref := actor.GetActorTemplate()
+			tmpl, ok := sub.Template(ref.GetAtespace(), ref.GetName())
+			if !ok {
+				t.Fatalf("actor template %v not found", ref)
+			}
+			for _, env := range tmpl.GetContainers()[0].GetEnv() {
+				if strings.Contains(env.GetValue(), credentialURI) {
+					t.Errorf("%s holds the gateway's credential URI", env.GetName())
+				}
+			}
+		})
+	}
+}
+
+// A task gets its gateway's rules before it can run. If Substrate refuses
+// them, the task fails and cannot be resumed. Once the task has them, later
+// changes to the gateway do not affect it.
+func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
+	ctx := context.Background()
+	mem := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(mem, newTestReconciler(sub))
+	saveGateway := func(hostname string) {
+		t.Helper()
+		if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
+			Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+			Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+				Https: &ateapipb.HttpsRule{Hostnames: []string{hostname}},
+			}}},
+		}); err != nil {
+			t.Fatalf("SaveGateway: %v", err)
+		}
+	}
+	hostname := func() string {
+		t.Helper()
+		policy, ok := sub.EgressPolicy("default", "task")
+		if !ok {
+			return ""
+		}
+		return policy.GetRules()[0].GetHttps().GetHostnames()[0]
+	}
+	suspend := &v1alpha1.SuspendTaskRequest{Name: "task"}
+	resume := &v1alpha1.ResumeTaskRequest{Name: "task"}
+
+	const substrateMsg = `egress_policy.rules[0].https.hostnames[0]: Invalid value: "a.example.com": refused`
+	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, substrateMsg)})
+	saveGateway("a.example.com")
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine", Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+	}})
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, `binding gateway "gw"`) || !strings.Contains(msg, substrateMsg) {
+		t.Fatalf("CreateTask error = %v, want it to name the gateway and carry Substrate's message", err)
+	}
+	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	ready := readyCondition(stored)
+	if stored.GetStatus().GetPhase() != v1alpha1.PhaseFailed || ready.GetReason() != v1alpha1.ReasonGatewayBindingFailed || ready.GetMessage() != `gateway "gw": `+substrateMsg {
+		t.Errorf("after refusal: phase %q, Ready %v; want Failed with reason GatewayBindingFailed and Substrate's message", stored.GetStatus().GetPhase(), ready)
+	}
+
+	// Resuming the task fails as well, and does not start it.
+	if _, err := srv.ResumeTask(ctx, resume); err == nil {
+		t.Fatal("ResumeTask succeeded although the gateway's rules were refused")
+	}
+	if actor, _ := sub.Actor("default", "task"); actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING {
+		t.Fatal("task is running without its gateway's rules")
+	}
+
+	// Once Substrate accepts the rules, resuming copies them and starts the
+	// task.
+	sub.SetErrors(substratetest.Errors{})
+	if _, err := srv.ResumeTask(ctx, resume); err != nil {
+		t.Fatalf("ResumeTask: %v", err)
+	}
+	if got := hostname(); got != "a.example.com" {
+		t.Fatalf("actor's rule after resume = %q, want a.example.com", got)
+	}
+
+	// From then on the gateway is not read again. Editing or deleting it does
+	// not change the task's rules or stop a suspend or resume, even when
+	// Substrate would refuse the new rules.
+	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, substrateMsg)})
+	saveGateway("b.example.com")
+	if _, err := srv.SuspendTask(ctx, suspend); err != nil {
+		t.Fatalf("SuspendTask after the gateway changed: %v", err)
+	}
+	if _, err := srv.ResumeTask(ctx, resume); err != nil {
+		t.Fatalf("ResumeTask after the gateway changed: %v", err)
+	}
+	if err := mem.DeleteGateway(ctx, "default", "gw"); err != nil {
+		t.Fatalf("DeleteGateway: %v", err)
+	}
+	if _, err := srv.SuspendTask(ctx, suspend); err != nil {
+		t.Fatalf("SuspendTask after the gateway was deleted: %v", err)
+	}
+	if _, err := srv.ResumeTask(ctx, resume); err != nil {
+		t.Fatalf("ResumeTask after the gateway was deleted: %v", err)
+	}
+	if got := hostname(); got != "a.example.com" {
+		t.Errorf("actor's rule after the gateway changed = %q, want a.example.com", got)
+	}
+}
+
 // CreateGateway makes a new gateway and UpdateGateway replaces an existing
 // one; neither does the other's work.
+// Rules are only copied while the actor is suspended, so a running task can be
+// suspended even when Substrate would refuse its gateway's rules.
+func TestServer_SuspendTask_RunningTaskWithoutGatewayRules(t *testing.T) {
+	ctx := context.Background()
+	mem := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(mem, newTestReconciler(sub))
+	if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+		Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+			Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
+		}}},
+	}); err != nil {
+		t.Fatalf("SaveGateway: %v", err)
+	}
+
+	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, "refused")})
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine", Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+	}}); err == nil {
+		t.Fatal("CreateTask succeeded although the gateway's rules were refused")
+	}
+
+	// Substrate may start an actor on its own, for example for a request.
+	actor, _ := sub.Actor("default", "task")
+	actor.Status.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
+	sub.SetActor(actor)
+	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"}); err != nil {
+		t.Fatalf("SuspendTask: %v", err)
+	}
+}
+
+// A task whose creation failed before its gateway's rules were copied gets
+// them when it is next suspended or resumed.
+func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		next func(context.Context, *server.Server) error
+	}{
+		{name: "suspend", next: func(ctx context.Context, srv *server.Server) error {
+			_, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"})
+			return err
+		}},
+		{name: "resume", next: func(ctx context.Context, srv *server.Server) error {
+			_, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mem := memory.NewStore()
+			sub := substratetest.NewServer(t)
+			srv := server.NewServer(mem, newTestReconciler(sub))
+			if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
+				Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+				Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+					Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
+				}}},
+			}); err != nil {
+				t.Fatalf("SaveGateway: %v", err)
+			}
+
+			sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.DeadlineExceeded, "substrate control plane timed out")})
+			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "task"},
+				Spec:     &v1alpha1.TaskSpec{Image: "alpine", Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+			}})
+			if status.Code(err) != codes.Unavailable {
+				t.Fatalf("CreateTask: got %v, want Unavailable", err)
+			}
+
+			sub.SetErrors(substratetest.Errors{})
+			if err := tc.next(ctx, srv); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 1 {
+				t.Errorf("actor's rules after %s = %v, want the gateway's", tc.name, policy.GetRules())
+			}
+		})
+	}
+}
+
 func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()

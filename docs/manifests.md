@@ -47,11 +47,11 @@ To work on content from several sources, put it all in one `Workspace`, for exam
 
 ### Binding a gateway
 
-Not available yet: ax-server rejects a task that sets `spec.gateway` until gateway rules are enforced.
-
-A task binds at most one `Gateway` through `spec.gateway`, for example `gateway: {name: review-bot-gw}`, and can reach only the external hosts that gateway's rules allow. A task with no `gateway` has no external network access.
+A task binds at most one `Gateway` through `spec.gateway`, for example `gateway: {name: review-bot-gw}`, and can reach only the external hosts that gateway's rules allow. A task with no `gateway` has no external network access. Workspace setup runs in the task's sandbox, so the same rules apply to it: allow the hosts that the workspace's `spec.setup` reaches, such as its Git repositories.
 
 A task gets a copy of the gateway's rules when it is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
+
+If Agent Substrate refuses one of the rules, the task is marked `Failed` with reason `GatewayBindingFailed` and does not run.
 
 ### Sizing the sandbox
 
@@ -142,7 +142,7 @@ spec:
 
 ## Gateway
 
-A `Gateway` lists the external traffic a task may send. Traffic that matches no rule is refused. A task [cannot bind a gateway yet](#binding-a-gateway).
+A `Gateway` lists the external traffic a task may send. Traffic that matches no rule is refused.
 
 ```yaml
 apiVersion: ax.io/v1alpha1
@@ -178,7 +178,18 @@ Each entry of `spec.egress` is an Agent Substrate `EgressRule` and sets exactly 
 
 `effects.replaceHeaders` adds a credential to matching requests outside the sandbox, so the task never holds it. The task sends the header with any placeholder value, and the egress gateway replaces that value with `prefix` followed by the credential that `credentialUri` names. A request that does not send the header is forwarded unchanged. Only an `https` rule whose hostnames have no wildcard can inject a credential.
 
-`credentialUri` has the form `ate-secret://<provider>/<path>` and is resolved by a credential provider registered with Agent Substrate. For the bundled Kubernetes Secrets provider it is `ate-secret://k8s.io/default/<namespace>/<secret>/<key>`. That provider denies by default: matching requests get a 403 until a cluster admin grants the task's atespace the Secret's namespace in the `k8s-credential-provider-namespace-policy` ConfigMap in `ate-system`. See Substrate's [egress credential injection](https://github.com/agent-substrate/substrate/blob/v1.0.0/docs/guides/egress-credential-injection.md) guide.
+A tool sends the header only when it has a key, so give it a placeholder: set the variable it reads its key from to any value, in the task's `spec.env` or in the image. For the gateway above:
+
+```yaml
+spec:
+  gateway:
+    name: review-bot-gw
+  env:
+    - name: ANTHROPIC_API_KEY
+      value: placeholder   # replaced with the real key outside the sandbox
+```
+
+`credentialUri` has the form `ate-secret://<provider>/<path>` and is resolved by a credential provider registered with Agent Substrate. For the bundled Kubernetes Secrets provider it is `ate-secret://k8s.io/default/<namespace>/<secret>/<key>`. That provider denies by default: matching requests get a 403 until a cluster admin grants the task's atespace the Secret's namespace in the `k8s-credential-provider-namespace-policy` ConfigMap in `ate-system`. A grant can be limited to Secrets with given labels, such as `ax.io/credential: "true"`, so that other Secrets in that namespace stay out of reach. See Substrate's [egress credential injection](https://github.com/agent-substrate/substrate/blob/v1.0.0/docs/guides/egress-credential-injection.md) guide.
 
 ### What `ax apply` rejects
 

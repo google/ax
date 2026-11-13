@@ -36,8 +36,8 @@ All Control API traffic goes through this package. It encapsulates:
   from `SUBSTRATE_CA_FILE`.
 - **Retry** — `IsTransientError` + `retryOnCodes` for `Unavailable`-class errors.
 - **Helpers** the reconciler relies on — `EnsureAtespace`, `EnsureActorTemplateWithImage`,
-  `EnsureActor`, `SuspendActor`, `ResumeActor`, `DeleteActor`, `WorkerIP`,
-  `ResourceLimits`, `BuildActorTemplate`.
+  `EnsureActor`, `EnsureActorEgressPolicy`, `SuspendActor`, `ResumeActor`,
+  `DeleteActor`, `WorkerIP`, `ResourceLimits`, `BuildActorTemplate`.
 
 ### Where a new Control API call lives today
 
@@ -97,6 +97,16 @@ instead. No mocking library is in `go.mod`.
   (`substrate.WorkerIP` in `internal/server/server.go`), and the reconciler
   uses the IP `ResumeActor` returns only for its readiness probe
   (`internal/controller/reconciler.go`).
+- Egress: an actor without an egress policy has no outbound access. `CreateTask`
+  looks up the task's Gateway and passes it to `ensureSubstrateResources`
+  (`internal/controller/reconciler.go`), which copies its rules to the actor
+  as the actor's one policy (named `default`) while the actor is suspended.
+  `EnsureActorEgressPolicy` treats an existing policy as success, so the rules
+  are copied once and never updated. `SuspendTask` and `ResumeTask` read the
+  Gateway again only for a task that is Pending or Failed (`fetchGateway` in
+  `internal/server/server.go`). Substrate validates the rules when they are
+  copied; a refusal fails the task with reason `GatewayBindingFailed`. A task
+  without a Gateway makes no egress policy call at all.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.

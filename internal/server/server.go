@@ -150,12 +150,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := apivalidation.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Tasks are immutable, so a task saved now would keep a gateway binding
-	// that nothing applies.
-	// TODO: Drop this check once gateway rules are enforced.
-	if task.GetSpec().GetGateway() != nil {
-		return nil, status.Error(codes.Unimplemented, "spec.gateway is not supported yet")
-	}
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -196,6 +190,18 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 			return nil, status.Errorf(codes.Internal, "getting workspace %q: %v", wsName, err)
 		}
 	}
+	// A task gets its Gateway's rules when it is created, so the Gateway must
+	// already exist.
+	var gateway *v1alpha1.Gateway
+	if gwName := task.GetSpec().GetGateway().GetName(); gwName != "" {
+		gateway, err = s.store.GetGateway(ctx, atespace, gwName)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.FailedPrecondition, "gateway %q not found in atespace %q", gwName, atespace)
+		}
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "getting gateway %q: %v", gwName, err)
+		}
+	}
 
 	if task.Metadata.CreateTime == nil {
 		task.Metadata.CreateTime = timestamppb.Now()
@@ -210,7 +216,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	// New tasks start suspended.
-	if err := s.reconciler.Suspend(ctx, task, workspace); err != nil {
+	if err := s.reconciler.Suspend(ctx, task, workspace, gateway); err != nil {
 		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
 	// The actor exists, so reads take the task's phase from it from now on.
@@ -292,7 +298,7 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 
-	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		// Store nothing: the actor keeps its state on Substrate, and a stored
 		// Pending or Failed would hide it.
 		if substrate.IsTransientError(err) {
@@ -341,7 +347,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 
-	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task)); err != nil {
+	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
 	// Clear any Pending or Failed left by an earlier failure, so reads take the
@@ -603,6 +609,22 @@ func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1al
 		return nil
 	}
 	return ws
+}
+
+// fetchGateway loads the Gateway the task binds, but only while the task is
+// Pending or Failed and so may not have the gateway's rules yet. It returns
+// nil for any other task, so that later changes to the Gateway do not affect
+// it, and when the task binds none or the Gateway does not exist.
+func (s *Server) fetchGateway(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Gateway {
+	name := task.GetSpec().GetGateway().GetName()
+	if phase := task.GetStatus().GetPhase(); name == "" || (phase != v1alpha1.PhasePending && phase != v1alpha1.PhaseFailed) {
+		return nil
+	}
+	gw, err := s.store.GetGateway(ctx, atespace, name)
+	if err != nil {
+		return nil
+	}
+	return gw
 }
 
 // --- Models ---

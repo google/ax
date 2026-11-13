@@ -4,7 +4,7 @@ Every task container starts with `ax-task-runner` as PID 1. On boot it:
 
 1. Loads the `Task` and every bound `Workspace` spec.
 2. Starts its servers: probes and guest management on port 80, and the metadata endpoints on `127.0.0.1:8099`.
-3. Sets the variables described under [Outbound TLS and credentials](#outbound-tls-and-credentials), which its own Git clones use too.
+3. Sets the variables described under [Outbound TLS and credentials](#outbound-tls-and-credentials), which workspace setup uses too.
 4. On the first run, prepares each workspace at its own path, in binding order: clones Git repos and sets up the skills path. The task reports not-ready until every workspace has finished.
 5. Starts `spec.command` as a child process, with the first workspace as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
 

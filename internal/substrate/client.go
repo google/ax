@@ -627,6 +627,36 @@ func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.A
 	}
 }
 
+// egressPolicyName is the name Substrate requires for an actor's egress
+// policy. An actor has at most one.
+const egressPolicyName = "default"
+
+// EnsureActorEgressPolicy creates the actor's egress policy with the given
+// rules if it does not already exist.
+func (c *Client) EnsureActorEgressPolicy(ctx context.Context, atespace, actorName string, rules []*ateapipb.EgressRule) error {
+	req := &ateapipb.CreateActorEgressPolicyRequest{
+		Actor: &ateapipb.ObjectRef{
+			Atespace: atespace,
+			Name:     actorName,
+		},
+		EgressPolicy: &ateapipb.EgressPolicy{
+			Metadata: &ateapipb.ResourceMetadata{
+				Atespace: atespace,
+				Name:     egressPolicyName,
+			},
+			Rules: rules,
+		},
+	}
+	err := retryOnCodes(ctx, func() error {
+		_, err := c.control.CreateActorEgressPolicy(ctx, req)
+		return err
+	}, codes.Unavailable)
+	if err != nil && status.Code(err) != codes.AlreadyExists {
+		return fmt.Errorf("creating egress policy of actor %s/%s: %w", atespace, actorName, err)
+	}
+	return nil
+}
+
 // DeleteActor deletes the specified actor from Substrate and blocks until the actor
 // is fully deleted.
 func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) error {

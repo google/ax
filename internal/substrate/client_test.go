@@ -44,6 +44,16 @@ type mockControlClient struct {
 	templates           map[string]*ateapipb.ActorTemplate
 	createTemplateErrs  []error
 	createdTemplates    []*ateapipb.ActorTemplate
+	createPolicyErr     error
+}
+
+func (m *mockControlClient) CreateActorEgressPolicy(ctx context.Context, req *ateapipb.CreateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.createPolicyErr != nil {
+		return nil, m.createPolicyErr
+	}
+	return req.GetEgressPolicy(), nil
 }
 
 func (m *mockControlClient) GetActorTemplate(ctx context.Context, req *ateapipb.GetActorTemplateRequest, opts ...grpc.CallOption) (*ateapipb.ActorTemplate, error) {
@@ -182,6 +192,19 @@ func TestClient_DeleteActor_NotFoundIsIgnored(t *testing.T) {
 	err := c.DeleteActor(ctx, "test-ns", "test-actor")
 	if err != nil {
 		t.Fatalf("expected nil error when actor is NotFound, got: %v", err)
+	}
+}
+
+func TestClient_EnsureActorEgressPolicy_AlreadyExistsIsIgnored(t *testing.T) {
+	mock := &mockControlClient{
+		createPolicyErr: status.Error(codes.AlreadyExists, "EgressPolicy already exists"),
+	}
+	c := &Client{control: mock}
+	ctx := context.Background()
+
+	err := c.EnsureActorEgressPolicy(ctx, "test-ns", "test-actor", nil)
+	if err != nil {
+		t.Fatalf("expected nil error when the policy already exists, got: %v", err)
 	}
 }
 
