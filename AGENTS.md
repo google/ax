@@ -74,7 +74,7 @@ location is where to look. How-to lives in the skills.
 - `internal/substrate/client.go` is the only non-test file that constructs
   `ateapipb.NewControlClient`; new Control API calls go there.
 - `api.ate-system.svc`, `atenet-router.ate-system.svc`, and namespace
-  `ate-system` are hard-coded across 10 files (list in `/substrate`).
+  `ate-system` are hard-coded across 11 files (list in `/substrate`).
 - Substrate rejects tag-only images; `spec.image` / `profile.image` must be
   digest-pinned (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true

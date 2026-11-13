@@ -228,7 +228,7 @@ image_digest() {
 WORKER_KO_REF="$(awk '$1 == "workerImage:" { print $2; exit }' "${E2E_DIR}/manifests/workerpool.yaml")"
 WORKER_IMAGE="${WORKER_KO_REF##*/}"
 # Every Substrate image the Kind install and the WorkerPool use.
-SUBSTRATE_IMAGES=(ateapi atecontroller atelet atenet "${WORKER_IMAGE}" podcertcontroller objectstore-plugin envoy-dataplane)
+SUBSTRATE_IMAGES=(ateapi atecontroller atelet atenet "${WORKER_IMAGE}" podcertcontroller objectstore-plugin envoy-dataplane kubernetes-secrets)
 
 SUBSTRATE_WORK_DIR="$(resolve_substrate_dir)"
 SUBSTRATE_COMMIT="$(git -C "${SUBSTRATE_WORK_DIR}" rev-parse HEAD)"
@@ -270,7 +270,8 @@ docker exec "${KIND_CLUSTER_NAME}-control-plane" sysctl -w fs.inotify.max_user_i
 INSTALLED_SUBSTRATE_COMMIT="$(k get namespace ate-system -o jsonpath='{.metadata.annotations.substrate-commit}' 2> /dev/null || true)"
 if [[ "${FORCE_INSTALL_SUBSTRATE:-false}" == "true" ]] ||
   [[ "${INSTALLED_SUBSTRATE_COMMIT}" != "${SUBSTRATE_COMMIT}" ]] ||
-  ! k -n ate-system get deployment ate-api-server > /dev/null 2>&1; then
+  ! k -n ate-system get deployment ate-api-server > /dev/null 2>&1 ||
+  ! k -n ate-system get deployment k8s-credential-provider > /dev/null 2>&1; then
   log "Installing Substrate (ate-system) at ${SUBSTRATE_COMMIT:0:12}..."
   if [[ -n "${INSTALLED_SUBSTRATE_COMMIT}" ]] || k get namespace ate-system > /dev/null 2>&1; then
     uninstall_substrate
@@ -282,7 +283,7 @@ if [[ "${FORCE_INSTALL_SUBSTRATE:-false}" == "true" ]] ||
       go run ./cmd/ate-setup --kind --kind-cluster-name="${KIND_CLUSTER_NAME}" --kubeconfig="${KUBECONFIG}" \
       deploy ate-system \
       --rollout-timeout="${SUBSTRATE_ROLLOUT_TIMEOUT:-3m}" \
-      --credential-provider='{"enabled":false}' \
+      --credential-provider='{"name":"k8s.io"}' \
       --ateapi-authz-bootstrap-owners="system:serviceaccount:ate-system:ate-client,system:serviceaccount:${AX_SYSTEM_NAMESPACE}:ax-server" \
       --ingress-allowed-spiffe-ids="spiffe://cluster.local/ns/${AX_SYSTEM_NAMESPACE}/sa/ax-server"
   )
@@ -343,7 +344,18 @@ k -n "${AX_SYSTEM_NAMESPACE}" rollout status statefulset/ax-postgres --timeout=1
 render_manifest ax-server.yaml | k apply -f -
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-server --timeout=120s
 
-# 6. Persist the environment for hack/run-e2e.sh and the Go test harness.
+# 6. Set up what TestE2E_GatewayEgress needs.
+log "Setting up the credential provider, the egress gateway and the echo server..."
+# The credential provider reads its policy only at startup.
+render_manifest credential-policy.yaml | k apply -f -
+k -n ate-system rollout restart deployment/k8s-credential-provider
+k -n ate-system rollout status deployment/k8s-credential-provider --timeout=180s
+# Make the egress gateway trust the CA that signs the echo server's certificate.
+(cd "${SUBSTRATE_WORK_DIR}" && KUBECTL_CONTEXT="${KUBE_CONTEXT}" ./hack/setup-e2e-egress-tls-kind.sh)
+render_manifest echo.yaml | k apply -f -
+k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-echo --timeout=120s
+
+# 7. Persist the environment for hack/run-e2e.sh and the Go test harness.
 cat > "${TMP_DIR}/e2e.env" << EOF
 export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
 export KUBECONFIG="${KUBECONFIG}"
