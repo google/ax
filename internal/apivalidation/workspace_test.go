@@ -36,7 +36,6 @@ func TestValidateWorkspace_Valid(t *testing.T) {
 					Resources: &v1alpha1.ResourcesSpec{
 						Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 					},
-					AteActorTemplate: "base-template",
 				},
 				Setup: &v1alpha1.WorkspaceSetup{
 					Git:      []*v1alpha1.GitRepo{{Repo: "https://github.com/org/repo.git", Dir: ".", Ref: "main", Depth: 1}},
@@ -245,6 +244,16 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 				Profile: &v1alpha1.Profile{AteActorTemplate: "Bad_Name"},
 			},
 			wantErr: "spec.profile.ateActorTemplate",
+		},
+		{
+			name: "ate_actor_template_combined_with_image",
+			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{
+					AteActorTemplate: "base-template",
+					Image:            "us-docker.pkg.dev/p/img@sha256:abc",
+				},
+			},
+			wantErr: "cannot be combined with image or resources",
 		},
 		{
 			name: "invalid_setup_gateway",

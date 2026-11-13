@@ -41,10 +41,12 @@ type Errors struct {
 	SuspendActor       error
 	ResumeActor        error
 	DeleteActor        error
+	CreateTag          error
+	DeleteTag          error
 }
 
 // Server is an in-memory Agent Substrate control API. It keeps atespaces,
-// actor templates, actors and their egress policies, and moves actors between
+// actor templates, actors, egress policies and tags, and moves actors between
 // states as Substrate does, without running anything. Calls it does not
 // implement return Unimplemented.
 type Server struct {
@@ -57,10 +59,12 @@ type Server struct {
 	templates        map[string]*ateapipb.ActorTemplate // by atespace/name
 	actors           map[string]*ateapipb.Actor         // by atespace/name
 	egressPolicies   map[string]*ateapipb.EgressPolicy  // by the actor's atespace/name
+	tags             map[string]*ateapipb.Tag           // by atespace/name
 	workerIP         string                             // empty: resumed actors get no worker
 	errs             Errors
 	onDeleteActor    func()
 	deleteActorCalls int
+	deleteTagCalls   int
 }
 
 // NewServer starts a Server with nothing in it. It stops when the test ends.
@@ -71,6 +75,7 @@ func NewServer(tb testing.TB) *Server {
 		templates:      make(map[string]*ateapipb.ActorTemplate),
 		actors:         make(map[string]*ateapipb.Actor),
 		egressPolicies: make(map[string]*ateapipb.EgressPolicy),
+		tags:           make(map[string]*ateapipb.Tag),
 	}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -165,6 +170,31 @@ func (s *Server) DeleteActorCalls() int {
 	return s.deleteActorCalls
 }
 
+// SetTag stores a copy of tag, replacing any tag of the same name.
+func (s *Server) SetTag(tag *ateapipb.Tag) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tags[key(tag.GetMetadata().GetAtespace(), tag.GetMetadata().GetName())] = proto.Clone(tag).(*ateapipb.Tag)
+}
+
+// Tag returns a copy of the named tag, if it exists.
+func (s *Server) Tag(atespace, name string) (*ateapipb.Tag, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tag, ok := s.tags[key(atespace, name)]
+	if !ok {
+		return nil, false
+	}
+	return proto.Clone(tag).(*ateapipb.Tag), true
+}
+
+// DeleteTagCalls returns how many DeleteTag calls s has received.
+func (s *Server) DeleteTagCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleteTagCalls
+}
+
 func key(atespace, name string) string {
 	return atespace + "/" + name
 }
@@ -216,6 +246,12 @@ func (s *Server) CreateActorTemplate(_ context.Context, req *ateapipb.CreateActo
 		return nil, status.Errorf(codes.AlreadyExists, "actor template %s already exists", k)
 	}
 	tmpl := proto.Clone(req.GetActorTemplate()).(*ateapipb.ActorTemplate)
+	if tmpl.Metadata == nil {
+		tmpl.Metadata = &ateapipb.ResourceMetadata{}
+	}
+	if tmpl.Metadata.Uid == "" {
+		tmpl.Metadata.Uid = "uid-" + k
+	}
 	s.templates[k] = tmpl
 	return proto.Clone(tmpl).(*ateapipb.ActorTemplate), nil
 }
@@ -256,6 +292,21 @@ func (s *Server) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest
 	k := key(meta.GetAtespace(), meta.GetName())
 	if _, ok := s.actors[k]; ok {
 		return nil, status.Errorf(codes.AlreadyExists, "actor %s already exists", k)
+	}
+	if tagRef := req.GetActor().GetSourceTag(); tagRef != nil {
+		tag, ok := s.tags[key(tagRef.GetAtespace(), tagRef.GetName())]
+		if !ok {
+			return nil, status.Errorf(codes.NotFound, "source tag %s/%s not found", tagRef.GetAtespace(), tagRef.GetName())
+		}
+		if tplRef := req.GetActor().GetActorTemplate(); tplRef != nil {
+			if tpl, ok := s.templates[key(tplRef.GetAtespace(), tplRef.GetName())]; ok {
+				tagUID := tag.GetStatus().GetActorTemplateUid()
+				tplUID := tpl.GetMetadata().GetUid()
+				if tagUID != "" && tplUID != "" && tagUID != tplUID {
+					return nil, status.Errorf(codes.InvalidArgument, "source tag template uid %q does not match actor template uid %q", tagUID, tplUID)
+				}
+			}
+		}
 	}
 	actor := proto.Clone(req.GetActor()).(*ateapipb.Actor)
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
@@ -387,4 +438,75 @@ func (s *Server) ListActors(_ context.Context, req *ateapipb.ListActorsRequest) 
 		}
 	}
 	return resp, nil
+}
+
+func (s *Server) CreateTag(_ context.Context, req *ateapipb.CreateTagRequest) (*ateapipb.Tag, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errs.CreateTag != nil {
+		return nil, s.errs.CreateTag
+	}
+	in := req.GetTag()
+	meta := in.GetMetadata()
+	k := key(meta.GetAtespace(), meta.GetName())
+	if _, ok := s.tags[k]; ok {
+		return nil, status.Errorf(codes.AlreadyExists, "tag %s already exists", k)
+	}
+	src, err := s.lookupActor(in.GetSourceActor())
+	if err != nil {
+		return nil, err
+	}
+	if src.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		return nil, status.Errorf(codes.FailedPrecondition, "source actor %s/%s must be suspended", in.GetSourceActor().GetAtespace(), in.GetSourceActor().GetName())
+	}
+	var tmplUID string
+	if tplRef := src.GetActorTemplate(); tplRef != nil {
+		if tpl, ok := s.templates[key(tplRef.GetAtespace(), tplRef.GetName())]; ok {
+			tmplUID = tpl.GetMetadata().GetUid()
+		}
+	}
+	tag := proto.Clone(in).(*ateapipb.Tag)
+	tag.Status = &ateapipb.TagStatus{ActorTemplateUid: tmplUID}
+	s.tags[k] = tag
+	return proto.Clone(tag).(*ateapipb.Tag), nil
+}
+
+func (s *Server) GetTag(_ context.Context, req *ateapipb.GetTagRequest) (*ateapipb.Tag, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ref := req.GetTag()
+	tag, ok := s.tags[key(ref.GetAtespace(), ref.GetName())]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "tag %s/%s not found", ref.GetAtespace(), ref.GetName())
+	}
+	return proto.Clone(tag).(*ateapipb.Tag), nil
+}
+
+func (s *Server) ListTags(_ context.Context, req *ateapipb.ListTagsRequest) (*ateapipb.ListTagsResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	resp := &ateapipb.ListTagsResponse{}
+	for _, tag := range s.tags {
+		if req.GetAtespace() == "" || tag.GetMetadata().GetAtespace() == req.GetAtespace() {
+			resp.Tags = append(resp.Tags, proto.Clone(tag).(*ateapipb.Tag))
+		}
+	}
+	return resp, nil
+}
+
+func (s *Server) DeleteTag(_ context.Context, req *ateapipb.DeleteTagRequest) (*ateapipb.Tag, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteTagCalls++
+	if s.errs.DeleteTag != nil {
+		return nil, s.errs.DeleteTag
+	}
+	ref := req.GetTag()
+	k := key(ref.GetAtespace(), ref.GetName())
+	tag, ok := s.tags[k]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "tag %s not found", k)
+	}
+	delete(s.tags, k)
+	return tag, nil
 }

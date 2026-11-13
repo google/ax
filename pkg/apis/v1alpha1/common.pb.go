@@ -278,9 +278,8 @@ type Profile struct {
 	// Sandbox compute resource limits (CPU and memory).
 	Resources *ResourcesSpec `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
 	// Optional name of an existing Substrate ActorTemplate in the same atespace
-	// used to seed omitted fields at creation time. Explicit fields on this
-	// Profile override the seed template. AX still creates and manages its own
-	// content-addressed ActorTemplate (ax-<sha256[:16]>).
+	// to use directly instead of generating an AX-managed template. Mutually
+	// exclusive with image and resources.
 	AteActorTemplate string `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache

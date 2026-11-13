@@ -45,6 +45,12 @@ type mockControlClient struct {
 	createTemplateErrs  []error
 	createdTemplates    []*ateapipb.ActorTemplate
 	createPolicyErr     error
+	createActorErrs     []error
+	createdActors       []*ateapipb.Actor
+	tags                map[string]*ateapipb.Tag
+	createTagErrs       []error
+	deleteTagErrs       []error
+	deleteTagCalls      int
 }
 
 func (m *mockControlClient) CreateActorEgressPolicy(ctx context.Context, req *ateapipb.CreateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error) {
@@ -132,6 +138,80 @@ func (m *mockControlClient) GetActor(ctx context.Context, req *ateapipb.GetActor
 		}, nil
 	}
 	return nil, status.Error(codes.NotFound, "actor not found")
+}
+
+func (m *mockControlClient) CreateActor(ctx context.Context, req *ateapipb.CreateActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.createActorErrs) > 0 {
+		err := m.createActorErrs[0]
+		m.createActorErrs = m.createActorErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	m.createdActors = append(m.createdActors, req.GetActor())
+	return req.GetActor(), nil
+}
+
+func (m *mockControlClient) CreateTag(ctx context.Context, req *ateapipb.CreateTagRequest, opts ...grpc.CallOption) (*ateapipb.Tag, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.createTagErrs) > 0 {
+		err := m.createTagErrs[0]
+		m.createTagErrs = m.createTagErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	if m.tags == nil {
+		m.tags = make(map[string]*ateapipb.Tag)
+	}
+	tag := proto.Clone(req.GetTag()).(*ateapipb.Tag)
+	tag.Status = &ateapipb.TagStatus{ActorTemplateUid: "tpl-uid-123"}
+	m.tags[tag.GetMetadata().GetAtespace()+"/"+tag.GetMetadata().GetName()] = tag
+	return proto.Clone(tag).(*ateapipb.Tag), nil
+}
+
+func (m *mockControlClient) GetTag(ctx context.Context, req *ateapipb.GetTagRequest, opts ...grpc.CallOption) (*ateapipb.Tag, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if tag, ok := m.tags[req.GetTag().GetAtespace()+"/"+req.GetTag().GetName()]; ok {
+		return proto.Clone(tag).(*ateapipb.Tag), nil
+	}
+	return nil, status.Error(codes.NotFound, "tag not found")
+}
+
+func (m *mockControlClient) ListTags(ctx context.Context, req *ateapipb.ListTagsRequest, opts ...grpc.CallOption) (*ateapipb.ListTagsResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	resp := &ateapipb.ListTagsResponse{}
+	for _, tag := range m.tags {
+		if req.GetAtespace() == "" || tag.GetMetadata().GetAtespace() == req.GetAtespace() {
+			resp.Tags = append(resp.Tags, proto.Clone(tag).(*ateapipb.Tag))
+		}
+	}
+	return resp, nil
+}
+
+func (m *mockControlClient) DeleteTag(ctx context.Context, req *ateapipb.DeleteTagRequest, opts ...grpc.CallOption) (*ateapipb.Tag, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deleteTagCalls++
+	if len(m.deleteTagErrs) > 0 {
+		err := m.deleteTagErrs[0]
+		m.deleteTagErrs = m.deleteTagErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	key := req.GetTag().GetAtespace() + "/" + req.GetTag().GetName()
+	tag, ok := m.tags[key]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "tag not found")
+	}
+	delete(m.tags, key)
+	return tag, nil
 }
 
 func TestClient_DeleteActor_AnyStateTrue(t *testing.T) {
@@ -544,4 +624,101 @@ func TestBuildActorTemplate_Resources(t *testing.T) {
 	if !proto.Equal(tmpl.GetResources(), wantDefault) {
 		t.Fatalf("template without limits has resources %v, want %v", tmpl.GetResources(), wantDefault)
 	}
+}
+
+func TestClient_TagsAndEnsureActorFromTag(t *testing.T) {
+	oldInterval := defaultRetryInterval
+	defaultRetryInterval = 5 * time.Millisecond
+	defer func() { defaultRetryInterval = oldInterval }()
+
+	mock := &mockControlClient{
+		createTagErrs: []error{
+			status.Error(codes.Unavailable, "transient"),
+			status.Error(codes.Aborted, "actor lease busy"),
+			nil,
+		},
+		deleteTagErrs: []error{status.Error(codes.Aborted, "busy"), nil},
+	}
+	c := &Client{control: mock}
+	ctx := context.Background()
+
+	tmpl := BuildActorTemplate("default", "ax-demo", "us-docker.pkg.dev/p/img@sha256:000", nil, nil, "", nil)
+	ensured, err := c.EnsureActorTemplate(ctx, tmpl)
+	if err != nil {
+		t.Fatalf("EnsureActorTemplate: %v", err)
+	}
+	if ensured.GetMetadata().GetName() != "ax-demo" {
+		t.Errorf("template name = %q, want ax-demo", ensured.GetMetadata().GetName())
+	}
+
+	tag, err := c.CreateTag(ctx, "default", "ws-demo-tag", "setup-actor-1")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if tag.GetScope() != ateapipb.TagScope_TAG_SCOPE_ATESPACE || tag.GetSourceActor().GetName() != "setup-actor-1" {
+		t.Fatalf("unexpected created tag: %+v", tag)
+	}
+
+	gotTag, err := c.GetTag(ctx, "default", "ws-demo-tag")
+	if err != nil || gotTag.GetStatus().GetActorTemplateUid() != "tpl-uid-123" {
+		t.Fatalf("GetTag = %+v, %v", gotTag, err)
+	}
+
+	tags, err := c.ListTags(ctx, "default")
+	if err != nil || len(tags) != 1 || tags[0].GetMetadata().GetName() != "ws-demo-tag" {
+		t.Fatalf("ListTags = %+v, %v", tags, err)
+	}
+
+	actor, err := c.EnsureActorFromTag(ctx, "default", "task-1", "default", "ax-demo", "ws-demo-tag")
+	if err != nil {
+		t.Fatalf("EnsureActorFromTag: %v", err)
+	}
+	if actor.GetSourceTag().GetName() != "ws-demo-tag" {
+		t.Errorf("source_tag = %+v, want ws-demo-tag", actor.GetSourceTag())
+	}
+
+	if err := c.DeleteTag(ctx, "default", "ws-demo-tag"); err != nil {
+		t.Fatalf("DeleteTag: %v", err)
+	}
+	// Deleting again when already gone is idempotent.
+	if err := c.DeleteTag(ctx, "default", "ws-demo-tag"); err != nil {
+		t.Fatalf("second DeleteTag (NotFound) should succeed, got %v", err)
+	}
+}
+
+func TestClient_EnsureActor_DeletingRaces(t *testing.T) {
+	oldRetry, oldWait := defaultRetryInterval, actorDeletingWaitInterval
+	defaultRetryInterval, actorDeletingWaitInterval = 2*time.Millisecond, 2*time.Millisecond
+	defer func() {
+		defaultRetryInterval = oldRetry
+		actorDeletingWaitInterval = oldWait
+	}()
+
+	t.Run("recreates when deleting actor disappears before GetActor", func(t *testing.T) {
+		c := &Client{control: &mockControlClient{
+			actorRemaining:  0, // GetActor immediately sees NotFound
+			createActorErrs: []error{status.Error(codes.AlreadyExists, "actor deleting"), nil},
+		}}
+		actor, err := c.EnsureActorFromTag(context.Background(), "default", "task-1", "default", "ax-demo", "ws-demo-tag")
+		if err != nil {
+			t.Fatalf("EnsureActorFromTag failed: %v", err)
+		}
+		if actor.GetSourceTag().GetName() != "ws-demo-tag" {
+			t.Fatalf("unexpected recreated actor: %+v", actor)
+		}
+	})
+
+	t.Run("propagates non-AlreadyExists error during recreateDeletingActor", func(t *testing.T) {
+		c := &Client{control: &mockControlClient{
+			actorRemaining: 1, // GetActor sees ACTOR_STATE_DELETING
+			createActorErrs: []error{
+				status.Error(codes.AlreadyExists, "actor deleting"),
+				status.Error(codes.FailedPrecondition, "Tag not found"),
+			},
+		}}
+		_, err := c.EnsureActorFromTag(context.Background(), "default", "task-1", "default", "ax-demo", "missing-tag")
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("status.Code(err) = %v (%v), want FailedPrecondition", status.Code(err), err)
+		}
+	})
 }

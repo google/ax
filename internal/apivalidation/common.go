@@ -96,15 +96,16 @@ func validateProfile(field string, p *v1alpha1.Profile) error {
 	if p == nil {
 		return nil
 	}
-	if err := validateResources(field+".resources", p.GetResources()); err != nil {
-		return err
-	}
-	if seed := p.GetAteActorTemplate(); seed != "" {
-		if err := ValidateName(seed); err != nil {
-			return fmt.Errorf("%s.ateActorTemplate: invalid value %q: %w", field, seed, err)
+	if tpl := p.GetAteActorTemplate(); tpl != "" {
+		if err := ValidateName(tpl); err != nil {
+			return fmt.Errorf("%s.ateActorTemplate: invalid value %q: %w", field, tpl, err)
 		}
+		if p.GetImage() != "" || p.GetResources() != nil {
+			return fmt.Errorf("%s.ateActorTemplate: cannot be combined with image or resources", field)
+		}
+		return nil
 	}
-	return nil
+	return validateResources(field+".resources", p.GetResources())
 }
 
 func validateGatewayRef(field string, ref *v1alpha1.GatewayRef) error {

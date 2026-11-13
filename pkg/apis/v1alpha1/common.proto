@@ -52,8 +52,7 @@ message Profile {
   // Sandbox compute resource limits (CPU and memory).
   ResourcesSpec resources = 2;
   // Optional name of an existing Substrate ActorTemplate in the same atespace
-  // used to seed omitted fields at creation time. Explicit fields on this
-  // Profile override the seed template. AX still creates and manages its own
-  // content-addressed ActorTemplate (ax-<sha256[:16]>).
+  // to use directly instead of generating an AX-managed template. Mutually
+  // exclusive with image and resources.
   string ate_actor_template = 3;
 }

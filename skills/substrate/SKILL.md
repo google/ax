@@ -18,7 +18,7 @@ and `hack/setup-e2e-kind.sh` if they look stale.
 
 | Module | Pinned | Provides | Imported by |
 |---|---|---|---|
-| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, suspend/resume, egress rules) | `internal/substrate`, `internal/server`, `internal/controller`, `internal/apivalidation`, `test/e2e`, `pkg/apis/v1alpha1` (its `.proto` files import `ateapi.proto`) |
+| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, tags, snapshot fidelity, suspend/resume, egress rules) | `internal/substrate`, `internal/substrate/substratetest`, `internal/server`, `internal/controller`, `internal/apivalidation`, `test/e2e`, `pkg/apis/v1alpha1` (its `.proto` files import `ateapi.proto`) |
 | `github.com/agent-substrate/env` | `v0.0.11-0.20260912052224-4468a200b170` (pseudo-version) | Guest services served inside the sandbox (process exec + file system gRPC) and `proto/ateenv/v1alpha` | `internal/guest`, `internal/metadata` |
 
 There is no `replace` directive for either module. Local hacking against a
@@ -34,16 +34,18 @@ All Control API traffic goes through this package. It encapsulates:
 - **Auth** — bearer token from `SUBSTRATE_TOKEN_FILE` (in-cluster: projected SA
   token with audience `api.ate-system.svc`, see `deploy/ax-server.yaml`), CA
   from `SUBSTRATE_CA_FILE`.
-- **Retry** — `IsTransientError` + `retryOnCodes` for `Unavailable`-class errors.
-- **Helpers** the reconciler relies on — `EnsureAtespace`, `EnsureActorTemplateWithImage`,
-  `EnsureActor`, `GetActorEgressPolicy`, `EnsureActorEgressPolicy`, `SuspendActor`,
-  `ResumeActor`, `DeleteActor`, `WorkerIP`, `ResourceLimits`, `BuildActorTemplate`.
+- **Retry** — `IsTransientError` + `callWithRetry` (`retryOnCodes`) for `Unavailable`-class errors.
+- **Helpers** the reconcilers rely on — `EnsureAtespace`, `EnsureActorTemplate`,
+  `EnsureActorTemplateWithImage`, `BuildActorTemplate`, `EnsureActor`,
+  `EnsureActorFromTag`, `GetActorEgressPolicy`, `EnsureActorEgressPolicy`,
+  `CreateTag`, `GetTag`, `ListTags`, `DeleteTag`, `SuspendActor`, `ResumeActor`,
+  `DeleteActor`, `WorkerIP`, `ResourceLimits`.
 
 ### Where a new Control API call lives today
 
 - `internal/substrate/client.go` is the only non-test file that calls
   `ateapipb.NewControlClient`; every existing RPC is a method on `*Client`,
-  wrapped in `retryOnCodes(..., codes.Unavailable)` where idempotent.
+  wrapped in `callWithRetry` (`codes.Unavailable` plus optional codes such as `codes.Aborted`).
 - Each method has a table-driven case in `client_test.go` (`mockControlClient`).
 - Callers in `internal/controller` exercise it through `mockControlServer`;
   `internal/server` and `cmd/ax` tests use `internal/substrate/substratetest`
@@ -82,7 +84,8 @@ ateapipb.RegisterControlServer(grpcServer, mockSrv)
 Canonical examples: `internal/controller/reconciler_test.go` (reconciler state
 transitions; the largest test file in the repo). `internal/server/server_test.go`
 and `cmd/ax/main_test.go` run a real `TaskReconciler` against
-`internal/substrate/substratetest`, an in-memory fake of the same API.
+`internal/substrate/substratetest`, an in-memory fake of the same API (atespaces,
+actor templates, actors, and tags).
 `internal/substrate/client_test.go` uses a client-side `mockControlClient`
 instead. No mocking library is in `go.mod`.
 
