@@ -273,6 +273,12 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 
 	// 3. Substrate has a suspended Actor using a per-task ActorTemplate.
 	actor := env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
+	actorUID := actor.GetMetadata().GetUid()
+	if got := task.GetStatus().GetActorUid(); actorUID == "" || got != actorUID {
+		t.Fatalf("task actorUid = %q, want Substrate actor UID %q", got, actorUID)
+	}
+	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", name),
+		"Actor UID:    "+actorUID+"\n")
 	tmplName := actor.GetActorTemplate().GetName()
 	if !strings.HasPrefix(tmplName, name+"-tmpl-") {
 		t.Fatalf("actor template = %q, want prefix %q", tmplName, name+"-tmpl-")

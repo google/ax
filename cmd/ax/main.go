@@ -732,6 +732,11 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	fmt.Printf("Atespace:     %s\n", taskAtespace)
 	fmt.Printf("Phase:        %s\n", phase)
 	fmt.Printf("Actor:        %s\n", actor)
+	actorUID := task.GetStatus().GetActorUid()
+	if actorUID == "" {
+		actorUID = "<none>"
+	}
+	fmt.Printf("Actor UID:    %s\n", actorUID)
 	fmt.Printf("Worker IP:    %s\n", workerIP)
 	if task.Spec != nil {
 		if ref := task.Spec.GetWorkspace(); ref != nil {

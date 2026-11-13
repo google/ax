@@ -23,6 +23,9 @@ PostgreSQL holds resources as protojson documents alongside the leases that back
                                         └───────────────────────────────┘
 ```
 
+The actor's UID (`status.actorUid`) is also read live and excluded from store
+writes. It identifies the current actor for correlation with Substrate telemetry.
+
 ## Components
 
 | Binary | Role |

@@ -126,3 +126,28 @@ func TestSetActorStatus_SubstrateErrorReportsUnknown(t *testing.T) {
 		t.Errorf("phase = %q, want %q to be kept", got, v1alpha1.PhaseTerminating)
 	}
 }
+
+func TestSetActorStatus_ActorUID(t *testing.T) {
+	actor := testActor("a", ateapipb.ActorState_ACTOR_STATE_RUNNING, "")
+	actor.Metadata.Uid = "uid-new"
+	for _, tt := range []struct {
+		name  string
+		actor *ateapipb.Actor
+		err   error
+		want  string
+	}{
+		{"current actor", actor, nil, "uid-new"},
+		{"actor without UID", testActor("a", ateapipb.ActorState_ACTOR_STATE_RUNNING, ""), nil, ""},
+		{"missing actor", nil, nil, ""},
+		{"unreachable substrate", nil, errors.New("unavailable"), ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			task := storedTask("a", "")
+			task.Status.ActorUid = "uid-old"
+			setActorStatus(task, tt.actor, tt.err)
+			if got := task.GetStatus().GetActorUid(); got != tt.want {
+				t.Errorf("actor UID = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -1371,3 +1371,69 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 		t.Errorf("phase after ResumeTask = %q, want Running", task.GetStatus().GetPhase())
 	}
 }
+
+func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
+	st := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(st, newTestReconciler(sub))
+	ctx := t.Context()
+	// Even a client-supplied UID must not enter storage.
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "identity"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+		Status:   &v1alpha1.TaskStatus{ActorUid: "client-uid"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	assertNotStored := func() {
+		t.Helper()
+		stored, err := st.GetTask(ctx, "default", "identity")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if uid := stored.GetStatus().GetActorUid(); uid != "" {
+			t.Fatalf("stored actor UID = %q, want empty", uid)
+		}
+	}
+	assertNotStored()
+	for _, uid := range []string{"uid-original", "uid-recreated"} {
+		t.Run(uid, func(t *testing.T) {
+			actor, _ := sub.Actor("default", "identity")
+			actor.Metadata.Uid = uid
+			sub.SetActor(actor)
+			got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "identity"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.GetStatus().GetActorUid() != uid {
+				t.Errorf("GetTask UID = %q, want %q", got.GetStatus().GetActorUid(), uid)
+			}
+			list, err := srv.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: "default"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(list.Tasks) != 1 || list.Tasks[0].GetStatus().GetActorUid() != uid {
+				t.Fatalf("ListTasks = %v, want one task with UID %q", list.Tasks, uid)
+			}
+		})
+	}
+	// Both mutation paths read the actor before writing the task status.
+	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "identity"}); err != nil {
+		t.Fatal(err)
+	}
+	assertNotStored()
+	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "identity"}); err != nil {
+		t.Fatal(err)
+	}
+	assertNotStored()
+	if err := sub.Client().DeleteActor(ctx, "default", "identity"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "identity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uid := got.GetStatus().GetActorUid(); uid != "" {
+		t.Errorf("UID after actor deletion = %q, want empty", uid)
+	}
+}

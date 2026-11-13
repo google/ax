@@ -33,6 +33,15 @@ spec:
   debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
 
+### Actor identity
+
+`status.actorUid` is the current actor's Substrate UID, also recorded as
+`ate.actor.uid` in Substrate telemetry. Use it to correlate a task with
+Substrate logs and events. `ax describe task <name>` shows it as `Actor UID`.
+AX reads it from Substrate on each get or list and never stores it. It changes
+if the actor is recreated and is empty when the actor is missing or Substrate
+cannot be reached; `describe` shows `<none>` in those cases.
+
 ### Image references
 
 Substrate requires `spec.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.

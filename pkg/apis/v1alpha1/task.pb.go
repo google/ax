@@ -287,8 +287,11 @@ type TaskStatus struct {
 	Id    string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	Actor string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
 	// json_name keeps the established `workerIP` spelling in YAML and JSON.
-	WorkerIp      string       `protobuf:"bytes,4,opt,name=worker_ip,json=workerIP,proto3" json:"worker_ip,omitempty"`
-	Conditions    []*Condition `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	WorkerIp   string       `protobuf:"bytes,4,opt,name=worker_ip,json=workerIP,proto3" json:"worker_ip,omitempty"`
+	Conditions []*Condition `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
+	// Read from Substrate, never stored; empty when the actor cannot be read.
+	ActorUid      string `protobuf:"bytes,23,opt,name=actor_uid,json=actorUid,proto3" json:"actor_uid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -356,6 +359,13 @@ func (x *TaskStatus) GetConditions() []*Condition {
 		return x.Conditions
 	}
 	return nil
+}
+
+func (x *TaskStatus) GetActorUid() string {
+	if x != nil {
+		return x.ActorUid
+	}
+	return ""
 }
 
 // Tasks
@@ -774,7 +784,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\agateway\x18\f \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\x9d\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\xba\x01\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x0e\n" +
@@ -783,7 +793,8 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\tworker_ip\x18\x04 \x01(\tR\bworkerIP\x126\n" +
 	"\n" +
 	"conditions\x18\a \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
-	"conditions\"@\n" +
+	"conditions\x12\x1b\n" +
+	"\tactor_uid\x18\x17 \x01(\tR\bactorUid\"@\n" +
 	"\x0eGetTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\\\n" +
