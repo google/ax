@@ -24,6 +24,7 @@ import (
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const defaultPageLimit = 50
@@ -109,8 +110,8 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	if task.Status.Phase == "" {
-		task.Status.Phase = v1alpha1.PhasePending
+	if task.Status.State == v1alpha1.TaskState_TASK_STATE_UNSPECIFIED && task.Metadata.GetDeleteTime() == nil {
+		task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
 	}
 
 	key := taskKey(task.Metadata.Atespace, task.Metadata.Name)
@@ -160,7 +161,28 @@ func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name strin
 	if !ok {
 		return store.ErrNotFound
 	}
-	t.Status = status
+	t.Status = clone(status)
+	return nil
+}
+
+func (s *MemoryStore) SetTaskDeleteTime(ctx context.Context, atespace, name string, deleteTime *timestamppb.Timestamp) error {
+	key := taskKey(atespace, name)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	t, ok := s.tasks[key]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if t.Metadata == nil {
+		t.Metadata = &v1alpha1.ObjectMeta{}
+	}
+	if deleteTime != nil {
+		t.Metadata.DeleteTime = clone(deleteTime)
+	} else {
+		t.Metadata.DeleteTime = nil
+	}
 	return nil
 }
 

@@ -34,9 +34,10 @@ kind: Task
 metadata:
   name: test
 spec:
-  image: "ghcr.io/my-org/my-coding-agent@sha256:..."
-  config:
-    goal: "Fix what's broken please."
+  profile:
+    image: "ghcr.io/my-org/my-coding-agent@sha256:..."
+  goal:
+    spec: "Fix what's broken please."
   workspace:
     name: golang
   debug: true   # enables `ax ssh`
@@ -105,7 +106,7 @@ With the [prerequisites](#prerequisites) in place — most importantly a reachab
 make deploy
 ```
 
-This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.image`. Everything lands in the `ax-system` namespace.
+This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.profile.image`. Everything lands in the `ax-system` namespace.
 
 ### 4. Create a WorkerPool
 
@@ -121,8 +122,8 @@ From your ax checkout:
 ax apply -f examples/simple.yaml         # the smallest useful Task
 ax resume task simple-task               # new tasks start Suspended; resume schedules the actor and starts it
 ax get tasks
-# NAME          ATESPACE   PHASE     ACTOR         WORKER-IP    AGE
-# simple-task   default    Running   simple-task   10.20.3.67   1m
+# NAME          ATESPACE   STATE     ACTOR         AGE
+# simple-task   default    Working   simple-task   1m
 
 ax ssh simple-task -- ls -la /workspace  # poke around inside the sandbox
 ax suspend task simple-task              # checkpoint and pause

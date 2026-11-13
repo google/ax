@@ -164,7 +164,7 @@ go list -m go.ate.dev/substrate github.com/agent-substrate/env \
 
 Stop if either digest check fails. Use the registry digests recorded by
 `make images`, not local image IDs or mutable tags. The server uses
-`AX_DEFAULT_TASK_IMAGE` for tasks that omit `spec.image`. An explicit task image
+`AX_DEFAULT_TASK_IMAGE` for tasks that omit `spec.profile.image`. An explicit task image
 overrides it: replace private image references in any adapted examples with your
 own runner digest ([#424](https://github.com/google/ax/issues/424)).
 
@@ -227,7 +227,7 @@ remove it.
 
 Control-plane rollout alone does not verify a sandbox. This task exercises the
 runner and guest exec without requiring a Workspace, Model, or model API key.
-It omits `spec.image` to check the server's configured default:
+It omits `spec.profile.image` to check the server's configured default:
 
 ```bash
 AX_CHECK_TASK="ax-install-$(date +%s)"
@@ -239,7 +239,7 @@ metadata:
   atespace: default
 spec:
   debug: true
-  command: ["sleep", "infinity"]
+  commands: ["sleep", "infinity"]
 EOF
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system apply -f "$AX_INSTALL_DIR/task.yaml"
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system describe task "$AX_CHECK_TASK"

@@ -25,6 +25,15 @@ message ObjectMeta {
   string name = 1;
   string atespace = 2;
   google.protobuf.Timestamp create_time = 3;
+  // Server-assigned UUID.
+  string uid = 4;
+  // Arbitrary key-value labels.
+  map<string, string> labels = 5;
+  // Authenticated creator identity.
+  string owner = 6;
+  google.protobuf.Timestamp update_time = 7;
+  // Set while resource deletion is in progress.
+  google.protobuf.Timestamp delete_time = 8;
 }
 
 message ResourcesSpec {

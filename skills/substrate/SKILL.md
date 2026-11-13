@@ -92,14 +92,13 @@ instead. No mocking library is in `go.mod`.
 ### Substrate behaviour the code already depends on
 
 - Actor template images must be digest-pinned (`@sha256:…`); a tag-only
-  `spec.image` fails at ActorTemplate creation with reason
+  `spec.profile.image` fails at ActorTemplate creation with reason
   `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
   `bin/ax-server.digest` / `bin/ax-task-runner.digest` for this reason.
 - After `ResumeActor` the actor may be on a different worker, so AX never
-  stores a worker IP: the server reads it from the actor on every get and list
-  (`substrate.WorkerIP` in `internal/server/server.go`), and the reconciler
-  uses the IP `ResumeActor` returns only for its readiness probe
-  (`internal/controller/reconciler.go`).
+  stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
+  its readiness probe (`internal/controller/reconciler.go`), and `ax ssh`
+  connects through `atenet-router`.
 - Egress: an actor without an egress policy has no outbound access. For a
   task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
   asks Substrate whether the actor has a policy. If it has none, `bindGateway`

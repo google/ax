@@ -16,7 +16,9 @@ syntax = "proto3";
 
 package ax.v1alpha1;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
+import "google/rpc/status.proto";
 import "pkg/apis/v1alpha1/common.proto";
 import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/workspace.proto";
@@ -32,18 +34,39 @@ message Task {
 }
 
 message TaskSpec {
-  string image = 1;
-  repeated string command = 2;
+  reserved 1, 2, 4;
+
+  // Optional compute profile (image, resources, ate_actor_template) for this
+  // task's sandbox.
+  //
+  // Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:
+  //   - If omitted (or empty), the task uses the bound Workspace's
+  //     spec.profile when set (hitting its pre-warmed workspace snapshot), or
+  //     server defaults otherwise.
+  //   - If set (any field populated), TaskSpec.profile is used as-is and
+  //     WorkspaceSpec.profile is ignored; any unset fields within
+  //     TaskSpec.profile fall back to server defaults (not WorkspaceSpec.profile).
+  //     When this differs from WorkspaceSpec.profile, the task cold-boots and
+  //     runs workspace setup in its own compute profile instead of starting
+  //     from the pre-warmed snapshot.
+  Profile profile = 8;
+
+  // Command argv; if empty, runs the resolved image's ENTRYPOINT + CMD in its WORKDIR.
+  repeated string commands = 9;
+
+  // Non-secret environment variables merged on top of the image's Env.
   repeated EnvVar env = 3;
-  ResourcesSpec resources = 4;
+
   // workspace binds the Workspace the task works in. It is mounted at
   // /workspace unless the binding sets a path, and that path is the task
   // command's working directory. A task without a workspace gets an empty
   // working directory at /workspace.
   WorkspaceRef workspace = 5;
+
   // debug enables the in-container guest services (process execution and file
   // access) that back `ax ssh`. Off by default.
   bool debug = 6;
+
   // config is free-form, runner-defined configuration. AX stores it and
   // hands it to the runner as-is, as part of the Task in AX_TASK_YAML and
   // the task metadata endpoint. The control plane only checks that it is an
@@ -51,12 +74,23 @@ message TaskSpec {
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
   google.protobuf.Struct config = 7;
+
+  // Optional natural-language task goal.
+  Goal goal = 10;
+
+  // Retries after a failed exit, sandbox crash, or lost runner.
+  RetryConfig retry = 11;
+
   // gateway binds the Gateway whose rules allow the task's external network
   // traffic. Rules are copied onto the actor when the task is created (later
   // edits or deletes of the gateway don't change existing tasks, and binding a
   // missing gateway fails). A task without a Gateway has no external network
   // access.
   GatewayRef gateway = 12;
+
+  // Logical multi-turn session / conversation thread ID. Defaults to
+  // metadata.uid on CreateTask if unset.
+  string session_id = 13;
 }
 
 message EnvVar {
@@ -64,13 +98,84 @@ message EnvVar {
   string value = 2;
 }
 
+message RetryConfig {
+  // Retries per turn (attempt runs 1 … max_retries + 1).
+  int32 max_retries = 1;
+  // Delay before the first retry. Default 0 (retry immediately).
+  google.protobuf.Duration initial_backoff = 2;
+  // Cap on retry delay. Default 5m.
+  google.protobuf.Duration max_backoff = 3;
+  // Multiplier applied after each retry (must be >= 1.0 when set).
+  double backoff_multiplier = 4;
+}
+
+message Goal {
+  string spec = 1;
+}
+
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_IDLE = 1;
+  TASK_STATE_WORKING = 2;
+  TASK_STATE_REQUIRES_ACTION = 3;
+  TASK_STATE_COMPLETED = 4;
+  TASK_STATE_FAILED = 5;
+  TASK_STATE_CANCELLED = 6;
+  TASK_STATE_QUEUED = 7;
+  TASK_STATE_SUSPENDED = 8;
+  TASK_STATE_SUSPENDING = 9;
+}
+
+enum TaskResult {
+  TASK_RESULT_UNSPECIFIED = 0;
+  TASK_RESULT_SUCCEEDED = 1;
+  TASK_RESULT_FAILED = 2;
+  TASK_RESULT_CANCELLED = 3;
+}
+
+message TaskOutcome {
+  TaskResult result = 1;
+  google.rpc.Status status = 2;
+  int32 exit_code = 3;
+  // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
+  // automatic stdout/stderr tail fallback (capped at 64 KiB).
+  string output = 4;
+  // Optional structured JSON output from $AX_OUTPUT_JSON_FILE or
+  // POST :8099/.../output (<= 64 KiB).
+  google.protobuf.Struct structured_output = 5;
+}
+
+enum TaskStatusReason {
+  TASK_STATUS_REASON_UNSPECIFIED = 0;
+  TASK_STATUS_REASON_PROVISIONING_FAILED = 1;
+  TASK_STATUS_REASON_SANDBOX_CRASHED = 2;
+}
+
+message StatusDetail {
+  TaskStatusReason reason = 1;
+  string detail = 2;
+}
+
 message TaskStatus {
-  string phase = 1;
-  string id = 2;
+  reserved 1, 2, 4, 5, 6;
+
   string actor = 3;
-  // json_name keeps the established `workerIP` spelling in YAML and JSON.
-  string worker_ip = 4 [json_name = "workerIP"];
   repeated Condition conditions = 7;
+  TaskState state = 8;
+  StatusDetail status_detail = 9;
+  TaskOutcome outcome = 10;
+  // 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
+  // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
+  // retry (non-zero command exit, sandbox crash, or lost runner).
+  int32 attempt = 11;
+  string ate_actor_template = 12;
+  // Monotonic task revision.
+  int64 generation = 13;
+  // Effective command argv executed by each run: spec.commands if set,
+  // otherwise the image's ENTRYPOINT + CMD.
+  repeated string resolved_argv = 14;
+  // Summary of the previous attempt's failure, provided as context on retry.
+  string previous_failure = 15;
   // actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
   // Read from Substrate, never stored; empty when the actor cannot be read.
   string actor_uid = 23;

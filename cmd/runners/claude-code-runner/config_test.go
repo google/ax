@@ -144,9 +144,9 @@ func TestClaudeArgs_WorkspaceMCP(t *testing.T) {
 func TestWithClaudeCommand(t *testing.T) {
 	config := mustStruct(t, map[string]any{"prompt": "p"})
 
-	explicit := &v1alpha1.Task{Spec: &v1alpha1.TaskSpec{Command: []string{"make", "test"}, Config: config}}
+	explicit := &v1alpha1.Task{Spec: &v1alpha1.TaskSpec{Commands: []string{"make", "test"}, Config: config}}
 	if got, err := withClaudeCommand(explicit, nil); err != nil || got != explicit {
-		t.Errorf("task with spec.command was changed: %v, %v", got, err)
+		t.Errorf("task with spec.commands was changed: %v, %v", got, err)
 	}
 
 	noConfig := &v1alpha1.Task{Spec: &v1alpha1.TaskSpec{}}
@@ -162,14 +162,14 @@ func TestWithClaudeCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("withClaudeCommand: %v", err)
 	}
-	cmd := got.GetSpec().GetCommand()
+	cmd := got.GetSpec().GetCommands()
 	if len(cmd) == 0 || cmd[0] != claudeBinary {
 		t.Errorf("command = %q", cmd)
 	}
 	if !slices.ContainsFunc(cmd, func(a string) bool { return strings.HasPrefix(a, "--mcp-config=") }) {
 		t.Errorf("command %q does not load the workspace MCP servers", cmd)
 	}
-	if len(task.GetSpec().GetCommand()) != 0 {
+	if len(task.GetSpec().GetCommands()) != 0 {
 		t.Errorf("input task was modified")
 	}
 }

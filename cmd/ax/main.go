@@ -20,11 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/signal"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -444,45 +442,10 @@ func runGet(serverURL, atespace string, args []string) error {
 			return fmt.Errorf("listing tasks: %w", err)
 		}
 
-		tasks := resp.Tasks
-
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tATESPACE\tPHASE\tACTOR\tWORKER-IP\tAGE")
-		for _, t := range tasks {
-			workerIP := ""
-			actor := ""
-			phase := v1alpha1.PhasePending
-			if t.Status != nil {
-				workerIP = t.Status.WorkerIp
-				actor = t.Status.Actor
-				if t.Status.Phase != "" {
-					phase = t.Status.Phase
-				}
-			}
-			if workerIP == "" {
-				workerIP = "<none>"
-			}
-			if actor == "" {
-				actor = "<none>"
-			}
-			age := "<unknown>"
-			name := ""
-			tAtespace := ""
-			if t.Metadata != nil {
-				name = t.Metadata.Name
-				tAtespace = t.Metadata.Atespace
-				if t.Metadata.CreateTime != nil {
-					age = formatAge(time.Since(t.Metadata.CreateTime.AsTime()))
-				}
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-				name,
-				tAtespace,
-				phase,
-				actor,
-				workerIP,
-				age,
-			)
+		fmt.Fprintln(w, "NAME\tATESPACE\tSTATE\tACTOR\tAGE")
+		for _, t := range resp.Tasks {
+			printTaskRow(w, t)
 		}
 		return w.Flush()
 	}
@@ -710,64 +673,7 @@ func runDescribe(serverURL, atespace string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("getting task %q: %w", name, err)
 	}
-
-	taskName := ""
-	taskAtespace := ""
-	if task.Metadata != nil {
-		taskName = task.Metadata.Name
-		taskAtespace = task.Metadata.Atespace
-	}
-	phase := ""
-	actor := ""
-	workerIP := ""
-	var conditions []*v1alpha1.Condition
-	if task.Status != nil {
-		phase = task.Status.Phase
-		actor = task.Status.Actor
-		workerIP = task.Status.WorkerIp
-		conditions = task.Status.Conditions
-	}
-
-	fmt.Printf("Name:         %s\n", taskName)
-	fmt.Printf("Atespace:     %s\n", taskAtespace)
-	fmt.Printf("Phase:        %s\n", phase)
-	fmt.Printf("Actor:        %s\n", actor)
-	actorUID := task.GetStatus().GetActorUid()
-	if actorUID == "" {
-		actorUID = "<none>"
-	}
-	fmt.Printf("Actor UID:    %s\n", actorUID)
-	fmt.Printf("Worker IP:    %s\n", workerIP)
-	if task.Spec != nil {
-		if ref := task.Spec.GetWorkspace(); ref != nil {
-			fmt.Printf("Workspace:    %s  path=%s\n", ref.Name, task.Spec.WorkspacePath())
-		}
-		if task.Spec.Image != "" {
-			fmt.Printf("Image:        %s\n", task.Spec.Image)
-		}
-		if len(task.Spec.Command) > 0 {
-			fmt.Printf("Command:      %v\n", task.Spec.Command)
-		}
-		if config := task.Spec.GetConfig().AsMap(); len(config) > 0 {
-			if out, err := yaml.Marshal(config); err == nil {
-				fmt.Println("Config:")
-				for _, line := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
-					fmt.Printf("  %s\n", line)
-				}
-			}
-		}
-	}
-
-	if len(conditions) > 0 {
-		fmt.Println("\nConditions:")
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintln(w, "  TYPE\tSTATUS\tREASON\tMESSAGE")
-		for _, c := range conditions {
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", c.Type, c.Status, c.Reason, c.Message)
-		}
-		_ = w.Flush()
-	}
-
+	describeTask(os.Stdout, task)
 	return nil
 }
 
@@ -1025,7 +931,7 @@ const sshUsage = `Usage:
   ax ssh <task-name> [-- command...]
 
 Run a command inside a running task's container, or /bin/sh when no command is
-given. The task must be Running and have spec.debug: true.
+given. The task must be Working and have spec.debug: true.
 
 Examples:
   ax ssh task123
@@ -1088,31 +994,21 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 		return fmt.Errorf("task %q has no status available", taskName)
 	}
 
-	if task.Status.Phase != v1alpha1.PhaseRunning {
-		return fmt.Errorf("task %q is in phase %q (must be Running to ssh)", taskName, task.Status.Phase)
+	if task.Status.GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
+		return fmt.Errorf("task %q is in state %q (must be Working to ssh)", taskName, v1alpha1.FormatTaskState(task))
 	}
 
 	if !task.GetSpec().GetDebug() {
 		return fmt.Errorf("task %q does not expose guest services; set spec.debug: true and re-apply to enable ax ssh", taskName)
 	}
 
-	workerIP := task.Status.WorkerIp
-	if workerIP == "" {
-		return fmt.Errorf("task %q has no worker IP assigned", taskName)
+	actor := task.Status.GetActor()
+	if actor == "" {
+		return fmt.Errorf("task %q has no actor assigned", taskName)
 	}
 
-	// The runner serves guest services on port 80 unless the worker IP says otherwise.
-	host := workerIP
-	port := 80
-	if h, p, err := net.SplitHostPort(workerIP); err == nil {
-		host = h
-		if parsedPort, err := strconv.Atoi(p); err == nil {
-			port = parsedPort
-		}
-	}
-
-	targetActor := fmt.Sprintf("%s/%s", task.Metadata.Atespace, task.Status.Actor)
-	guestClient, cleanup, err := dialGuest(host, port, targetActor, kubeContext, axNamespace)
+	targetActor := fmt.Sprintf("%s/%s", task.GetMetadata().GetAtespace(), actor)
+	guestClient, cleanup, err := dialGuest(targetActor, kubeContext, axNamespace)
 	if err != nil {
 		return err
 	}
@@ -1157,15 +1053,13 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 	return nil
 }
 
-func dialGuest(host string, port int, targetActor, kubeContext, axNamespace string) (*guest.Client, func(), error) {
-	// 1. Connect directly if worker IP is reachable (e.g. within cluster or local mesh).
-	d := net.Dialer{Timeout: 500 * time.Millisecond}
-	guestEndpoint := net.JoinHostPort(host, fmt.Sprint(port))
-	if testConn, err := d.Dial("tcp", guestEndpoint); err == nil {
-		_ = testConn.Close()
-		client, err := guest.Dial(guestEndpoint)
+func dialGuest(targetActor, kubeContext, axNamespace string) (*guest.Client, func(), error) {
+	// 1. Connect directly to ATENET_ROUTER_ADDR when set (e.g. in-cluster).
+	if routerAddr := os.Getenv("ATENET_ROUTER_ADDR"); routerAddr != "" {
+		addr := strings.TrimPrefix(strings.TrimPrefix(routerAddr, "http://"), "https://")
+		client, err := guest.DialTarget(addr, targetActor)
 		if err != nil {
-			return nil, nil, fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
+			return nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", addr, err)
 		}
 		return client, nil, nil
 	}

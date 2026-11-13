@@ -18,12 +18,12 @@
 # starts with project guidance. The Task uses the Claude Code image
 # (Dockerfile.claude-code), whose runner turns spec.config into one
 # non-interactive `claude --print` session in /workspace. The prompt asks the
-# agent to write its report to /workspace/claude-output.md. spec.command is
+# agent to write its report to /workspace/claude-output.md. spec.commands is
 # left empty so the runner builds the command itself.
 #
 # Before applying:
 #
-# 1. Build and push the image, then pin its digest in spec.image below.
+# 1. Build and push the image, then pin its digest in spec.profile.image below.
 #    Substrate rejects tag-only image references.
 #
 #      make push-claude-code-image CLAUDE_CODE_REPO=<your-registry>/<image>
@@ -70,7 +70,12 @@ metadata:
 spec:
   # Built from Dockerfile.claude-code; replace the digest with the one
   # `make push-claude-code-image` prints.
-  image: "gcr.io/ax-images/ax-images@sha256:REPLACE_WITH_PUSHED_DIGEST"
+  profile:
+    image: "gcr.io/ax-images/ax-images@sha256:REPLACE_WITH_PUSHED_DIGEST"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
   # The prompt and claude's flags from `claude --help`, in camelCase
   # (maxTurns is --max-turns). The runner runs:
   #   claude --print --<flag>=<value>... -- <prompt>
@@ -94,10 +99,6 @@ spec:
     # TODO: Inject the ANTHROPIC_API_KEY to the outbound calls automatically.
     - name: ANTHROPIC_API_KEY
       value: "${ANTHROPIC_API_KEY}"
-  resources:
-    limits:
-      cpu: "2"
-      memory: "4Gi"
   workspace:
     name: itsdangerous
   debug: true # serve guest services so `ax ssh` works; off by default

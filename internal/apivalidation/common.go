@@ -68,15 +68,13 @@ func ValidateObjectMeta(meta *v1alpha1.ObjectMeta) error {
 // than zero, and a cpu limit below 1000 cores. Checking them here means a bad
 // value fails at apply time instead of when the template is created.
 
-// ValidateResources reports the first problem with a task's resource
+// ValidateResources reports the first problem with a profile's resource
 // requirements. A nil or empty value is valid: omitted cpu and memory limits
 // default to 1 CPU (1000m) and 512Mi when the ActorTemplate is built.
 func ValidateResources(reqs *v1alpha1.ResourcesSpec) error {
-	return validateResources("spec.resources", reqs)
+	return validateResources("spec.profile.resources", reqs)
 }
 
-// TODO: Once TaskSpec migrates to spec.profile, drop the field parameter
-// and hardcode "spec.profile.resources".
 func validateResources(field string, reqs *v1alpha1.ResourcesSpec) error {
 	limits := reqs.GetLimits()
 	if cpu := limits.GetCpu(); cpu != "" {

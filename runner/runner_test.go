@@ -45,7 +45,7 @@ func TestRun_StartsTaskCommandWithInjectedEnv(t *testing.T) {
 	h := newHarness(t)
 	outFile := filepath.Join(t.TempDir(), "out.txt")
 	h.task.Spec.Env = []*v1alpha1.EnvVar{{Name: "DEMO_ENV", Value: "from-task"}}
-	h.task.Spec.Command = []string{"sh", "-c", `echo "$DEMO_ENV $AX_METADATA_URL $(pwd)" > ` + outFile}
+	h.task.Spec.Commands = []string{"sh", "-c", `echo "$DEMO_ENV $AX_METADATA_URL $(pwd)" > ` + outFile}
 
 	exit := h.runUntilCommandExits(t)
 	if exit.Err != nil || exit.ExitCode != 0 {
@@ -70,7 +70,7 @@ func TestRun_StartsTaskCommandWithInjectedEnv(t *testing.T) {
 
 func TestRun_ReportsCommandExitCode(t *testing.T) {
 	h := newHarness(t)
-	h.task.Spec.Command = []string{"sh", "-c", "exit 3"}
+	h.task.Spec.Commands = []string{"sh", "-c", "exit 3"}
 
 	exit := h.runUntilCommandExits(t)
 	if exit.ExitCode != 3 || exit.Err == nil {
@@ -80,7 +80,7 @@ func TestRun_ReportsCommandExitCode(t *testing.T) {
 
 func TestRun_KeepsServingAfterCommandExits(t *testing.T) {
 	h := newHarness(t)
-	h.task.Spec.Command = []string{"true"}
+	h.task.Spec.Commands = []string{"true"}
 
 	h.runUntilCommandExits(t)
 
@@ -103,7 +103,7 @@ func TestRun_KeepsServingAfterCommandExits(t *testing.T) {
 func TestRun_StopsRunningCommandOnCancel(t *testing.T) {
 	h := newHarness(t)
 	// A shell with a sleeping child: the whole process group must be stopped.
-	h.task.Spec.Command = []string{"sh", "-c", "sleep 30; sleep 30"}
+	h.task.Spec.Commands = []string{"sh", "-c", "sleep 30; sleep 30"}
 	h.start(t)
 
 	// Give the command a moment to start before cancelling.
@@ -175,7 +175,7 @@ func TestRun_SetsDefaultEnv(t *testing.T) {
 			outFile := filepath.Join(t.TempDir(), "out.txt")
 			h.cfg.CABundle = tc.caBundle
 			h.task.Spec.Env = tc.env
-			h.task.Spec.Command = []string{"sh", "-c", `echo "$SSL_CERT_FILE|$GIT_SSL_CAINFO|$GIT_TERMINAL_PROMPT|$(printf 'protocol=https\nhost=git.example\n\n' | git credential fill 2>/dev/null | grep password)" > ` + outFile}
+			h.task.Spec.Commands = []string{"sh", "-c", `echo "$SSL_CERT_FILE|$GIT_SSL_CAINFO|$GIT_TERMINAL_PROMPT|$(printf 'protocol=https\nhost=git.example\n\n' | git credential fill 2>/dev/null | grep password)" > ` + outFile}
 
 			if exit := h.runUntilCommandExits(t); exit.Err != nil {
 				t.Fatalf("unexpected exit: %+v", exit)
@@ -333,7 +333,7 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 
 	h.task.Spec.Workspace = &v1alpha1.WorkspaceRef{Name: "code", Path: codePath}
 	h.cfg.Workspace = &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "code"}, Spec: &v1alpha1.WorkspaceSpec{}}
-	h.task.Spec.Command = []string{"sh", "-c", "pwd > " + outFile}
+	h.task.Spec.Commands = []string{"sh", "-c", "pwd > " + outFile}
 
 	exit := h.runUntilCommandExits(t)
 	if exit.Err != nil || exit.ExitCode != 0 {
@@ -388,7 +388,7 @@ func TestRun_SetupFailureAbortsBeforeStartingCommand(t *testing.T) {
 			},
 		},
 	}
-	h.task.Spec.Command = []string{"sh", "-c", "touch " + ranMarker}
+	h.task.Spec.Commands = []string{"sh", "-c", "touch " + ranMarker}
 
 	err := runner.Run(t.Context(), h.cfg)
 	if err == nil || !strings.Contains(err.Error(), "setup-boom") {

@@ -14,23 +14,38 @@ kind: Task
 metadata:
   name: task123
   atespace: default
+  labels:
+    team: platform
 spec:
-  image: "ghcr.io/my-org/my-agent-image"
-  command: ["python", "agent.py"]
+  profile:
+    image: "ghcr.io/my-org/my-agent-image@sha256:..."
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources):
+    # ateActorTemplate: "base-tmpl"
+
+  commands: ["python", "agent.py"]
   env:
     - name: ENVIRONMENT
       value: "production"
-
-  resources:
-    limits:
-      cpu: "2"
-      memory: "4Gi"
 
   workspace:
     name: default-workspace
     path: "/workspace"   # optional; this is the default
 
-  debug: true   # serve guest services inside the sandbox so `ax ssh` works; off by default
+  goal:
+    spec: "Fix the failing unit tests."
+
+  retry:
+    maxRetries: 2
+    initialBackoff: 30s
+    maxBackoff: 300s
+    backoffMultiplier: 2
+
+  sessionId: "session-42"   # optional; defaults to metadata.uid on creation
+  debug: true               # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
 
 ### Actor identity
@@ -42,13 +57,20 @@ AX reads it from Substrate on each get or list and never stores it. It changes
 if the actor is recreated and is empty when the actor is missing or Substrate
 cannot be reached; `describe` shows `<none>` in those cases.
 
-### Image references
+### Compute profile and image references
 
-Substrate requires `spec.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
+`spec.profile` configures the task's sandbox compute environment (`image` and `resources.limits`, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace).
+
+When a task binds a `Workspace`, profile selection operates on the **whole `Profile`** rather than merging individual fields:
+
+- **Omitted `Task.spec.profile` (warm path):** If `Task.spec.profile` is omitted (or empty), the task falls back to `Workspace.spec.profile` when set (or server defaults otherwise), allowing it to start directly from the Workspace's pre-warmed snapshot.
+- **Explicit `Task.spec.profile` (independent override / cold-boot on mismatch):** `Workspace.spec.profile` exists to pre-warm a default workspace snapshot for fast warm startup—it never constrains or leaks fields into an explicit `Task.spec.profile`. Whenever `Task.spec.profile` sets any field (`image`, `resources.limits`, or `ateActorTemplate`), it is used **as-is** and `Workspace.spec.profile` is ignored; any unset fields within `Task.spec.profile` fall back to server defaults (`AX_DEFAULT_TASK_IMAGE`, `1` CPU / `1000m`, `512Mi` memory), never to `Workspace.spec.profile`. If the resulting profile differs from `Workspace.spec.profile`, the task simply misses the pre-warmed snapshot and cold-boots to run workspace setup in its own sandbox profile first.
+
+Substrate requires `spec.profile.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
 
 ### Binding a workspace
 
-A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.command`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`.
+A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.commands`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`.
 
 The bound `Workspace` must already exist in the task's atespace. Creating a task that binds a missing workspace fails with `FailedPrecondition` and stores nothing. `ax apply` creates documents in file order, so list a `Workspace` before the `Task` that binds it.
 
@@ -64,9 +86,15 @@ If Agent Substrate refuses one of the rules, the task is marked `Failed` with re
 
 ### Sizing the sandbox
 
-`spec.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses is marked `Failed` with reason `TemplateCreationFailed` rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
+`spec.profile.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses is marked `Failed` with reason `TemplateCreationFailed` rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
 
-Substrate sizes sandboxes by limits alone, so `spec.resources.requests` is not supported and `ax apply` rejects a manifest that sets it.
+Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` is not supported and `ax apply` rejects a manifest that sets it.
+
+### Goal, retries, and session ID
+
+- **`spec.goal.spec`** is an optional natural-language description of the task's objective, delivered as part of the task metadata.
+- **`spec.retry`** configures retry limits and backoff (`maxRetries >= 0`, non-negative `initialBackoff` and `maxBackoff` with `initialBackoff <= maxBackoff`, and `backoffMultiplier >= 1.0` when set).
+- **`spec.sessionId`** groups related tasks or multi-turn runs under one correlation ID. When omitted, `CreateTask` defaults it to the server-assigned `metadata.uid`.
 
 ### Runner configuration
 
@@ -141,7 +169,7 @@ spec:
 
 ### Workspace fields
 
-- **`spec.profile`** defines the default sandbox compute profile (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace). Because `ateActorTemplate` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
+- **`spec.profile`** defines the compute profile pre-warmed upon Workspace creation for fast warm task startup (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace). Tasks that bind this Workspace and omit `Task.spec.profile` use `Workspace.spec.profile` as their default profile and start warm from the snapshot; tasks that set their own `Task.spec.profile` use it as-is without field-merging from `Workspace.spec.profile` (cold-booting workspace setup when the profiles differ). Because `ateActorTemplate` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
 - **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).

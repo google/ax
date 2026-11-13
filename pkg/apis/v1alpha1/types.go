@@ -39,32 +39,6 @@ const (
 	// so Substrate rejects it unless overridden via --default-task-image / AX_DEFAULT_TASK_IMAGE.
 	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
 	DefaultSystemNamespace = "ax-system"
-
-	// PhasePending marks a task whose actor has not been provisioned yet, for
-	// example because Substrate was unavailable. Retrying the operation can
-	// still succeed.
-	PhasePending = "Pending"
-	// PhaseFailed marks a task that AX could not provision or operate, or whose
-	// actor crashed or disappeared.
-	PhaseFailed = "Failed"
-	// PhaseTerminating marks a task whose deletion has been requested and whose
-	// actor is being torn down. The record disappears once cleanup completes.
-	PhaseTerminating = "Terminating"
-
-	// The phases below follow from the state of the task's actor on Agent
-	// Substrate. They are never stored.
-
-	// PhaseRunning marks a task whose actor is running.
-	PhaseRunning = "Running"
-	// PhaseResuming marks a task whose actor is being resumed.
-	PhaseResuming = "Resuming"
-	// PhaseSuspending marks a task whose actor is being suspended.
-	PhaseSuspending = "Suspending"
-	// PhaseSuspended marks a task whose actor is suspended.
-	PhaseSuspended = "Suspended"
-	// PhaseUnknown marks a task whose actor could not be read, or is in a state
-	// AX does not recognize.
-	PhaseUnknown = "Unknown"
 )
 
 // Condition types reported on Task status.
@@ -82,9 +56,7 @@ const (
 // are invalid states. These should be returned as errors, shouldn't be
 // leaking as state.
 
-// Condition reasons. A Ready condition that is False because the actor is
-// not running (for example while it is suspended) uses the task's phase as its
-// reason instead.
+// Condition reasons reported on Ready and WorkspaceReady conditions.
 const (
 	// ReasonTaskRunning: Ready is True; the actor is running and the workspace
 	// is set up.
@@ -93,8 +65,8 @@ const (
 	// the workspace is still being set up.
 	ReasonWorkspaceInitializing = "WorkspaceInitializing"
 	// ReasonSubstrateUnavailable: Agent Substrate could not be reached. Ready
-	// is False with phase Pending while provisioning, or Unknown with phase
-	// Unknown while reading the actor.
+	// is False with state Queued while provisioning, or Unknown while reading
+	// the actor.
 	ReasonSubstrateUnavailable = "SubstrateUnavailable"
 	// ReasonActorNotFound: Ready is False; the task's actor was removed
 	// outside AX.
@@ -102,7 +74,7 @@ const (
 	// ReasonAtespaceCreationFailed: Ready is False; the atespace could not be
 	// created on Agent Substrate.
 	ReasonAtespaceCreationFailed = "AtespaceCreationFailed"
-	// ReasonInvalidResources: Ready is False; spec.resources is invalid.
+	// ReasonInvalidResources: Ready is False; spec.profile.resources is invalid.
 	ReasonInvalidResources = "InvalidResources"
 	// ReasonTemplateCreationFailed: Ready is False; Agent Substrate rejected
 	// the task's ActorTemplate, for example because of its image.
@@ -116,22 +88,62 @@ const (
 	// ReasonActorResumeFailed: Ready is False; the actor could not be resumed.
 	ReasonActorResumeFailed = "ActorResumeFailed"
 
+	// Actor lifecycle reasons reported on Ready when the actor is not running.
+	ReasonResuming    = "Resuming"
+	ReasonSuspending  = "Suspending"
+	ReasonSuspended   = "Suspended"
+	ReasonFailed      = "Failed"
+	ReasonTerminating = "Terminating"
+	ReasonUnknown     = "Unknown"
+
 	// ReasonSetupComplete: WorkspaceReady is True.
 	ReasonSetupComplete = "SetupComplete"
 	// ReasonInitializing: WorkspaceReady is False; setup is still running.
 	ReasonInitializing = "Initializing"
 )
 
-// IsAXPhase reports whether phase describes the control plane's own work on a
-// task (provisioning it, failing to, or tearing it down) rather than the state
-// of the task's actor. Only these phases are stored; every other phase is read
-// from the actor on Agent Substrate when the task is fetched.
-func IsAXPhase(phase string) bool {
-	switch phase {
-	case PhasePending, PhaseFailed, PhaseTerminating:
+// IsAXTaskState reports whether state describes the control plane's own stored
+// state on a task (queued for provisioning/retry, or terminal) rather than a
+// live state derived from the task's actor on Agent Substrate.
+func IsAXTaskState(state TaskState) bool {
+	switch state {
+	case TaskState_TASK_STATE_QUEUED,
+		TaskState_TASK_STATE_COMPLETED,
+		TaskState_TASK_STATE_FAILED,
+		TaskState_TASK_STATE_CANCELLED:
 		return true
 	}
 	return false
+}
+
+// FormatTaskState returns a human-readable state label for CLI display. A task
+// with metadata.delete_time set is reported as "Terminating".
+func FormatTaskState(task *Task) string {
+	if task.GetMetadata().GetDeleteTime() != nil {
+		return ReasonTerminating
+	}
+	switch task.GetStatus().GetState() {
+	case TaskState_TASK_STATE_IDLE:
+		return "Idle"
+	case TaskState_TASK_STATE_WORKING:
+		return "Working"
+	case TaskState_TASK_STATE_REQUIRES_ACTION:
+		return "RequiresAction"
+	case TaskState_TASK_STATE_COMPLETED:
+		return "Completed"
+	case TaskState_TASK_STATE_FAILED:
+		return "Failed"
+	case TaskState_TASK_STATE_CANCELLED:
+		return "Cancelled"
+	case TaskState_TASK_STATE_QUEUED:
+		return "Queued"
+	case TaskState_TASK_STATE_SUSPENDED:
+		return "Suspended"
+	case TaskState_TASK_STATE_SUSPENDING:
+		return "Suspending"
+	default:
+		return ReasonUnknown
+	}
 }
 
 // YAML encoding.

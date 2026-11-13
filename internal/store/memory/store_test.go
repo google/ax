@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestListPagination(t *testing.T) {
@@ -82,5 +83,19 @@ func TestListPagination(t *testing.T) {
 	maxTasks, err := s.ListTasks(ctx, "default", math.MaxInt64, 1)
 	if err != nil || !slices.Equal(taskNames(maxTasks), []string{"task-b", "task-c"}) {
 		t.Fatalf("ListTasks(limit=MaxInt64, offset=1) = %v, %v; want [task-b task-c]", taskNames(maxTasks), err)
+	}
+
+	dt := timestamppb.Now()
+	if err := s.SetTaskDeleteTime(ctx, "default", "task-a", dt); err != nil {
+		t.Fatalf("SetTaskDeleteTime: %v", err)
+	}
+	if got, err := s.GetTask(ctx, "default", "task-a"); err != nil || got.GetMetadata().GetDeleteTime() == nil {
+		t.Fatalf("GetTask(task-a) delete_time = %v, err = %v; want non-nil", got.GetMetadata().GetDeleteTime(), err)
+	}
+	if err := s.SetTaskDeleteTime(ctx, "default", "task-a", nil); err != nil {
+		t.Fatalf("SetTaskDeleteTime(nil): %v", err)
+	}
+	if got, err := s.GetTask(ctx, "default", "task-a"); err != nil || got.GetMetadata().GetDeleteTime() != nil {
+		t.Fatalf("GetTask(task-a) delete_time after clear = %v, err = %v; want nil", got.GetMetadata().GetDeleteTime(), err)
 	}
 }

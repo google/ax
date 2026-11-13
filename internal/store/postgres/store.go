@@ -33,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const defaultPageLimit = 50
@@ -218,8 +219,8 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	if task.Status.Phase == "" {
-		task.Status.Phase = v1alpha1.PhasePending
+	if task.Status.State == v1alpha1.TaskState_TASK_STATE_UNSPECIFIED && task.Metadata.GetDeleteTime() == nil {
+		task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
 	}
 	return s.save(ctx, tasksTable, task.Metadata, task)
 }
@@ -267,6 +268,39 @@ func (s *Store) UpdateTaskStatus(ctx context.Context, atespace, name string, sta
 		if _, err := tx.Exec(ctx, `UPDATE tasks SET data = $3 WHERE atespace = $1 AND name = $2`,
 			atespace, name, string(data)); err != nil {
 			return fmt.Errorf("updating task status: %w", err)
+		}
+		return nil
+	})
+}
+
+// SetTaskDeleteTime sets or clears metadata.delete_time on a task without
+// changing its position in lists.
+func (s *Store) SetTaskDeleteTime(ctx context.Context, atespace, name string, deleteTime *timestamppb.Timestamp) error {
+	atespace = defaultAtespace(atespace)
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var data []byte
+		err := tx.QueryRow(ctx, `SELECT data FROM tasks WHERE atespace = $1 AND name = $2 FOR UPDATE`,
+			atespace, name).Scan(&data)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("getting task: %w", err)
+		}
+		var task v1alpha1.Task
+		if err := unmarshalOpts.Unmarshal(data, &task); err != nil {
+			return fmt.Errorf("unmarshaling task: %w", err)
+		}
+		if task.Metadata == nil {
+			task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: name}
+		}
+		task.Metadata.DeleteTime = deleteTime
+		if data, err = protojson.Marshal(&task); err != nil {
+			return fmt.Errorf("marshaling task: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tasks SET data = $3 WHERE atespace = $1 AND name = $2`,
+			atespace, name, string(data)); err != nil {
+			return fmt.Errorf("updating task delete_time: %w", err)
 		}
 		return nil
 	})

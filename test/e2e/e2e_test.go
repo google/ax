@@ -30,9 +30,6 @@ import (
 const (
 	defaultAtespace = "default"
 
-	phaseSuspended = "Suspended"
-	phaseRunning   = "Running"
-
 	// sampleRepo is a bare Git repository baked into the E2E task-runner image
 	// (see test/e2e/Dockerfile.task-runner.e2e). Tag v1.0.0 contains
 	// app.py printing "hello from git repo v1".
@@ -252,7 +249,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	// 1. A new task is created Suspended, backed by an Actor of the same name.
 	assertContains(t, "'ax apply'", env.apply(t, ns, manifest), "task.ax.io/"+name+" created")
 	task := env.getTask(t, ns, name)
-	assertPhase(t, task, phaseSuspended)
+	assertState(t, task, v1alpha1.TaskState_TASK_STATE_SUSPENDED)
 	if got := task.GetStatus().GetActor(); got != name {
 		t.Fatalf("task actor = %q, want %q", got, name)
 	}
@@ -298,19 +295,15 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
-	// 4. Resuming moves the task to Running on a worker reported by Substrate.
+	// 4. Resuming moves the task to Working on a worker reported by Substrate.
 	assertContains(t, "'ax resume task'", env.mustRunAX(t, ns, "resume", "task", name), "resumed")
 	task = env.getTask(t, ns, name)
-	assertPhase(t, task, phaseRunning)
+	assertState(t, task, v1alpha1.TaskState_TASK_STATE_WORKING)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 	assertCondition(t, task, "Ready", "True", v1alpha1.ReasonTaskRunning)
-	workerIP := task.GetStatus().GetWorkerIp()
-	if workerIP == "" {
-		t.Fatal("expected non-empty WorkerIp on running task")
-	}
 	actor = env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_RUNNING)
-	if ips := actor.GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) == 0 || ips[0] != workerIP {
-		t.Fatalf("Substrate WorkerPodIps = %v, want first IP %q", ips, workerIP)
+	if ips := actor.GetStatus().GetWorkerAssignment().GetWorkerPodIps(); len(ips) == 0 || ips[0] == "" {
+		t.Fatalf("Substrate WorkerPodIps = %v, want non-empty", ips)
 	}
 
 	// 5. Deleting the task removes the AX task, the Actor, and its ActorTemplate.
@@ -350,7 +343,7 @@ spec:
   env:
   - name: CUSTOM_E2E_VAR
     value: "custom-val-123"
-  command:
+  commands:
   - sh
   - -c
   - "echo cmd-ran-ok > /workspace/cmd-ran.txt"
@@ -536,11 +529,8 @@ func TestE2E_TaskSuspendAndResumePersistence(t *testing.T) {
 	// 2. Suspend: the task and its Actor are suspended and the worker released.
 	assertContains(t, "'ax suspend task'", env.mustRunAX(t, ns, "suspend", "task", task), "suspended")
 	got := env.getTask(t, ns, task)
-	assertPhase(t, got, phaseSuspended)
-	assertCondition(t, got, "Ready", "False", v1alpha1.PhaseSuspended)
-	if ip := got.GetStatus().GetWorkerIp(); ip != "" {
-		t.Fatalf("expected empty WorkerIp when suspended, got %q", ip)
-	}
+	assertState(t, got, v1alpha1.TaskState_TASK_STATE_SUSPENDED)
+	assertCondition(t, got, "Ready", "False", v1alpha1.ReasonSuspended)
 	actor := env.getActor(t, ns, task, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 	if len(actor.GetStatus().GetSnapshots()) == 0 && len(actor.GetStatus().ProtoReflect().GetUnknown()) == 0 {
 		t.Fatal("expected non-empty Snapshots on suspended actor")
@@ -580,7 +570,7 @@ func TestE2E_DescribeAndAtespaceIsolation(t *testing.T) {
 
 	// 3. `ax describe task` reflects the running task and its conditions.
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", task),
-		task, ns, phaseRunning, "WorkspaceReady", v1alpha1.ReasonTaskRunning)
+		task, ns, "Working", "WorkspaceReady", v1alpha1.ReasonTaskRunning)
 }
 
 const gatewayEgressManifest = `apiVersion: ax.io/v1alpha1
