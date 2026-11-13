@@ -55,7 +55,26 @@ type mockControlServer struct {
 	revertedActors    []string
 	// createTemplateErr, when set, is returned by CreateActorTemplate to stand in
 	// for Substrate rejecting a template (for example an invalid quantity).
-	createTemplateErr error
+	createTemplateErr     error
+	createdEgressPolicies []*ateapipb.CreateActorEgressPolicyRequest
+	// egressPolicyCalls counts the egress policy calls of any kind.
+	egressPolicyCalls int
+}
+
+func (m *mockControlServer) GetActorEgressPolicy(_ context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	m.egressPolicyCalls++
+	for _, created := range m.createdEgressPolicies {
+		if proto.Equal(created.GetActor(), req.GetActor()) {
+			return created.GetEgressPolicy(), nil
+		}
+	}
+	return nil, status.Error(codes.NotFound, "egress policy not found")
+}
+
+func (m *mockControlServer) CreateActorEgressPolicy(_ context.Context, req *ateapipb.CreateActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	m.egressPolicyCalls++
+	m.createdEgressPolicies = append(m.createdEgressPolicies, req)
+	return req.GetEgressPolicy(), nil
 }
 
 func (m *mockControlServer) GetActorTemplate(_ context.Context, req *ateapipb.GetActorTemplateRequest) (*ateapipb.ActorTemplate, error) {
@@ -256,7 +275,7 @@ func TestTaskReconciler(t *testing.T) {
 		Status: &v1alpha1.TaskStatus{Actor: "not-the-task"},
 	}
 
-	if err := reconciler.Resume(ctx, task, nil); err != nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 
@@ -321,7 +340,7 @@ func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
 				Metadata:   &v1alpha1.ObjectMeta{Name: "no-image", Atespace: "default"},
 				Spec:       &v1alpha1.TaskSpec{},
 			}
-			if err := reconciler.Resume(context.Background(), task, nil); err != nil {
+			if err := reconciler.Resume(context.Background(), task, nil, nil); err != nil {
 				t.Fatalf("Resume failed: %v", err)
 			}
 			if got := task.GetSpec().GetImage(); got != tc.want {
@@ -370,7 +389,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 		},
 	}
 
-	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 
@@ -382,6 +401,73 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 	if len(mockSrv.resumedActors) != 0 {
 		t.Errorf("expected no actor to be resumed, got %v", mockSrv.resumedActors)
+	}
+}
+
+// The actor of a task that binds a gateway gets that gateway's rules. For a
+// task that binds none, the reconciler makes no egress policy call.
+func TestTaskReconciler_GatewayRules(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+
+	newTask := func(name string) *v1alpha1.Task {
+		return &v1alpha1.Task{
+			ApiVersion: v1alpha1.APIVersion,
+			Kind:       v1alpha1.KindTask,
+			Metadata:   &v1alpha1.ObjectMeta{Name: name, Atespace: "default"},
+			Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		}
+	}
+
+	unbound := newTask("unbound-task")
+	if err := reconciler.Suspend(ctx, unbound, nil, nil); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	if n := mockSrv.egressPolicyCalls; n != 0 {
+		t.Fatalf("made %d egress policy calls for a task that binds no gateway, want none", n)
+	}
+
+	gw := &v1alpha1.Gateway{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gw", Atespace: "default"},
+		Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+			Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
+		}}},
+	}
+	bound := newTask("bound-task")
+	bound.Spec.Gateway = &v1alpha1.GatewayRef{Name: "gw"}
+	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+	if n := len(mockSrv.createdEgressPolicies); n != 1 {
+		t.Fatalf("created %d egress policies for a task that binds a gateway, want 1", n)
+	}
+	req := mockSrv.createdEgressPolicies[0]
+	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
+		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 1 || policy.GetRules()[0].GetHttps().GetHostnames()[0] != "a.example.com" {
+		t.Errorf("egress policy request = %v, want the gateway's rules as policy \"default\" of actor default/bound-task", req)
 	}
 }
 
@@ -429,7 +515,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 	before := proto.Clone(task.Status).(*v1alpha1.TaskStatus)
 
-	if err := reconciler.Suspend(ctx, task, nil); err == nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected Suspend to return an error when SuspendActor fails")
 	}
 	if !proto.Equal(task.Status, before) {
@@ -481,7 +567,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 		},
 	}
 
-	err = reconciler.Resume(ctx, task, nil)
+	err = reconciler.Resume(ctx, task, nil, nil)
 	if err == nil {
 		t.Fatal("expected Resume to fail when the ActorTemplate cannot be created")
 	}
@@ -552,7 +638,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 		Spec: &v1alpha1.TaskSpec{Image: "ghcr.io/my-org/my-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
 	}
 
-	if err := reconciler.Resume(ctx, task, nil); err == nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected Resume to return an error on transient template failure")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -620,21 +706,21 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 
 	// Case 1: Worker not responding on readyz -> WorkspaceReady=False.
-	if err := reconciler.Resume(ctx, task, nil); err != nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
 
 	// Case 2: Worker readyz endpoint succeeds -> WorkspaceReady=True.
 	mockSrv.workerIP = httpLis.Addr().String()
-	if err := reconciler.Resume(ctx, task, nil); err != nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with ready worker failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
 	// Case 3: Suspending the task -> the workspace was already initialized, so
 	// WorkspaceReady stays True.
-	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
@@ -642,7 +728,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// Case 4: Resuming with the worker unreachable -> the reconciler trusts the recorded
 	// WorkspaceReady instead of re-polling.
 	mockSrv.workerIP = "127.0.0.1:1"
-	if err := reconciler.Resume(ctx, task, nil); err != nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume after suspend failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
@@ -652,7 +738,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 
 	// A launch configuration change must still get a distinct template.
 	task.Spec.Command = []string{"python3", "agent.py"}
-	if err := reconciler.Resume(ctx, task, nil); err != nil {
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
 	}
 	if got := len(mockSrv.actorTemplates); got != 2 {
@@ -699,7 +785,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		},
 	}
 
-	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 1 {
@@ -716,7 +802,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	// Raising a limit is a launch configuration change and must provision a new
 	// template, under a new name, carrying the new value.
 	task.Spec.Resources.Limits.Memory = "8Gi"
-	if err := reconciler.Suspend(ctx, task, nil); err != nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend with changed limits failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 2 {
@@ -738,7 +824,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		Metadata:   &v1alpha1.ObjectMeta{Name: "plain-task", Atespace: "default"},
 		Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if err := reconciler.Suspend(ctx, plain, nil); err != nil {
+	if err := reconciler.Suspend(ctx, plain, nil, nil); err != nil {
 		t.Fatalf("Suspend of task without limits failed: %v", err)
 	}
 	wantDefault := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
@@ -797,7 +883,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			{Limits: &v1alpha1.ResourceList{Memory: "-4Gi"}},
 		} {
 			task := newTask("bad-limits", reqs)
-			if err := reconciler.Suspend(ctx, task, nil); err == nil {
+			if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 				t.Errorf("Suspend(%v) succeeded, want error", reqs)
 			}
 			assertCondition(t, task, "Ready", "False", v1alpha1.ReasonInvalidResources)
@@ -817,7 +903,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		task := newTask("rejected-limits", &v1alpha1.ResourcesSpec{
 			Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 		})
-		if err := reconciler.Suspend(ctx, task, nil); err == nil {
+		if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 			t.Fatal("Suspend succeeded although the template with limits was rejected")
 		}
 		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
@@ -833,7 +919,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		reconciler := setup(t, mockSrv)
 
 		task := newTask("no-limits", nil)
-		if err := reconciler.Suspend(ctx, task, nil); err == nil {
+		if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 			t.Fatal("Suspend succeeded although the template was rejected")
 		}
 		// Falling back would run a different image than the task asked for, so the
@@ -1063,7 +1149,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-atespace"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if err := reconciler.Suspend(ctx, task, nil); err == nil {
+	if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureAtespace fails, got nil")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -1075,7 +1161,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-actor"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if err := reconciler.Suspend(ctx, task2, nil); err == nil {
+	if err := reconciler.Suspend(ctx, task2, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureActor fails, got nil")
 	}
 	assertCondition(t, task2, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -1088,14 +1174,14 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-resume"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if err := reconciler.Resume(ctx, task3, nil); err == nil {
+	if err := reconciler.Resume(ctx, task3, nil, nil); err == nil {
 		t.Fatal("expected error from Resume when ResumeActor fails, got nil")
 	}
 	assertCondition(t, task3, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 
 	// Recovery on retry:
 	mockSrv.resumeActorErr = nil
-	if err := reconciler.Resume(ctx, task3, nil); err != nil {
+	if err := reconciler.Resume(ctx, task3, nil, nil); err != nil {
 		t.Fatalf("expected Resume to succeed after Substrate recovers, got %v", err)
 	}
 	if len(mockSrv.resumedActors) != 1 || mockSrv.resumedActors[0] != "transient-resume" {
@@ -1108,7 +1194,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "permanent-actor-err"},
 		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
 	}
-	if err := reconciler.Suspend(ctx, task4, nil); err == nil {
+	if err := reconciler.Suspend(ctx, task4, nil, nil); err == nil {
 		t.Fatal("expected error on InvalidArgument, got nil")
 	}
 	assertCondition(t, task4, "Ready", "False", v1alpha1.ReasonActorCreationFailed)

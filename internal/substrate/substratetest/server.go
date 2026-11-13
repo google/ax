@@ -34,18 +34,19 @@ import (
 // Errors makes calls to a Server fail. Each non-nil field is returned by the
 // matching call.
 type Errors struct {
-	CreateAtespace error
-	CreateTemplate error
-	CreateActor    error
-	SuspendActor   error
-	ResumeActor    error
-	DeleteActor    error
+	CreateAtespace     error
+	CreateTemplate     error
+	CreateActor        error
+	CreateEgressPolicy error
+	SuspendActor       error
+	ResumeActor        error
+	DeleteActor        error
 }
 
 // Server is an in-memory Agent Substrate control API. It keeps atespaces,
-// actor templates and actors, and moves actors between states as Substrate
-// does, without running anything. Calls it does not implement return
-// Unimplemented.
+// actor templates, actors and their egress policies, and moves actors between
+// states as Substrate does, without running anything. Calls it does not
+// implement return Unimplemented.
 type Server struct {
 	ateapipb.UnimplementedControlServer
 
@@ -55,6 +56,7 @@ type Server struct {
 	atespaces        map[string]*ateapipb.Atespace
 	templates        map[string]*ateapipb.ActorTemplate // by atespace/name
 	actors           map[string]*ateapipb.Actor         // by atespace/name
+	egressPolicies   map[string]*ateapipb.EgressPolicy  // by the actor's atespace/name
 	workerIP         string                             // empty: resumed actors get no worker
 	errs             Errors
 	onDeleteActor    func()
@@ -65,9 +67,10 @@ type Server struct {
 func NewServer(tb testing.TB) *Server {
 	tb.Helper()
 	s := &Server{
-		atespaces: make(map[string]*ateapipb.Atespace),
-		templates: make(map[string]*ateapipb.ActorTemplate),
-		actors:    make(map[string]*ateapipb.Actor),
+		atespaces:      make(map[string]*ateapipb.Atespace),
+		templates:      make(map[string]*ateapipb.ActorTemplate),
+		actors:         make(map[string]*ateapipb.Actor),
+		egressPolicies: make(map[string]*ateapipb.EgressPolicy),
 	}
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -142,6 +145,17 @@ func (s *Server) Template(atespace, name string) (*ateapipb.ActorTemplate, bool)
 		return nil, false
 	}
 	return proto.Clone(tmpl).(*ateapipb.ActorTemplate), true
+}
+
+// EgressPolicy returns a copy of the actor's egress policy, if it has one.
+func (s *Server) EgressPolicy(atespace, actorName string) (*ateapipb.EgressPolicy, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	policy, ok := s.egressPolicies[key(atespace, actorName)]
+	if !ok {
+		return nil, false
+	}
+	return proto.Clone(policy).(*ateapipb.EgressPolicy), true
 }
 
 // DeleteActorCalls returns how many DeleteActor calls s has received.
@@ -316,7 +330,41 @@ func (s *Server) DeleteActor(_ context.Context, req *ateapipb.DeleteActorRequest
 		return nil, err
 	}
 	delete(s.actors, key(ref.GetAtespace(), ref.GetName()))
+	delete(s.egressPolicies, key(ref.GetAtespace(), ref.GetName()))
 	return actor, nil
+}
+
+func (s *Server) GetActorEgressPolicy(_ context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.GetName() != "default" {
+		return nil, status.Errorf(codes.InvalidArgument, "name: Invalid value: %q: must be \"default\"", req.GetName())
+	}
+	ref := req.GetActor()
+	policy, ok := s.egressPolicies[key(ref.GetAtespace(), ref.GetName())]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "actor %s/%s has no egress policy", ref.GetAtespace(), ref.GetName())
+	}
+	return proto.Clone(policy).(*ateapipb.EgressPolicy), nil
+}
+
+func (s *Server) CreateActorEgressPolicy(_ context.Context, req *ateapipb.CreateActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.errs.CreateEgressPolicy != nil {
+		return nil, s.errs.CreateEgressPolicy
+	}
+	ref := req.GetActor()
+	if _, err := s.lookupActor(ref); err != nil {
+		return nil, err
+	}
+	k := key(ref.GetAtespace(), ref.GetName())
+	if _, ok := s.egressPolicies[k]; ok {
+		return nil, status.Errorf(codes.AlreadyExists, "actor %s already has an egress policy", k)
+	}
+	policy := proto.Clone(req.GetEgressPolicy()).(*ateapipb.EgressPolicy)
+	s.egressPolicies[k] = policy
+	return proto.Clone(policy).(*ateapipb.EgressPolicy), nil
 }
 
 func (s *Server) GetActor(_ context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error) {
