@@ -34,6 +34,7 @@ import (
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/jackc/pgx/v5/pgconn"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -120,7 +121,7 @@ func main() {
 		CAFile:      substrateCAFile,
 		InsecureTLS: substrateInsecureTLS,
 		Plaintext:   substratePlaintext,
-	})
+	}, grpc.WithStatsHandler(telemetry.ClientStatsHandler()))
 	if err != nil {
 		slog.Error("initializing substrate client", "error", err)
 		os.Exit(1)
