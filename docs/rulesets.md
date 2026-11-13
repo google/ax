@@ -9,10 +9,19 @@ reviewed and recorded like any other change.
 
 | Ruleset | Applies to | Rules |
 |---|---|---|
-| [`protect-main`](../.github/rulesets/protect-main.json) | `main` (`~DEFAULT_BRANCH`) | No deletion or force-push. Changes go through a pull request with 1 approving review, merged by squash or rebase. The `build-and-test` check must pass. |
+| [`protect-main`](../.github/rulesets/protect-main.json) | `main` (`~DEFAULT_BRANCH`) | No deletion or force-push. Changes go through a pull request with 1 approving review, merged by squash or rebase. Pushing a new commit dismisses existing approvals. The `build-and-test` check must pass. |
+| [`protect-release-branches`](../.github/rulesets/protect-release-branches.json) | `release-*` branches | The same rules as `protect-main`. Starts in `evaluate` mode. |
+| [`protect-tags`](../.github/rulesets/protect-tags.json) | All tags | Only repo admins can create, move or delete tags. Tag names must be semantic versions, `vX.Y.Z` or `vX.Y.Z-<pre-release>`. Starts in `evaluate` mode. |
 
 The JSON files are the source of truth. If this table and a file disagree, the
 file wins.
+
+## Branches and tags
+
+- `main` and `release-X.Y` are the only long-lived branches on `google/ax`.
+  Delete other branches once their pull request is merged or closed.
+- Release tags are `vX.Y.Z` or `vX.Y.Z-<pre-release>` (for example
+  `v0.4.0-rc.1`). Other tags aren't allowed on `google/ax`.
 
 ## Changing a ruleset
 

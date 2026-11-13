@@ -23,7 +23,7 @@
           "squash",
           "rebase"
         ],
-        "dismiss_stale_reviews_on_push": false,
+        "dismiss_stale_reviews_on_push": true,
         "dismissal_restriction": {
           "allowed_actors": [],
           "enabled": false

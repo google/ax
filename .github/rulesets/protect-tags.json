@@ -1,0 +1,43 @@
+{
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "~ALL"
+      ]
+    }
+  },
+  "enforcement": "evaluate",
+  "name": "protect-tags",
+  "rules": [
+    {
+      "type": "creation"
+    },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "parameters": {
+        "name": "",
+        "negate": false,
+        "operator": "regex",
+        "pattern": "^v\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+      },
+      "type": "tag_name_pattern"
+    },
+    {
+      "type": "update"
+    }
+  ],
+  "target": "tag"
+}
