@@ -33,7 +33,6 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -124,13 +123,12 @@ func newProbeHTTPClient() *http.Client {
 	}
 }
 
-// ensureSubstrateResources fills in the task's defaults, makes sure its
-// atespace, ActorTemplate and actor exist on Substrate, and copies the rules
-// of gw, if it is not nil, to the actor. It records only what AX stores in the
-// task's status: the task ID, and on failure the reason in a False Ready
-// condition. The caller sets the phase, and the server reads the rest of the
-// status from the actor.
-func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
+// ensureSubstrateResources fills in the task's defaults and makes sure its
+// atespace, ActorTemplate and actor exist on Substrate. It records only what AX
+// stores in the task's status: the task ID, and on failure the reason in a
+// False Ready condition. The caller sets the phase, and the server reads the
+// rest of the status from the actor.
+func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -239,7 +237,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		}
 	}
 
-	actor, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
+	_, err := r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
@@ -248,27 +246,44 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
 		return fmt.Errorf("ensuring actor: %w", err)
 	}
+	return nil
+}
 
-	// Copy the gateway's rules to the actor, while it is suspended. An actor
-	// that already has rules keeps them.
-	if gw != nil && actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
-		if err := r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress()); err != nil {
-			gwName := gw.GetMetadata().GetName()
-			if substrate.IsTransientError(err) {
-				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-				return fmt.Errorf("binding gateway %q: %w", gwName, err)
-			}
-			r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, substrateErrorMessage(err)), now)
+// bindGateway makes sure that the actor of a task that binds a gateway has
+// rules. An actor that has rules keeps them. An actor without rules gets the
+// rules of gw, or bindGateway fails if gw is nil. A failure is recorded the
+// way ensureSubstrateResources records its own.
+func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *v1alpha1.Gateway) error {
+	gwName := task.Spec.GetGateway().GetName()
+	if gwName == "" {
+		return nil
+	}
+	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
+	_, err := r.client.GetActorEgressPolicy(ctx, atespace, actorName)
+	if status.Code(err) == codes.NotFound {
+		if gw == nil {
+			err = fmt.Errorf("not available in atespace %q", atespace)
+		} else {
+			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress())
+		}
+	}
+	if err != nil {
+		now := time.Now()
+		if substrate.IsTransientError(err) {
+			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("binding gateway %q: %w", gwName, err)
 		}
+		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, substrateErrorMessage(err)), now)
+		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
 }
 
-// Suspend runs ensureSubstrateResources, then suspends the task's actor. A
+// Suspend runs ensureSubstrateResources, suspends the task's actor, and then
+// runs bindGateway, so the actor is suspended even when bindGateway fails. A
 // failure to suspend the actor is returned without changing the task's status.
 func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
-	if err := r.ensureSubstrateResources(ctx, task, ws, gw); err != nil {
+	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
@@ -276,16 +291,22 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 	if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
 		return fmt.Errorf("suspending actor: %w", err)
 	}
+	if err := r.bindGateway(ctx, task, gw); err != nil {
+		return err
+	}
 	slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
 	return nil
 }
 
-// Resume runs ensureSubstrateResources, resumes the task's actor, and waits up
-// to WorkspaceReadyTimeout for the task's workspace to be set up, recording the
-// result in the WorkspaceReady condition. A failure to resume the actor is
-// recorded the way ensureSubstrateResources records its own.
+// Resume runs ensureSubstrateResources and bindGateway, resumes the task's
+// actor, and waits up to WorkspaceReadyTimeout for the task's workspace to be
+// set up, recording the result in the WorkspaceReady condition. A failure to
+// resume the actor is recorded the way ensureSubstrateResources records its own.
 func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
-	if err := r.ensureSubstrateResources(ctx, task, ws, gw); err != nil {
+	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
+		return err
+	}
+	if err := r.bindGateway(ctx, task, gw); err != nil {
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name

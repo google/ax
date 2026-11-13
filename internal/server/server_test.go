@@ -576,17 +576,27 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 		t.Errorf("after refusal: phase %q, Ready %v; want Failed with reason GatewayBindingFailed and Substrate's message", stored.GetStatus().GetPhase(), ready)
 	}
 
-	// Resuming the task fails as well, and does not start it.
+	// Resuming the task fails as well.
 	if _, err := srv.ResumeTask(ctx, resume); err == nil {
 		t.Fatal("ResumeTask succeeded although the gateway's rules were refused")
+	}
+	// Resuming the task also fails while the gateway is deleted, because
+	// there are no rules to copy.
+	sub.SetErrors(substratetest.Errors{})
+	if err := mem.DeleteGateway(ctx, "default", "gw"); err != nil {
+		t.Fatalf("DeleteGateway: %v", err)
+	}
+	_, err = srv.ResumeTask(ctx, resume)
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, `binding gateway "gw": not available in atespace "default"`) {
+		t.Fatalf("ResumeTask error = %v, want it to say that the gateway is not available", err)
 	}
 	if actor, _ := sub.Actor("default", "task"); actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING {
 		t.Fatal("task is running without its gateway's rules")
 	}
 
-	// Once Substrate accepts the rules, resuming copies them and starts the
-	// task.
-	sub.SetErrors(substratetest.Errors{})
+	// Once the gateway exists and Substrate accepts its rules, resuming copies
+	// them and starts the task.
+	saveGateway("a.example.com")
 	if _, err := srv.ResumeTask(ctx, resume); err != nil {
 		t.Fatalf("ResumeTask: %v", err)
 	}
@@ -594,9 +604,9 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 		t.Fatalf("actor's rule after resume = %q, want a.example.com", got)
 	}
 
-	// From then on the gateway is not read again. Editing or deleting it does
-	// not change the task's rules or stop a suspend or resume, even when
-	// Substrate would refuse the new rules.
+	// From then on the task keeps these rules. Editing or deleting the gateway
+	// does not change them or stop a suspend or resume, even when Substrate
+	// would refuse the new rules.
 	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, substrateMsg)})
 	saveGateway("b.example.com")
 	if _, err := srv.SuspendTask(ctx, suspend); err != nil {
@@ -619,10 +629,8 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	}
 }
 
-// CreateGateway makes a new gateway and UpdateGateway replaces an existing
-// one; neither does the other's work.
-// Rules are only copied while the actor is suspended, so a running task can be
-// suspended even when Substrate would refuse its gateway's rules.
+// Suspending a running task that lacks its gateway's rules stops its actor.
+// The suspend still fails when the rules cannot be copied.
 func TestServer_SuspendTask_RunningTaskWithoutGatewayRules(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewStore()
@@ -649,8 +657,12 @@ func TestServer_SuspendTask_RunningTaskWithoutGatewayRules(t *testing.T) {
 	actor, _ := sub.Actor("default", "task")
 	actor.Status.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
 	sub.SetActor(actor)
-	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"}); err != nil {
-		t.Fatalf("SuspendTask: %v", err)
+	_, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"})
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, `binding gateway "gw"`) {
+		t.Errorf("SuspendTask error = %v, want it to report that the gateway was not bound", err)
+	}
+	if actor, _ := sub.Actor("default", "task"); actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("actor state after SuspendTask = %v, want suspended", actor.GetStatus().GetState())
 	}
 }
 
@@ -692,6 +704,13 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 			if status.Code(err) != codes.Unavailable {
 				t.Fatalf("CreateTask: got %v, want Unavailable", err)
 			}
+			stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if reason := readyCondition(stored).GetReason(); reason != v1alpha1.ReasonSubstrateUnavailable {
+				t.Errorf("Ready reason after the failed creation = %q, want %q", reason, v1alpha1.ReasonSubstrateUnavailable)
+			}
 
 			sub.SetErrors(substratetest.Errors{})
 			if err := tc.next(ctx, srv); err != nil {
@@ -704,6 +723,38 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 	}
 }
 
+// A task that has its gateway's rules can be resumed and suspended while its
+// Gateway cannot be read.
+func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
+	ctx := context.Background()
+	mem := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
+		Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+		Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
+			Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
+		}}},
+	}); err != nil {
+		t.Fatalf("SaveGateway: %v", err)
+	}
+	if _, err := server.NewServer(mem, newTestReconciler(sub)).CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine", Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+	}}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	srv := server.NewServer(&failGetGatewayStore{Store: mem, err: errors.New("store unavailable")}, newTestReconciler(sub))
+	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"}); err != nil {
+		t.Errorf("ResumeTask: %v", err)
+	}
+	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"}); err != nil {
+		t.Errorf("SuspendTask: %v", err)
+	}
+}
+
+// CreateGateway makes a new gateway and UpdateGateway replaces an existing
+// one; neither does the other's work.
 func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()

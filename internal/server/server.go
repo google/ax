@@ -611,13 +611,11 @@ func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1al
 	return ws
 }
 
-// fetchGateway loads the Gateway the task binds, but only while the task is
-// Pending or Failed and so may not have the gateway's rules yet. It returns
-// nil for any other task, so that later changes to the Gateway do not affect
-// it, and when the task binds none or the Gateway does not exist.
+// fetchGateway loads the Gateway the task binds, or nil when the task binds
+// none or the Gateway cannot be loaded.
 func (s *Server) fetchGateway(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Gateway {
 	name := task.GetSpec().GetGateway().GetName()
-	if phase := task.GetStatus().GetPhase(); name == "" || (phase != v1alpha1.PhasePending && phase != v1alpha1.PhaseFailed) {
+	if name == "" {
 		return nil
 	}
 	gw, err := s.store.GetGateway(ctx, atespace, name)

@@ -631,6 +631,25 @@ func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.A
 // policy. An actor has at most one.
 const egressPolicyName = "default"
 
+// GetActorEgressPolicy fetches the actor's egress policy. The error has code
+// NotFound when the actor has none.
+func (c *Client) GetActorEgressPolicy(ctx context.Context, atespace, actorName string) (*ateapipb.EgressPolicy, error) {
+	req := &ateapipb.GetActorEgressPolicyRequest{
+		Actor: &ateapipb.ObjectRef{
+			Atespace: atespace,
+			Name:     actorName,
+		},
+		Name: egressPolicyName,
+	}
+	var policy *ateapipb.EgressPolicy
+	err := retryOnCodes(ctx, func() error {
+		var err error
+		policy, err = c.control.GetActorEgressPolicy(ctx, req)
+		return err
+	}, codes.Unavailable)
+	return policy, err
+}
+
 // EnsureActorEgressPolicy creates the actor's egress policy with the given
 // rules if it does not already exist.
 func (c *Client) EnsureActorEgressPolicy(ctx context.Context, atespace, actorName string, rules []*ateapipb.EgressRule) error {

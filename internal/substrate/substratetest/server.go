@@ -334,6 +334,20 @@ func (s *Server) DeleteActor(_ context.Context, req *ateapipb.DeleteActorRequest
 	return actor, nil
 }
 
+func (s *Server) GetActorEgressPolicy(_ context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if req.GetName() != "default" {
+		return nil, status.Errorf(codes.InvalidArgument, "name: Invalid value: %q: must be \"default\"", req.GetName())
+	}
+	ref := req.GetActor()
+	policy, ok := s.egressPolicies[key(ref.GetAtespace(), ref.GetName())]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "actor %s/%s has no egress policy", ref.GetAtespace(), ref.GetName())
+	}
+	return proto.Clone(policy).(*ateapipb.EgressPolicy), nil
+}
+
 func (s *Server) CreateActorEgressPolicy(_ context.Context, req *ateapipb.CreateActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

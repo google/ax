@@ -57,9 +57,22 @@ type mockControlServer struct {
 	// for Substrate rejecting a template (for example an invalid quantity).
 	createTemplateErr     error
 	createdEgressPolicies []*ateapipb.CreateActorEgressPolicyRequest
+	// egressPolicyCalls counts the egress policy calls of any kind.
+	egressPolicyCalls int
+}
+
+func (m *mockControlServer) GetActorEgressPolicy(_ context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	m.egressPolicyCalls++
+	for _, created := range m.createdEgressPolicies {
+		if proto.Equal(created.GetActor(), req.GetActor()) {
+			return created.GetEgressPolicy(), nil
+		}
+	}
+	return nil, status.Error(codes.NotFound, "egress policy not found")
 }
 
 func (m *mockControlServer) CreateActorEgressPolicy(_ context.Context, req *ateapipb.CreateActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
+	m.egressPolicyCalls++
 	m.createdEgressPolicies = append(m.createdEgressPolicies, req)
 	return req.GetEgressPolicy(), nil
 }
@@ -391,8 +404,8 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 }
 
-// The actor gets the rules of the gateway the reconciler is given. Without a
-// gateway, the reconciler makes no egress policy call.
+// The actor of a task that binds a gateway gets that gateway's rules. For a
+// task that binds none, the reconciler makes no egress policy call.
 func TestTaskReconciler_GatewayRules(t *testing.T) {
 	ctx := context.Background()
 
@@ -433,8 +446,8 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
-	if n := len(mockSrv.createdEgressPolicies); n != 0 {
-		t.Fatalf("made %d egress policy calls without a gateway, want none", n)
+	if n := mockSrv.egressPolicyCalls; n != 0 {
+		t.Fatalf("made %d egress policy calls for a task that binds no gateway, want none", n)
 	}
 
 	gw := &v1alpha1.Gateway{
@@ -443,11 +456,13 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 			Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
 		}}},
 	}
-	if err := reconciler.Suspend(ctx, newTask("bound-task"), nil, gw); err != nil {
+	bound := newTask("bound-task")
+	bound.Spec.Gateway = &v1alpha1.GatewayRef{Name: "gw"}
+	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	if n := len(mockSrv.createdEgressPolicies); n != 1 {
-		t.Fatalf("made %d egress policy calls with a gateway, want 1", n)
+		t.Fatalf("created %d egress policies for a task that binds a gateway, want 1", n)
 	}
 	req := mockSrv.createdEgressPolicies[0]
 	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
