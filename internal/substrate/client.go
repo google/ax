@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path"
 	"slices"
@@ -190,10 +191,9 @@ func (c *Client) EnsureAtespace(ctx context.Context, atespace string) error {
 			},
 		},
 	}
-	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.CreateAtespace(ctx, req)
-		return err
-	}, codes.Unavailable)
+	_, err := callWithRetry(ctx, func() (*ateapipb.Atespace, error) {
+		return c.control.CreateAtespace(ctx, req)
+	})
 	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return fmt.Errorf("creating atespace %q: %w", atespace, err)
 	}
@@ -208,13 +208,9 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 			Name:     templateName,
 		},
 	}
-	var tmpl *ateapipb.ActorTemplate
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		tmpl, err = c.control.GetActorTemplate(ctx, req)
-		return err
-	}, codes.Unavailable)
-	return tmpl, err
+	return callWithRetry(ctx, func() (*ateapipb.ActorTemplate, error) {
+		return c.control.GetActorTemplate(ctx, req)
+	})
 }
 
 const (
@@ -291,6 +287,19 @@ func retryOnCodes(ctx context.Context, fn func() error, retryable ...codes.Code)
 	return err
 }
 
+// callWithRetry runs fn with retryOnCodes, always retrying codes.Unavailable
+// plus any additional retryable codes (such as codes.Aborted).
+func callWithRetry[T any](ctx context.Context, fn func() (T, error), extraRetryable ...codes.Code) (T, error) {
+	var out T
+	retryable := append([]codes.Code{codes.Unavailable}, extraRetryable...)
+	err := retryOnCodes(ctx, func() error {
+		var callErr error
+		out, callErr = fn()
+		return callErr
+	}, retryable...)
+	return out, err
+}
+
 const (
 	// DefaultCPUMillicores is the default CPU limit (1 core) applied to an
 	// ActorTemplate when a Task omits spec.resources.limits.cpu.
@@ -301,9 +310,9 @@ const (
 )
 
 // ResourceLimits translates a Task's resource limits into the Substrate
-// ActorTemplate resources block. Substrate sizes a sandbox by limits alone
-// (requests are rejected by apivalidation.ValidateResources). It returns nil when no
-// limit is set so the template uses the default sandbox limits.
+// ActorTemplate resources block. Substrate sizes a sandbox by limits alone. It
+// returns nil when no limit is set so the template uses the default sandbox
+// limits.
 func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements {
 	limits := reqs.GetLimits()
 	cpuStr := limits.GetCpu()
@@ -336,7 +345,7 @@ func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements
 // Substrate's cluster-wide snapshot storage location.
 func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.ResourceRequirements) *ateapipb.ActorTemplate {
 	if atespace == "" {
-		atespace = "default"
+		atespace = v1alpha1.DefaultAtespace
 	}
 	if image == "" {
 		image = v1alpha1.DefaultTaskImage
@@ -421,120 +430,155 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	}
 }
 
-// EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
-// resource limits (nil for default limits), and optional environment variables.
-func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
-	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
+// EnsureActorTemplate returns the named ActorTemplate if it already exists, or
+// creates it from tmpl idempotently.
+func (c *Client) EnsureActorTemplate(ctx context.Context, tmpl *ateapipb.ActorTemplate) (*ateapipb.ActorTemplate, error) {
+	atespace := tmpl.GetMetadata().GetAtespace()
+	name := tmpl.GetMetadata().GetName()
+	existing, err := c.GetActorTemplate(ctx, atespace, name)
 	if err == nil && existing != nil {
 		return existing, nil
 	}
-
-	envMap := make(map[string]string)
-	for _, envs := range extraEnv {
-		for k, v := range envs {
-			envMap[k] = v
-		}
+	if err != nil && status.Code(err) != codes.NotFound {
+		return nil, fmt.Errorf("getting actor template %s/%s: %w", atespace, name, err)
 	}
 
-	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "", resources)
-	req := &ateapipb.CreateActorTemplateRequest{
-		ActorTemplate: tmpl,
-	}
-	var created *ateapipb.ActorTemplate
-	err = retryOnCodes(ctx, func() error {
-		var err error
-		created, err = c.control.CreateActorTemplate(ctx, req)
-		return err
-	}, codes.Unavailable)
+	req := &ateapipb.CreateActorTemplateRequest{ActorTemplate: tmpl}
+	created, err := callWithRetry(ctx, func() (*ateapipb.ActorTemplate, error) {
+		return c.control.CreateActorTemplate(ctx, req)
+	})
 	if err != nil && status.Code(err) != codes.AlreadyExists {
-		return nil, fmt.Errorf("creating actor template %s/%s: %w", targetAtespace, targetTemplate, err)
+		return nil, fmt.Errorf("creating actor template %s/%s: %w", atespace, name, err)
 	}
 	if created != nil {
 		return created, nil
 	}
-	return c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
+	// Another caller created the same template concurrently (AlreadyExists);
+	// fetch the winner's template so the returned metadata/UID is populated.
+	return c.GetActorTemplate(ctx, atespace, name)
+}
+
+// EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
+// resource limits (nil for default limits), and optional environment variables.
+//
+// TODO: Remove once TaskReconciler migrates from per-task templates to shared
+// Profile ActorTemplates via EnsureActorTemplate.
+func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
+	envMap := make(map[string]string)
+	for _, envs := range extraEnv {
+		maps.Copy(envMap, envs)
+	}
+	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "", resources)
+	return c.EnsureActorTemplate(ctx, tmpl)
 }
 
 // EnsureActor creates an Actor in the specified atespace deriving from an ActorTemplate.
 func (c *Client) EnsureActor(ctx context.Context, atespace, actorName, templateAtespace, templateName string) (*ateapipb.Actor, error) {
-	req := &ateapipb.CreateActorRequest{
-		Actor: &ateapipb.Actor{
-			Metadata: &ateapipb.ResourceMetadata{
-				Atespace: atespace,
-				Name:     actorName,
-			},
-			ActorTemplate: &ateapipb.ObjectRef{
-				Atespace: templateAtespace,
-				Name:     templateName,
-			},
-		},
+	return c.EnsureActorFromTag(ctx, atespace, actorName, templateAtespace, templateName, "")
+}
+
+// EnsureActorFromTag creates an Actor in atespace deriving from an ActorTemplate,
+// seeded from sourceTagName (a Workspace snapshot Tag) when non-empty.
+func (c *Client) EnsureActorFromTag(ctx context.Context, atespace, actorName, templateAtespace, templateName, sourceTagName string) (*ateapipb.Actor, error) {
+	actorSpec := &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: atespace, Name: actorName},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: templateAtespace, Name: templateName},
 	}
-	var actor *ateapipb.Actor
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		actor, err = c.control.CreateActor(ctx, req)
-		return err
-	}, codes.Unavailable)
-	if err != nil {
-		if status.Code(err) == codes.AlreadyExists {
-			existing, getErr := c.GetActor(ctx, atespace, actorName)
-			if getErr == nil && existing != nil {
-				state := existing.GetStatus().GetState()
-				if state == ateapipb.ActorState_ACTOR_STATE_CRASHED {
-					// Revert to the last snapshot so the workspace survives the crash.
-					var reverted *ateapipb.RevertActorResponse
-					revertErr := retryOnCodes(ctx, func() error {
-						var err error
-						reverted, err = c.control.RevertActor(ctx, &ateapipb.RevertActorRequest{
-							Actor: &ateapipb.ObjectRef{
-								Atespace: atespace,
-								Name:     actorName,
-							},
-						})
-						return err
-					}, codes.Unavailable)
-					if revertErr == nil {
-						slog.Warn("existing actor is crashed, reverted to its last snapshot", "actor", actorName)
-						return reverted.GetActor(), nil
-					}
-					slog.Warn("existing actor is crashed and could not be reverted, deleting and recreating", "actor", actorName, "error", revertErr)
-					if err := c.DeleteActor(ctx, atespace, actorName); err != nil {
-						return nil, err
-					}
-					err = retryOnCodes(ctx, func() error {
-						var err error
-						actor, err = c.control.CreateActor(ctx, req)
-						return err
-					}, codes.Unavailable)
-					if err == nil {
-						return actor, nil
-					}
-					return nil, fmt.Errorf("recreating actor %s/%s after crash: %w", atespace, actorName, err)
-				}
-				if state == ateapipb.ActorState_ACTOR_STATE_DELETING {
-					// Wait briefly for previous actor deletion to finalize before recreating
-					for i := 0; i < actorDeletingWaitAttempts; i++ {
-						select {
-						case <-ctx.Done():
-							return nil, ctx.Err()
-						case <-time.After(actorDeletingWaitInterval):
-						}
-						actor, err = c.control.CreateActor(ctx, req)
-						if err == nil {
-							return actor, nil
-						}
-						if status.Code(err) != codes.AlreadyExists {
-							break
-						}
-					}
-					return nil, fmt.Errorf("actor %s/%s is still deleting; please retry", atespace, actorName)
-				}
-			}
-			return existing, getErr
+	if sourceTagName != "" {
+		actorSpec.SourceTag = &ateapipb.ObjectRef{Atespace: atespace, Name: sourceTagName}
+	}
+	req := &ateapipb.CreateActorRequest{Actor: actorSpec}
+
+	actor, err := callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+		return c.control.CreateActor(ctx, req)
+	})
+	if err == nil {
+		return actor, nil
+	}
+	if status.Code(err) == codes.AlreadyExists {
+		return c.resolveExistingActor(ctx, req, atespace, actorName)
+	}
+	return nil, fmt.Errorf("creating actor %s/%s: %w", atespace, actorName, err)
+}
+
+// resolveExistingActor handles AlreadyExists when EnsureActor/EnsureActorFromTag
+// is called on subsequent Suspend/Resume cycles or retries for an actor that was
+// already provisioned on Substrate.
+func (c *Client) resolveExistingActor(ctx context.Context, req *ateapipb.CreateActorRequest, atespace, actorName string) (*ateapipb.Actor, error) {
+	existing, err := c.GetActor(ctx, atespace, actorName)
+	if status.Code(err) == codes.NotFound {
+		// Previous deleting actor finished removal right after CreateActor returned AlreadyExists.
+		actor, createErr := callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+			return c.control.CreateActor(ctx, req)
+		})
+		if createErr != nil {
+			return nil, fmt.Errorf("creating actor %s/%s: %w", atespace, actorName, createErr)
 		}
-		return nil, fmt.Errorf("creating actor %s/%s: %w", atespace, actorName, err)
+		return actor, nil
+	}
+	if err != nil || existing == nil {
+		return existing, err
+	}
+	switch existing.GetStatus().GetState() {
+	case ateapipb.ActorState_ACTOR_STATE_CRASHED:
+		return c.recoverCrashedActor(ctx, req, atespace, actorName)
+	case ateapipb.ActorState_ACTOR_STATE_DELETING:
+		return c.recreateDeletingActor(ctx, req, atespace, actorName)
+	default:
+		return existing, nil
+	}
+}
+
+// recoverCrashedActor rolls a crashed actor back to its last snapshot via
+// RevertActor so the workspace volume survives the crash. If RevertActor fails
+// (for example when the actor crashed before taking any snapshot), it deletes
+// and recreates the actor from scratch.
+func (c *Client) recoverCrashedActor(ctx context.Context, req *ateapipb.CreateActorRequest, atespace, actorName string) (*ateapipb.Actor, error) {
+	// Revert to the last snapshot so the workspace survives the crash.
+	reverted, revertErr := callWithRetry(ctx, func() (*ateapipb.RevertActorResponse, error) {
+		return c.control.RevertActor(ctx, &ateapipb.RevertActorRequest{
+			Actor: &ateapipb.ObjectRef{Atespace: atespace, Name: actorName},
+		})
+	}, codes.Aborted)
+	if revertErr == nil {
+		slog.Warn("existing actor is crashed, reverted to its last snapshot", "actor", actorName)
+		return reverted.GetActor(), nil
+	}
+
+	slog.Warn("existing actor is crashed and could not be reverted, deleting and recreating", "actor", actorName, "error", revertErr)
+	if err := c.DeleteActor(ctx, atespace, actorName); err != nil {
+		return nil, err
+	}
+	actor, err := callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+		return c.control.CreateActor(ctx, req)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("recreating actor %s/%s after crash: %w", atespace, actorName, err)
 	}
 	return actor, nil
+}
+
+// recreateDeletingActor waits briefly for a previous actor of the same name to
+// finish deleting before recreating it.
+func (c *Client) recreateDeletingActor(ctx context.Context, req *ateapipb.CreateActorRequest, atespace, actorName string) (*ateapipb.Actor, error) {
+	// Wait briefly for previous actor deletion to finalize before recreating.
+	for i := 0; i < actorDeletingWaitAttempts; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(actorDeletingWaitInterval):
+		}
+		actor, err := callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+			return c.control.CreateActor(ctx, req)
+		})
+		if err == nil {
+			return actor, nil
+		}
+		if status.Code(err) != codes.AlreadyExists {
+			return nil, fmt.Errorf("creating actor %s/%s: %w", atespace, actorName, err)
+		}
+	}
+	return nil, fmt.Errorf("actor %s/%s is still deleting; please retry", atespace, actorName)
 }
 
 // ResumeActor resumes the specified actor onto a worker and returns the worker details.
@@ -545,12 +589,9 @@ func (c *Client) ResumeActor(ctx context.Context, atespace, actorName string) (*
 			Name:     actorName,
 		},
 	}
-	var resp *ateapipb.ResumeActorResponse
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		resp, err = c.control.ResumeActor(ctx, req)
-		return err
-	}, codes.Aborted, codes.Unavailable)
+	resp, err := callWithRetry(ctx, func() (*ateapipb.ResumeActorResponse, error) {
+		return c.control.ResumeActor(ctx, req)
+	}, codes.Aborted)
 	if err != nil {
 		return nil, "", fmt.Errorf("resuming actor %s/%s: %w", atespace, actorName, err)
 	}
@@ -577,10 +618,9 @@ func (c *Client) SuspendActor(ctx context.Context, atespace, actorName string) e
 			Name:     actorName,
 		},
 	}
-	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.SuspendActor(ctx, req)
-		return err
-	}, codes.Aborted, codes.Unavailable)
+	_, err := callWithRetry(ctx, func() (*ateapipb.SuspendActorResponse, error) {
+		return c.control.SuspendActor(ctx, req)
+	}, codes.Aborted)
 	if err != nil {
 		return fmt.Errorf("suspending actor %s/%s: %w", atespace, actorName, err)
 	}
@@ -595,13 +635,9 @@ func (c *Client) GetActor(ctx context.Context, atespace, actorName string) (*ate
 			Name:     actorName,
 		},
 	}
-	var actor *ateapipb.Actor
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		actor, err = c.control.GetActor(ctx, req)
-		return err
-	}, codes.Unavailable)
-	return actor, err
+	return callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+		return c.control.GetActor(ctx, req)
+	})
 }
 
 // ListActors returns every Actor in the given atespace, or in all atespaces
@@ -610,12 +646,9 @@ func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.A
 	var actors []*ateapipb.Actor
 	req := &ateapipb.ListActorsRequest{Atespace: atespace, Options: &ateapipb.ListOptions{}}
 	for {
-		var resp *ateapipb.ListActorsResponse
-		err := retryOnCodes(ctx, func() error {
-			var err error
-			resp, err = c.control.ListActors(ctx, req)
-			return err
-		}, codes.Unavailable)
+		resp, err := callWithRetry(ctx, func() (*ateapipb.ListActorsResponse, error) {
+			return c.control.ListActors(ctx, req)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("listing actors in %q: %w", atespace, err)
 		}
@@ -641,13 +674,9 @@ func (c *Client) GetActorEgressPolicy(ctx context.Context, atespace, actorName s
 		},
 		Name: egressPolicyName,
 	}
-	var policy *ateapipb.EgressPolicy
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		policy, err = c.control.GetActorEgressPolicy(ctx, req)
-		return err
-	}, codes.Unavailable)
-	return policy, err
+	return callWithRetry(ctx, func() (*ateapipb.EgressPolicy, error) {
+		return c.control.GetActorEgressPolicy(ctx, req)
+	})
 }
 
 // EnsureActorEgressPolicy creates the actor's egress policy with the given
@@ -666,10 +695,9 @@ func (c *Client) EnsureActorEgressPolicy(ctx context.Context, atespace, actorNam
 			Rules: rules,
 		},
 	}
-	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.CreateActorEgressPolicy(ctx, req)
-		return err
-	}, codes.Unavailable)
+	_, err := callWithRetry(ctx, func() (*ateapipb.EgressPolicy, error) {
+		return c.control.CreateActorEgressPolicy(ctx, req)
+	})
 	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return fmt.Errorf("creating egress policy of actor %s/%s: %w", atespace, actorName, err)
 	}
@@ -685,10 +713,9 @@ func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) er
 			Name:     actorName,
 		},
 	}
-	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.DeleteActor(ctx, req)
-		return err
-	}, codes.Aborted, codes.Unavailable)
+	_, err := callWithRetry(ctx, func() (*ateapipb.Actor, error) {
+		return c.control.DeleteActor(ctx, req)
+	}, codes.Aborted)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil
@@ -737,12 +764,9 @@ func (c *Client) DeleteActor(ctx context.Context, atespace, actorName string) er
 
 // ListActorTemplates returns all ActorTemplates in the given atespace.
 func (c *Client) ListActorTemplates(ctx context.Context, atespace string) ([]*ateapipb.ActorTemplate, error) {
-	var resp *ateapipb.ListActorTemplatesResponse
-	err := retryOnCodes(ctx, func() error {
-		var err error
-		resp, err = c.control.ListActorTemplates(ctx, &ateapipb.ListActorTemplatesRequest{Atespace: atespace})
-		return err
-	}, codes.Unavailable)
+	resp, err := callWithRetry(ctx, func() (*ateapipb.ListActorTemplatesResponse, error) {
+		return c.control.ListActorTemplates(ctx, &ateapipb.ListActorTemplatesRequest{Atespace: atespace})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing actor templates in %s: %w", atespace, err)
 	}
@@ -760,12 +784,80 @@ func (c *Client) DeleteActorTemplate(ctx context.Context, atespace, templateName
 			Name:     templateName,
 		},
 	}
-	err := retryOnCodes(ctx, func() error {
-		_, err := c.control.DeleteActorTemplate(ctx, req)
-		return err
-	}, codes.Aborted, codes.Unavailable)
+	_, err := callWithRetry(ctx, func() (*ateapipb.ActorTemplate, error) {
+		return c.control.DeleteActorTemplate(ctx, req)
+	}, codes.Aborted)
 	if err != nil && status.Code(err) != codes.NotFound {
 		return fmt.Errorf("deleting actor template %s/%s: %w", atespace, templateName, err)
+	}
+	return nil
+}
+
+// -----------------------------------------------------------------------------
+// Snapshot Tags
+// -----------------------------------------------------------------------------
+
+// CreateTag creates an atespace-scoped Tag capturing the snapshot of a
+// suspended source actor. If a tag of the same name already exists from an
+// earlier incomplete attempt, callers should DeleteTag before retrying.
+func (c *Client) CreateTag(ctx context.Context, atespace, tagName, sourceActorName string) (*ateapipb.Tag, error) {
+	req := &ateapipb.CreateTagRequest{
+		Tag: &ateapipb.Tag{
+			Metadata:    &ateapipb.ResourceMetadata{Atespace: atespace, Name: tagName},
+			Scope:       ateapipb.TagScope_TAG_SCOPE_ATESPACE,
+			SourceActor: &ateapipb.ObjectRef{Atespace: atespace, Name: sourceActorName},
+		},
+	}
+	tag, err := callWithRetry(ctx, func() (*ateapipb.Tag, error) {
+		return c.control.CreateTag(ctx, req)
+	}, codes.Aborted)
+	if err != nil {
+		return nil, fmt.Errorf("creating tag %s/%s from actor %s: %w", atespace, tagName, sourceActorName, err)
+	}
+	return tag, nil
+}
+
+// GetTag fetches a Tag by atespace and name.
+func (c *Client) GetTag(ctx context.Context, atespace, tagName string) (*ateapipb.Tag, error) {
+	req := &ateapipb.GetTagRequest{
+		Tag: &ateapipb.ObjectRef{Atespace: atespace, Name: tagName},
+	}
+	return callWithRetry(ctx, func() (*ateapipb.Tag, error) {
+		return c.control.GetTag(ctx, req)
+	})
+}
+
+// ListTags returns every Tag in the given atespace, or in all atespaces when
+// atespace is empty.
+func (c *Client) ListTags(ctx context.Context, atespace string) ([]*ateapipb.Tag, error) {
+	var tags []*ateapipb.Tag
+	req := &ateapipb.ListTagsRequest{Atespace: atespace, Options: &ateapipb.ListOptions{}}
+	for {
+		resp, err := callWithRetry(ctx, func() (*ateapipb.ListTagsResponse, error) {
+			return c.control.ListTags(ctx, req)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("listing tags in %q: %w", atespace, err)
+		}
+		tags = append(tags, resp.GetTags()...)
+		if resp.GetNextPageToken() == "" {
+			return tags, nil
+		}
+		req.Options.PageToken = resp.GetNextPageToken()
+	}
+}
+
+// DeleteTag deletes a Tag and the external snapshot it owns. Deleting a missing
+// Tag is not an error.
+func (c *Client) DeleteTag(ctx context.Context, atespace, tagName string) error {
+	req := &ateapipb.DeleteTagRequest{
+		Tag: &ateapipb.ObjectRef{Atespace: atespace, Name: tagName},
+	}
+	_, err := callWithRetry(ctx, func() (*ateapipb.Tag, error) {
+		return c.control.DeleteTag(ctx, req)
+	}, codes.Aborted)
+	if err != nil && status.Code(err) != codes.NotFound {
+		return fmt.Errorf("deleting tag %s/%s: %w", atespace, tagName, err)
 	}
 	return nil
 }
