@@ -207,4 +207,29 @@ spec:
       name: metrics
   selector:
     app.kubernetes.io/name: ax-server
-
+---
+# ax-server does not authenticate its callers yet, so code running in a task
+# must not reach it: that rules out the worker pods, which run the sandboxes,
+# and the egress gateway, which connects on their behalf. Other pods may
+# connect, and kubectl port-forward is not affected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-server
+  namespace: ax-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ax-server
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchExpressions:
+              - key: ate.dev/worker-pool
+                operator: DoesNotExist
+              - key: app
+                operator: NotIn
+                values: ["atenet-egress"]
