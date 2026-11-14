@@ -21,9 +21,10 @@ metadata:
   name: hero-demo-starter-task
   atespace: default
 spec:
-  # TODO(@Lukeluds): Replace with the published Claude Code starter image, pinned
-  # by digest. Substrate rejects tag-only images when it creates the actor template.
-  image: registry.example.com/ax/claude-code-starter@sha256:REPLACE_WITH_PUBLISHED_DIGEST
+  # TODO(@Lukeluds): Replace with the Claude Code starter image published from
+  # github.com/agentexecutor/images, pinned by digest. Substrate rejects tag-only
+  # images when it creates the actor template.
+  image: "<starter-image>@sha256:<digest>"
   resources:
     limits:
       cpu: "2"

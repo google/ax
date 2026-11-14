@@ -141,7 +141,7 @@ step1_local_up() {
   if curl -fsS --max-time 5 "${STUDIO_URL}/healthz" >/dev/null 2>&1; then
     mark_pass "${step}" "ax-server reachable and AX Studio healthy at ${STUDIO_URL}"
   else
-    # TODO(@YoyinZyc): Wire the AX Studio health check once Studio lands (#543).
+    # TODO(@YoyinZyc, @Raji14): Wire the AX Studio health check once Studio lands (#543).
     mark_stub "${step}" "ax-server reachable; AX Studio not running at ${STUDIO_URL}"
   fi
 }
@@ -189,7 +189,7 @@ step3_starter_task_session() {
       return
     fi
   done
-  # TODO(@itssimrank, @Lukeluds): Send a second Session turn and check the
+  # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn and check the
   # task keeps its state across suspend/resume, once sessions land on main.
   mark_stub "${step}" "Apply + resume/suspend/resume OK; wire the second Session turn"
 }
