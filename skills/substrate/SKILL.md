@@ -57,7 +57,7 @@ All Control API traffic goes through this package. It encapsulates:
 |---|---|
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
-| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`) |
+| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml` |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
 
@@ -162,6 +162,17 @@ and pins the WorkerPool's worker image by digest. It exits early unless:
   manifests and `ate-setup`, so they must match the images.
 - That release's `ate-setup` supports `--image-repo`, and every image the
   install uses exists under the tag.
+
+The install enables the `k8s.io` credential provider. For
+`TestE2E_GatewayEgress` the script then:
+
+- Applies `test/e2e/manifests/credential-policy.yaml`, which lets tasks in
+  atespace `default` use Secrets labeled `ax.io/credential: "true"` in the AX
+  namespace, and restarts the provider, which reads its policy only at startup.
+- Runs Substrate's `hack/setup-e2e-egress-tls-kind.sh`, which makes the egress
+  gateway trust Substrate's service-DNS CA.
+- Deploys the echo server (`test/e2e/manifests/echo.yaml`), whose certificate
+  comes from that CA.
 
 Useful env (full list in `test/e2e/README.md`): `SUBSTRATE_DIR` (local
 checkout; a detached worktree is created under `.tmp/` if HEAD ≠ ref),

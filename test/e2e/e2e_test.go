@@ -576,3 +576,161 @@ func TestE2E_DescribeAndAtespaceIsolation(t *testing.T) {
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", task),
 		task, ns, phaseRunning, "WorkspaceReady", v1alpha1.ReasonTaskRunning)
 }
+
+const gatewayEgressManifest = `apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: {{.Gateway}}
+  atespace: {{.Atespace}}
+spec:
+  egress:
+  - https:
+      # The task asks for the first name. Its DNS search path expands it to the second.
+      hostnames:
+      - ax-echo.{{.Namespace}}.svc
+      - ax-echo.{{.Namespace}}.svc.cluster.local
+      effects:
+        replaceHeaders:
+        - header: Authorization
+          prefix: "Bearer "
+          credentialUri: ate-secret://k8s.io/default/{{.Namespace}}/{{.Secret}}/token
+        - header: X-Api-Key
+          credentialUri: ate-secret://k8s.io/default/{{.Namespace}}/{{.UnlabeledSecret}}/token
+  - http:
+      # A NetworkPolicy keeps the egress gateway away from ax-server all the same.
+      hostnames:
+      - ax-server.{{.Namespace}}.svc.cluster.local
+      ports:
+        numbers: [8080]
+---
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: {{.Task}}
+  atespace: {{.Atespace}}
+spec:
+  debug: true
+  gateway:
+    name: {{.Gateway}}
+`
+
+// TestE2E_GatewayEgress verifies that a Gateway decides what a task can reach.
+// The allowed host is an echo server, which answers with the request headers
+// it received.
+//   - The echo server receives the credential from a labeled Secret, not the
+//     placeholder the task sent.
+//   - A credential from an unlabeled Secret is refused.
+//   - A host without a rule is unreachable.
+//   - ax-server is unreachable even though a rule names it.
+//   - A task without a Gateway reaches nothing.
+//   - Editing or deleting the Gateway does not affect a task that already
+//     runs with it.
+func TestE2E_GatewayEgress(t *testing.T) {
+	ns := defaultAtespace
+	gw := uniqueName("gw-egress")
+	secret := uniqueName("gw-egress-token")
+	unlabeled := uniqueName("gw-egress-plain")
+	bound := uniqueName("task-egress")
+	unbound := uniqueName("task-noegress")
+	env.deleteOnCleanup(t, ns, "gateway", gw)
+	env.deleteOnCleanup(t, ns, "task", bound)
+	env.deleteOnCleanup(t, ns, "task", unbound)
+
+	// Setup: two Secrets, only the first labeled for use by tasks; a task
+	// bound to the Gateway; and a task without a Gateway.
+	for _, args := range [][]string{
+		{"create", "secret", "generic", secret, "--from-literal=token=e2e-token"},
+		{"label", "secret", secret, "ax.io/credential=true"},
+		{"create", "secret", "generic", unlabeled, "--from-literal=token=e2e-token"},
+	} {
+		if _, err := env.kubectl(append([]string{"-n", env.AXSystemNamespace}, args...)...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = env.kubectl("-n", env.AXSystemNamespace, "delete", "secret", secret, unlabeled, "--ignore-not-found")
+	})
+	env.apply(t, ns, renderYAML(t, gatewayEgressManifest, map[string]string{
+		"Gateway": gw, "Task": bound, "Atespace": ns,
+		"Namespace": env.AXSystemNamespace, "Secret": secret, "UnlabeledSecret": unlabeled,
+	}))
+	env.apply(t, ns, taskManifest(t, ns, unbound, true))
+	env.mustRunAX(t, ns, "resume", "task", bound)
+	env.mustRunAX(t, ns, "resume", "task", unbound)
+
+	echoHost := "ax-echo." + env.AXSystemNamespace + ".svc"
+	echoURL := "https://" + echoHost + "/"
+	// No rule names noRuleHost.
+	noRuleHost := "ax-postgres." + env.AXSystemNamespace + ".svc.cluster.local"
+	// received returns the request headers that the echo server received from
+	// the bound task, which sends only the placeholder. A request can fail with
+	// 503 right after a task starts, and until the egress gateway has
+	// reconnected to the credential provider, which the setup restarts, so
+	// received retries.
+	received := func() string {
+		t.Helper()
+		var out string
+		err := poll(2*time.Minute, 2*time.Second, func() error {
+			var err error
+			out, err = env.runAX(ns, "ssh", bound, "--", "sh", "-c", `curl -sf -m 30 -H "Authorization: Bearer placeholder" `+echoURL)
+			if err != nil {
+				return fmt.Errorf("%w: %s", err, out)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("GET %s with the placeholder header: %v", echoURL, err)
+		}
+		return out
+	}
+	// get returns the HTTP status of a request from inside the task. When
+	// there was no response, the status is 000 and curl's error follows it.
+	get := func(task, curlArgs string) string {
+		t.Helper()
+		return strings.TrimSpace(env.ssh(t, ns, task, `curl -s -o /dev/null -m 30 -w '%{http_code} %{errormsg}' `+curlArgs+` || true`))
+	}
+	const unresolved = "000 Could not resolve host: "
+
+	// 1. The echo server receives the credential, not the placeholder.
+	headers := received()
+	assertContains(t, "request received by the echo server", headers, "Bearer e2e-token")
+	if strings.Contains(headers, "placeholder") {
+		t.Fatalf("the echo server received the placeholder:\n%s", headers)
+	}
+
+	// 2. A credential from the unlabeled Secret is refused.
+	if got := get(bound, `-H "X-Api-Key: placeholder" `+echoURL); got != "403" {
+		t.Fatalf("GET %s with a credential from an unlabeled Secret = %q, want 403", echoURL, got)
+	}
+
+	// 3. A host without a rule is not resolved.
+	if got, want := get(bound, "http://"+noRuleHost+"/"), unresolved+noRuleHost; got != want {
+		t.Fatalf("GET http://%s/ = %q, want %q", noRuleHost, got, want)
+	}
+
+	// 4. ax-server is unreachable although a rule names it. It does not
+	// authenticate its callers yet, so a NetworkPolicy keeps the egress
+	// gateway away from it, and the egress gateway answers 503.
+	axServerURL := "http://ax-server." + env.AXSystemNamespace + ".svc.cluster.local:8080/healthz"
+	if got := get(bound, axServerURL); got != "503" {
+		t.Fatalf("GET %s = %q, want 503", axServerURL, got)
+	}
+
+	// 5. A task without a Gateway resolves nothing.
+	if got, want := get(unbound, echoURL), unresolved+echoHost; got != want {
+		t.Fatalf("GET %s from a task without a gateway = %q, want %q", echoURL, got, want)
+	}
+
+	// 6. Editing and then deleting the Gateway does not affect the task,
+	// across a suspend and resume. The edited Gateway no longer allows the
+	// echo server.
+	env.apply(t, ns, renderYAML(t, gatewayCRUDManifest, map[string]string{"Name": gw, "Atespace": ns, "Host": noRuleHost}))
+	for _, change := range []string{"edited", "deleted"} {
+		if change == "deleted" {
+			env.mustRunAX(t, ns, "delete", "gateway", gw)
+		}
+		env.mustRunAX(t, ns, "suspend", "task", bound)
+		env.mustRunAX(t, ns, "resume", "task", bound)
+		assertContains(t, "request received after the gateway was "+change, received(), "Bearer e2e-token")
+	}
+}

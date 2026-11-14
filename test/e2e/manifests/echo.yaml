@@ -1,0 +1,93 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Echo server for TestE2E_GatewayEgress. It answers a GET with the request
+# headers it received. Its certificate comes from Substrate's service-DNS CA.
+# It runs the task image because that image has Python.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ax-echo
+  namespace: ${AX_SYSTEM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ax-echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ax-echo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ax-echo
+    spec:
+      containers:
+        - name: echo
+          image: ${AX_DEFAULT_TASK_IMAGE}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import ssl
+
+              class Echo(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = str(self.headers).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+
+              server = http.server.ThreadingHTTPServer(("", 8443), Echo)
+              tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+              tls.load_cert_chain("/run/servicedns.podcert.ate.dev/credential-bundle.pem")
+              server.socket = tls.wrap_socket(server.socket, server_side=True)
+              server.serve_forever()
+          ports:
+            - containerPort: 8443
+              name: https
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8443
+              scheme: HTTPS
+            periodSeconds: 2
+          volumeMounts:
+            - name: servicedns
+              mountPath: /run/servicedns.podcert.ate.dev
+              readOnly: true
+      volumes:
+        - name: servicedns
+          projected:
+            sources:
+              - podCertificate:
+                  signerName: servicedns.podcert.ate.dev/identity
+                  keyType: ECDSAP256
+                  credentialBundlePath: credential-bundle.pem
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ax-echo
+  namespace: ${AX_SYSTEM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ax-echo
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+      name: https
+  selector:
+    app.kubernetes.io/name: ax-echo
