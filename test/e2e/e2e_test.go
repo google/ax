@@ -596,6 +596,12 @@ spec:
           credentialUri: ate-secret://k8s.io/default/{{.Namespace}}/{{.Secret}}/token
         - header: X-Api-Key
           credentialUri: ate-secret://k8s.io/default/{{.Namespace}}/{{.UnlabeledSecret}}/token
+  - http:
+      # A NetworkPolicy keeps the egress gateway away from ax-server all the same.
+      hostnames:
+      - ax-server.{{.Namespace}}.svc.cluster.local
+      ports:
+        numbers: [8080]
 ---
 apiVersion: ax.io/v1alpha1
 kind: Task
@@ -615,6 +621,7 @@ spec:
 //     placeholder the task sent.
 //   - A credential from an unlabeled Secret is refused.
 //   - A host without a rule is unreachable.
+//   - ax-server is unreachable even though a rule names it.
 //   - A task without a Gateway reaches nothing.
 //   - Editing or deleting the Gateway does not affect a task that already
 //     runs with it.
@@ -655,9 +662,27 @@ func TestE2E_GatewayEgress(t *testing.T) {
 	echoURL := "https://" + echoHost + "/"
 	// No rule names noRuleHost.
 	noRuleHost := "ax-postgres." + env.AXSystemNamespace + ".svc.cluster.local"
-	// fetchEcho sends the placeholder and prints the request headers that the
-	// echo server received.
-	fetchEcho := `curl -sf -m 30 -H "Authorization: Bearer placeholder" ` + echoURL
+	// received returns the request headers that the echo server received from
+	// the bound task, which sends only the placeholder. A request can fail with
+	// 503 right after a task starts, and until the egress gateway has
+	// reconnected to the credential provider, which the setup restarts, so
+	// received retries.
+	received := func() string {
+		t.Helper()
+		var out string
+		err := poll(2*time.Minute, 2*time.Second, func() error {
+			var err error
+			out, err = env.runAX(ns, "ssh", bound, "--", "sh", "-c", `curl -sf -m 30 -H "Authorization: Bearer placeholder" `+echoURL)
+			if err != nil {
+				return fmt.Errorf("%w: %s", err, out)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("GET %s with the placeholder header: %v", echoURL, err)
+		}
+		return out
+	}
 	// get returns the HTTP status of a request from inside the task. When
 	// there was no response, the status is 000 and curl's error follows it.
 	get := func(task, curlArgs string) string {
@@ -666,24 +691,11 @@ func TestE2E_GatewayEgress(t *testing.T) {
 	}
 	const unresolved = "000 Could not resolve host: "
 
-	// 1. The echo server receives the credential, not the placeholder. The
-	// request fails with 503 until the egress gateway has reconnected to the
-	// credential provider, which the setup restarts, so retry.
-	var received string
-	err := poll(30*time.Second, 2*time.Second, func() error {
-		out, err := env.runAX(ns, "ssh", bound, "--", "sh", "-c", fetchEcho)
-		if err != nil {
-			return fmt.Errorf("%w: %s", err, out)
-		}
-		received = out
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("GET %s with the placeholder header: %v", echoURL, err)
-	}
-	assertContains(t, "request received by the echo server", received, "Bearer e2e-token")
-	if strings.Contains(received, "placeholder") {
-		t.Fatalf("the echo server received the placeholder:\n%s", received)
+	// 1. The echo server receives the credential, not the placeholder.
+	headers := received()
+	assertContains(t, "request received by the echo server", headers, "Bearer e2e-token")
+	if strings.Contains(headers, "placeholder") {
+		t.Fatalf("the echo server received the placeholder:\n%s", headers)
 	}
 
 	// 2. A credential from the unlabeled Secret is refused.
@@ -696,12 +708,20 @@ func TestE2E_GatewayEgress(t *testing.T) {
 		t.Fatalf("GET http://%s/ = %q, want %q", noRuleHost, got, want)
 	}
 
-	// 4. A task without a Gateway resolves nothing.
+	// 4. ax-server is unreachable although a rule names it. It does not
+	// authenticate its callers yet, so a NetworkPolicy keeps the egress
+	// gateway away from it, and the egress gateway answers 503.
+	axServerURL := "http://ax-server." + env.AXSystemNamespace + ".svc.cluster.local:8080/healthz"
+	if got := get(bound, axServerURL); got != "503" {
+		t.Fatalf("GET %s = %q, want 503", axServerURL, got)
+	}
+
+	// 5. A task without a Gateway resolves nothing.
 	if got, want := get(unbound, echoURL), unresolved+echoHost; got != want {
 		t.Fatalf("GET %s from a task without a gateway = %q, want %q", echoURL, got, want)
 	}
 
-	// 5. Editing and then deleting the Gateway does not affect the task,
+	// 6. Editing and then deleting the Gateway does not affect the task,
 	// across a suspend and resume. The edited Gateway no longer allows the
 	// echo server.
 	env.apply(t, ns, renderYAML(t, gatewayCRUDManifest, map[string]string{"Name": gw, "Atespace": ns, "Host": noRuleHost}))
@@ -711,6 +731,6 @@ func TestE2E_GatewayEgress(t *testing.T) {
 		}
 		env.mustRunAX(t, ns, "suspend", "task", bound)
 		env.mustRunAX(t, ns, "resume", "task", bound)
-		assertContains(t, "request received after the gateway was "+change, env.ssh(t, ns, bound, fetchEcho), "Bearer e2e-token")
+		assertContains(t, "request received after the gateway was "+change, received(), "Bearer e2e-token")
 	}
 }
