@@ -113,6 +113,10 @@ instead. No mocking library is in `go.mod`.
   not fail on the Gateway themselves (`fetchGateway` in
   `internal/server/server.go`), so a suspend always reaches `SuspendActor`. A
   task without a Gateway makes no egress policy call at all.
+- `status.actorUid` is read live by `setActorStatus` in
+  `internal/server/server.go` and cleared by `storedStatus` before writes.
+  It changes when Substrate recreates the actor and is empty when the actor
+  is missing or cannot be read. `ax describe task` shows it as `Actor UID`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.

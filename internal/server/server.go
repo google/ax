@@ -470,7 +470,7 @@ func (s *Server) applyActor(ctx context.Context, task *v1alpha1.Task) {
 }
 
 // setActorStatus overlays the actor's state on the task's status: actor,
-// workerIP, and, unless the phase is one of AX's own, the phase and Ready
+// actorUID, workerIP, and, unless the phase is one of AX's own, the phase and Ready
 // condition. actor is nil when the task has no actor; err is set when the actor
 // could not be looked up, in which case the task is reported with phase
 // Unknown.
@@ -480,6 +480,7 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	}
 	st := task.Status
 	st.Actor = ""
+	st.ActorUid = ""
 	st.WorkerIp = ""
 
 	switch {
@@ -498,6 +499,7 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		}
 	default:
 		st.Actor = actor.GetMetadata().GetName()
+		st.ActorUid = actor.GetMetadata().GetUid()
 		st.WorkerIp = substrate.WorkerIP(actor)
 		if v1alpha1.IsAXPhase(st.Phase) {
 			return
@@ -586,6 +588,7 @@ func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 		out = proto.Clone(st).(*v1alpha1.TaskStatus)
 	}
 	out.Actor = ""
+	out.ActorUid = ""
 	out.WorkerIp = ""
 	if !v1alpha1.IsAXPhase(out.Phase) {
 		out.Phase = ""

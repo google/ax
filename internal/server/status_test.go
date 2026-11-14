@@ -30,17 +30,18 @@ func TestStoredStatus(t *testing.T) {
 		Id:         "id",
 		Phase:      "Running",
 		Actor:      "actor",
+		ActorUid:   "uid-1",
 		WorkerIp:   "10.0.0.1",
 		Conditions: []*v1alpha1.Condition{{Type: "Ready"}, {Type: "WorkspaceReady"}},
 	}
 	got := storedStatus(in)
-	if got.Id != "id" || got.Phase != "" || got.Actor != "" || got.WorkerIp != "" {
+	if got.Id != "id" || got.Phase != "" || got.Actor != "" || got.ActorUid != "" || got.WorkerIp != "" {
 		t.Errorf("storedStatus = %v, want only Id kept", got)
 	}
 	if len(got.Conditions) != 1 || got.Conditions[0].Type != "WorkspaceReady" {
 		t.Errorf("conditions = %v, want only WorkspaceReady", got.Conditions)
 	}
-	if in.Actor != "actor" || len(in.Conditions) != 2 {
+	if in.Actor != "actor" || in.ActorUid != "uid-1" || len(in.Conditions) != 2 {
 		t.Errorf("storedStatus modified its input: %v", in)
 	}
 
@@ -50,6 +51,13 @@ func TestStoredStatus(t *testing.T) {
 	}
 	if got := storedStatus(nil); got == nil {
 		t.Error("storedStatus(nil) = nil, want empty status")
+	}
+	for _, phase := range []string{v1alpha1.PhasePending, v1alpha1.PhaseFailed, v1alpha1.PhaseTerminating} {
+		t.Run(phase, func(t *testing.T) {
+			if got := storedStatus(&v1alpha1.TaskStatus{Phase: phase, ActorUid: "uid-1"}); got.ActorUid != "" {
+				t.Errorf("stored actor UID = %q, want empty", got.ActorUid)
+			}
+		})
 	}
 }
 

@@ -565,3 +565,50 @@ func TestParseGlobalArgsNamespacePrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestRunDescribeShowsLiveActorUID(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	if _, err := srv.CreateTask(t.Context(), &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "identity"},
+		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := srv.GRPCServer()
+	t.Cleanup(grpcServer.Stop)
+	go func() { _ = grpcServer.Serve(listener) }()
+	for _, uid := range []string{"uid-original", "uid-recreated", ""} {
+		t.Run("uid="+uid, func(t *testing.T) {
+			actor, _ := sub.Actor("default", "identity")
+			actor.Metadata.Uid = uid
+			sub.SetActor(actor)
+			output, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = output.Close() })
+			stdout := os.Stdout
+			os.Stdout = output
+			defer func() { os.Stdout = stdout }()
+			if err := runDescribe(listener.Addr().String(), "default", []string{"task", "identity"}); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(output.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := uid
+			if want == "" {
+				want = "<none>"
+			}
+			if !strings.Contains(string(data), "Actor UID:    "+want+"\n") {
+				t.Errorf("describe output has no Actor UID %q:\n%s", want, data)
+			}
+		})
+	}
+}

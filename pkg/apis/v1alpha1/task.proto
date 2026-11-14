@@ -71,6 +71,9 @@ message TaskStatus {
   // json_name keeps the established `workerIP` spelling in YAML and JSON.
   string worker_ip = 4 [json_name = "workerIP"];
   repeated Condition conditions = 7;
+  // actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
+  // Read from Substrate, never stored; empty when the actor cannot be read.
+  string actor_uid = 23;
 }
 
 // --- RPC Request & Response Messages ---
