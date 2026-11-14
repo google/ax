@@ -24,11 +24,20 @@ import (
 
 var (
 	ErrNotFound = errors.New("resource not found")
+	// ErrLockTimeout is returned by Apply when acquiring the row lock or
+	// executing the short transaction exceeds its bounded timeout (2s lock,
+	// 5s statement). Callers treat it as retryable (HTTP 503 on :8081, gRPC
+	// Aborted/Unavailable on :8080).
+	ErrLockTimeout = errors.New("task row lock or statement timeout")
 )
 
 // TODO(jbd): Better pagination.
 
 // Store defines the storage interface for AX resources.
+//
+// For tasks managed via [TaskApplier] (store.Apply), the stored
+// TaskStatus.state (mirrored in tasks.state) is authoritative for all TaskState
+// values rather than being derived on read from live Substrate Actor calls.
 type Store interface {
 	SaveTask(ctx context.Context, task *v1alpha1.Task) error
 	GetTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error)
