@@ -13,7 +13,6 @@
 # limitations under the License.
 
 # AX v1alpha1 Workspace manifest for Step 2 of the hero demo: Warm Workspace Snapshot.
-# DRI: @sizhang
 #
 # spec.setup runs once and is captured in the workspace snapshot, so tasks that
 # bind this workspace start with /workspace/app already in place.
@@ -23,10 +22,8 @@ metadata:
   name: hero-demo-ws
   atespace: default
 spec:
+  # No image is set, so setup runs on the server's default task image.
   profile:
-    # TODO(@sizhang): Pin by digest once the setup image is published. Substrate
-    # rejects tag-only images when it creates the actor template.
-    image: ghcr.io/agentexecutor/images/workspace-setup:v0.1.0-rc1
     resources:
       limits:
         cpu: "2"

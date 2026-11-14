@@ -15,14 +15,14 @@
 
 # AX v0.1 hero demo harness.
 #
-# Usage: ./examples/hero-demo/run.sh [--step N] [--remote-context <kube-context>]
+# Usage: ./hack/hero-demo/run.sh [--step N] [--remote-context <kube-context>]
 #
 # Runs the five hero demo steps in order and prints a scoreboard
 # (🟢 PASS / 🟡 STUB / 🔴 FAIL). By default it makes no calls to a cluster, so it
 # runs cleanly anywhere. Set RUN_LIVE_STEPS=1 to run the steps that already work
 # on main against the AX server of your current kube context.
 #
-# Each DRI replaces their 🟡 STUB with the real call in their step function below.
+# Each step owner replaces their 🟡 STUB with the real call in their step function below.
 #
 # Environment:
 #   AX_BIN          ax CLI to use (default: ax on PATH, else ./bin/ax)
@@ -120,17 +120,17 @@ ax_quiet() {
 }
 
 # ------------------------------------------------------------------------------
-# Step 1: Local Up & AX Studio (@yczhou, @gmccloskey)
+# Step 1: Local Up & AX Studio
 # ------------------------------------------------------------------------------
 step1_local_up() {
   local step="${STEPS[0]}"
-  echo "==> [Step 1] Local Up & AX Studio (@yczhou, @gmccloskey)"
+  echo "==> [Step 1] Local Up & AX Studio"
   if ! have_ax; then
     mark_stub "${step}" "ax CLI not found; run 'make install' or set AX_BIN"
     return
   fi
   if ! live; then
-    # TODO(@yczhou): Replace with 'ax local start' once local mode lands on main (#526).
+    # TODO(@YoyinZyc): Replace with 'ax local start' once local mode lands on main (#526).
     mark_stub "${step}" "ax CLI found; wire 'ax local start' + Studio health check"
     return
   fi
@@ -141,17 +141,17 @@ step1_local_up() {
   if curl -fsS --max-time 5 "${STUDIO_URL}/healthz" >/dev/null 2>&1; then
     mark_pass "${step}" "ax-server reachable and AX Studio healthy at ${STUDIO_URL}"
   else
-    # TODO(@gmccloskey): Wire the AX Studio health check once Studio lands (#543).
+    # TODO(@YoyinZyc): Wire the AX Studio health check once Studio lands (#543).
     mark_stub "${step}" "ax-server reachable; AX Studio not running at ${STUDIO_URL}"
   fi
 }
 
 # ------------------------------------------------------------------------------
-# Step 2: Warm Workspace Snapshot (@sizhang)
+# Step 2: Warm Workspace Snapshot
 # ------------------------------------------------------------------------------
 step2_warm_workspace() {
   local step="${STEPS[1]}"
-  echo "==> [Step 2] Warm Workspace Snapshot (@sizhang)"
+  echo "==> [Step 2] Warm Workspace Snapshot"
   if ! live; then
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to apply workspace.yaml"
     return
@@ -161,17 +161,17 @@ step2_warm_workspace() {
     mark_fail "${step}" "ax apply -f workspace.yaml failed"
     return
   fi
-  # TODO(@sizhang): Check that the workspace reaches Ready from a warm snapshot
+  # TODO(@YoyinZyc): Check that the workspace reaches Ready from a warm snapshot
   # once pre-warmed workspace snapshots land on main (#584).
   mark_stub "${step}" "Workspace ${WORKSPACE_NAME} applied; wire the warm snapshot check"
 }
 
 # ------------------------------------------------------------------------------
-# Step 3: Starter Task, Session & Resume (@aprajitaarora, @luluke, @simrankaurk, @rajithal)
+# Step 3: Starter Task, Session & Resume
 # ------------------------------------------------------------------------------
 step3_starter_task_session() {
   local step="${STEPS[2]}"
-  echo "==> [Step 3] Starter Task, Session & Resume (@aprajitaarora, @luluke, @simrankaurk, @rajithal)"
+  echo "==> [Step 3] Starter Task, Session & Resume"
   if ! live; then
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the starter task lifecycle"
     return
@@ -189,20 +189,20 @@ step3_starter_task_session() {
       return
     fi
   done
-  # TODO(@aprajitaarora, @simrankaurk): Send a second Session turn and check the
+  # TODO(@itssimrank, @Lukeluds): Send a second Session turn and check the
   # task keeps its state across suspend/resume, once sessions land on main.
   mark_stub "${step}" "Apply + resume/suspend/resume OK; wire the second Session turn"
 }
 
 # ------------------------------------------------------------------------------
-# Step 4: Custom Image Task Without Starter Template (@simrankaurk, @rajithal, @sizhang)
+# Step 4: Custom Image Task Without Starter Template
 # ------------------------------------------------------------------------------
 step4_custom_image_task() {
   local step="${STEPS[3]}"
-  echo "==> [Step 4] Custom Image Task - No Starter Template (@simrankaurk, @rajithal, @sizhang)"
+  echo "==> [Step 4] Custom Image Task - No Starter Template"
   # A plain image has no ax-task-runner, so task-custom.yaml cannot run on main
   # yet; nothing is called here even in live mode.
-  # TODO(@simrankaurk, @sizhang): Once automatic runner injection lands, run
+  # TODO(@itssimrank, @siyuanfoundation): Once automatic runner injection lands, run
   #   ax apply -f task-custom.yaml && ax resume task hero-demo-custom-task
   # and check the unit tests pass, e.g. with
   #   ax ssh hero-demo-custom-task -- python3 -m unittest discover -s /workspace/app
@@ -211,13 +211,13 @@ step4_custom_image_task() {
 }
 
 # ------------------------------------------------------------------------------
-# Step 5: Remote Cluster Promotion (@yczhou, @sizhang, @gmccloskey)
+# Step 5: Remote Cluster Promotion
 # ------------------------------------------------------------------------------
 step5_remote_promote() {
   local step="${STEPS[4]}"
-  echo "==> [Step 5] Remote Cluster Promotion (@yczhou, @sizhang, @gmccloskey)"
+  echo "==> [Step 5] Remote Cluster Promotion"
   if [[ -z "${REMOTE_CONTEXT}" ]]; then
-    # TODO(@yczhou, @gmccloskey): Wire a Kind remote context into the E2E run.
+    # TODO(@YoyinZyc, @MushuEE): Wire a Kind remote context into the E2E run.
     mark_stub "${step}" "Set REMOTE_CONTEXT or --remote-context to promote"
     return
   fi
@@ -229,7 +229,7 @@ step5_remote_promote() {
   run_ax --context "${REMOTE_CONTEXT}" delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
   if ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${WORKSPACE_MANIFEST}" &&
     ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${STARTER_MANIFEST}"; then
-    # TODO(@sizhang): Promote in one command instead of one apply per manifest.
+    # TODO(@siyuanfoundation): Promote in one command instead of one apply per manifest.
     mark_pass "${step}" "Manifests applied unchanged to ${REMOTE_CONTEXT}"
   else
     mark_fail "${step}" "Applying the manifests to ${REMOTE_CONTEXT} failed"

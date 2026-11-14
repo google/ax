@@ -13,7 +13,6 @@
 # limitations under the License.
 
 # AX v1alpha1 Task manifest for Step 4 of the hero demo: Custom Image Task, without a starter template.
-# DRIs: @simrankaurk, @rajithal, @sizhang
 #
 # Runs the workspace's unit tests in a plain Python image, in the same
 # hero-demo-ws workspace as the starter task.
@@ -23,7 +22,7 @@ metadata:
   name: hero-demo-custom-task
   atespace: default
 spec:
-  # TODO(@simrankaurk): A plain image has no /usr/local/bin/ax-task-runner, so this
+  # TODO(@itssimrank): A plain image has no /usr/local/bin/ax-task-runner, so this
   # needs automatic runner injection. Pin by digest as well: Substrate rejects
   # tag-only images.
   image: python:3.12-slim
