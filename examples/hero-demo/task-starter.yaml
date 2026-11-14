@@ -1,0 +1,39 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# AX v1alpha1 Task manifest for Step 3 of the hero demo: Starter Task, Session & Resume.
+# DRIs: @aprajitaarora, @luluke, @simrankaurk, @rajithal
+#
+# Runs the prebuilt Claude Code starter image against the hero-demo-ws workspace.
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: hero-demo-starter-task
+  atespace: default
+spec:
+  # TODO(@aprajitaarora): Pin by digest once the starter image is published.
+  # Substrate rejects tag-only images when it creates the actor template.
+  image: ghcr.io/agentexecutor/images/claude-code:v0.1.0-rc1
+  resources:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  workspace:
+    name: hero-demo-ws
+  # The Claude Code runner reads its prompt from spec.config.
+  # TODO(@simrankaurk): Move this to spec.goal once the Task schema update (#587) lands.
+  # TODO(@luluke): Bind a Gateway that injects ANTHROPIC_API_KEY, so the task can reach the model.
+  config:
+    prompt: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
+  debug: true # serve guest services so `ax ssh` works; off by default
