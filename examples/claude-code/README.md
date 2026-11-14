@@ -1,8 +1,8 @@
 # Claude Code runner
 
-`claude-code-runner` is a [runner](../../docs/runner.md) that runs [Claude Code](https://claude.com/claude-code) headlessly, configured from the `Task` itself. It embeds the standard `runner` package, so workspace setup, supervision, probes, and shutdown work exactly as they do with the default runner. The only difference is where the command comes from. When a task leaves `spec.command` empty, the runner builds a `claude --print` command from `spec.config` and connects it to the MCP servers of the task's Workspace.
+`claude-code-runner` is a [runner](../../docs/runner.md) that runs [Claude Code](https://claude.com/claude-code) headlessly, configured from the `Task` itself. It embeds the standard `runner` package, so workspace setup, supervision, probes, and shutdown work exactly as they do with the default runner. The only difference is where the command comes from. When a task leaves `spec.commands` empty, the runner builds a `claude --print` command from `spec.config` and connects it to the MCP servers of the task's Workspace.
 
-A task that sets `spec.command` runs that command unchanged, so the same image also works for tasks that call `claude` themselves.
+A task that sets `spec.commands` runs that command unchanged, so the same image also works for tasks that call `claude` themselves.
 
 ## Build the image
 
@@ -13,7 +13,7 @@ make push-claude-code-image CLAUDE_CODE_REPO=<your-registry>/<image>
 make push-claude-code-image CLAUDE_CODE_VERSION=2.1.310   # pin a Claude Code version
 ```
 
-The target cross-compiles the runner, builds and pushes the image, and prints the digest to pin in `spec.image`. Build on an amd64 host: the Claude Code installer runs the binary it downloads, and that binary aborts under qemu emulation.
+The target cross-compiles the runner, builds and pushes the image, and prints the digest to pin in `spec.profile.image`. Build on an amd64 host: the Claude Code installer runs the binary it downloads, and that binary aborts under qemu emulation.
 
 ## Configure a task
 
@@ -25,7 +25,8 @@ kind: Task
 metadata:
   name: fix-tests
 spec:
-  image: "gcr.io/my-project/claude-code@sha256:..."
+  profile:
+    image: "gcr.io/my-project/claude-code@sha256:..."
   config:
     prompt: "Run the test suite and fix any failing tests."
     model: claude-opus-5-5
@@ -109,7 +110,7 @@ ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code/task.yaml | ax appl
 
 ## Debugging
 
-The runner writes the command it builds into `spec.command` of the `Task` it serves from the metadata endpoint. Inside the sandbox, this shows exactly what ran:
+The runner writes the command it builds into `spec.commands` of the `Task` it serves from the metadata endpoint. Inside the sandbox, this shows exactly what ran:
 
 ```bash
 curl -s "$AX_METADATA_URL/metadata/v1alpha1/ax/task"

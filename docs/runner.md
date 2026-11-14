@@ -2,17 +2,17 @@
 
 A runner is the program that AX starts as PID 1 inside every task container. It is the bridge between the control plane and whatever your agent actually is: the control plane hands it the `Task` and `Workspace` specs, and the runner turns them into a prepared workspace, a running command, and a small HTTP surface that the rest of AX uses to observe the sandbox.
 
-AX ships a default runner, `ax-task-runner`, baked into the default task image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.image`, and the control plane will treat it exactly like the default.
+AX ships a default runner, `ax-task-runner`, baked into the default task image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.profile.image`, and the control plane will treat it exactly like the default.
 
 This page describes what a runner must do. For what the default runner exposes to your command once it is up, see [Sandbox](sandbox.md).
 
 ## How a runner is launched
 
-The control plane does not run `spec.command` as the container entrypoint. It always starts the container with a fixed command and lets the runner take it from there:
+The control plane does not run `spec.commands` as the container entrypoint. It always starts the container with a fixed command and lets the runner take it from there:
 
 | What AX sets | Value |
 |---|---|
-| Container image | `spec.image`, or the default `ax-task-runner` image when unset |
+| Container image | `spec.profile.image`, or the default `ax-task-runner` image when unset |
 | Container command | `/usr/local/bin/ax-task-runner`, always |
 | `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
 | `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
@@ -21,7 +21,7 @@ The control plane does not run `spec.command` as the container entrypoint. It al
 | CA bundle | `/run/ate/egress-trust-bundle/trust-bundle.pem`: the CA certificates to trust for outbound TLS, including the egress gateway's |
 | Readiness probe | `GET /readyz` on port 80 |
 
-Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-task-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.command` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
+Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-task-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.commands` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
 
 **Runner-specific settings** belong in `spec.config`, a free-form object that AX passes through unchanged inside `AX_TASK_YAML` (and the task metadata endpoint). The runner owns its schema; the control plane only checks that it is an object of at most 16 KiB and that the whole encoded task fits in 31 KiB. Decode `AX_TASK_YAML` leniently (the Go package offers `v1alpha1.UnmarshalYAMLLenient`) so the runner keeps working when a newer control plane adds fields. See [Runner configuration](manifests.md#runner-configuration).
 
@@ -47,7 +47,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 **Make outbound TLS and credentials work.** The egress gateway intercepts HTTPS that a `Gateway` rule allows, so point the CA variables your tools read (`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`) at the CA bundle when it exists. It replaces a credential header only on requests that already carry it. Tasks set placeholders for their tools in `spec.env`; the default runner adds one for git (see [Outbound TLS and credentials](sandbox.md#outbound-tls-and-credentials)).
 
-**Run the command and supervise it.** Start `spec.command` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
+**Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
 **Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
 
@@ -154,8 +154,9 @@ kind: Task
 metadata:
   name: custom-runner
 spec:
-  image: "ghcr.io/my-org/my-runner@sha256:..."
-  command: ["my-agent", "--goal", "fix the flaky test"]
+  profile:
+    image: "ghcr.io/my-org/my-runner@sha256:..."
+  commands: ["my-agent", "--goal", "fix the flaky test"]
   debug: true
 ```
 
@@ -182,7 +183,7 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 - Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until the workspace is ready
 - Serves the metadata endpoints on loopback only, at `AX_METADATA_URL`
 - Prepares the workspace exactly once across restarts and resumes, at its path
-- Starts `spec.command` in the workspace with `AX_METADATA_URL` and `spec.env`
+- Starts `spec.commands` in the workspace with `AX_METADATA_URL` and `spec.env`
 - Keeps running after the command exits
 - Forwards `SIGTERM` to the command's process group and exits after a grace period
 - Serves guest gRPC services on port 80 only when `spec.debug` is true

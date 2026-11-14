@@ -64,10 +64,11 @@ location is where to look. How-to lives in the skills.
   service, and the messages are in `common.proto`, `task.proto`,
   `workspace.proto`, `model.proto`, and `gateway.proto`. `*.pb.go` are
   generated (`DO NOT EDIT` headers); run `make generate` after editing a
-  `.proto`. Imports are repo-root-relative, except imports of Agent Substrate's
-  `api/ateapi/v1/ateapi.proto`: `make generate` links that module from the Go
-  module cache into `.tmp/buf/substrate` for buf (`buf.yaml`). `.tmp/substrate`
-  is the E2E scripts' Substrate clone.
+  `.proto`. Imports are repo-root-relative, except `google/rpc/status.proto`
+  (`buf.build/googleapis/googleapis`, pinned in `buf.lock`) and Agent
+  Substrate's `api/ateapi/v1/ateapi.proto` (`make generate` links that module
+  from the Go module cache into `.tmp/buf/substrate` for `buf.yaml`).
+  `.tmp/substrate` is the E2E scripts' Substrate clone.
 - `internal/store/postgres/schema.go` loads `schema.sql`; change them together.
 
 **B. Agent Substrate** (details: `/substrate`)
@@ -75,7 +76,7 @@ location is where to look. How-to lives in the skills.
   `ateapipb.NewControlClient`; new Control API calls go there.
 - `api.ate-system.svc`, `atenet-router.ate-system.svc`, and namespace
   `ate-system` are hard-coded across 11 files (list in `/substrate`).
-- Substrate rejects tag-only images; `spec.image` / `profile.image` must be
+- Substrate rejects tag-only images; `profile.image` must be
   digest-pinned (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
   (`internal/metadata/server.go`, `cmd/ax/main.go`).

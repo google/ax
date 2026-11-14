@@ -6,7 +6,7 @@ Every task container starts with `ax-task-runner` as PID 1. On boot it:
 2. Starts its servers: probes and guest management on port 80, and the metadata endpoints on `127.0.0.1:8099`.
 3. Sets the variables described under [Outbound TLS and credentials](#outbound-tls-and-credentials), which workspace setup uses too.
 4. On the first run, prepares each workspace at its own path, in binding order: clones Git repos and sets up the skills path. The task reports not-ready until every workspace has finished.
-5. Starts `spec.command` as a child process, with the first workspace as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
+5. Starts `spec.commands` as a child process, with the workspace path as its working directory and `AX_METADATA_URL` plus `spec.env` in its environment, and supervises it.
 
 The runner stays up as PID 1 whether or not the command is still running, so the metadata server keeps answering and `ax ssh` still works after the command has exited. Its exit code is logged. When the sandbox is stopped or suspended, the runner sends the command's process group `SIGTERM`, waits ten seconds, and then kills whatever is left.
 

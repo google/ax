@@ -20,6 +20,8 @@ modules:
   - path: .tmp/buf/substrate # go.ate.dev/substrate; run `make generate` once to link it
     includes:
       - .tmp/buf/substrate/api/ateapi/v1
+deps:
+  - buf.build/googleapis/googleapis
 lint:
   use:
     - STANDARD

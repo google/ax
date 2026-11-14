@@ -24,7 +24,7 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= amd64
 AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
 AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
-# Image the server runs for tasks that do not set spec.image. Substrate only
+# Image the server runs for tasks that do not set spec.profile.image. Substrate only
 # accepts images pinned by digest, so after `make images` this defaults to the
 # digest it recorded for the pushed ax-task-runner image.
 AX_TASK_RUNNER_DIGEST := $(strip $(shell cat bin/ax-task-runner.digest 2>/dev/null))
@@ -111,7 +111,7 @@ build-claude-code-image:
 	@echo "==> Building container image $(CLAUDE_CODE_REPO):latest (Claude Code $(CLAUDE_CODE_VERSION)) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/amd64 --build-arg CLAUDE_CODE_VERSION=$(CLAUDE_CODE_VERSION) $(if $(CLAUDE_CODE_BASE_IMAGE),--build-arg BASE_IMAGE=$(CLAUDE_CODE_BASE_IMAGE),) -t $(CLAUDE_CODE_REPO):latest -f Dockerfile.claude-code .
 
-# Push the Claude Code task image to the registry and print the digest to pin in spec.image
+# Push the Claude Code task image to the registry and print the digest to pin in spec.profile.image
 push-claude-code-image: build-claude-code-image
 	@mkdir -p bin
 	$(call push_image,$(CLAUDE_CODE_REPO):latest,claude-code)

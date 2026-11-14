@@ -267,8 +267,8 @@ func TestTaskReconciler(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image:   "ghrc.io/my-org/my-image",
-			Command: []string{"/bin/task-runner"},
+			Profile:  &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"},
+			Commands: []string{"/bin/task-runner"},
 		},
 		// A client-supplied actor name is ignored: the actor is always named
 		// after the task.
@@ -279,10 +279,16 @@ func TestTaskReconciler(t *testing.T) {
 		t.Fatalf("Resume failed: %v", err)
 	}
 
-	// 4. Validate the results. The phase and worker IP belong to the actor, so
-	// Resume leaves them for the server to read from Substrate.
-	if st := task.GetStatus(); st.GetPhase() != "" || st.GetWorkerIp() != "" {
-		t.Errorf("Resume set phase %q and worker IP %q, want both left empty", st.GetPhase(), st.GetWorkerIp())
+	// 4. Validate the results. The state belongs to the actor, so Resume leaves
+	// it unspecified for the server to read from Substrate.
+	if st := task.GetStatus(); st.GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
+		t.Errorf("Resume set state %v, want UNSPECIFIED", st.GetState())
+	}
+	if got := task.GetStatus().GetResolvedArgv(); len(got) != 1 || got[0] != "/bin/task-runner" {
+		t.Errorf("ResolvedArgv = %v, want [/bin/task-runner]", got)
+	}
+	if !strings.HasPrefix(task.GetStatus().GetAteActorTemplate(), "test-task-tmpl-") {
+		t.Errorf("AteActorTemplate = %q, want prefix test-task-tmpl-", task.GetStatus().GetAteActorTemplate())
 	}
 	// The mock's worker does not answer the readiness check.
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
@@ -343,9 +349,6 @@ func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
 			if err := reconciler.Resume(context.Background(), task, nil, nil); err != nil {
 				t.Fatalf("Resume failed: %v", err)
 			}
-			if got := task.GetSpec().GetImage(); got != tc.want {
-				t.Errorf("spec.image = %q, want %q", got, tc.want)
-			}
 			if len(mockSrv.templateImages) != 1 || mockSrv.templateImages[0] != tc.want {
 				t.Errorf("ActorTemplate images = %v, want [%q]", mockSrv.templateImages, tc.want)
 			}
@@ -385,7 +388,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image: "ghrc.io/my-org/my-image",
+			Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"},
 		},
 	}
 
@@ -393,8 +396,8 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 
-	if st := task.GetStatus(); st.GetPhase() != "" || st.GetWorkerIp() != "" {
-		t.Errorf("Suspend set phase %q and worker IP %q, want both left empty", st.GetPhase(), st.GetWorkerIp())
+	if st := task.GetStatus(); st.GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
+		t.Errorf("Suspend set state %v, want UNSPECIFIED", st.GetState())
 	}
 	if len(mockSrv.suspendedActors) != 1 || mockSrv.suspendedActors[0] != "suspend-task" {
 		t.Errorf("expected actor 'suspend-task' suspended, got %v", mockSrv.suspendedActors)
@@ -435,7 +438,7 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 			ApiVersion: v1alpha1.APIVersion,
 			Kind:       v1alpha1.KindTask,
 			Metadata:   &v1alpha1.ObjectMeta{Name: name, Atespace: "default"},
-			Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+			Spec:       &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 		}
 	}
 
@@ -504,12 +507,9 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image: "ghrc.io/my-org/my-image",
+			Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"},
 		},
 		Status: &v1alpha1.TaskStatus{
-			// Set, so that ensureSubstrateResources has no task ID to fill in.
-			Id:         "task-suspend-fail-task-1",
-			WorkerIp:   "10.1.1.1",
 			Conditions: []*v1alpha1.Condition{{Type: "Ready", Status: "True", Reason: v1alpha1.ReasonTaskRunning}},
 		},
 	}
@@ -562,8 +562,8 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image:   "localhost:5001/my-agent:v1",
-			Command: []string{"python3", "/app/agent.py"},
+			Profile:  &v1alpha1.Profile{Image: "localhost:5001/my-agent:v1"},
+			Commands: []string{"python3", "/app/agent.py"},
 		},
 	}
 
@@ -635,7 +635,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 			Name:     "template-transient",
 			Atespace: "default",
 		},
-		Spec: &v1alpha1.TaskSpec{Image: "ghcr.io/my-org/my-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+		Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/my-org/my-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"}},
 	}
 
 	if err := reconciler.Resume(ctx, task, nil, nil); err == nil {
@@ -737,7 +737,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 
 	// A launch configuration change must still get a distinct template.
-	task.Spec.Command = []string{"python3", "agent.py"}
+	task.Spec.Commands = []string{"python3", "agent.py"}
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
 	}
@@ -778,9 +778,11 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 			Atespace: "default",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image: "ghrc.io/my-org/my-image",
-			Resources: &v1alpha1.ResourcesSpec{
-				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
+			Profile: &v1alpha1.Profile{
+				Image: "ghrc.io/my-org/my-image",
+				Resources: &v1alpha1.ResourcesSpec{
+					Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
+				},
 			},
 		},
 	}
@@ -801,7 +803,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 
 	// Raising a limit is a launch configuration change and must provision a new
 	// template, under a new name, carrying the new value.
-	task.Spec.Resources.Limits.Memory = "8Gi"
+	task.Spec.Profile.Resources.Limits.Memory = "8Gi"
 	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend with changed limits failed: %v", err)
 	}
@@ -822,7 +824,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		ApiVersion: v1alpha1.APIVersion,
 		Kind:       v1alpha1.KindTask,
 		Metadata:   &v1alpha1.ObjectMeta{Name: "plain-task", Atespace: "default"},
-		Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		Spec:       &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
 	if err := reconciler.Suspend(ctx, plain, nil, nil); err != nil {
 		t.Fatalf("Suspend of task without limits failed: %v", err)
@@ -847,7 +849,9 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			ApiVersion: v1alpha1.APIVersion,
 			Kind:       v1alpha1.KindTask,
 			Metadata:   &v1alpha1.ObjectMeta{Name: name, Atespace: "default"},
-			Spec:       &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image", Resources: resources},
+			Spec: &v1alpha1.TaskSpec{
+				Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image", Resources: resources},
+			},
 		}
 	}
 	setup := func(t *testing.T, mockSrv *mockControlServer) *controller.TaskReconciler {
@@ -1147,7 +1151,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	mockSrv.createAtespaceErr = status.Error(codes.DeadlineExceeded, "substrate control plane timed out")
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-atespace"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
 	if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureAtespace fails, got nil")
@@ -1159,7 +1163,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	mockSrv.createActorErr = status.Error(codes.DeadlineExceeded, "substrate actor creation timed out")
 	task2 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-actor"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
 	if err := reconciler.Suspend(ctx, task2, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureActor fails, got nil")
@@ -1172,7 +1176,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	mockSrv.resumeActorErr = status.Error(codes.DeadlineExceeded, "substrate worker pool temporarily unreachable")
 	task3 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-resume"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
 	if err := reconciler.Resume(ctx, task3, nil, nil); err == nil {
 		t.Fatal("expected error from Resume when ResumeActor fails, got nil")
@@ -1192,11 +1196,175 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	mockSrv.createActorErr = status.Error(codes.InvalidArgument, "invalid actor specification")
 	task4 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "permanent-actor-err"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghrc.io/my-org/my-image"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
 	if err := reconciler.Suspend(ctx, task4, nil, nil); err == nil {
 		t.Fatal("expected error on InvalidArgument, got nil")
 	}
 	assertCondition(t, task4, "Ready", "False", v1alpha1.ReasonActorCreationFailed)
 	mockSrv.createActorErr = nil
+}
+
+func TestTaskReconciler_AteActorTemplate(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{actorTemplates: map[string]bool{"custom-base": true}}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
+
+	task := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-task", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "custom-base"}},
+	}
+	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+		t.Fatalf("Suspend failed: %v", err)
+	}
+	if got := task.GetStatus().GetAteActorTemplate(); got != "custom-base" {
+		t.Errorf("AteActorTemplate = %q, want custom-base", got)
+	}
+	if len(mockSrv.createdTemplates) != 0 {
+		t.Errorf("expected no per-task template created, got %d", len(mockSrv.createdTemplates))
+	}
+	if err := reconciler.DeleteTask(ctx, task); err != nil {
+		t.Fatalf("DeleteTask failed: %v", err)
+	}
+	if !mockSrv.actorTemplates["custom-base"] {
+		t.Errorf("user-supplied template custom-base should not be deleted by DeleteTask")
+	}
+}
+
+func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
+	ctx := context.Background()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	mockSrv := &mockControlServer{actorTemplates: map[string]bool{"ws-base-tpl": true}}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+
+	const defaultImg = "ghcr.io/default/runner@sha256:1111"
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, defaultImg)
+	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "warm-ws", Atespace: "default"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Profile: &v1alpha1.Profile{
+				Image: "ghcr.io/ws/image@sha256:2222",
+				Resources: &v1alpha1.ResourcesSpec{
+					Limits: &v1alpha1.ResourceList{Cpu: "4", Memory: "8Gi"},
+				},
+			},
+		},
+	}
+
+	// 1. Omitted task profile falls back to Workspace.spec.profile.
+	inheritedTask := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "inherited-task", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "warm-ws"}},
+	}
+	if err := reconciler.Suspend(ctx, inheritedTask, ws, nil); err != nil {
+		t.Fatalf("Suspend(inheritedTask) failed: %v", err)
+	}
+	if len(mockSrv.createdTemplates) != 1 {
+		t.Fatalf("createdTemplates = %d, want 1", len(mockSrv.createdTemplates))
+	}
+	gotInherited := mockSrv.createdTemplates[0]
+	if got := gotInherited.GetContainers()[0].GetImage(); got != "ghcr.io/ws/image@sha256:2222" {
+		t.Errorf("inherited image = %q, want ghcr.io/ws/image@sha256:2222", got)
+	}
+	wantWsRes := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: 4000,
+		MemoryBytes:   8 << 30,
+	}}
+	if !proto.Equal(gotInherited.GetResources(), wantWsRes) {
+		t.Errorf("inherited resources = %v, want %v", gotInherited.GetResources(), wantWsRes)
+	}
+
+	// 2. Non-empty task profile (resources only) uses task profile as-is:
+	// falls back to server default image and default CPU, NOT Workspace.spec.profile.
+	resourcesOnlyTask := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "resources-only-task", Atespace: "default"},
+		Spec: &v1alpha1.TaskSpec{
+			Workspace: &v1alpha1.WorkspaceRef{Name: "warm-ws"},
+			Profile: &v1alpha1.Profile{
+				Resources: &v1alpha1.ResourcesSpec{
+					Limits: &v1alpha1.ResourceList{Memory: "2Gi"},
+				},
+			},
+		},
+	}
+	if err := reconciler.Suspend(ctx, resourcesOnlyTask, ws, nil); err != nil {
+		t.Fatalf("Suspend(resourcesOnlyTask) failed: %v", err)
+	}
+	if len(mockSrv.createdTemplates) != 2 {
+		t.Fatalf("createdTemplates = %d, want 2", len(mockSrv.createdTemplates))
+	}
+	gotResOnly := mockSrv.createdTemplates[1]
+	if got := gotResOnly.GetContainers()[0].GetImage(); got != defaultImg {
+		t.Errorf("resources-only task image = %q, want server default %q", got, defaultImg)
+	}
+	wantTaskRes := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
+		CpuMillicores: substrate.DefaultCPUMillicores,
+		MemoryBytes:   2 << 30,
+	}}
+	if !proto.Equal(gotResOnly.GetResources(), wantTaskRes) {
+		t.Errorf("resources-only task resources = %v, want %v", gotResOnly.GetResources(), wantTaskRes)
+	}
+
+	// 3. Even when Workspace uses ateActorTemplate, a task setting resources-only
+	// uses its own profile cleanly without conflicting with Workspace.spec.profile.
+	wsWithTpl := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-ws", Atespace: "default"},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "ws-base-tpl"}},
+	}
+	taskOverTplWs := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task-over-tpl-ws", Atespace: "default"},
+		Spec: &v1alpha1.TaskSpec{
+			Workspace: &v1alpha1.WorkspaceRef{Name: "tpl-ws"},
+			Profile: &v1alpha1.Profile{
+				Resources: &v1alpha1.ResourcesSpec{
+					Limits: &v1alpha1.ResourceList{Memory: "1Gi"},
+				},
+			},
+		},
+	}
+	if err := reconciler.Suspend(ctx, taskOverTplWs, wsWithTpl, nil); err != nil {
+		t.Fatalf("Suspend(taskOverTplWs) failed: %v", err)
+	}
+	if len(mockSrv.createdTemplates) != 3 {
+		t.Fatalf("createdTemplates = %d, want 3", len(mockSrv.createdTemplates))
+	}
+	if got := mockSrv.createdTemplates[2].GetContainers()[0].GetImage(); got != defaultImg {
+		t.Errorf("taskOverTplWs image = %q, want %q", got, defaultImg)
+	}
 }

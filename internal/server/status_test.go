@@ -27,16 +27,17 @@ import (
 
 func TestStoredStatus(t *testing.T) {
 	in := &v1alpha1.TaskStatus{
-		Id:         "id",
-		Phase:      "Running",
-		Actor:      "actor",
-		ActorUid:   "uid-1",
-		WorkerIp:   "10.0.0.1",
-		Conditions: []*v1alpha1.Condition{{Type: "Ready"}, {Type: "WorkspaceReady"}},
+		State:            v1alpha1.TaskState_TASK_STATE_WORKING,
+		Actor:            "actor",
+		ActorUid:         "uid-1",
+		AteActorTemplate: "task-tmpl-01234567",
+		Attempt:          1,
+		Generation:       2,
+		Conditions:       []*v1alpha1.Condition{{Type: "Ready"}, {Type: "WorkspaceReady"}},
 	}
 	got := storedStatus(in)
-	if got.Id != "id" || got.Phase != "" || got.Actor != "" || got.ActorUid != "" || got.WorkerIp != "" {
-		t.Errorf("storedStatus = %v, want only Id kept", got)
+	if got.State != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || got.Actor != "" || got.ActorUid != "" || got.AteActorTemplate != "task-tmpl-01234567" {
+		t.Errorf("storedStatus = %v, want actor/actorUid/state stripped and AteActorTemplate kept", got)
 	}
 	if len(got.Conditions) != 1 || got.Conditions[0].Type != "WorkspaceReady" {
 		t.Errorf("conditions = %v, want only WorkspaceReady", got.Conditions)
@@ -45,16 +46,20 @@ func TestStoredStatus(t *testing.T) {
 		t.Errorf("storedStatus modified its input: %v", in)
 	}
 
-	in = &v1alpha1.TaskStatus{Phase: v1alpha1.PhaseFailed, Conditions: []*v1alpha1.Condition{{Type: "Ready"}}}
-	if got := storedStatus(in); got.Phase != v1alpha1.PhaseFailed || len(got.Conditions) != 1 {
-		t.Errorf("storedStatus(%v) = %v, want AX phase and its conditions kept", in, got)
+	in = &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, Conditions: []*v1alpha1.Condition{{Type: "Ready"}}}
+	if got := storedStatus(in); got.State != v1alpha1.TaskState_TASK_STATE_FAILED || len(got.Conditions) != 1 {
+		t.Errorf("storedStatus(%v) = %v, want AX state and its conditions kept", in, got)
 	}
 	if got := storedStatus(nil); got == nil {
 		t.Error("storedStatus(nil) = nil, want empty status")
 	}
-	for _, phase := range []string{v1alpha1.PhasePending, v1alpha1.PhaseFailed, v1alpha1.PhaseTerminating} {
-		t.Run(phase, func(t *testing.T) {
-			if got := storedStatus(&v1alpha1.TaskStatus{Phase: phase, ActorUid: "uid-1"}); got.ActorUid != "" {
+	for _, state := range []v1alpha1.TaskState{
+		v1alpha1.TaskState_TASK_STATE_QUEUED,
+		v1alpha1.TaskState_TASK_STATE_FAILED,
+		v1alpha1.TaskState_TASK_STATE_COMPLETED,
+	} {
+		t.Run(state.String(), func(t *testing.T) {
+			if got := storedStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {
 				t.Errorf("stored actor UID = %q, want empty", got.ActorUid)
 			}
 		})
@@ -66,8 +71,8 @@ func TestStoredStatus(t *testing.T) {
 // between stored and Substrate-owned status.
 func TestTasksGoThroughHelpers(t *testing.T) {
 	helpers := map[string]bool{
-		"getTask": true, "listTasks": true, "saveTask": true, "updateTask": true,
-		"deleteTask": true,
+		"getStoredTask": true, "getTask": true, "listTasks": true,
+		"saveTask": true, "updateTask": true, "setTaskDeleteTime": true, "deleteTask": true,
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {

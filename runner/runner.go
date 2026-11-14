@@ -93,7 +93,7 @@ type CommandExit struct {
 // Run executes the task-runner lifecycle and blocks until ctx is cancelled.
 //
 // The task's workspace is set up at its path, /workspace unless the binding
-// says otherwise. The task's spec.command, if any, is then started as a child
+// says otherwise. The task's spec.commands, if any, is then started as a child
 // process in its own process group with that path as its working directory and
 // AX_METADATA_URL plus spec.env in its environment. The metadata and guest
 // server keeps serving whether or not the command is still running. When ctx is
@@ -142,7 +142,7 @@ func Run(ctx context.Context, cfg Config) error {
 	metaServer.SetWorkspaceReady(true)
 	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 
-	cmdArgs := cfg.Task.GetSpec().GetCommand()
+	cmdArgs := cfg.Task.GetSpec().GetCommands()
 	if len(cmdArgs) == 0 {
 		slog.Info("no task command specified; serving metadata until stopped")
 		<-ctx.Done()

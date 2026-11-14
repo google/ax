@@ -175,8 +175,14 @@ type WorkspaceSpec struct {
 	// delivered to the runner rather than baked into an immutable snapshot.
 	Mcp *MCPConfig `protobuf:"bytes,3,opt,name=mcp,proto3" json:"mcp,omitempty"`
 	// Default compute profile (image, resources, ate_actor_template) used to
-	// pre-warm the initial workspace snapshot upon Workspace creation. Tasks
-	// binding this Workspace inherit profile unless overridden at task level.
+	// pre-warm the workspace snapshot upon Workspace creation for fast warm task
+	// startup, and used as the fallback profile for Tasks binding this Workspace
+	// that omit TaskSpec.profile.
+	//
+	// WorkspaceSpec.profile never restricts or merges fields into an explicit
+	// TaskSpec.profile: if a Task sets its own profile and it differs from
+	// WorkspaceSpec.profile, the Task uses its own profile as-is and cold-boots
+	// workspace setup rather than starting from the pre-warmed snapshot.
 	Profile *Profile `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Setup steps executed once in a setup actor and captured into the workspace
 	// snapshot.

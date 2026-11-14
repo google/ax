@@ -10,7 +10,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 
 ### Lifecycle
 
-`status.phase` is a one-word summary of where the task is: `Running`, `Suspended`, `Failed`, `Terminating`, and so on. Conditions carry the detail. Check them with `ax describe`.
+`status.state` summarizes where the task is (`TASK_STATE_WORKING`, `TASK_STATE_SUSPENDED`, `TASK_STATE_QUEUED`, `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, and so on), while `metadata.deleteTime` marks a task whose deletion is in progress. Conditions and `status.statusDetail` carry the detail. Check them with `ax describe`.
 
 | Condition | True when |
 |---|---|

@@ -38,10 +38,19 @@ const (
 
 // ObjectMeta is metadata for AX resources.
 type ObjectMeta struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Atespace      string                 `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
-	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Atespace   string                 `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	// Server-assigned UUID.
+	Uid string `protobuf:"bytes,4,opt,name=uid,proto3" json:"uid,omitempty"`
+	// Arbitrary key-value labels.
+	Labels map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Authenticated creator identity.
+	Owner      string                 `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
+	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	// Set while resource deletion is in progress.
+	DeleteTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=delete_time,json=deleteTime,proto3" json:"delete_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -93,6 +102,41 @@ func (x *ObjectMeta) GetAtespace() string {
 func (x *ObjectMeta) GetCreateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *ObjectMeta) GetUid() string {
+	if x != nil {
+		return x.Uid
+	}
+	return ""
+}
+
+func (x *ObjectMeta) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *ObjectMeta) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *ObjectMeta) GetUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdateTime
+	}
+	return nil
+}
+
+func (x *ObjectMeta) GetDeleteTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeleteTime
 	}
 	return nil
 }
@@ -348,13 +392,23 @@ var File_pkg_apis_v1alpha1_common_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1epkg/apis/v1alpha1/common.proto\x12\vax.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"y\n" +
+	"\x1epkg/apis/v1alpha1/common.proto\x12\vax.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x03\n" +
 	"\n" +
 	"ObjectMeta\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\batespace\x18\x02 \x01(\tR\batespace\x12;\n" +
 	"\vcreate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"B\n" +
+	"createTime\x12\x10\n" +
+	"\x03uid\x18\x04 \x01(\tR\x03uid\x12;\n" +
+	"\x06labels\x18\x05 \x03(\v2#.ax.v1alpha1.ObjectMeta.LabelsEntryR\x06labels\x12\x14\n" +
+	"\x05owner\x18\x06 \x01(\tR\x05owner\x12;\n" +
+	"\vupdate_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTime\x12;\n" +
+	"\vdelete_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"deleteTime\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"B\n" +
 	"\rResourcesSpec\x121\n" +
 	"\x06limits\x18\x02 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
 	"\fResourceList\x12\x10\n" +
@@ -384,25 +438,29 @@ func file_pkg_apis_v1alpha1_common_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_pkg_apis_v1alpha1_common_proto_goTypes = []any{
 	(*ObjectMeta)(nil),            // 0: ax.v1alpha1.ObjectMeta
 	(*ResourcesSpec)(nil),         // 1: ax.v1alpha1.ResourcesSpec
 	(*ResourceList)(nil),          // 2: ax.v1alpha1.ResourceList
 	(*Condition)(nil),             // 3: ax.v1alpha1.Condition
 	(*Profile)(nil),               // 4: ax.v1alpha1.Profile
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	nil,                           // 5: ax.v1alpha1.ObjectMeta.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
 }
 var file_pkg_apis_v1alpha1_common_proto_depIdxs = []int32{
-	5, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
-	2, // 1: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
-	5, // 2: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
-	1, // 3: ax.v1alpha1.Profile.resources:type_name -> ax.v1alpha1.ResourcesSpec
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	6, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
+	5, // 1: ax.v1alpha1.ObjectMeta.labels:type_name -> ax.v1alpha1.ObjectMeta.LabelsEntry
+	6, // 2: ax.v1alpha1.ObjectMeta.update_time:type_name -> google.protobuf.Timestamp
+	6, // 3: ax.v1alpha1.ObjectMeta.delete_time:type_name -> google.protobuf.Timestamp
+	2, // 4: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
+	6, // 5: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
+	1, // 6: ax.v1alpha1.Profile.resources:type_name -> ax.v1alpha1.ResourcesSpec
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_common_proto_init() }
@@ -416,7 +474,7 @@ func file_pkg_apis_v1alpha1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_common_proto_rawDesc), len(file_pkg_apis_v1alpha1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -17,6 +17,7 @@ package apivalidation
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -32,6 +33,9 @@ func ValidateTask(t *v1alpha1.Task) error {
 		return err
 	}
 	spec := t.GetSpec()
+	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {
+		return err
+	}
 	if ref := spec.GetWorkspace(); ref != nil {
 		if ref.GetName() == "" {
 			return errors.New("spec.workspace: name is required")
@@ -40,16 +44,44 @@ func ValidateTask(t *v1alpha1.Task) error {
 			return fmt.Errorf("spec.workspace: path %q must be absolute", p)
 		}
 	}
-	if ref := spec.GetGateway(); ref != nil && ref.GetName() == "" {
-		return errors.New("spec.gateway: name is required")
+	if err := validateGatewayRef("spec.gateway", spec.GetGateway()); err != nil {
+		return err
+	}
+	if err := validateRetry("spec.retry", spec.GetRetry()); err != nil {
+		return err
 	}
 	if err := ValidateTaskConfig(spec); err != nil {
 		return err
 	}
-	if err := ValidateTaskSize(t); err != nil {
-		return err
+	return ValidateTaskSize(t)
+}
+
+func validateRetry(field string, r *v1alpha1.RetryConfig) error {
+	if r == nil {
+		return nil
 	}
-	return ValidateResources(spec.GetResources())
+	if r.GetMaxRetries() < 0 {
+		return fmt.Errorf("%s.maxRetries: must not be negative", field)
+	}
+	if d := r.GetInitialBackoff(); d != nil {
+		if !d.IsValid() || d.AsDuration() < 0 {
+			return fmt.Errorf("%s.initialBackoff: must not be negative", field)
+		}
+	}
+	if d := r.GetMaxBackoff(); d != nil {
+		if !d.IsValid() || d.AsDuration() < 0 {
+			return fmt.Errorf("%s.maxBackoff: must not be negative", field)
+		}
+	}
+	if r.GetInitialBackoff() != nil && r.GetMaxBackoff() != nil &&
+		r.GetMaxBackoff().AsDuration() > 0 &&
+		r.GetInitialBackoff().AsDuration() > r.GetMaxBackoff().AsDuration() {
+		return fmt.Errorf("%s.initialBackoff: must not exceed maxBackoff", field)
+	}
+	if m := r.GetBackoffMultiplier(); m != 0 && (math.IsNaN(m) || math.IsInf(m, 0) || m < 1.0) {
+		return fmt.Errorf("%s.backoffMultiplier: must be >= 1.0", field)
+	}
+	return nil
 }
 
 // MaxEnvValueSize is the longest environment variable value Substrate accepts
@@ -61,7 +93,7 @@ const MaxEnvValueSize = 32 << 10
 // encoded as YAML, the form in which it reaches the runner through the
 // AX_TASK_YAML environment variable. It keeps 1 KiB of MaxEnvValueSize in
 // reserve for the fields the control plane fills in after validation, such as
-// metadata.atespace and metadata.createTime.
+// metadata.atespace, metadata.uid, metadata.createTime, and spec.sessionId.
 const MaxTaskYAMLSize = MaxEnvValueSize - 1<<10
 
 // MaxTaskConfigSize is the largest spec.config a task may have, measured as

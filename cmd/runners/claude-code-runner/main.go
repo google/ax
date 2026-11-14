@@ -16,11 +16,11 @@
 // configured from the Task itself. It is installed as
 // /usr/local/bin/ax-task-runner in the image built from Dockerfile.claude-code.
 //
-// When the task leaves spec.command empty, the runner runs one headless
+// When the task leaves spec.commands empty, the runner runs one headless
 // `claude --print` session in the workspace. spec.config holds the prompt and
 // claude's flags, named as in `claude --help` (see [claudeArgs]), and the
 // session is connected to the MCP servers the bound Workspace declares.
-// A task that sets spec.command runs it unchanged, exactly as with
+// A task that sets spec.commands runs it unchanged, exactly as with
 // ax-task-runner. Everything else, from workspace setup to supervision and
 // shutdown, is the standard runner lifecycle.
 package main

@@ -174,13 +174,13 @@ func mcpServers(mcp *v1alpha1.MCPConfig) map[string]any {
 	return servers
 }
 
-// withClaudeCommand returns task with spec.command set to the claude
+// withClaudeCommand returns task with spec.commands set to the claude
 // invocation described by spec.config and the MCP servers of ws, which may be
-// nil. A task that already sets spec.command, or has no spec.config, is
+// nil. A task that already sets spec.commands, or has no spec.config, is
 // returned unchanged.
 func withClaudeCommand(task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
 	spec := task.GetSpec()
-	if len(spec.GetCommand()) > 0 || spec.GetConfig() == nil {
+	if len(spec.GetCommands()) > 0 || spec.GetConfig() == nil {
 		return task, nil
 	}
 	cmd, err := claudeArgs(spec.GetConfig(), ws.GetSpec().GetMcp())
@@ -188,6 +188,6 @@ func withClaudeCommand(task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.T
 		return nil, err
 	}
 	task = proto.Clone(task).(*v1alpha1.Task)
-	task.Spec.Command = cmd
+	task.Spec.Commands = cmd
 	return task, nil
 }

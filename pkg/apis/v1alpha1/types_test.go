@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	rpcstatus "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
@@ -29,6 +31,10 @@ import (
 // fullTask returns a Task with every field populated so round trips exercise
 // the whole schema, including timestamps and status.
 func fullTask() *v1alpha1.Task {
+	structuredOut, err := structpb.NewStruct(map[string]any{"passed": true})
+	if err != nil {
+		panic(err)
+	}
 	return &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
 		Kind:       v1alpha1.KindTask,
@@ -36,22 +42,35 @@ func fullTask() *v1alpha1.Task {
 			Name:       "full",
 			Atespace:   "default",
 			CreateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)),
+			Uid:        "550e8400-e29b-41d4-a716-446655440000",
+			Labels:     map[string]string{"team": "platform"},
+			Owner:      "alice@example.com",
+			UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 1, 0, 0, time.UTC)),
+			DeleteTime: timestamppb.New(time.Date(2026, 9, 19, 12, 10, 0, 0, time.UTC)),
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image:   "example.com/img:1",
-			Command: []string{"sh", "-c", "true"},
-			Env:     []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
-			Resources: &v1alpha1.ResourcesSpec{
-				Limits: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
+			Profile: &v1alpha1.Profile{
+				Image: "example.com/img@sha256:deadbeef",
+				Resources: &v1alpha1.ResourcesSpec{
+					Limits: &v1alpha1.ResourceList{Cpu: "500m", Memory: "1Gi"},
+				},
 			},
+			Commands:  []string{"sh", "-c", "true"},
+			Env:       []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
 			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace"},
 			Debug:     true,
+			Goal:      &v1alpha1.Goal{Spec: "Run verification suite"},
+			Retry: &v1alpha1.RetryConfig{
+				MaxRetries:        2,
+				InitialBackoff:    durationpb.New(30 * time.Second),
+				MaxBackoff:        durationpb.New(5 * time.Minute),
+				BackoffMultiplier: 2.0,
+			},
+			Gateway:   &v1alpha1.GatewayRef{Name: "gw"},
+			SessionId: "sess-123",
 		},
 		Status: &v1alpha1.TaskStatus{
-			Phase:    "Running",
-			Id:       "id-1",
-			Actor:    "actor-1",
-			WorkerIp: "10.0.0.5:80",
+			Actor: "actor-1",
 			Conditions: []*v1alpha1.Condition{{
 				Type:       "Ready",
 				Status:     "True",
@@ -59,6 +78,23 @@ func fullTask() *v1alpha1.Task {
 				Message:    "ok",
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
+			State: v1alpha1.TaskState_TASK_STATE_WORKING,
+			StatusDetail: &v1alpha1.StatusDetail{
+				Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED,
+				Detail: "OOMKilled",
+			},
+			Outcome: &v1alpha1.TaskOutcome{
+				Result:           v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
+				Status:           &rpcstatus.Status{Code: 0, Message: "done"},
+				ExitCode:         0,
+				Output:           "all checks passed",
+				StructuredOutput: structuredOut,
+			},
+			Attempt:          1,
+			AteActorTemplate: "ax-3f9c1a2b5d7e9f01",
+			Generation:       3,
+			ResolvedArgv:     []string{"sh", "-c", "true"},
+			PreviousFailure:  "exit status 1",
 		},
 	}
 }
@@ -83,10 +119,57 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"workerIP: 10.0.0.5:80", "updateTime: 2026-09-19T12:05:00Z", "createTime: 2026-09-19T12:00:00Z"} {
+	for _, want := range []string{
+		"createTime: 2026-09-19T12:00:00Z",
+		"updateTime: 2026-09-19T12:01:00Z",
+		"deleteTime: 2026-09-19T12:10:00Z",
+		"sessionId: sess-123",
+		"initialBackoff: 30s",
+		"maxBackoff: 300s",
+		"backoffMultiplier: 2",
+		"state: TASK_STATE_WORKING",
+		"reason: TASK_STATUS_REASON_SANDBOX_CRASHED",
+		"result: TASK_RESULT_SUCCEEDED",
+		"structuredOutput:",
+		"ateActorTemplate: ax-3f9c1a2b5d7e9f01",
+		"resolvedArgv:",
+		"previousFailure: exit status 1",
+	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("yaml missing %s:\n%s", want, out)
 		}
+	}
+}
+
+func TestTask_RejectsRemovedAndDeferredFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{name: "spec_image", src: "kind: Task\nspec:\n  image: alpine\n", wantErr: "image"},
+		{name: "spec_command_singular", src: "kind: Task\nspec:\n  command:\n    - sh\n", wantErr: "command"},
+		{name: "spec_resources", src: "kind: Task\nspec:\n  resources:\n    limits:\n      cpu: 1\n", wantErr: "resources"},
+		{name: "spec_budget_deferred", src: "kind: Task\nspec:\n  budget:\n    maxWallclock: 60s\n", wantErr: "budget"},
+		{name: "spec_parent_task_id_deferred", src: "kind: Task\nspec:\n  parentTaskId: p1\n", wantErr: "parentTaskId"},
+		{name: "spec_cascade_deferred", src: "kind: Task\nspec:\n  cascadeOnParentDelete: true\n", wantErr: "cascadeOnParentDelete"},
+		{name: "status_phase_removed", src: "kind: Task\nstatus:\n  phase: Running\n", wantErr: "phase"},
+		{name: "status_id_removed", src: "kind: Task\nstatus:\n  id: t-1\n", wantErr: "id"},
+		{name: "status_worker_ip_removed", src: "kind: Task\nstatus:\n  workerIP: 10.0.0.1\n", wantErr: "workerIP"},
+		{name: "status_parent_tag_deferred", src: "kind: Task\nstatus:\n  parentTag: tag-1\n", wantErr: "parentTag"},
+		{name: "status_init_start_time_deferred", src: "kind: Task\nstatus:\n  initStartTime: 2026-09-19T12:00:00Z\n", wantErr: "initStartTime"},
+		{name: "status_current_start_time_deferred", src: "kind: Task\nstatus:\n  currentStartTime: 2026-09-19T12:00:00Z\n", wantErr: "currentStartTime"},
+		{name: "status_end_time_deferred", src: "kind: Task\nstatus:\n  endTime: 2026-09-19T12:00:00Z\n", wantErr: "endTime"},
+		{name: "status_working_duration_deferred", src: "kind: Task\nstatus:\n  workingDuration: 30s\n", wantErr: "workingDuration"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var task v1alpha1.Task
+			err := yaml.Unmarshal([]byte(tc.src), &task)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("yaml.Unmarshal() error = %v, want containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 
@@ -388,8 +471,8 @@ func TestTaskSpec_WorkspacePath(t *testing.T) {
 
 func TestTask_ResourcesRequestsRejected_YAML(t *testing.T) {
 	var task v1alpha1.Task
-	if err := yaml.Unmarshal([]byte("apiVersion: ax.io/v1alpha1\nkind: Task\nmetadata:\n  name: t\nspec:\n  resources:\n    requests:\n      cpu: 500m\n"), &task); err == nil {
-		t.Fatal("expected unknown field error for removed spec.resources.requests")
+	if err := yaml.Unmarshal([]byte("apiVersion: ax.io/v1alpha1\nkind: Task\nmetadata:\n  name: t\nspec:\n  profile:\n    resources:\n      requests:\n        cpu: 500m\n"), &task); err == nil {
+		t.Fatal("expected unknown field error for removed spec.profile.resources.requests")
 	}
 }
 
@@ -399,8 +482,9 @@ kind: Task
 metadata:
   name: swe-bench-shard-07
 spec:
-  image: us-docker.pkg.dev/acme/evals/harness:2026.10
-  command: ["python3", "-m", "harness.run"]
+  profile:
+    image: us-docker.pkg.dev/acme/evals/harness:2026.10
+  commands: ["python3", "-m", "harness.run"]
   config:
     suite: swe_bench_verified
     shard: { index: 7, total: 32 }
@@ -577,7 +661,7 @@ spec:
 }
 
 func TestUnmarshalYAMLLenient_IgnoresUnknownFields(t *testing.T) {
-	doc := "metadata:\n  name: t\n  atespace: default\nspec:\n  image: img\n  fieldFromTheFuture: 1\n"
+	doc := "metadata:\n  name: t\n  atespace: default\nspec:\n  profile:\n    image: img\n  fieldFromTheFuture: 1\n"
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(doc), &node); err != nil {
 		t.Fatal(err)
@@ -592,8 +676,8 @@ func TestUnmarshalYAMLLenient_IgnoresUnknownFields(t *testing.T) {
 	if err := v1alpha1.UnmarshalYAMLLenient(&node, &lenient); err != nil {
 		t.Fatalf("lenient decoding failed: %v", err)
 	}
-	if lenient.GetSpec().GetImage() != "img" {
-		t.Errorf("image = %q, want img", lenient.GetSpec().GetImage())
+	if lenient.GetSpec().GetProfile().GetImage() != "img" {
+		t.Errorf("profile.image = %q, want img", lenient.GetSpec().GetProfile().GetImage())
 	}
 }
 

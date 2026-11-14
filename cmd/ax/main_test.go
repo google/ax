@@ -571,7 +571,7 @@ func TestRunDescribeShowsLiveActorUID(t *testing.T) {
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
 	if _, err := srv.CreateTask(t.Context(), &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "identity"},
-		Spec:     &v1alpha1.TaskSpec{Image: "alpine"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
 	}}); err != nil {
 		t.Fatal(err)
 	}

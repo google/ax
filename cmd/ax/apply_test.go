@@ -62,8 +62,9 @@ metadata:
   name: my-task
   atespace: default
 spec:
-  image: ubuntu:latest
-  command: ["echo", "hello"]
+  profile:
+    image: ubuntu:latest
+  commands: ["echo", "hello"]
 `
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(manifestYAML), &node); err != nil {
@@ -99,8 +100,9 @@ metadata:
   name: existing-task
   atespace: default
 spec:
-  image: ubuntu:latest
-  command: ["echo", "hello"]
+  profile:
+    image: ubuntu:latest
+  commands: ["echo", "hello"]
 `
 	var node yaml.Node
 	if err := yaml.Unmarshal([]byte(manifestYAML), &node); err != nil {

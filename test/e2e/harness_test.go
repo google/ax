@@ -443,10 +443,10 @@ func (s *suiteEnv) getTask(t *testing.T, atespace, name string) *v1alpha1.Task {
 	return task
 }
 
-func assertPhase(t *testing.T, task *v1alpha1.Task, want string) {
+func assertState(t *testing.T, task *v1alpha1.Task, want v1alpha1.TaskState) {
 	t.Helper()
-	if got := task.GetStatus().GetPhase(); got != want {
-		t.Fatalf("task %s: phase = %q, want %q", task.GetMetadata().GetName(), got, want)
+	if got := task.GetStatus().GetState(); got != want {
+		t.Fatalf("task %s: state = %v, want %v", task.GetMetadata().GetName(), got, want)
 	}
 }
 

@@ -17,82 +17,47 @@ package controller
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 
 	"github.com/google/ax/internal/resources"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
+	"google.golang.org/protobuf/proto"
 )
 
-// MergeProfile overlays optional Task-level overrides onto a Workspace base
-// Profile without mutating either input or filling server defaults.
+// EffectiveProfile selects the compute Profile for a Task as a whole unit,
+// without field-level merging, without mutating either input, and without
+// filling server defaults.
 //
-// Override precedence across the four combinations:
-//  1. base uses image (or omits both image and ate_actor_template) and override
-//     sets resources only: inherits base's image (or falls back to the server
-//     default image) with the overridden resource limits.
-//  2. base uses ate_actor_template and override is nil/empty or sets another
-//     ate_actor_template: inherits base's template or switches to override's
-//     template.
-//  3. base uses ate_actor_template and override sets image (with or without
-//     resources): replaces base's template with an AX-managed template using
-//     override's image and resource limits.
-//  4. base uses ate_actor_template and override sets resources only (without
-//     image or ate_actor_template): returns an error rather than silently
-//     dropping base's template and falling back to the default image.
-func MergeProfile(base, override *v1alpha1.Profile) (*v1alpha1.Profile, error) {
-	out := &v1alpha1.Profile{}
-	if err := applyProfile(out, base); err != nil {
-		return nil, err
+// Workspace.spec.profile exists to pre-warm a default workspace snapshot for
+// fast warm task startup; it does not constrain or bleed fields into an
+// explicit Task.spec.profile:
+//   - When taskProfile is non-empty (sets image, ate_actor_template, or any
+//     CPU/memory limit), EffectiveProfile returns a copy of taskProfile as-is
+//     and ignores workspaceProfile completely. Omitted fields within
+//     taskProfile fall back to server/Substrate defaults, never to
+//     workspaceProfile. If the resulting profile differs from workspaceProfile,
+//     the task simply misses the pre-warmed snapshot and cold-boots workspace
+//     setup in its own sandbox profile.
+//   - When taskProfile is nil or empty, EffectiveProfile falls back to a copy
+//     of workspaceProfile (if non-empty) so the task runs on the Workspace's
+//     pre-warmed profile, or returns an empty Profile when both are empty.
+func EffectiveProfile(workspaceProfile, taskProfile *v1alpha1.Profile) *v1alpha1.Profile {
+	if !isProfileEmpty(taskProfile) {
+		return proto.Clone(taskProfile).(*v1alpha1.Profile)
 	}
-	if err := applyProfile(out, override); err != nil {
-		return nil, err
+	if !isProfileEmpty(workspaceProfile) {
+		return proto.Clone(workspaceProfile).(*v1alpha1.Profile)
 	}
-	return out, nil
+	return &v1alpha1.Profile{}
 }
 
-func applyProfile(dst, src *v1alpha1.Profile) error {
-	if src == nil {
-		return nil
-	}
-	if tpl := src.GetAteActorTemplate(); tpl != "" {
-		dst.AteActorTemplate = tpl
-		dst.Image = ""
-		dst.Resources = nil
-		return nil
-	}
-
-	img := src.GetImage()
-	cpu := src.GetResources().GetLimits().GetCpu()
-	mem := src.GetResources().GetLimits().GetMemory()
-	if img == "" && cpu == "" && mem == "" {
-		return nil
-	}
-	if dst.AteActorTemplate != "" && img == "" {
-		return errors.New("cannot override resources without image when base profile uses ateActorTemplate; set image or ateActorTemplate")
-	}
-
-	dst.AteActorTemplate = ""
-	if img != "" {
-		dst.Image = img
-	}
-	if cpu != "" || mem != "" {
-		if dst.Resources == nil {
-			dst.Resources = &v1alpha1.ResourcesSpec{}
-		}
-		if dst.Resources.Limits == nil {
-			dst.Resources.Limits = &v1alpha1.ResourceList{}
-		}
-		if cpu != "" {
-			dst.Resources.Limits.Cpu = cpu
-		}
-		if mem != "" {
-			dst.Resources.Limits.Memory = mem
-		}
-	}
-	return nil
+func isProfileEmpty(p *v1alpha1.Profile) bool {
+	return p.GetAteActorTemplate() == "" &&
+		p.GetImage() == "" &&
+		p.GetResources().GetLimits().GetCpu() == "" &&
+		p.GetResources().GetLimits().GetMemory() == ""
 }
 
 // DefaultProfileSnapshotFidelity is the Substrate snapshot fidelity configured

@@ -16,15 +16,15 @@
 #
 # Extends the default ax-task-runner image and replaces its runner with
 # claude-code-runner (cmd/runners/claude-code-runner), installed at the same
-# /usr/local/bin/ax-task-runner path. A Task that leaves spec.command empty is
+# /usr/local/bin/ax-task-runner path. A Task that leaves spec.commands empty is
 # configured through spec.config, which holds the prompt and claude's flags:
-# the runner turns it into a headless `claude --print` session. A Task that sets spec.command runs it as usual.
+# the runner turns it into a headless `claude --print` session. A Task that sets spec.commands runs it as usual.
 #
 #   make build-claude-code-image            # build locally
 #   make push-claude-code-image             # push and print the digest
 #   make push-claude-code-image CLAUDE_CODE_VERSION=2.1.310
 #
-# Pin the digest the Makefile prints in your Task's spec.image. See
+# Pin the digest the Makefile prints in your Task's spec.profile.image. See
 # examples/claude-code/task.yaml for a Task that uses this image.
 #
 # Build on a linux/amd64 host (or in CI). The installer executes the
@@ -43,7 +43,7 @@ ARG CLAUDE_CODE_VERSION=latest
 
 # The installer puts the launcher in ~/.local/bin and versioned binaries in
 # ~/.local/share/claude. Install as root (the task runs as root) and expose the
-# launcher on the default PATH so spec.command can call `claude` directly.
+# launcher on the default PATH so spec.commands can call `claude` directly.
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- "${CLAUDE_CODE_VERSION}" \
     && ln -s /root/.local/bin/claude /usr/local/bin/claude \
     && claude --version

@@ -38,14 +38,14 @@ func TestMetadataServer(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{
 			Name:     "task123",
 			Atespace: "default",
+			Uid:      "550e8400-e29b-41d4-a716-446655440000",
 		},
 		Spec: &v1alpha1.TaskSpec{
-			Image: "ghcr.io/test/img",
-			Debug: true,
+			Profile: &v1alpha1.Profile{Image: "ghcr.io/test/img"},
+			Debug:   true,
 		},
 		Status: &v1alpha1.TaskStatus{
-			Id:    "task-task123-1",
-			Phase: "Running",
+			State: v1alpha1.TaskState_TASK_STATE_WORKING,
 		},
 	}
 
@@ -154,7 +154,7 @@ func TestMetadataServer(t *testing.T) {
 func TestMetadataServer_GuestServicesRequireDebug(t *testing.T) {
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "no-debug", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghcr.io/test/img"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/test/img"}},
 	}
 
 	srv := metadata.NewServer(0, task, nil)
@@ -194,7 +194,7 @@ func TestMetadataServer_GuestServicesRequireDebug(t *testing.T) {
 func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "loopback", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Image: "ghcr.io/test/img"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/test/img"}},
 	}
 
 	srv := metadata.NewServer(0, task, nil)

@@ -125,20 +125,20 @@ func TestValidateResources(t *testing.T) {
 		{name: "decimal SI memory", reqs: limits("", "512M")},
 		{name: "binary SI memory", reqs: limits("", "1Ti")},
 		{name: "small units", reqs: limits("1n", "1u")},
-		{name: "cpu zero", reqs: limits("0", ""), wantErr: `spec.resources.limits.cpu: "0" must be greater than zero`},
+		{name: "cpu zero", reqs: limits("0", ""), wantErr: `spec.profile.resources.limits.cpu: "0" must be greater than zero`},
 		{name: "cpu zero millicores", reqs: limits("0m", ""), wantErr: "must be greater than zero"},
 		{name: "cpu negative", reqs: limits("-1", ""), wantErr: "must be greater than zero"},
-		{name: "cpu at bound", reqs: limits("1000", ""), wantErr: `spec.resources.limits.cpu: "1000" must be less than 1000 cores`},
+		{name: "cpu at bound", reqs: limits("1000", ""), wantErr: `spec.profile.resources.limits.cpu: "1000" must be less than 1000 cores`},
 		{name: "cpu over bound via suffix", reqs: limits("1k", ""), wantErr: "must be less than 1000 cores"},
 		{name: "cpu over bound via exponent", reqs: limits("1e3", ""), wantErr: "must be less than 1000 cores"},
 		{name: "cpu over bound via binary suffix", reqs: limits("1Ki", ""), wantErr: "must be less than 1000 cores"},
-		{name: "cpu not a quantity", reqs: limits("two", ""), wantErr: `spec.resources.limits.cpu: invalid quantity "two"`},
+		{name: "cpu not a quantity", reqs: limits("two", ""), wantErr: `spec.profile.resources.limits.cpu: invalid quantity "two"`},
 		{name: "cpu bad suffix", reqs: limits("2cores", ""), wantErr: "invalid quantity"},
 		{name: "cpu double dot", reqs: limits("1.2.3", ""), wantErr: "invalid quantity"},
 		{name: "cpu whitespace", reqs: limits(" 2", ""), wantErr: "invalid quantity"},
-		{name: "memory zero", reqs: limits("", "0Gi"), wantErr: `spec.resources.limits.memory: "0Gi" must be greater than zero`},
+		{name: "memory zero", reqs: limits("", "0Gi"), wantErr: `spec.profile.resources.limits.memory: "0Gi" must be greater than zero`},
 		{name: "memory negative", reqs: limits("", "-4Gi"), wantErr: "must be greater than zero"},
-		{name: "memory lowercase suffix", reqs: limits("", "4gi"), wantErr: `spec.resources.limits.memory: invalid quantity "4gi"`},
+		{name: "memory lowercase suffix", reqs: limits("", "4gi"), wantErr: `spec.profile.resources.limits.memory: invalid quantity "4gi"`},
 		{name: "memory bytes suffix", reqs: limits("", "4GiB"), wantErr: "invalid quantity"},
 		{name: "memory exponent out of range", reqs: limits("", "1e100"), wantErr: "exponent out of range"},
 	}
@@ -159,11 +159,11 @@ func TestValidateResources(t *testing.T) {
 
 	// ValidateTask runs the same check, so ax apply rejects bad limits up front.
 	meta := &v1alpha1.ObjectMeta{Name: "task", Atespace: "default"}
-	err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("abc", "")}})
-	if err == nil || !strings.Contains(err.Error(), "spec.resources.limits.cpu") {
+	err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Resources: limits("abc", "")}}})
+	if err == nil || !strings.Contains(err.Error(), "spec.profile.resources.limits.cpu") {
 		t.Fatalf("ValidateTask error = %v, want cpu limit error", err)
 	}
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Resources: limits("2", "4Gi")}}); err != nil {
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Resources: limits("2", "4Gi")}}}); err != nil {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
 	}
 }

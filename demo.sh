@@ -136,10 +136,10 @@ spec:
     - name: DEMO_ENV
       value: "active"
 YAML
-# Without AX_TASK_IMAGE, spec.image stays unset and the server runs the task with
-# its default task image: the ax-task-runner that `make deploy` configured.
+# Without AX_TASK_IMAGE, spec.profile.image stays unset and the server runs the
+# task with its default task image: the ax-task-runner that `make deploy` configured.
 if [[ -n "${TASK_IMAGE}" ]]; then
-  printf '  image: "%s"\n' "${TASK_IMAGE}" >> "${DEMO_YAML}"
+  printf '  profile:\n    image: "%s"\n' "${TASK_IMAGE}" >> "${DEMO_YAML}"
 fi
 printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
