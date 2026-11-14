@@ -155,6 +155,13 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := apivalidation.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// Tasks are immutable, so reject fields whose runtime enforcement has not
+	// landed yet (ateActorTemplate requires pull-based runner assignment; retry
+	// requires runner exit events and the retry loop) rather than silently
+	// storing settings that nothing honors.
+	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
+		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
+	}
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -172,9 +179,15 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	defer unlock()
 
-	existing, err := s.getTask(ctx, atespace, taskName)
+	// Check the stored record (before overlaying live actor status) so only an
+	// unfinished initial CreateTask (stored State == QUEUED with no provisioned
+	// template yet) can be retried; an already-created task whose actor happens
+	// to be resuming (ACTOR_STATE_RESUMING -> TASK_STATE_QUEUED on read) or that
+	// hit a later transient ResumeTask error is rejected without touching the actor.
+	existing, err := s.getStoredTask(ctx, atespace, taskName)
 	if err == nil {
 		if existing.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED ||
+			existing.GetStatus().GetAteActorTemplate() != "" ||
 			existing.GetMetadata().GetDeleteTime() != nil ||
 			!taskSpecMatchesExisting(existing, task.GetSpec()) {
 			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
@@ -211,21 +224,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	effectiveProfile := controller.EffectiveProfile(workspace.GetSpec().GetProfile(), task.GetSpec().GetProfile())
-	// Tasks are immutable, so a task whose referenced ActorTemplate does not
-	// exist cannot be fixed later. Reject it before saving or provisioning.
-	if tpl := effectiveProfile.GetAteActorTemplate(); tpl != "" {
-		if _, err := s.substrate.GetActorTemplate(ctx, atespace, tpl); err != nil {
-			if status.Code(err) == codes.NotFound {
-				return nil, status.Errorf(codes.FailedPrecondition, "actor template %q not found in atespace %q", tpl, atespace)
-			}
-			if substrate.IsTransientError(err) {
-				return nil, status.Errorf(codes.Unavailable, "getting actor template %s/%s: %v", atespace, tpl, err)
-			}
-			if st, ok := status.FromError(err); ok && st.Code() != codes.Unknown {
-				return nil, status.Errorf(st.Code(), "getting actor template %s/%s: %s", atespace, tpl, st.Message())
-			}
-			return nil, status.Errorf(codes.Internal, "getting actor template %s/%s: %v", atespace, tpl, err)
-		}
+	if effectiveProfile.GetAteActorTemplate() != "" {
+		return nil, status.Error(codes.Unimplemented, "spec.profile.ateActorTemplate is not supported yet")
 	}
 
 	now := timestamppb.Now()
@@ -269,6 +269,20 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	// Report the actor as it is now, as GetTask would.
 	s.applyActor(ctx, task)
 	return task, nil
+}
+
+// TODO: Drop these checks once pull-based runner assignment and task retries are wired.
+func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
+	if spec == nil {
+		return ""
+	}
+	if spec.GetProfile().GetAteActorTemplate() != "" {
+		return "spec.profile.ateActorTemplate"
+	}
+	if spec.GetRetry() != nil {
+		return "spec.retry"
+	}
+	return ""
 }
 
 // taskSpecMatchesExisting compares an incoming TaskSpec against an existing
@@ -483,9 +497,15 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 // and updateTask drop the actor-owned status before writing. getTask and
 // listTasks fill it in from Substrate.
 
+// getStoredTask returns a task directly from the store without overlaying live
+// actor status from Substrate.
+func (s *Server) getStoredTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error) {
+	return s.store.GetTask(ctx, atespace, name)
+}
+
 // getTask returns a task with its Substrate-owned status filled in.
 func (s *Server) getTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error) {
-	task, err := s.store.GetTask(ctx, atespace, name)
+	task, err := s.getStoredTask(ctx, atespace, name)
 	if err != nil {
 		return nil, err
 	}

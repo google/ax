@@ -23,7 +23,8 @@ spec:
       limits:
         cpu: "2"
         memory: "4Gi"
-    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources):
+    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources;
+    # not available yet: rejected until pull-based runner assignment is wired):
     # ateActorTemplate: "base-tmpl"
 
   commands: ["python", "agent.py"]
@@ -38,11 +39,11 @@ spec:
   goal:
     spec: "Fix the failing unit tests."
 
-  retry:
-    maxRetries: 2
-    initialBackoff: 30s
-    maxBackoff: 300s
-    backoffMultiplier: 2
+  # retry:                         # not available yet: rejected until task retries are wired
+  #   maxRetries: 2
+  #   initialBackoff: 30s
+  #   maxBackoff: 300s
+  #   backoffMultiplier: 2
 
   sessionId: "session-42"   # optional; defaults to metadata.uid on creation
   debug: true               # serve guest services inside the sandbox so `ax ssh` works; off by default
@@ -59,7 +60,7 @@ cannot be reached; `describe` shows `<none>` in those cases.
 
 ### Compute profile and image references
 
-`spec.profile` configures the task's sandbox compute environment (`image` and `resources.limits`, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace).
+`spec.profile` configures the task's sandbox compute environment (`image` and `resources.limits`, or a mutually exclusive `ateActorTemplate` referencing an existing `ActorTemplate` in the same atespace; *not available yet: ax-server rejects `spec.profile.ateActorTemplate` until pull-based runner assignment is wired*).
 
 When a task binds a `Workspace`, profile selection operates on the **whole `Profile`** rather than merging individual fields:
 
@@ -93,7 +94,7 @@ Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` 
 ### Goal, retries, and session ID
 
 - **`spec.goal.spec`** is an optional natural-language description of the task's objective, delivered as part of the task metadata.
-- **`spec.retry`** configures retry limits and backoff (`maxRetries >= 0`, non-negative `initialBackoff` and `maxBackoff` with `initialBackoff <= maxBackoff`, and `backoffMultiplier >= 1.0` when set).
+- **`spec.retry`** configures retry limits and backoff (`maxRetries >= 0`, non-negative `initialBackoff` and `maxBackoff` with `initialBackoff <= maxBackoff`, and `backoffMultiplier >= 1.0` when set). *Not available yet: ax-server rejects `spec.retry` until task retries are wired.*
 - **`spec.sessionId`** groups related tasks or multi-turn runs under one correlation ID. When omitted, `CreateTask` defaults it to the server-assigned `metadata.uid`.
 
 ### Runner configuration

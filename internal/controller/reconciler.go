@@ -340,6 +340,7 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 		return fmt.Errorf("suspending actor: %w", err)
 	}
 	if err := r.bindGateway(ctx, task, gw); err != nil {
+		task.Status.AteActorTemplate = prevStatus.GetAteActorTemplate()
 		return err
 	}
 	slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)

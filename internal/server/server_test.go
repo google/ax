@@ -1339,6 +1339,75 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	if storedAfterResumeErr.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
 		t.Errorf("expected stored state QUEUED after transient ResumeTask error, got %v", storedAfterResumeErr.GetStatus().GetState())
 	}
+
+	// 7. Because initial CreateTask already completed, re-applying CreateTask on a task
+	// that entered QUEUED from a later ResumeTask failure is still rejected as immutable.
+	sub.SetErrors(substratetest.Errors{})
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+		},
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition re-applying already-provisioned task after ResumeTask error, got %v", err)
+	}
+}
+
+// Resuming and reverting actors map to TASK_STATE_QUEUED on read (matching Sobi
+// TaskState), but CreateTask must still reject re-applying an already-created
+// task rather than running the create path and suspending the resuming actor.
+func TestCreateTask_RejectsResumingTask(t *testing.T) {
+	for _, actorState := range []ateapipb.ActorState{
+		ateapipb.ActorState_ACTOR_STATE_RESUMING,
+		ateapipb.ActorState_ACTOR_STATE_REVERTING,
+	} {
+		t.Run(actorState.String(), func(t *testing.T) {
+			st := memory.NewStore()
+			sub := substratetest.NewServer(t)
+			srv := server.NewServer(st, newTestReconciler(sub))
+			ctx := context.Background()
+
+			spec := &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}}
+			if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "resuming-task"},
+				Spec:     spec,
+			}}); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+
+			actor, ok := sub.Actor("default", "resuming-task")
+			if !ok {
+				t.Fatal("expected actor to exist")
+			}
+			actor.Status = &ateapipb.ActorStatus{State: actorState}
+			sub.SetActor(actor)
+
+			got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "resuming-task"})
+			if err != nil {
+				t.Fatalf("GetTask: %v", err)
+			}
+			if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
+				t.Fatalf("GetTask state = %v, want TASK_STATE_QUEUED", got.GetStatus().GetState())
+			}
+			if ready := readyCondition(got); ready.GetReason() != v1alpha1.ReasonResuming {
+				t.Fatalf("Ready = %v, want reason %q", ready, v1alpha1.ReasonResuming)
+			}
+
+			_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "resuming-task"},
+				Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+			}})
+			if status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("CreateTask on %v actor: got %v, want FailedPrecondition", actorState, err)
+			}
+
+			after, _ := sub.Actor("default", "resuming-task")
+			if after.GetStatus().GetState() != actorState {
+				t.Errorf("actor state changed to %v after rejected CreateTask; want %v preserved", after.GetStatus().GetState(), actorState)
+			}
+		})
+	}
 }
 
 // A failed create stores state Failed. A later successful suspend or resume
@@ -1388,67 +1457,75 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	}
 }
 
-func TestCreateTask_RequiresExistingAteActorTemplate(t *testing.T) {
+func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	srv := server.NewServer(st, newTestReconciler(sub))
 	ctx := context.Background()
 
+	tests := []struct {
+		name      string
+		spec      *v1alpha1.TaskSpec
+		wantField string
+	}{
+		{
+			name:      "ateActorTemplate",
+			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "user-tpl"}},
+			wantField: "spec.profile.ateActorTemplate is not supported yet",
+		},
+		{
+			name:      "retry",
+			spec:      &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxRetries: 2}},
+			wantField: "spec.retry is not supported yet",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "unimpl-task"},
+				Spec:     tc.spec,
+			}})
+			if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), tc.wantField) {
+				t.Fatalf("CreateTask() = %v, want Unimplemented containing %q", err, tc.wantField)
+			}
+			if _, err := st.GetTask(ctx, "default", "unimpl-task"); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("expected rejected task not to be saved, got %v", err)
+			}
+		})
+	}
+
+	// Invalid retry values are still caught by admission validation before Unimplemented.
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "missing-tpl"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "does-not-exist"}},
+		Metadata: &v1alpha1.ObjectMeta{Name: "bad-retry"},
+		Spec:     &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxRetries: -1}},
 	}})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("CreateTask with missing ateActorTemplate: got %v, want FailedPrecondition", err)
-	}
-	if _, err := st.GetTask(ctx, "default", "missing-tpl"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("expected rejected task not to be saved, got %v", err)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("CreateTask(negative maxRetries) = %v, want InvalidArgument", err)
 	}
 
-	if _, err := sub.Client().EnsureActorTemplate(ctx, &ateapipb.ActorTemplate{
-		Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "user-tpl"},
-	}); err != nil {
-		t.Fatalf("EnsureActorTemplate: %v", err)
-	}
-	created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "ok-tpl"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "user-tpl"}},
-	}})
-	if err != nil {
-		t.Fatalf("CreateTask with existing ateActorTemplate: %v", err)
-	}
-	if created.GetStatus().GetAteActorTemplate() != "user-tpl" {
-		t.Errorf("AteActorTemplate = %q, want user-tpl", created.GetStatus().GetAteActorTemplate())
-	}
-	if _, err := srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "ok-tpl"}); err != nil {
-		t.Fatalf("DeleteTask: %v", err)
-	}
-	if _, ok := sub.Template("default", "user-tpl"); !ok {
-		t.Error("expected user-supplied ActorTemplate user-tpl to survive DeleteTask")
-	}
-
-	// When a Workspace defines a profile with ateActorTemplate:
-	// - A task omitting spec.profile uses the Workspace's profile (requiring that template).
+	// When a Workspace in the store defines a profile with ateActorTemplate:
+	// - A task omitting spec.profile inherits the Workspace's profile and is rejected with Unimplemented.
 	// - A task setting its own spec.profile (e.g. resources only) ignores Workspace.spec.profile
-	//   completely and succeeds even if Workspace's ateActorTemplate does not exist.
+	//   completely and succeeds.
 	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
-		Metadata: &v1alpha1.ObjectMeta{Name: "ws-missing-tpl", Atespace: "default"},
-		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "missing-ws-tpl"}},
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws-tpl", Atespace: "default"},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "ws-user-tpl"}},
 	}); err != nil {
 		t.Fatalf("SaveWorkspace: %v", err)
 	}
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "inherits-missing-ws-tpl"},
-		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-missing-tpl"}},
+		Metadata: &v1alpha1.ObjectMeta{Name: "inherits-ws-tpl"},
+		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"}},
 	}})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("CreateTask inheriting missing workspace ateActorTemplate: got %v, want FailedPrecondition", err)
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("CreateTask inheriting workspace ateActorTemplate: got %v, want Unimplemented", err)
 	}
 
 	overrideTask, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "overrides-ws-profile"},
 		Spec: &v1alpha1.TaskSpec{
-			Workspace: &v1alpha1.WorkspaceRef{Name: "ws-missing-tpl"},
+			Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"},
 			Profile: &v1alpha1.Profile{
 				Resources: &v1alpha1.ResourcesSpec{
 					Limits: &v1alpha1.ResourceList{Memory: "1Gi"},
