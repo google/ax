@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/store"
+	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,7 +33,7 @@ func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceReq
 	}
 	atespace := req.Atespace
 	if atespace == "" {
-		atespace = "default"
+		atespace = v1alpha1.DefaultAtespace
 	}
 	ws, err := s.store.GetWorkspace(ctx, atespace, req.Name)
 	if err != nil {
@@ -76,9 +77,13 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	if err := apivalidation.ValidateWorkspace(req.Workspace); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Workspaces are immutable, so a workspace saved now would keep a profile or
-	// gateway binding that nothing enforces yet.
-	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); field != "" {
+	// TODO: Remove prewarmEnabled (and firstUnimplementedWorkspaceField) once
+	// SetupCoordinator is wired in cmd/ax-server/main.go.
+	prewarmEnabled := s.workspaces.PrewarmEnabled()
+	// Workspaces are immutable, so until the pull-based runner SetupCoordinator
+	// is connected to drive setup actors, reject profile and setup.gateway
+	// rather than saving fields that nothing enforces yet.
+	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); !prewarmEnabled && field != "" {
 		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
 	}
 
@@ -86,16 +91,46 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	ws.Status = nil
 	ws.Metadata = defaultMetadata(ws.Metadata, nil)
 
-	atespace := ws.Metadata.Atespace
-	wsName := ws.Metadata.Name
-
-	// Acquire exclusive lock for this workspace.
+	atespace, wsName := ws.Metadata.Atespace, ws.Metadata.Name
 	unlock, err := s.locker.Lock(ctx, "workspace", atespace, wsName)
 	if err != nil {
 		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, wsName, err)
 	}
 	defer unlock()
 
+	setupGateway, err := s.lookupSetupGateway(ctx, atespace, ws.GetSpec())
+	if err != nil {
+		return nil, err
+	}
+
+	ws, err = s.saveOrLoadWorkspace(ctx, ws, prewarmEnabled)
+	if err != nil || ws.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
+		return ws, err
+	}
+	return s.prepareWorkspace(ctx, ws, setupGateway)
+}
+
+func (s *Server) lookupSetupGateway(ctx context.Context, atespace string, spec *v1alpha1.WorkspaceSpec) (*v1alpha1.Gateway, error) {
+	gwName := spec.GetSetup().GetGateway().GetName()
+	if gwName == "" {
+		return nil, nil
+	}
+	gw, err := s.store.GetGateway(ctx, atespace, gwName)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.FailedPrecondition, "gateway %q not found in atespace %q", gwName, atespace)
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "getting gateway %q: %v", gwName, err)
+	}
+	return gw, nil
+}
+
+// saveOrLoadWorkspace handles repeated `ax apply` calls (enforcing immutability)
+// and persists a newly created Workspace. A Workspace that still needs pre-warming
+// is returned in Phase=Preparing; an already Ready Workspace (or one created
+// while pre-warming is disabled) is returned as-is.
+func (s *Server) saveOrLoadWorkspace(ctx context.Context, ws *v1alpha1.Workspace, prewarmEnabled bool) (*v1alpha1.Workspace, error) {
+	atespace, wsName := ws.Metadata.Atespace, ws.Metadata.Name
 	existing, err := s.store.GetWorkspace(ctx, atespace, wsName)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.Internal, "checking existing workspace: %v", err)
@@ -104,11 +139,33 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 		if !workspaceSpecEqual(existing.GetSpec(), ws.GetSpec()) {
 			return nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s already exists and is immutable", atespace, wsName)
 		}
+		if existing.GetStatus().GetPhase() == v1alpha1.WorkspacePhaseFailed {
+			return nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s failed setup (%s); delete and recreate it", atespace, wsName, existing.GetStatus().GetLastSetupError())
+		}
 		return existing, nil
 	}
 
+	if prewarmEnabled {
+		ws.Status = &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhasePreparing}
+	}
 	if err := s.store.SaveWorkspace(ctx, ws); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving workspace: %v", err)
+	}
+	return ws, nil
+}
+
+func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, setupGateway *v1alpha1.Gateway) (*v1alpha1.Workspace, error) {
+	atespace, wsName := ws.Metadata.Atespace, ws.Metadata.Name
+	st, prepErr := s.workspaces.Prepare(ctx, ws, setupGateway)
+	ws.Status = st
+	if err := s.store.UpdateWorkspaceStatus(ctx, atespace, wsName, st); err != nil {
+		return nil, status.Errorf(codes.Internal, "updating workspace status: %v", err)
+	}
+	if prepErr != nil {
+		if substrate.IsTransientError(prepErr) {
+			return nil, status.Errorf(codes.Unavailable, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)
+		}
+		return nil, status.Errorf(codes.FailedPrecondition, "preparing workspace %s/%s: %s", atespace, wsName, st.GetLastSetupError())
 	}
 	return ws, nil
 }
@@ -119,7 +176,7 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	}
 	atespace := req.Atespace
 	if atespace == "" {
-		atespace = "default"
+		atespace = v1alpha1.DefaultAtespace
 	}
 	wsName := req.Name
 
@@ -130,6 +187,13 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	}
 	defer unlock()
 
+	if err := s.workspaces.Delete(ctx, atespace, wsName); err != nil {
+		code := codes.Internal
+		if substrate.IsTransientError(err) {
+			code = codes.Unavailable
+		}
+		return nil, status.Errorf(code, "deleting workspace resources on substrate: %v", err)
+	}
 	if err := s.store.DeleteWorkspace(ctx, atespace, wsName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting workspace: %v", err)
 	}
@@ -146,7 +210,7 @@ func workspaceSpecEqual(a, b *v1alpha1.WorkspaceSpec) bool {
 	return proto.Equal(a, b)
 }
 
-// TODO: Drop this check once workspace profiles and gateways are enforced.
+// TODO: Drop this check once SetupCoordinator is wired to the pull-based runner.
 func firstUnimplementedWorkspaceField(spec *v1alpha1.WorkspaceSpec) string {
 	if spec == nil {
 		return ""

@@ -185,7 +185,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 				return fmt.Errorf("getting actor template: %w", err)
 			}
-			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 			return fmt.Errorf("getting actor template: %w", err)
 		}
 		templateAtespace = atespace
@@ -279,7 +279,7 @@ func (r *TaskReconciler) ensureTaskTemplate(
 			// the user asked for, without the limits it asked for, or fail later with
 			// a misleading "actor template not found". Surface the real error on the
 			// task and stop here.
-			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, substrateErrorMessage(err), now)
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 			return "", "", fmt.Errorf("ensuring actor template: %w", err)
 		}
 		if tmpl != nil && tmpl.Metadata != nil {
@@ -316,7 +316,7 @@ func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, g
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("binding gateway %q: %w", gwName, err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, substrateErrorMessage(err)), now)
+		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
 		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
@@ -482,14 +482,12 @@ func conditionTrue(task *v1alpha1.Task, condType string) bool {
 	return false
 }
 
-// substrateErrorMessage returns the message to show users for a failed Substrate call.
-// Substrate errors reach the reconciler wrapped (fmt.Errorf("...: %w", grpcErr)), and
-// status.Convert on a wrapped error yields the full err.Error() including the
-// "rpc error: code = ... desc = " boilerplate. Unwrapping to the underlying gRPC
-// status recovers just the description Substrate wrote, e.g.
-// `actor_template.containers[0].image: Invalid value: "...": must be pinned by digest`.
-// Non-gRPC errors are returned verbatim.
-func substrateErrorMessage(err error) string {
+// statusErrorMessage returns a clean user-facing error message for status
+// conditions and error fields. Wrapped gRPC errors (fmt.Errorf("...: %w", grpcErr))
+// have their underlying gRPC status description extracted so the
+// "rpc error: code = ... desc = " boilerplate is stripped; non-gRPC errors
+// (such as in-sandbox command failures) are returned verbatim.
+func statusErrorMessage(err error) string {
 	var gs interface{ GRPCStatus() *status.Status }
 	if errors.As(err, &gs) {
 		if s := gs.GRPCStatus(); s != nil && s.Message() != "" {

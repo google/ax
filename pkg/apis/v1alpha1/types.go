@@ -102,6 +102,34 @@ const (
 	ReasonInitializing = "Initializing"
 )
 
+// Workspace lifecycle phases, condition types, and condition reasons reported
+// on WorkspaceStatus.
+//
+// In Kubernetes-style conditions, a Condition Type names a check dimension
+// whose Status is "True" (healthy) or "False" (unhealthy), while a Reason is a
+// short machine-readable code explaining why that Condition currently has
+// Status "True" or "False".
+const (
+	WorkspacePhasePreparing = "Preparing"
+	WorkspacePhaseReady     = "Ready"
+	WorkspacePhaseFailed    = "Failed"
+
+	// WorkspaceConditionSetupComplete has Status "True" once the temporary setup
+	// actor finishes executing spec.setup inside /workspace, or Status "False"
+	// while setup is pending or after setup fails.
+	WorkspaceConditionSetupComplete = "SetupComplete"
+	// WorkspaceConditionSnapshotReady has Status "True" when the Workspace's
+	// default snapshot Tag is COMPLETED on Substrate, or Status "False" when
+	// pre-warming is still running or failed.
+	WorkspaceConditionSnapshotReady = "SnapshotReady"
+
+	WorkspaceReasonPreparing         = "Preparing"
+	WorkspaceReasonSetupComplete     = "SetupComplete"
+	WorkspaceReasonSnapshotReady     = "SnapshotReady"
+	WorkspaceReasonSetupFailed       = "SetupFailed"
+	WorkspaceReasonSnapshotTagFailed = "SnapshotTagFailed"
+)
+
 // IsAXTaskState reports whether state describes the control plane's own stored
 // state on a task (queued for provisioning/retry, or terminal) rather than a
 // live state derived from the task's actor on Agent Substrate.

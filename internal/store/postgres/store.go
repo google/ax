@@ -349,6 +349,36 @@ func (s *Store) ListWorkspaces(ctx context.Context, atespace string, limit, offs
 	return list(ctx, s, workspacesTable, atespace, limit, offset, func() *v1alpha1.Workspace { return &v1alpha1.Workspace{} })
 }
 
+// UpdateWorkspaceStatus replaces only the status of a workspace without
+// changing its saved_at ordering in lists.
+func (s *Store) UpdateWorkspaceStatus(ctx context.Context, atespace, name string, status *v1alpha1.WorkspaceStatus) error {
+	atespace = defaultAtespace(atespace)
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var data []byte
+		err := tx.QueryRow(ctx, `SELECT data FROM workspaces WHERE atespace = $1 AND name = $2 FOR UPDATE`,
+			atespace, name).Scan(&data)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("getting workspace: %w", err)
+		}
+		var ws v1alpha1.Workspace
+		if err := unmarshalOpts.Unmarshal(data, &ws); err != nil {
+			return fmt.Errorf("unmarshaling workspace: %w", err)
+		}
+		ws.Status = status
+		if data, err = protojson.Marshal(&ws); err != nil {
+			return fmt.Errorf("marshaling workspace status: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE workspaces SET data = $3 WHERE atespace = $1 AND name = $2`,
+			atespace, name, string(data)); err != nil {
+			return fmt.Errorf("updating workspace status: %w", err)
+		}
+		return nil
+	})
+}
+
 // DeleteWorkspace removes a workspace. Deleting a missing workspace is not an error.
 func (s *Store) DeleteWorkspace(ctx context.Context, atespace, name string) error {
 	return s.delete(ctx, workspacesTable, atespace, name)

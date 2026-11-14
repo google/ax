@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -150,6 +151,44 @@ func TestListNewestFirst(t *testing.T) {
 	}
 	if list, err := s.ListModels(ctx, "*"); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "m2" {
 		t.Errorf("ListModels = %v, %v; want m2 first", list, err)
+	}
+}
+
+func TestUpdateWorkspaceStatus(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := t.Context()
+
+	if err := s.UpdateWorkspaceStatus(ctx, "default", "missing", &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhaseReady}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("UpdateWorkspaceStatus(missing) = %v, want ErrNotFound", err)
+	}
+
+	if err := s.SaveWorkspace(ctx, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws-1", Atespace: "default"},
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+
+	st := &v1alpha1.WorkspaceStatus{
+		Phase:          v1alpha1.WorkspacePhaseFailed,
+		LastSetupError: "clone failed",
+		Conditions: []*v1alpha1.Condition{{
+			Type:   v1alpha1.WorkspaceConditionSetupComplete,
+			Status: "False",
+			Reason: v1alpha1.WorkspaceReasonSetupFailed,
+		}},
+	}
+	if err := s.UpdateWorkspaceStatus(ctx, "default", "ws-1", st); err != nil {
+		t.Fatalf("UpdateWorkspaceStatus: %v", err)
+	}
+
+	got, err := s.GetWorkspace(ctx, "default", "ws-1")
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if got.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseFailed ||
+		got.GetStatus().GetLastSetupError() != "clone failed" ||
+		len(got.GetStatus().GetConditions()) != 1 {
+		t.Fatalf("GetWorkspace(ws-1) status = %+v, want Failed / clone failed / 1 condition", got.GetStatus())
 	}
 }
 

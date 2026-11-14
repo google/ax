@@ -466,7 +466,14 @@ func (s *Server) CreateTag(_ context.Context, req *ateapipb.CreateTagRequest) (*
 		}
 	}
 	tag := proto.Clone(in).(*ateapipb.Tag)
-	tag.Status = &ateapipb.TagStatus{ActorTemplateUid: tmplUID}
+	tag.Status = &ateapipb.TagStatus{
+		ActorTemplateUid: tmplUID,
+		Snapshot: &ateapipb.Snapshot{
+			DurableSnapshot: &ateapipb.SnapshotStorage{
+				State: ateapipb.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED,
+			},
+		},
+	}
 	s.tags[k] = tag
 	return proto.Clone(tag).(*ateapipb.Tag), nil
 }

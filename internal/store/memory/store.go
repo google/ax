@@ -301,6 +301,20 @@ func (s *MemoryStore) ListWorkspaces(ctx context.Context, atespace string, limit
 	return paginate(result, limit, offset), nil
 }
 
+func (s *MemoryStore) UpdateWorkspaceStatus(ctx context.Context, atespace, name string, status *v1alpha1.WorkspaceStatus) error {
+	key := taskKey(atespace, name)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ws, ok := s.workspaces[key]
+	if !ok {
+		return store.ErrNotFound
+	}
+	ws.Status = clone(status)
+	return nil
+}
+
 func (s *MemoryStore) DeleteWorkspace(ctx context.Context, atespace, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -15,10 +15,12 @@
 package memory_test
 
 import (
+	"errors"
 	"math"
 	"slices"
 	"testing"
 
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -97,5 +99,38 @@ func TestListPagination(t *testing.T) {
 	}
 	if got, err := s.GetTask(ctx, "default", "task-a"); err != nil || got.GetMetadata().GetDeleteTime() != nil {
 		t.Fatalf("GetTask(task-a) delete_time after clear = %v, err = %v; want nil", got.GetMetadata().GetDeleteTime(), err)
+	}
+}
+
+func TestUpdateWorkspaceStatus(t *testing.T) {
+	ctx := t.Context()
+	s := memory.NewStore()
+
+	if err := s.UpdateWorkspaceStatus(ctx, "default", "missing", &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhaseReady}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("UpdateWorkspaceStatus(missing) = %v, want ErrNotFound", err)
+	}
+
+	if err := s.SaveWorkspace(ctx, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws-1", Atespace: "default"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	st := &v1alpha1.WorkspaceStatus{
+		Phase:          v1alpha1.WorkspacePhaseFailed,
+		LastSetupError: "clone failed",
+	}
+	if err := s.UpdateWorkspaceStatus(ctx, "default", "ws-1", st); err != nil {
+		t.Fatalf("UpdateWorkspaceStatus: %v", err)
+	}
+	// Mutating caller's status after update must not mutate stored workspace.
+	st.Phase = v1alpha1.WorkspacePhaseReady
+
+	got, err := s.GetWorkspace(ctx, "default", "ws-1")
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if got.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseFailed || got.GetStatus().GetLastSetupError() != "clone failed" {
+		t.Fatalf("stored workspace status = %+v, want Failed / clone failed", got.GetStatus())
 	}
 }

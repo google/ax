@@ -34,12 +34,13 @@ All Control API traffic goes through this package. It encapsulates:
 - **Auth** — bearer token from `SUBSTRATE_TOKEN_FILE` (in-cluster: projected SA
   token with audience `api.ate-system.svc`, see `deploy/ax-server.yaml`), CA
   from `SUBSTRATE_CA_FILE`.
-- **Retry** — `IsTransientError` + `callWithRetry` (`retryOnCodes`) for `Unavailable`-class errors.
+- **Retry** — `IsTransientError` (`Unavailable`, `DeadlineExceeded`, `Aborted`) + `callWithRetry` (`retryOnCodes`).
 - **Helpers** the reconcilers rely on — `EnsureAtespace`, `EnsureActorTemplate`,
   `EnsureActorTemplateWithImage`, `BuildActorTemplate`, `EnsureActor`,
   `EnsureActorFromTag`, `GetActorEgressPolicy`, `EnsureActorEgressPolicy`,
-  `CreateTag`, `GetTag`, `ListTags`, `DeleteTag`, `SuspendActor`, `ResumeActor`,
-  `DeleteActor`, `WorkerIP`, `ResourceLimits`.
+  `CreateTag`, `GetTag`, `ListTags`, `DeleteTag`, `SuspendActor`,
+  `SuspendActorAndWaitForSnapshot`, `ResumeActor`, `DeleteActor`, `WorkerIP`,
+  `ResourceLimits`.
 
 ### Where a new Control API call lives today
 
@@ -47,8 +48,9 @@ All Control API traffic goes through this package. It encapsulates:
   `ateapipb.NewControlClient`; every existing RPC is a method on `*Client`,
   wrapped in `callWithRetry` (`codes.Unavailable` plus optional codes such as `codes.Aborted`).
 - Each method has a table-driven case in `client_test.go` (`mockControlClient`).
-- Callers in `internal/controller` exercise it through `mockControlServer`;
-  `internal/server` and `cmd/ax` tests use `internal/substrate/substratetest`
+- Callers in `internal/controller` exercise it through `mockControlServer`
+  (`reconciler_test.go`) or `internal/substrate/substratetest` (`workspace_test.go`);
+  `internal/server` and `cmd/ax` tests also use `internal/substrate/substratetest`
   (section 4).
 
 ## 3. Address contract
@@ -133,6 +135,15 @@ instead. No mocking library is in `go.mod`.
 - Readiness: Substrate and the reconciler probe the runner on port 80
   (`/healthz`, `/readyz?check=workspace`, served by `internal/metadata`);
   `/readyz` is 503 until all workspaces are materialized (`docs/sandbox.md`).
+- Workspace snapshot tags: `SuspendActor` defaults to asynchronous snapshot
+  upload, whereas `CreateTag` requires the source actor's snapshot to be
+  recorded, so `WorkspaceManager` suspends setup actors with
+  `SuspendActorAndWaitForSnapshot` (`DURABILITY_MODE_SYNCHRONOUS`,
+  `internal/substrate/client.go`). Because `CreateTag` spans two transactions
+  around an object copy, an interrupted call can leave a tag with
+  `status.snapshot` unset or `SNAPSHOT_STORAGE_STATE_PENDING`; `isTagCompleted`
+  (`internal/controller/workspace.go`) requires `SNAPSHOT_STORAGE_STATE_COMPLETED`
+  (populated by `internal/substrate/substratetest/server.go` in tests).
 - Snapshot storage: Actor templates created by AX leave `SnapshotConfig.StorageLocation`
   empty by default so Substrate uses its cluster-wide `--snapshot-location`. Specifying a custom
   snapshot bucket (`snapshotsBucket` in `BuildActorTemplate`) can only be used when the

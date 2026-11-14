@@ -344,6 +344,9 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err != nil {
 			return "", "", "", err
 		}
+		if outcome == "unchanged" && existing.GetStatus().GetPhase() == v1alpha1.WorkspacePhasePreparing {
+			outcome = "configured"
+		}
 		res, err := client.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
 		return head.Kind, res.GetMetadata().GetName(), outcome, err
 
@@ -467,7 +470,7 @@ func runGet(serverURL, atespace string, args []string) error {
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tATESPACE\tGIT-REPOS\tMCP-SERVERS")
+		fmt.Fprintln(w, "NAME\tATESPACE\tPHASE\tGIT-REPOS\tMCP-SERVERS")
 		for _, ws := range resp.Workspaces {
 			printWorkspaceRow(w, ws)
 		}

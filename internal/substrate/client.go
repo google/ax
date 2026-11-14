@@ -253,7 +253,7 @@ func IsTransientError(err error) bool {
 	}
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
-		case codes.Unavailable, codes.DeadlineExceeded:
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Aborted:
 			return true
 		}
 	}
@@ -610,13 +610,31 @@ func WorkerIP(actor *ateapipb.Actor) string {
 	return ""
 }
 
-// SuspendActor suspends the specified actor, triggering state checkpointing.
+// SuspendActor suspends the specified actor. When SuspendOptions is omitted,
+// Substrate defaults to DURABILITY_MODE_ASYNCHRONOUS (the actor transitions to
+// SUSPENDED immediately with a node-local snapshot while atelet uploads the
+// durable copy in the background; see workflow_suspend.go in Substrate).
 func (c *Client) SuspendActor(ctx context.Context, atespace, actorName string) error {
+	return c.suspendActor(ctx, atespace, actorName, nil)
+}
+
+// SuspendActorAndWaitForSnapshot suspends the specified actor with
+// DURABILITY_MODE_SYNCHRONOUS so the RPC blocks until atelet finishes uploading
+// a COMPLETED durable snapshot. Setup actors use this before CreateTag and
+// DeleteActor so the snapshot is guaranteed durable before teardown.
+func (c *Client) SuspendActorAndWaitForSnapshot(ctx context.Context, atespace, actorName string) error {
+	return c.suspendActor(ctx, atespace, actorName, &ateapipb.SuspendOptions{
+		Mode: ateapipb.DurabilityMode_DURABILITY_MODE_SYNCHRONOUS,
+	})
+}
+
+func (c *Client) suspendActor(ctx context.Context, atespace, actorName string, opts *ateapipb.SuspendOptions) error {
 	req := &ateapipb.SuspendActorRequest{
 		Actor: &ateapipb.ObjectRef{
 			Atespace: atespace,
 			Name:     actorName,
 		},
+		Options: opts,
 	}
 	_, err := callWithRetry(ctx, func() (*ateapipb.SuspendActorResponse, error) {
 		return c.control.SuspendActor(ctx, req)
@@ -697,7 +715,7 @@ func (c *Client) EnsureActorEgressPolicy(ctx context.Context, atespace, actorNam
 	}
 	_, err := callWithRetry(ctx, func() (*ateapipb.EgressPolicy, error) {
 		return c.control.CreateActorEgressPolicy(ctx, req)
-	})
+	}, codes.Aborted)
 	if err != nil && status.Code(err) != codes.AlreadyExists {
 		return fmt.Errorf("creating egress policy of actor %s/%s: %w", atespace, actorName, err)
 	}
