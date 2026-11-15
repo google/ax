@@ -56,48 +56,48 @@ func TestValidateTask(t *testing.T) {
 			},
 		},
 		{
-			name: "profile ate.name",
+			name: "profile ateTemplate.name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "base-template"}},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"}},
 			},
 		},
 		{
-			name: "ate.atespace invalid name",
+			name: "ateTemplate.atespace invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "base-template", Atespace: "Bad_Space"}},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "base-template", Atespace: "Bad_Space"}},
 			},
-			wantErr: "spec.profile.ate.atespace",
+			wantErr: "spec.profile.ateTemplate.atespace",
 		},
 		{
-			name: "ate.name empty",
+			name: "ateTemplate.name empty",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Atespace: "shared"}},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Atespace: "shared"}},
 			},
-			wantErr: "spec.profile.ate.name: must be set",
+			wantErr: "spec.profile.ateTemplate.name: must be set",
 		},
 		{
-			name: "profile ate.name invalid name",
+			name: "profile ateTemplate.name invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "Bad_Name"}},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "Bad_Name"}},
 			},
-			wantErr: "spec.profile.ate.name",
+			wantErr: "spec.profile.ateTemplate.name",
 		},
 		{
-			name: "profile ate.name combined with image",
+			name: "profile ateTemplate.name combined with image",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:   &v1alpha1.ObjectRef{Name: "base-template"},
-					Image: "us-docker.pkg.dev/p/img@sha256:abc",
+					AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"},
+					Image:       "us-docker.pkg.dev/p/img@sha256:abc",
 				},
 			},
 			wantErr: "cannot be combined with image or resources",
 		},
 		{
-			name: "profile ate.name combined with resources",
+			name: "profile ateTemplate.name combined with resources",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:       &v1alpha1.ObjectRef{Name: "base-template"},
-					Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
+					AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"},
+					Resources:   &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
 				},
 			},
 			wantErr: "cannot be combined with image or resources",

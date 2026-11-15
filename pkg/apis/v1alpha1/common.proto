@@ -71,7 +71,7 @@ message Profile {
   // port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
   // mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
   // traverses a Gateway).
-  ObjectRef ate = 3;
+  ObjectRef ate_template = 3;
 }
 
 // ObjectRef names another resource, optionally in a different atespace.

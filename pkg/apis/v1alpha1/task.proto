@@ -36,7 +36,7 @@ message Task {
 message TaskSpec {
   reserved 1, 2, 4;
 
-  // Optional compute profile (image, resources, ate.name) for this
+  // Optional compute profile (image, resources, ate_template) for this
   // task's sandbox.
   //
   // Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:

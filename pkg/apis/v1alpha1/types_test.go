@@ -284,7 +284,7 @@ spec:
       limits:
         cpu: "4"
         memory: "8Gi"
-    ate:
+    ateTemplate:
       name: base-tmpl
       atespace: shared
   setup:

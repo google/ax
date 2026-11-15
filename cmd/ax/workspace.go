@@ -66,7 +66,7 @@ func describeWorkspaceProfile(out io.Writer, prof *v1alpha1.Profile) {
 	if limits := prof.GetResources().GetLimits(); limits != nil && (limits.GetCpu() != "" || limits.GetMemory() != "") {
 		fmt.Fprintf(out, "Resources:    cpu=%s memory=%s\n", limits.GetCpu(), limits.GetMemory())
 	}
-	if ate := prof.GetAte(); ate.GetName() != "" {
+	if ate := prof.GetAteTemplate(); ate.GetName() != "" {
 		if ate.GetAtespace() != "" {
 			fmt.Fprintf(out, "ATE Template: %s/%s\n", ate.GetAtespace(), ate.GetName())
 		} else {
