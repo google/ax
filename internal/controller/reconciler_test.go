@@ -1237,7 +1237,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-task", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{ActorTemplate: "custom-base"}}},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "custom-base"}}},
 	}
 	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
@@ -1260,7 +1260,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	mockSrv.templateRefs, mockSrv.actorTemplateRefs = nil, nil
 	crossTask := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "cross-tpl-task", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{ActorTemplate: "custom-base", Atespace: "shared"}}},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "custom-base", Atespace: "shared"}}},
 	}
 	if err := reconciler.Suspend(ctx, crossTask, nil, nil); err != nil {
 		t.Fatalf("Suspend with ate.atespace failed: %v", err)
@@ -1365,11 +1365,11 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		t.Errorf("resources-only task resources = %v, want %v", gotResOnly.GetResources(), wantTaskRes)
 	}
 
-	// 3. Even when Workspace uses ate.actorTemplate, a task setting resources-only
+	// 3. Even when Workspace uses ate.template, a task setting resources-only
 	// uses its own profile cleanly without conflicting with Workspace.spec.profile.
 	wsWithTpl := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-ws", Atespace: "default"},
-		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{ActorTemplate: "ws-base-tpl"}}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "ws-base-tpl"}}},
 	}
 	taskOverTplWs := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task-over-tpl-ws", Atespace: "default"},

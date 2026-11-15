@@ -62,7 +62,7 @@ type TaskReconciler struct {
 	httpClient              *http.Client
 	defaultTemplate         string
 	defaultTemplateAtespace string
-	// defaultTaskImage is used when the effective profile omits image and ate.actorTemplate.
+	// defaultTaskImage is used when the effective profile omits image and ate.template.
 	defaultTaskImage string
 
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
@@ -152,7 +152,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 
 	// Resource limits are enforced by the template, so they are checked here as
 	// well as at apply time: a task must never run without limits it asked for.
-	if effective.GetAte().GetActorTemplate() == "" {
+	if effective.GetAte().GetTemplate() == "" {
 		if err := apivalidation.ValidateResources(effective.GetResources()); err != nil {
 			r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 			return fmt.Errorf("validating resources: %w", err)
@@ -178,7 +178,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		templateAtespace, templateName string
 		err                            error
 	)
-	if tpl := effective.GetAte().GetActorTemplate(); tpl != "" {
+	if tpl := effective.GetAte().GetTemplate(); tpl != "" {
 		tplAtespace := ProfileTemplateAtespace(atespace, effective)
 		slog.Info("reconciling task with existing ActorTemplate", "name", task.Metadata.Name, "atespace", atespace, "templateAtespace", tplAtespace, "template", tpl)
 		if _, err := r.client.GetActorTemplate(ctx, tplAtespace, tpl); err != nil {
@@ -561,7 +561,7 @@ func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) er
 	}
 	taskName := task.GetMetadata().GetName()
 	tpl := task.GetStatus().GetAteActorTemplate()
-	skipTemplates := task.GetSpec().GetProfile().GetAte().GetActorTemplate() != "" ||
+	skipTemplates := task.GetSpec().GetProfile().GetAte().GetTemplate() != "" ||
 		(tpl != "" && !taskTemplatePattern(taskName).MatchString(tpl))
 	return r.delete(ctx, atespace, taskName, skipTemplates)
 }

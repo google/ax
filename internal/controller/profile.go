@@ -33,7 +33,7 @@ import (
 // Workspace.spec.profile exists to pre-warm a default workspace snapshot for
 // fast warm task startup; it does not constrain or bleed fields into an
 // explicit Task.spec.profile:
-//   - When taskProfile is non-empty (sets image, ate.actorTemplate, or any
+//   - When taskProfile is non-empty (sets image, ate.template, or any
 //     CPU/memory limit), EffectiveProfile returns a copy of taskProfile as-is
 //     and ignores workspaceProfile completely. Omitted fields within
 //     taskProfile fall back to server/Substrate defaults, never to
@@ -54,7 +54,7 @@ func EffectiveProfile(workspaceProfile, taskProfile *v1alpha1.Profile) *v1alpha1
 }
 
 func isProfileEmpty(p *v1alpha1.Profile) bool {
-	return p.GetAte().GetActorTemplate() == "" &&
+	return p.GetAte().GetTemplate() == "" &&
 		p.GetImage() == "" &&
 		p.GetResources().GetLimits().GetCpu() == "" &&
 		p.GetResources().GetLimits().GetMemory() == ""
@@ -93,7 +93,7 @@ func (p profile) templateName(runnerImage string) string {
 // The returned atespace is where the template lives: ate.atespace when set,
 // otherwise atespace (the task's own, defaulting to DefaultAtespace).
 //
-// When p sets ate.actorTemplate, ResolveProfileTemplate returns that template
+// When p sets ate.template, ResolveProfileTemplate returns that template
 // name with a nil *ateapipb.ActorTemplate so the caller looks up the existing
 // user-managed template on Substrate (surfacing NotFound if it is missing)
 // rather than creating an AX-managed template.
@@ -106,7 +106,7 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage st
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
-	if tpl := p.GetAte().GetActorTemplate(); tpl != "" {
+	if tpl := p.GetAte().GetTemplate(); tpl != "" {
 		return ProfileTemplateAtespace(atespace, p), tpl, nil, nil
 	}
 

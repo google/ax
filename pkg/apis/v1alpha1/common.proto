@@ -78,7 +78,7 @@ message Profile {
 // traverses a Gateway).
 message ATETemplateSpec {
   // Name of an existing Substrate ActorTemplate.
-  string actor_template = 1;
+  string template = 1;
   // Atespace the ActorTemplate lives in. Defaults to the resource's own
   // atespace (metadata.atespace) when empty.
   string atespace = 2;
