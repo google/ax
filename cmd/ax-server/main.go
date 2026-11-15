@@ -130,7 +130,8 @@ func main() {
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
-		Locker: backend,
+		Locker:           backend,
+		DefaultTaskImage: defaultTaskImage,
 	})
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,

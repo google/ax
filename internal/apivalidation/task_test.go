@@ -189,3 +189,16 @@ func TestValidateTask(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateTask_ReservedSetupActorPrefix(t *testing.T) {
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: apivalidation.SetupActorPrefix + "foo"},
+	}); err == nil || !strings.Contains(err.Error(), "reserved for workspace setup actors") {
+		t.Fatalf("ValidateTask(reserved prefix) = %v, want reserved prefix error", err)
+	}
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "my-" + apivalidation.SetupActorPrefix + "task"},
+	}); err != nil {
+		t.Fatalf("ValidateTask(non-prefix occurrence) = %v, want nil", err)
+	}
+}

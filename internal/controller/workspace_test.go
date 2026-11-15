@@ -64,32 +64,33 @@ func TestWorkspaceTagName(t *testing.T) {
 	tpl1 := "ax-3f9c1a2b5d7e9f01"
 	tpl2 := "ax-9999999999999999"
 
-	short1 := controller.WorkspaceTagName("my-repo-env", tpl1, 1)
-	short2 := controller.WorkspaceTagName("my-repo-env", tpl2, 1)
-	refreshed := controller.WorkspaceTagName("my-repo-env", tpl1, 12)
+	uid1 := "11111111-1111-1111-1111-111111111111"
+	uid2 := "22222222-2222-2222-2222-222222222222"
+
+	short1 := controller.WorkspaceTagName(uid1, tpl1, 1)
+	short2 := controller.WorkspaceTagName(uid1, tpl2, 1)
+	refreshed := controller.WorkspaceTagName(uid1, tpl1, 12)
 	if err := apivalidation.ValidateName(short1); err != nil {
 		t.Fatalf("short tag %q invalid: %v", short1, err)
 	}
 	if !strings.HasSuffix(short1, "-r1") || !strings.HasSuffix(refreshed, "-r12") {
 		t.Fatalf("unexpected revision suffixes: %q, %q", short1, refreshed)
 	}
-	prefix := controller.WorkspaceTagPrefix("my-repo-env")
+	prefix := controller.WorkspaceTagPrefix(uid1)
 	if !strings.HasPrefix(short1, prefix) || !strings.HasPrefix(short2, prefix) || !strings.HasPrefix(refreshed, prefix) {
 		t.Errorf("tags %q, %q, %q do not share WorkspaceTagPrefix %q", short1, short2, refreshed, prefix)
 	}
 
-	longWS1 := strings.Repeat("a", 62) + "1"
-	longWS2 := strings.Repeat("a", 62) + "2"
-	tag1 := controller.WorkspaceTagName(longWS1, tpl1, 1)
-	tag2 := controller.WorkspaceTagName(longWS2, tpl1, math.MaxUint64)
+	tag1 := controller.WorkspaceTagName(uid1, tpl1, 1)
+	tag2 := controller.WorkspaceTagName(uid2, tpl1, math.MaxUint64)
 	if err := apivalidation.ValidateName(tag1); err != nil {
-		t.Fatalf("long tag1 %q invalid: %v", tag1, err)
+		t.Fatalf("tag1 %q invalid: %v", tag1, err)
 	}
 	if err := apivalidation.ValidateName(tag2); err != nil {
-		t.Fatalf("long tag2 %q invalid at MaxUint64: %v", tag2, err)
+		t.Fatalf("tag2 %q invalid at MaxUint64: %v", tag2, err)
 	}
-	if controller.WorkspaceTagPrefix(longWS1) == controller.WorkspaceTagPrefix(longWS2) {
-		t.Errorf("distinct 63-char workspace names collided on owner prefix: %q vs %q", tag1, tag2)
+	if controller.WorkspaceTagPrefix(uid1) == controller.WorkspaceTagPrefix(uid2) {
+		t.Errorf("distinct workspace UIDs collided on owner prefix: %q vs %q", tag1, tag2)
 	}
 }
 
@@ -185,6 +186,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	}
 	mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
 		SetupCoordinator: coord,
+		DefaultTaskImage: "ghcr.io/org/default-task@sha256:111",
 		RunnerImage:      "ghcr.io/org/runner@sha256:222",
 	})
 
@@ -205,7 +207,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	// 2. Workspace with setup + setupGateway runs setup actor, binds egress rules,
 	// creates default Tag, and deletes temporary setup actor.
 	ws := &v1alpha1.Workspace{
-		Metadata: &v1alpha1.ObjectMeta{Name: "payments", Atespace: "default"},
+		Metadata: &v1alpha1.ObjectMeta{Name: "payments", Atespace: "default", Uid: "uid-payments"},
 		Spec: &v1alpha1.WorkspaceSpec{
 			Setup: &v1alpha1.WorkspaceSetup{
 				Commands: []string{"npm ci"},
@@ -309,26 +311,39 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		t.Fatalf("AwaitSetup calls after 8 concurrent cold misses = %d, want 4", coord.calls.Load())
 	}
 
-	// Prepare an unrelated workspace to ensure Delete("payments") leaves its tag intact.
+	// Prepare an unrelated workspace to ensure Delete("uid-payments") leaves its tag intact.
 	otherWS := &v1alpha1.Workspace{
-		Metadata: &v1alpha1.ObjectMeta{Name: "payments-other", Atespace: "default"},
+		Metadata: &v1alpha1.ObjectMeta{Name: "payments-other", Atespace: "default", Uid: "uid-payments-other"},
 		Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 	}
 	if _, err := mgr.Prepare(ctx, otherWS, nil); err != nil {
 		t.Fatalf("Prepare(payments-other): %v", err)
 	}
 
-	// 4. Delete("payments") removes both the eager default tag and the lazy override tag,
-	// while keeping "payments-other"'s tag intact.
-	if err := mgr.Delete(ctx, "default", "payments"); err != nil {
-		t.Fatalf("Delete(payments): %v", err)
+	// Verify DefaultTaskImage was used for the template created when profile.image is omitted.
+	expectedTplName, _, err := controller.ResolveProfileTemplate("default", nil, "ghcr.io/org/default-task@sha256:111", "ghcr.io/org/runner@sha256:222")
+	if err != nil {
+		t.Fatalf("ResolveProfileTemplate: %v", err)
+	}
+	tpl, err := sub.Client().GetActorTemplate(ctx, "default", expectedTplName)
+	if err != nil {
+		t.Fatalf("GetActorTemplate(%s): %v", expectedTplName, err)
+	}
+	if got := tpl.GetContainers()[0].GetImage(); got != "ghcr.io/org/default-task@sha256:111" {
+		t.Errorf("template image = %q, want DefaultTaskImage", got)
+	}
+
+	// 4. Delete("uid-payments") removes both the eager default tag and the lazy override tag,
+	// while keeping "uid-payments-other"'s tag intact.
+	if err := mgr.Delete(ctx, "default", "uid-payments"); err != nil {
+		t.Fatalf("Delete(uid-payments): %v", err)
 	}
 	remainingTags, err := sub.Client().ListTags(ctx, "default")
 	if err != nil {
 		t.Fatalf("ListTags: %v", err)
 	}
-	if len(remainingTags) != 1 || !strings.HasPrefix(remainingTags[0].GetMetadata().GetName(), controller.WorkspaceTagPrefix("payments-other")) {
-		t.Fatalf("remaining tags after Delete(payments) = %+v, want only payments-other's tag", remainingTags)
+	if len(remainingTags) != 1 || !strings.HasPrefix(remainingTags[0].GetMetadata().GetName(), controller.WorkspaceTagPrefix("uid-payments-other")) {
+		t.Fatalf("remaining tags after Delete(uid-payments) = %+v, want only uid-payments-other's tag", remainingTags)
 	}
 }
 
@@ -357,7 +372,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			MaxSetupAttempts: 2,
 		})
 		st, err := mgr.Prepare(ctx, &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "flaky-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "flaky-ws", Atespace: "default", Uid: "uid-flaky"},
 			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"git fetch"}}},
 		}, nil)
 		if err != nil || st.GetPhase() != v1alpha1.WorkspacePhaseReady || coord.calls.Load() != 2 {
@@ -366,8 +381,8 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		if len(seenActors) != 2 || seenActors[0] == seenActors[1] {
 			t.Errorf("setup actor names across attempts = %v, want 2 distinct actor names", seenActors)
 		}
-		if !strings.HasPrefix(seenActors[0], controller.SetupActorPrefix+"flaky-ws-") {
-			t.Errorf("setup actor name %q missing %sflaky-ws- prefix", seenActors[0], controller.SetupActorPrefix)
+		if !strings.HasPrefix(seenActors[0], controller.SetupActorPrefix) {
+			t.Errorf("setup actor name %q missing %s prefix", seenActors[0], controller.SetupActorPrefix)
 		}
 		if got := coord.active.Load(); got != 0 {
 			t.Errorf("active setup records after retries = %d, want 0", got)
@@ -387,7 +402,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			MaxSetupAttempts: 2,
 		})
 		ws := &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "broken-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "broken-ws", Atespace: "default", Uid: "uid-broken"},
 			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
@@ -417,7 +432,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			MaxSetupAttempts: 3,
 		})
 		ws := &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "bad-gw-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "bad-gw-ws", Atespace: "default", Uid: "uid-bad-gw"},
 			Spec: &v1alpha1.WorkspaceSpec{
 				Setup: &v1alpha1.WorkspaceSetup{
 					Commands: []string{"true"},
@@ -446,7 +461,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			SetupCoordinator: &fakeSetupCoordinator{},
 		})
 		ws := &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "missing-tpl-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "missing-tpl-ws", Atespace: "default", Uid: "uid-missing-tpl"},
 			Spec: &v1alpha1.WorkspaceSpec{
 				Profile: &v1alpha1.Profile{AteActorTemplate: "does-not-exist"},
 			},
@@ -472,7 +487,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			MaxSetupAttempts: 1,
 		})
 		ws := &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "tag-fail-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "tag-fail-ws", Atespace: "default", Uid: "uid-tag-fail"},
 			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
@@ -498,7 +513,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			SetupCoordinator: &fakeSetupCoordinator{},
 		})
 		ws := &v1alpha1.Workspace{
-			Metadata: &v1alpha1.ObjectMeta{Name: "transient-ws", Atespace: "default"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "transient-ws", Atespace: "default", Uid: "uid-transient"},
 			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)

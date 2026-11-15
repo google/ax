@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/server"
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/internal/substrate/substratetest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -35,19 +36,34 @@ import (
 type testSetupCoordinator struct {
 	calls atomic.Int32
 	err   error
+	fn    func(ctx context.Context, atespace, setupActor string) error
 }
 
 func (c *testSetupCoordinator) RegisterSetup(context.Context, string, string, string, *v1alpha1.Workspace) error {
 	return nil
 }
 
-func (c *testSetupCoordinator) AwaitSetup(context.Context, string, string) error {
+func (c *testSetupCoordinator) AwaitSetup(ctx context.Context, atespace, setupActor string) error {
 	c.calls.Add(1)
+	if c.fn != nil {
+		return c.fn(ctx, atespace, setupActor)
+	}
 	return c.err
 }
 
 func (c *testSetupCoordinator) DeleteSetup(context.Context, string, string) error {
 	return nil
+}
+
+type ctxCheckingWorkspaceStore struct {
+	store.Store
+}
+
+func (s *ctxCheckingWorkspaceStore) UpdateWorkspaceStatus(ctx context.Context, atespace, name string, st *v1alpha1.WorkspaceStatus) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.Store.UpdateWorkspaceStatus(ctx, atespace, name, st)
 }
 
 func newWorkspaceTestServer(t *testing.T) *server.Server {
@@ -59,10 +75,11 @@ func newWorkspaceTestServer(t *testing.T) *server.Server {
 func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupCoordinator) (*server.Server, *substratetest.Server) {
 	t.Helper()
 	sub := substratetest.NewServer(t)
+	st := &ctxCheckingWorkspaceStore{Store: memory.NewStore()}
 	wsMgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
 		SetupCoordinator: coord,
 	})
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub), server.Options{
+	srv := server.NewServer(st, newTestReconciler(sub), server.Options{
 		WorkspaceManager: wsMgr,
 	})
 	return srv, sub
@@ -378,5 +395,89 @@ func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
 	})
 	if err != nil || ready.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseReady {
 		t.Fatalf("retry CreateWorkspace = (%+v, %v), want Ready", ready, err)
+	}
+}
+
+func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
+	reqCtx, cancel := context.WithCancel(t.Context())
+	coord := &testSetupCoordinator{
+		fn: func(ctx context.Context, _, _ string) error {
+			cancel()
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
+
+	_, err := srv.CreateWorkspace(reqCtx, &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "canceled-ws"},
+			Spec: &v1alpha1.WorkspaceSpec{
+				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"sleep 60"}},
+			},
+		},
+	})
+	if status.Code(err) != codes.Canceled {
+		t.Fatalf("CreateWorkspace(canceled) = %v, want Canceled", err)
+	}
+
+	stored, err := srv.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: "canceled-ws"})
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if stored.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
+		t.Fatalf("stored phase = %q, want Preparing", stored.GetStatus().GetPhase())
+	}
+	if len(stored.GetStatus().GetConditions()) != 2 ||
+		stored.GetStatus().GetConditions()[0].GetReason() != v1alpha1.ReasonSubstrateUnavailable {
+		t.Fatalf("stored conditions = %+v, want SubstrateUnavailable conditions persisted", stored.GetStatus().GetConditions())
+	}
+}
+
+func TestWorkspacePrewarm_DeleteAndRecreateUsesFreshUIDTag(t *testing.T) {
+	coord := &testSetupCoordinator{}
+	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
+	ctx := t.Context()
+
+	wsReq := func() *v1alpha1.CreateWorkspaceRequest {
+		return &v1alpha1.CreateWorkspaceRequest{
+			Workspace: &v1alpha1.Workspace{
+				Metadata: &v1alpha1.ObjectMeta{Name: "reused-ws"},
+				Spec: &v1alpha1.WorkspaceSpec{
+					Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+				},
+			},
+		}
+	}
+
+	ws1, err := srv.CreateWorkspace(ctx, wsReq())
+	if err != nil {
+		t.Fatalf("first CreateWorkspace: %v", err)
+	}
+	if ws1.GetMetadata().GetUid() == "" {
+		t.Fatal("first Workspace missing Metadata.Uid")
+	}
+	tags1, err := sub.Client().ListTags(ctx, "default")
+	if err != nil || len(tags1) != 1 {
+		t.Fatalf("tags after first create = (%+v, %v), want 1", tags1, err)
+	}
+
+	if _, err := srv.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Name: "reused-ws"}); err != nil {
+		t.Fatalf("DeleteWorkspace: %v", err)
+	}
+
+	ws2, err := srv.CreateWorkspace(ctx, wsReq())
+	if err != nil {
+		t.Fatalf("second CreateWorkspace: %v", err)
+	}
+	if ws2.GetMetadata().GetUid() == "" || ws2.GetMetadata().GetUid() == ws1.GetMetadata().GetUid() {
+		t.Fatalf("recreated Workspace UID = %q, want distinct from %q", ws2.GetMetadata().GetUid(), ws1.GetMetadata().GetUid())
+	}
+	tags2, err := sub.Client().ListTags(ctx, "default")
+	if err != nil || len(tags2) != 1 {
+		t.Fatalf("tags after recreate = (%+v, %v), want 1", tags2, err)
+	}
+	if tags2[0].GetMetadata().GetName() == tags1[0].GetMetadata().GetName() {
+		t.Errorf("recreated Workspace reused old tag name %q", tags2[0].GetMetadata().GetName())
 	}
 }

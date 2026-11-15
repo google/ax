@@ -98,6 +98,11 @@ func (r *TaskReconciler) Client() *substrate.Client {
 	return r.client
 }
 
+// DefaultTaskImage returns the fallback container image configured on the reconciler.
+func (r *TaskReconciler) DefaultTaskImage() string {
+	return r.defaultTaskImage
+}
+
 func newProbeHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	tlsCfg := &tls.Config{

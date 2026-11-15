@@ -79,7 +79,8 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 	workspaces := opt.WorkspaceManager
 	if workspaces == nil {
 		workspaces = controller.NewWorkspaceManager(reconciler.Client(), controller.WorkspaceManagerOptions{
-			Locker: locker,
+			Locker:           locker,
+			DefaultTaskImage: reconciler.DefaultTaskImage(),
 		})
 	}
 
@@ -882,11 +883,18 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	if meta.Atespace == "" {
 		meta.Atespace = v1alpha1.DefaultAtespace
 	}
-	if meta.CreateTime == nil {
-		var prev *v1alpha1.ObjectMeta
-		if existing != nil {
-			prev = existing(meta.Atespace, meta.Name)
+	var prev *v1alpha1.ObjectMeta
+	if existing != nil && (meta.Uid == "" || meta.CreateTime == nil) {
+		prev = existing(meta.Atespace, meta.Name)
+	}
+	if meta.Uid == "" {
+		if prev.GetUid() != "" {
+			meta.Uid = prev.GetUid()
+		} else {
+			meta.Uid = uuid.NewString()
 		}
+	}
+	if meta.CreateTime == nil {
 		if prev.GetCreateTime() != nil {
 			meta.CreateTime = prev.GetCreateTime()
 		} else {

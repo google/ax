@@ -37,66 +37,58 @@ import (
 // SetupActorPrefix prefixes temporary Workspace setup actor names so the
 // runner control server routes their claims and events to the workspace setup
 // handler rather than looking up a Task row.
-const SetupActorPrefix = "ax-ws-setup-"
+const SetupActorPrefix = apivalidation.SetupActorPrefix
 
 const (
-	maxUint64Digits = 20
-	// maxTagWorkspacePrefix leaves room for "ws-" (3) + "-" (1) + 8-char ws
-	// hash + "-" (1) + 16-char template hash + "-r" (2) + up to 20 revision
-	// digits within apivalidation.MaxNameLength (63).
-	maxTagWorkspacePrefix = apivalidation.MaxNameLength - len("ws-") - 1 - 8 - 1 - 16 - len("-r") - maxUint64Digits
-
-	// maxSetupActorPrefix leaves room for SetupActorPrefix (12) + "-" (1) +
-	// 8-char ws hash + "-" (1) + 8-char random nonce within MaxNameLength (63).
-	maxSetupActorPrefix = apivalidation.MaxNameLength - len(SetupActorPrefix) - 1 - 8 - 1 - 8
-
 	initialSnapshotRevision uint64 = 1
 	defaultMaxSetupAttempts        = 2
 	setupRetryBackoff              = 200 * time.Millisecond
 )
 
+// workspaceIDHash returns a fixed 16-hex (64-bit) identifier derived from
+// workspaceUID so Tag and temporary setup actor names stay well within
+// RFC 1123's 63-character limit without name truncation and remain isolated
+// across delete-and-recreate cycles for the same Workspace name.
+func workspaceIDHash(workspaceUID string) string {
+	sum := sha256.Sum256([]byte(workspaceUID))
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 // WorkspaceTagPrefix returns the deterministic Tag prefix
-// ("ws-<prefix>-<8hex(ws)>-") shared by every snapshot Tag owned by
-// workspaceName across all compute templates (default + lazy-cached) and
-// snapshot revisions.
-func WorkspaceTagPrefix(workspaceName string) string {
-	wsSum := sha256.Sum256([]byte(workspaceName))
-	prefix := strings.TrimRight(workspaceName[:min(len(workspaceName), maxTagWorkspacePrefix)], "-")
-	return fmt.Sprintf("ws-%s-%x-", prefix, wsSum[:4])
+// ("ws-<16hex(uid)>-") shared by every snapshot Tag owned by workspaceUID
+// across all compute templates (default + lazy-cached) and snapshot revisions.
+func WorkspaceTagPrefix(workspaceUID string) string {
+	return fmt.Sprintf("ws-%s-", workspaceIDHash(workspaceUID))
 }
 
 // WorkspaceTagName returns a deterministic RFC 1123 Substrate Tag name
-// ("ws-<prefix>-<8hex(ws)>-<16hex(tpl)>-r<revision>") for (workspaceName,
-// templateName, revision).
+// ("ws-<16hex(uid)>-<16hex(tpl)>-r<revision>") for (workspaceUID,
+// templateName, revision). Maximum length is 58 chars (at MaxUint64), well
+// within apivalidation.MaxNameLength (63).
 //
 // Substrate Tags cannot repoint their snapshot in place (UpdateTag does not
 // change the underlying snapshot, and DeleteTag invalidates unsuspended
 // running Actors created from that Tag), so refreshing a Workspace snapshot
 // mints a new Tag under an incremented "-r<revision>" suffix while keeping the
-// "ws-<prefix>-<8hex(ws)>-" owner prefix intact.
+// "ws-<16hex(uid)>-" owner prefix intact.
 //
 // TODO: Persist the active snapshot revision on Workspace and increment it
 // once periodic or on-demand snapshot refresh is implemented.
-func WorkspaceTagName(workspaceName, templateName string, revision uint64) string {
+func WorkspaceTagName(workspaceUID, templateName string, revision uint64) string {
 	tplSum := sha256.Sum256([]byte(templateName))
-	return fmt.Sprintf("%s%x-r%d", WorkspaceTagPrefix(workspaceName), tplSum[:8], revision)
+	return fmt.Sprintf("%s%x-r%d", WorkspaceTagPrefix(workspaceUID), tplSum[:8], revision)
 }
 
-func setupActorPrefix(workspaceName string) string {
-	wsSum := sha256.Sum256([]byte(workspaceName))
-	prefix := strings.TrimRight(workspaceName[:min(len(workspaceName), maxSetupActorPrefix)], "-")
-	if prefix == "" {
-		return fmt.Sprintf("%s%x-", SetupActorPrefix, wsSum[:4])
-	}
-	return fmt.Sprintf("%s%s-%x-", SetupActorPrefix, prefix, wsSum[:4])
+func setupActorPrefix(workspaceUID string) string {
+	return fmt.Sprintf("%s%s-", SetupActorPrefix, workspaceIDHash(workspaceUID))
 }
 
-func newSetupActorName(workspaceName string) (string, error) {
+func newSetupActorName(workspaceUID string) (string, error) {
 	var nonce [4]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return "", fmt.Errorf("generating setup actor nonce: %w", err)
 	}
-	return fmt.Sprintf("%s%x", setupActorPrefix(workspaceName), nonce), nil
+	return fmt.Sprintf("%s%x", setupActorPrefix(workspaceUID), nonce), nil
 }
 
 // NeedsPrewarmSnapshot reports whether spec declares any setup steps or compute
@@ -133,6 +125,9 @@ type SetupCoordinator interface {
 type WorkspaceManagerOptions struct {
 	Locker           lock.Locker
 	SetupCoordinator SetupCoordinator
+	// DefaultTaskImage is used when a Profile omits image and ate_actor_template
+	// (defaults to v1alpha1.DefaultTaskImage).
+	DefaultTaskImage string
 	// RunnerImage is a static server-startup setting (changed only when
 	// ax-server is redeployed with a new flag/env digest, never mutated
 	// dynamically at runtime).
@@ -149,6 +144,7 @@ type WorkspaceManager struct {
 	client           *substrate.Client
 	locker           lock.Locker
 	coordinator      SetupCoordinator
+	defaultTaskImage string
 	runnerImage      string
 	maxSetupAttempts int
 }
@@ -163,6 +159,10 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
+	defaultTaskImage := opt.DefaultTaskImage
+	if defaultTaskImage == "" {
+		defaultTaskImage = v1alpha1.DefaultTaskImage
+	}
 	attempts := opt.MaxSetupAttempts
 	if attempts <= 0 {
 		attempts = defaultMaxSetupAttempts
@@ -171,6 +171,7 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 		client:           client,
 		locker:           locker,
 		coordinator:      opt.SetupCoordinator,
+		defaultTaskImage: defaultTaskImage,
 		runnerImage:      opt.RunnerImage,
 		maxSetupAttempts: attempts,
 	}
@@ -271,6 +272,10 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 		atespace = v1alpha1.DefaultAtespace
 	}
 	wsName := ws.GetMetadata().GetName()
+	wsUID := ws.GetMetadata().GetUid()
+	if wsUID == "" {
+		return "", fmt.Errorf("workspace %s/%s is missing metadata.uid", atespace, wsName)
+	}
 
 	// Step 1: Ensure the atespace and the Profile's shared ActorTemplate exist.
 	// Wrapped in stageError so Prepare records AtespaceCreationFailed /
@@ -285,7 +290,7 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 
 	// Step 2: Fast path (warm hit) — if a COMPLETED Tag already exists on
 	// Substrate, return immediately without taking a lock or spawning a setup actor.
-	tagName := WorkspaceTagName(wsName, templateName, initialSnapshotRevision)
+	tagName := WorkspaceTagName(wsUID, templateName, initialSnapshotRevision)
 	if tag, err := m.client.GetTag(ctx, atespace, tagName); err == nil && isTagCompleted(tag) {
 		return tagName, nil
 	} else if err != nil && status.Code(err) != codes.NotFound {
@@ -293,7 +298,12 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 	}
 
 	// Step 3: Cold miss (or incomplete stranded Tag) — acquire a per-Tag
-	// distributed lock so concurrent requests coalesce onto one setup actor.
+	// distributed lock so concurrent requests for the same Profile coalesce
+	// onto one setup actor while distinct Profiles for the same Workspace still
+	// build in parallel.
+	//
+	// TODO: Coordinate lazy EnsureSnapshotTag builds with DeleteWorkspace via a
+	// shared/exclusive (RLock/Lock) Workspace lock once lock.Locker supports it.
 	unlock, err := m.locker.Lock(ctx, "workspace-tag", atespace, tagName)
 	if err != nil {
 		return "", fmt.Errorf("locking workspace tag %s/%s: %w", atespace, tagName, err)
@@ -359,7 +369,7 @@ func isNonRetryableSetupError(err error) bool {
 }
 
 func (m *WorkspaceManager) ensureProfileTemplate(ctx context.Context, atespace string, prof *v1alpha1.Profile) (string, error) {
-	tplName, tplSpec, err := ResolveProfileTemplate(atespace, prof, m.runnerImage)
+	tplName, tplSpec, err := ResolveProfileTemplate(atespace, prof, m.defaultTaskImage, m.runnerImage)
 	if err != nil {
 		return "", err
 	}
@@ -384,13 +394,13 @@ func (m *WorkspaceManager) ensureProfileTemplate(ctx context.Context, atespace s
 //  4. Suspend synchronously (waiting for durable snapshot upload) and CreateTag.
 //  5. Always delete the setup record and temporary setup actor on exit.
 func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *v1alpha1.Workspace, atespace, templateName, tagName string, setupGateway *v1alpha1.Gateway) error {
-	wsName := ws.GetMetadata().GetName()
-	actorName, err := newSetupActorName(wsName)
+	wsName, wsUID := ws.GetMetadata().GetName(), ws.GetMetadata().GetUid()
+	actorName, err := newSetupActorName(wsUID)
 	if err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorCreationFailed, nonRetryable: true, underlyingErr: err}
 	}
 
-	slog.Info("provisioning workspace setup actor", "atespace", atespace, "workspace", wsName, "actor", actorName, "template", templateName, "tag", tagName)
+	slog.Info("provisioning workspace setup actor", "atespace", atespace, "workspace", wsName, "uid", wsUID, "actor", actorName, "template", templateName, "tag", tagName)
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -449,8 +459,8 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 
 // Delete removes every Substrate snapshot Tag (both the default Tag and any
 // lazy-cached Tags created by Task profile overrides) and any stranded setup
-// actor belonging to wsName.
-func (m *WorkspaceManager) Delete(ctx context.Context, atespace, wsName string) error {
+// actor belonging to workspaceUID.
+func (m *WorkspaceManager) Delete(ctx context.Context, atespace, workspaceUID string) error {
 	if m == nil || m.client == nil {
 		return nil
 	}
@@ -459,7 +469,7 @@ func (m *WorkspaceManager) Delete(ctx context.Context, atespace, wsName string) 
 	}
 
 	var errs []error
-	tagPrefix := WorkspaceTagPrefix(wsName)
+	tagPrefix := WorkspaceTagPrefix(workspaceUID)
 	tags, err := m.client.ListTags(ctx, atespace)
 	if err != nil {
 		errs = append(errs, err)
@@ -474,7 +484,7 @@ func (m *WorkspaceManager) Delete(ctx context.Context, atespace, wsName string) 
 		}
 	}
 
-	actorPrefix := setupActorPrefix(wsName)
+	actorPrefix := setupActorPrefix(workspaceUID)
 	actors, err := m.client.ListActors(ctx, atespace)
 	if err != nil {
 		errs = append(errs, err)

@@ -128,11 +128,11 @@ func TestResolveProfileTemplate(t *testing.T) {
 		},
 	}
 
-	n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r1")
+	n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "", "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p1): %v", err)
 	}
-	n2, _, err := controller.ResolveProfileTemplate("default", p2, "runner@sha256:r1")
+	n2, _, err := controller.ResolveProfileTemplate("default", p2, "", "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p2): %v", err)
 	}
@@ -150,14 +150,14 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Omitted CPU/memory equivalent to Substrate's defaults (1000m, 512Mi) hash identically.
-	nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "runner@sha256:r1")
+	nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "", "runner@sha256:r1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	nExplicitDefault, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{
 		Image:     "img@sha256:abc",
 		Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1000m", Memory: "512Mi"}},
-	}, "runner@sha256:r1")
+	}, "", "runner@sha256:r1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,8 +165,25 @@ func TestResolveProfileTemplate(t *testing.T) {
 		t.Errorf("omitted defaults (%q) != explicit defaults (%q)", nOmitted, nExplicitDefault)
 	}
 
+	// Omitted profile image uses defaultTaskImage (or v1alpha1.DefaultTaskImage when empty).
+	customDefault := "us-docker.pkg.dev/proj/img@sha256:def"
+	nDefaultImg, tmplDefaultImg, err := controller.ResolveProfileTemplate("default", nil, customDefault, "runner@sha256:r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tmplDefaultImg.GetContainers()[0].GetImage(); got != customDefault {
+		t.Errorf("default image = %q, want %q", got, customDefault)
+	}
+	nExplicitSame, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: customDefault}, "", "runner@sha256:r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nDefaultImg != nExplicitSame {
+		t.Errorf("omitted profile image with defaultTaskImage (%q) != explicit image (%q)", nDefaultImg, nExplicitSame)
+	}
+
 	// Changing runner volume image produces a distinct template hash.
-	nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r2")
+	nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "", "runner@sha256:r2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +192,7 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Explicit ate_actor_template returns that name with nil template spec.
-	directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteActorTemplate: "gpu-base"}, "runner@sha256:r1")
+	directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteActorTemplate: "gpu-base"}, customDefault, "runner@sha256:r1")
 	if err != nil || directName != "gpu-base" || directTmpl != nil {
 		t.Fatalf("ResolveProfileTemplate(AteActorTemplate) = (%q, %v, %v), want (\"gpu-base\", nil, nil)", directName, directTmpl, err)
 	}

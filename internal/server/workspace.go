@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/store"
@@ -26,6 +27,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
+
+const workspaceStatusUpdateTimeout = 10 * time.Second
 
 func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceRequest) (*v1alpha1.Workspace, error) {
 	if req == nil {
@@ -158,16 +161,25 @@ func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, s
 	atespace, wsName := ws.Metadata.Atespace, ws.Metadata.Name
 	st, prepErr := s.workspaces.Prepare(ctx, ws, setupGateway)
 	ws.Status = st
-	if err := s.store.UpdateWorkspaceStatus(ctx, atespace, wsName, st); err != nil {
+
+	// Use an independent context for persisting status so a canceled or timed-out
+	// client RPC still records the Preparing/condition state in the store.
+	statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceStatusUpdateTimeout)
+	defer cancel()
+	if err := s.store.UpdateWorkspaceStatus(statusCtx, atespace, wsName, st); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating workspace status: %v", err)
 	}
-	if prepErr != nil {
-		if substrate.IsTransientError(prepErr) {
-			return nil, status.Errorf(codes.Unavailable, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)
-		}
+	if prepErr == nil {
+		return ws, nil
+	}
+	switch {
+	case errors.Is(prepErr, context.Canceled):
+		return nil, status.Errorf(codes.Canceled, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)
+	case substrate.IsTransientError(prepErr):
+		return nil, status.Errorf(codes.Unavailable, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)
+	default:
 		return nil, status.Errorf(codes.FailedPrecondition, "preparing workspace %s/%s: %s", atespace, wsName, st.GetLastSetupError())
 	}
-	return ws, nil
 }
 
 func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorkspaceRequest) (*v1alpha1.DeleteWorkspaceResponse, error) {
@@ -187,7 +199,15 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	}
 	defer unlock()
 
-	if err := s.workspaces.Delete(ctx, atespace, wsName); err != nil {
+	ws, err := s.store.GetWorkspace(ctx, atespace, wsName)
+	if errors.Is(err, store.ErrNotFound) {
+		return &v1alpha1.DeleteWorkspaceResponse{}, nil
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "getting workspace: %v", err)
+	}
+
+	if err := s.workspaces.Delete(ctx, atespace, ws.GetMetadata().GetUid()); err != nil {
 		code := codes.Internal
 		if substrate.IsTransientError(err) {
 			code = codes.Unavailable
