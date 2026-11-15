@@ -41,7 +41,7 @@ type WorkspaceRef struct {
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Optional mount / working directory path inside the sandbox.
 	// Defaults to "/workspace" when omitted.
-	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Path          string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1121,10 +1121,10 @@ var File_pkg_apis_v1alpha1_workspace_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\n" +
-	"!pkg/apis/v1alpha1/workspace.proto\x12\vax.v1alpha1\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\"6\n" +
+	"!pkg/apis/v1alpha1/workspace.proto\x12\vax.v1alpha1\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\"<\n" +
 	"\fWorkspaceRef\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\xdb\x01\n" +
+	"\x04path\x18\x03 \x01(\tR\x04pathJ\x04\b\x02\x10\x03\"\xdb\x01\n" +
 	"\tWorkspace\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
