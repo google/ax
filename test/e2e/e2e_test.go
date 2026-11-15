@@ -74,7 +74,11 @@ func TestE2E_CLIVersionAndAutoTunnel(t *testing.T) {
 	assertContains(t, "'ax ctx'", strings.ToLower(listOut), strings.ToLower(env.KubeContext), "healthy")
 
 	runTunneled("tunnel", "stop", env.KubeContext)
-	assertContains(t, "'ax ctx' after stop", runTunneled("ctx"), "No background tunnel running")
+	afterStop := runTunneled("ctx")
+	assertContains(t, "'ax ctx' after stop", strings.ToLower(afterStop), strings.ToLower(env.KubeContext))
+	if strings.Contains(strings.ToLower(afterStop), "healthy") || strings.Contains(afterStop, "127.0.0.1:") {
+		t.Fatalf("'ax ctx' after stop still reports an active tunnel:\n%s", afterStop)
+	}
 }
 
 const workspaceCRUDManifest = `apiVersion: ax.io/v1alpha1

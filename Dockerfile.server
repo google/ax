@@ -16,7 +16,7 @@ FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates
 
-ARG TARGETARCH=amd64
-COPY bin/linux_${TARGETARCH}/ax-server /usr/local/bin/ax-server
+ARG TARGETARCH
+COPY bin/linux_${TARGETARCH:-amd64}/ax-server /usr/local/bin/ax-server
 
 ENTRYPOINT ["/usr/local/bin/ax-server"]

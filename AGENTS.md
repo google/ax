@@ -18,11 +18,13 @@ reconciler or server.
 ## Layout
 
 ```
-cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tunnel)
+cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/local/install/uninstall/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
+deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template
+internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
@@ -34,10 +36,10 @@ internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTE
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
-hack/                  E2E provisioning scripts; apply-rulesets.sh; tools/buf/go.mod pins buf for `make generate`
+install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
-hack/                  E2E provisioning scripts; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
-docs/                  manifests.md is the user-facing API reference
+hack/                  E2E provisioning, Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
+docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
 ```
 
@@ -47,7 +49,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~20 s, 21 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 26 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:
@@ -75,7 +77,7 @@ location is where to look. How-to lives in the skills.
 - `internal/substrate/client.go` is the only non-test file that constructs
   `ateapipb.NewControlClient`; new Control API calls go there.
 - `api.ate-system.svc`, `atenet-router.ate-system.svc`, and namespace
-  `ate-system` are hard-coded across 11 files (list in `/substrate`).
+  `ate-system` are hard-coded across 16 files (list in `/substrate`).
 - Substrate rejects tag-only images; `profile.image` must be
   digest-pinned (`docs/manifests.md`, `TemplateCreationFailed`).
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
@@ -108,7 +110,7 @@ location is where to look. How-to lives in the skills.
 
 | Area | Skill | When to load |
 |---|---|---|
-| Substrate | `/substrate` | Touching `internal/substrate`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
+| Substrate | `/substrate` | Touching `internal/substrate`, `internal/install`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
 | Contract sync | `/sync-contract` | After any code change, before declaring done: verify `AGENTS.md` and `skills/` still match the code |
 
 Conventions: one directory per skill, `skills/<name>/SKILL.md`, frontmatter
