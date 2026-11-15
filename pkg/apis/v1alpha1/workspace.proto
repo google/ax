@@ -24,9 +24,11 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 // WorkspaceRef binds a Task to a Workspace in the same atespace.
 message WorkspaceRef {
   string name = 1;
+  // Held for atespace.
+  reserved 2;
   // Optional mount / working directory path inside the sandbox.
   // Defaults to "/workspace" when omitted.
-  string path = 2;
+  string path = 3;
 }
 
 // Workspace defines a pre-warmed, shareable environment recipe and its cached
