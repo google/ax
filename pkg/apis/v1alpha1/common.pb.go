@@ -324,10 +324,15 @@ type Profile struct {
 	Image string `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	// Sandbox compute resource limits (CPU and memory).
 	Resources *ResourcesSpec `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
-	// Optional Agent Substrate template settings that point the Profile at an
-	// existing ActorTemplate instead of generating an AX-managed template.
-	// Mutually exclusive with image and resources.
-	Ate           *ATETemplateRef `protobuf:"bytes,3,opt,name=ate,proto3" json:"ate,omitempty"`
+	// Optional reference to an existing Substrate ActorTemplate to use directly
+	// instead of generating an AX-managed template. Mutually exclusive with
+	// image and resources. Because AX does not synthesize or mutate a
+	// user-supplied template, it must already satisfy the AX sandbox contract
+	// (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup probe on
+	// port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
+	// mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
+	// traverses a Gateway).
+	Ate           *ObjectRef `protobuf:"bytes,3,opt,name=ate,proto3" json:"ate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,45 +381,39 @@ func (x *Profile) GetResources() *ResourcesSpec {
 	return nil
 }
 
-func (x *Profile) GetAte() *ATETemplateRef {
+func (x *Profile) GetAte() *ObjectRef {
 	if x != nil {
 		return x.Ate
 	}
 	return nil
 }
 
-// ATETemplateRef references an existing Substrate ActorTemplate to use for a
-// Profile directly. Because AX does not synthesize or mutate a user-supplied
-// template, it must already satisfy the AX sandbox contract
-// (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup probe on
-// port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
-// mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
-// traverses a Gateway).
-type ATETemplateRef struct {
+// ObjectRef names another resource, optionally in a different atespace.
+type ObjectRef struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Name of an existing Substrate ActorTemplate.
-	Template string `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
-	// Atespace the ActorTemplate lives in. Defaults to the resource's own
+	// Name of the referenced resource.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Atespace of the referenced resource. Defaults to the referrer's own
 	// atespace (metadata.atespace) when empty.
 	Atespace      string `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ATETemplateRef) Reset() {
-	*x = ATETemplateRef{}
+func (x *ObjectRef) Reset() {
+	*x = ObjectRef{}
 	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ATETemplateRef) String() string {
+func (x *ObjectRef) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ATETemplateRef) ProtoMessage() {}
+func (*ObjectRef) ProtoMessage() {}
 
-func (x *ATETemplateRef) ProtoReflect() protoreflect.Message {
+func (x *ObjectRef) ProtoReflect() protoreflect.Message {
 	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -426,19 +425,19 @@ func (x *ATETemplateRef) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ATETemplateRef.ProtoReflect.Descriptor instead.
-func (*ATETemplateRef) Descriptor() ([]byte, []int) {
+// Deprecated: Use ObjectRef.ProtoReflect.Descriptor instead.
+func (*ObjectRef) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ATETemplateRef) GetTemplate() string {
+func (x *ObjectRef) GetName() string {
 	if x != nil {
-		return x.Template
+		return x.Name
 	}
 	return ""
 }
 
-func (x *ATETemplateRef) GetAtespace() string {
+func (x *ObjectRef) GetAtespace() string {
 	if x != nil {
 		return x.Atespace
 	}
@@ -477,13 +476,13 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\vupdate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"\x88\x01\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"\x83\x01\n" +
 	"\aProfile\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x128\n" +
-	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12-\n" +
-	"\x03ate\x18\x03 \x01(\v2\x1b.ax.v1alpha1.ATETemplateRefR\x03ate\"H\n" +
-	"\x0eATETemplateRef\x12\x1a\n" +
-	"\btemplate\x18\x01 \x01(\tR\btemplate\x12\x1a\n" +
+	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12(\n" +
+	"\x03ate\x18\x03 \x01(\v2\x16.ax.v1alpha1.ObjectRefR\x03ate\";\n" +
+	"\tObjectRef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
 	"\batespace\x18\x02 \x01(\tR\batespaceB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
@@ -505,7 +504,7 @@ var file_pkg_apis_v1alpha1_common_proto_goTypes = []any{
 	(*ResourceList)(nil),          // 2: ax.v1alpha1.ResourceList
 	(*Condition)(nil),             // 3: ax.v1alpha1.Condition
 	(*Profile)(nil),               // 4: ax.v1alpha1.Profile
-	(*ATETemplateRef)(nil),        // 5: ax.v1alpha1.ATETemplateRef
+	(*ObjectRef)(nil),             // 5: ax.v1alpha1.ObjectRef
 	nil,                           // 6: ax.v1alpha1.ObjectMeta.LabelsEntry
 	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
@@ -517,7 +516,7 @@ var file_pkg_apis_v1alpha1_common_proto_depIdxs = []int32{
 	2, // 4: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
 	7, // 5: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
 	1, // 6: ax.v1alpha1.Profile.resources:type_name -> ax.v1alpha1.ResourcesSpec
-	5, // 7: ax.v1alpha1.Profile.ate:type_name -> ax.v1alpha1.ATETemplateRef
+	5, // 7: ax.v1alpha1.Profile.ate:type_name -> ax.v1alpha1.ObjectRef
 	8, // [8:8] is the sub-list for method output_type
 	8, // [8:8] is the sub-list for method input_type
 	8, // [8:8] is the sub-list for extension type_name

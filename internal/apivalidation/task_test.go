@@ -56,47 +56,47 @@ func TestValidateTask(t *testing.T) {
 			},
 		},
 		{
-			name: "profile ate.template",
+			name: "profile ate.name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "base-template"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "base-template"}},
 			},
 		},
 		{
 			name: "ate.atespace invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "base-template", Atespace: "Bad_Space"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "base-template", Atespace: "Bad_Space"}},
 			},
 			wantErr: "spec.profile.ate.atespace",
 		},
 		{
-			name: "ate.template empty",
+			name: "ate.name empty",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Atespace: "shared"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Atespace: "shared"}},
 			},
-			wantErr: "spec.profile.ate.template: must be set",
+			wantErr: "spec.profile.ate.name: must be set",
 		},
 		{
-			name: "profile ate.template invalid name",
+			name: "profile ate.name invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "Bad_Name"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ObjectRef{Name: "Bad_Name"}},
 			},
-			wantErr: "spec.profile.ate.template",
+			wantErr: "spec.profile.ate.name",
 		},
 		{
-			name: "profile ate.template combined with image",
+			name: "profile ate.name combined with image",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:   &v1alpha1.ATETemplateRef{Template: "base-template"},
+					Ate:   &v1alpha1.ObjectRef{Name: "base-template"},
 					Image: "us-docker.pkg.dev/p/img@sha256:abc",
 				},
 			},
 			wantErr: "cannot be combined with image or resources",
 		},
 		{
-			name: "profile ate.template combined with resources",
+			name: "profile ate.name combined with resources",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:       &v1alpha1.ATETemplateRef{Template: "base-template"},
+					Ate:       &v1alpha1.ObjectRef{Name: "base-template"},
 					Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
 				},
 			},
