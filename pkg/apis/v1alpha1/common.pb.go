@@ -393,7 +393,7 @@ func (x *Profile) GetAte() *ATETemplateSpec {
 type ATETemplateSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of an existing Substrate ActorTemplate.
-	Template string `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
+	ActorTemplate string `protobuf:"bytes,1,opt,name=actor_template,json=actorTemplate,proto3" json:"actor_template,omitempty"`
 	// Atespace the ActorTemplate lives in. Defaults to the resource's own
 	// atespace (metadata.atespace) when empty.
 	Atespace      string `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
@@ -431,9 +431,9 @@ func (*ATETemplateSpec) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ATETemplateSpec) GetTemplate() string {
+func (x *ATETemplateSpec) GetActorTemplate() string {
 	if x != nil {
-		return x.Template
+		return x.ActorTemplate
 	}
 	return ""
 }
@@ -481,9 +481,9 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\aProfile\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x128\n" +
 	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12.\n" +
-	"\x03ate\x18\x03 \x01(\v2\x1c.ax.v1alpha1.ATETemplateSpecR\x03ate\"I\n" +
-	"\x0fATETemplateSpec\x12\x1a\n" +
-	"\btemplate\x18\x01 \x01(\tR\btemplate\x12\x1a\n" +
+	"\x03ate\x18\x03 \x01(\v2\x1c.ax.v1alpha1.ATETemplateSpecR\x03ate\"T\n" +
+	"\x0fATETemplateSpec\x12%\n" +
+	"\x0eactor_template\x18\x01 \x01(\tR\ractorTemplate\x12\x1a\n" +
 	"\batespace\x18\x02 \x01(\tR\batespaceB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (

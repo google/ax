@@ -285,7 +285,7 @@ spec:
         cpu: "4"
         memory: "8Gi"
     ate:
-      template: base-tmpl
+      actorTemplate: base-tmpl
       atespace: shared
   setup:
     git:

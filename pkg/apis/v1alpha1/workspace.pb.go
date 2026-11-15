@@ -174,7 +174,7 @@ type WorkspaceSpec struct {
 	// Resolved dynamically by ax-server on every Task wakeup (create/resume) and
 	// delivered to the runner rather than baked into an immutable snapshot.
 	Mcp *MCPConfig `protobuf:"bytes,3,opt,name=mcp,proto3" json:"mcp,omitempty"`
-	// Default compute profile (image, resources, ate.template) used to
+	// Default compute profile (image, resources, ate.actor_template) used to
 	// pre-warm the workspace snapshot upon Workspace creation for fast warm task
 	// startup, and used as the fallback profile for Tasks binding this Workspace
 	// that omit TaskSpec.profile.

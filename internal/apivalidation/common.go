@@ -95,11 +95,11 @@ func validateProfile(field string, p *v1alpha1.Profile) error {
 		return nil
 	}
 	if ate := p.GetAte(); ate != nil {
-		if ate.GetTemplate() == "" {
-			return fmt.Errorf("%s.ate.template: must be set", field)
+		if ate.GetActorTemplate() == "" {
+			return fmt.Errorf("%s.ate.actorTemplate: must be set", field)
 		}
-		if err := ValidateName(ate.GetTemplate()); err != nil {
-			return fmt.Errorf("%s.ate.template: invalid value %q: %w", field, ate.GetTemplate(), err)
+		if err := ValidateName(ate.GetActorTemplate()); err != nil {
+			return fmt.Errorf("%s.ate.actorTemplate: invalid value %q: %w", field, ate.GetActorTemplate(), err)
 		}
 		if atespace := ate.GetAtespace(); atespace != "" {
 			if err := ValidateName(atespace); err != nil {
