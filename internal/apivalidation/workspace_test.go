@@ -239,28 +239,42 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 			wantErr: "spec.profile.resources.limits.cpu",
 		},
 		{
-			name: "invalid_ate_actor_template",
+			name: "ate.atespace invalid name",
 			spec: &v1alpha1.WorkspaceSpec{
-				Profile: &v1alpha1.Profile{AteActorTemplate: "Bad_Name"},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "base-template", Atespace: "Bad_Space"}},
 			},
-			wantErr: "spec.profile.ateActorTemplate",
+			wantErr: "spec.profile.ate.atespace",
 		},
 		{
-			name: "ate_actor_template_combined_with_image",
+			name: "ate.template empty",
+			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Atespace: "shared"}},
+			},
+			wantErr: "spec.profile.ate.template: must be set",
+		},
+		{
+			name: "invalid_ate.template",
+			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "Bad_Name"}},
+			},
+			wantErr: "spec.profile.ate.template",
+		},
+		{
+			name: "ate.template_combined_with_image",
 			spec: &v1alpha1.WorkspaceSpec{
 				Profile: &v1alpha1.Profile{
-					AteActorTemplate: "base-template",
-					Image:            "us-docker.pkg.dev/p/img@sha256:abc",
+					Ate:   &v1alpha1.ATETemplateSpec{Template: "base-template"},
+					Image: "us-docker.pkg.dev/p/img@sha256:abc",
 				},
 			},
 			wantErr: "cannot be combined with image or resources",
 		},
 		{
-			name: "ate_actor_template_combined_with_resources",
+			name: "ate.template_combined_with_resources",
 			spec: &v1alpha1.WorkspaceSpec{
 				Profile: &v1alpha1.Profile{
-					AteActorTemplate: "base-template",
-					Resources:        &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
+					Ate:       &v1alpha1.ATETemplateSpec{Template: "base-template"},
+					Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
 				},
 			},
 			wantErr: "cannot be combined with image or resources",

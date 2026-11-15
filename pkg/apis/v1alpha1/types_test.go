@@ -284,7 +284,9 @@ spec:
       limits:
         cpu: "4"
         memory: "8Gi"
-    ateActorTemplate: base-tmpl
+    ate:
+      template: base-tmpl
+      atespace: shared
   setup:
     git:
       - name: origin

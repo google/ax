@@ -156,7 +156,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Tasks are immutable, so reject fields whose runtime enforcement has not
-	// landed yet (ateActorTemplate requires pull-based runner assignment; retry
+	// landed yet (ate.template requires pull-based runner assignment; retry
 	// requires runner exit events and the retry loop) rather than silently
 	// storing settings that nothing honors.
 	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
@@ -224,8 +224,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	effectiveProfile := controller.EffectiveProfile(workspace.GetSpec().GetProfile(), task.GetSpec().GetProfile())
-	if effectiveProfile.GetAteActorTemplate() != "" {
-		return nil, status.Error(codes.Unimplemented, "spec.profile.ateActorTemplate is not supported yet")
+	if effectiveProfile.GetAte().GetTemplate() != "" {
+		return nil, status.Error(codes.Unimplemented, "spec.profile.ate.template is not supported yet")
 	}
 
 	now := timestamppb.Now()
@@ -276,8 +276,8 @@ func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 	if spec == nil {
 		return ""
 	}
-	if spec.GetProfile().GetAteActorTemplate() != "" {
-		return "spec.profile.ateActorTemplate"
+	if spec.GetProfile().GetAte().GetTemplate() != "" {
+		return "spec.profile.ate.template"
 	}
 	if spec.GetRetry() != nil {
 		return "spec.retry"

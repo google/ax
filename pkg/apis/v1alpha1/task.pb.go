@@ -287,7 +287,7 @@ func (x *Task) GetStatus() *TaskStatus {
 
 type TaskSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional compute profile (image, resources, ate_actor_template) for this
+	// Optional compute profile (image, resources, ate.template) for this
 	// task's sandbox.
 	//
 	// Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:

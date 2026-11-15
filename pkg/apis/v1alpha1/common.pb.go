@@ -324,17 +324,12 @@ type Profile struct {
 	Image string `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	// Sandbox compute resource limits (CPU and memory).
 	Resources *ResourcesSpec `protobuf:"bytes,2,opt,name=resources,proto3" json:"resources,omitempty"`
-	// Optional name of an existing Substrate ActorTemplate in the same atespace
-	// to use directly instead of generating an AX-managed template. Mutually
-	// exclusive with image and resources. Because AX does not synthesize or
-	// mutate a user-supplied template, it must already satisfy the AX sandbox
-	// contract (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup
-	// probe on port 80, durable /workspace volume, and the egress-trust-bundle
-	// SystemInfo mount at /run/ate/egress-trust-bundle/trust-bundle.pem when
-	// outbound HTTPS traverses a Gateway).
-	AteActorTemplate string `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Optional Agent Substrate template settings that point the Profile at an
+	// existing ActorTemplate instead of generating an AX-managed template.
+	// Mutually exclusive with image and resources.
+	Ate           *ATETemplateSpec `protobuf:"bytes,3,opt,name=ate,proto3" json:"ate,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Profile) Reset() {
@@ -381,9 +376,71 @@ func (x *Profile) GetResources() *ResourcesSpec {
 	return nil
 }
 
-func (x *Profile) GetAteActorTemplate() string {
+func (x *Profile) GetAte() *ATETemplateSpec {
 	if x != nil {
-		return x.AteActorTemplate
+		return x.Ate
+	}
+	return nil
+}
+
+// ATETemplateSpec references an existing Substrate ActorTemplate to use for a
+// Profile directly. Because AX does not synthesize or mutate a user-supplied
+// template, it must already satisfy the AX sandbox contract
+// (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup probe on
+// port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
+// mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
+// traverses a Gateway).
+type ATETemplateSpec struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Name of an existing Substrate ActorTemplate.
+	Template string `protobuf:"bytes,1,opt,name=template,proto3" json:"template,omitempty"`
+	// Atespace the ActorTemplate lives in. Defaults to the resource's own
+	// atespace (metadata.atespace) when empty.
+	Atespace      string `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ATETemplateSpec) Reset() {
+	*x = ATETemplateSpec{}
+	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ATETemplateSpec) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ATETemplateSpec) ProtoMessage() {}
+
+func (x *ATETemplateSpec) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_common_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ATETemplateSpec.ProtoReflect.Descriptor instead.
+func (*ATETemplateSpec) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_common_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ATETemplateSpec) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *ATETemplateSpec) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
 	}
 	return ""
 }
@@ -420,11 +477,14 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\vupdate_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTime\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x18\n" +
-	"\amessage\x18\x05 \x01(\tR\amessage\"\x87\x01\n" +
+	"\amessage\x18\x05 \x01(\tR\amessage\"\x89\x01\n" +
 	"\aProfile\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x128\n" +
-	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12,\n" +
-	"\x12ate_actor_template\x18\x03 \x01(\tR\x10ateActorTemplateB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\tresources\x18\x02 \x01(\v2\x1a.ax.v1alpha1.ResourcesSpecR\tresources\x12.\n" +
+	"\x03ate\x18\x03 \x01(\v2\x1c.ax.v1alpha1.ATETemplateSpecR\x03ate\"I\n" +
+	"\x0fATETemplateSpec\x12\x1a\n" +
+	"\btemplate\x18\x01 \x01(\tR\btemplate\x12\x1a\n" +
+	"\batespace\x18\x02 \x01(\tR\batespaceB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_common_proto_rawDescOnce sync.Once
@@ -438,29 +498,31 @@ func file_pkg_apis_v1alpha1_common_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_common_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_pkg_apis_v1alpha1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_pkg_apis_v1alpha1_common_proto_goTypes = []any{
 	(*ObjectMeta)(nil),            // 0: ax.v1alpha1.ObjectMeta
 	(*ResourcesSpec)(nil),         // 1: ax.v1alpha1.ResourcesSpec
 	(*ResourceList)(nil),          // 2: ax.v1alpha1.ResourceList
 	(*Condition)(nil),             // 3: ax.v1alpha1.Condition
 	(*Profile)(nil),               // 4: ax.v1alpha1.Profile
-	nil,                           // 5: ax.v1alpha1.ObjectMeta.LabelsEntry
-	(*timestamppb.Timestamp)(nil), // 6: google.protobuf.Timestamp
+	(*ATETemplateSpec)(nil),       // 5: ax.v1alpha1.ATETemplateSpec
+	nil,                           // 6: ax.v1alpha1.ObjectMeta.LabelsEntry
+	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
 }
 var file_pkg_apis_v1alpha1_common_proto_depIdxs = []int32{
-	6, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
-	5, // 1: ax.v1alpha1.ObjectMeta.labels:type_name -> ax.v1alpha1.ObjectMeta.LabelsEntry
-	6, // 2: ax.v1alpha1.ObjectMeta.update_time:type_name -> google.protobuf.Timestamp
-	6, // 3: ax.v1alpha1.ObjectMeta.delete_time:type_name -> google.protobuf.Timestamp
+	7, // 0: ax.v1alpha1.ObjectMeta.create_time:type_name -> google.protobuf.Timestamp
+	6, // 1: ax.v1alpha1.ObjectMeta.labels:type_name -> ax.v1alpha1.ObjectMeta.LabelsEntry
+	7, // 2: ax.v1alpha1.ObjectMeta.update_time:type_name -> google.protobuf.Timestamp
+	7, // 3: ax.v1alpha1.ObjectMeta.delete_time:type_name -> google.protobuf.Timestamp
 	2, // 4: ax.v1alpha1.ResourcesSpec.limits:type_name -> ax.v1alpha1.ResourceList
-	6, // 5: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
+	7, // 5: ax.v1alpha1.Condition.update_time:type_name -> google.protobuf.Timestamp
 	1, // 6: ax.v1alpha1.Profile.resources:type_name -> ax.v1alpha1.ResourcesSpec
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	5, // 7: ax.v1alpha1.Profile.ate:type_name -> ax.v1alpha1.ATETemplateSpec
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_common_proto_init() }
@@ -474,7 +536,7 @@ func file_pkg_apis_v1alpha1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_common_proto_rawDesc), len(file_pkg_apis_v1alpha1_common_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -94,12 +94,20 @@ func validateProfile(field string, p *v1alpha1.Profile) error {
 	if p == nil {
 		return nil
 	}
-	if tpl := p.GetAteActorTemplate(); tpl != "" {
-		if err := ValidateName(tpl); err != nil {
-			return fmt.Errorf("%s.ateActorTemplate: invalid value %q: %w", field, tpl, err)
+	if ate := p.GetAte(); ate != nil {
+		if ate.GetTemplate() == "" {
+			return fmt.Errorf("%s.ate.template: must be set", field)
+		}
+		if err := ValidateName(ate.GetTemplate()); err != nil {
+			return fmt.Errorf("%s.ate.template: invalid value %q: %w", field, ate.GetTemplate(), err)
+		}
+		if atespace := ate.GetAtespace(); atespace != "" {
+			if err := ValidateName(atespace); err != nil {
+				return fmt.Errorf("%s.ate.atespace: invalid value %q: %w", field, atespace, err)
+			}
 		}
 		if p.GetImage() != "" || p.GetResources() != nil {
-			return fmt.Errorf("%s.ateActorTemplate: cannot be combined with image or resources", field)
+			return fmt.Errorf("%s.ate: cannot be combined with image or resources", field)
 		}
 		return nil
 	}

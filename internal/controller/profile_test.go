@@ -25,7 +25,7 @@ import (
 
 func TestEffectiveProfile(t *testing.T) {
 	empty := controller.EffectiveProfile(nil, nil)
-	if empty.GetImage() != "" || empty.GetResources() != nil || empty.GetAteActorTemplate() != "" {
+	if empty.GetImage() != "" || empty.GetResources() != nil || empty.GetAte().GetTemplate() != "" {
 		t.Fatalf("EffectiveProfile(nil, nil) = %+v, want empty Profile", empty)
 	}
 
@@ -56,10 +56,10 @@ func TestEffectiveProfile(t *testing.T) {
 		}
 	}
 
-	// Workspace AteActorTemplate is also inherited when taskProfile is empty.
-	inheritedTpl := controller.EffectiveProfile(&v1alpha1.Profile{AteActorTemplate: "gpu-base"}, &v1alpha1.Profile{})
-	if inheritedTpl.GetAteActorTemplate() != "gpu-base" {
-		t.Fatalf("inherited AteActorTemplate = %+v, want gpu-base", inheritedTpl)
+	// Workspace ate.template is also inherited when taskProfile is empty.
+	inheritedTpl := controller.EffectiveProfile(&v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "gpu-base"}}, &v1alpha1.Profile{})
+	if inheritedTpl.GetAte().GetTemplate() != "gpu-base" {
+		t.Fatalf("inherited ate.template = %+v, want gpu-base", inheritedTpl)
 	}
 
 	// Scenario 2: taskProfile sets resources only -> used as-is; does NOT inherit
@@ -92,24 +92,24 @@ func TestEffectiveProfile(t *testing.T) {
 		t.Errorf("EffectiveProfile(wsImageProfile, image-only) = %+v, want image only with nil resources", gotImageOnly)
 	}
 
-	// Scenario 4: workspaceProfile uses AteActorTemplate, while taskProfile sets
-	// resources only, image, or another AteActorTemplate -> taskProfile wins cleanly
-	// without conflicting with workspaceProfile's AteActorTemplate.
-	wsTemplateProfile := &v1alpha1.Profile{AteActorTemplate: "gpu-base"}
+	// Scenario 4: workspaceProfile uses ate.template, while taskProfile sets
+	// resources only, image, or another ate.template -> taskProfile wins cleanly
+	// without conflicting with workspaceProfile's ate.template.
+	wsTemplateProfile := &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "gpu-base"}}
 	gotResourcesOverTpl := controller.EffectiveProfile(wsTemplateProfile, taskResourcesOnly)
-	if gotResourcesOverTpl.GetAteActorTemplate() != "" ||
+	if gotResourcesOverTpl.GetAte().GetTemplate() != "" ||
 		gotResourcesOverTpl.GetImage() != "" ||
 		gotResourcesOverTpl.GetResources().GetLimits().GetMemory() != "16Gi" {
 		t.Errorf("EffectiveProfile(wsTemplateProfile, taskResourcesOnly) = %+v, want taskResourcesOnly as-is", gotResourcesOverTpl)
 	}
 
-	switchedTpl := controller.EffectiveProfile(wsTemplateProfile, &v1alpha1.Profile{AteActorTemplate: "tpu-base"})
-	if switchedTpl.GetAteActorTemplate() != "tpu-base" {
-		t.Errorf("switched AteActorTemplate = %+v, want tpu-base", switchedTpl)
+	switchedTpl := controller.EffectiveProfile(wsTemplateProfile, &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "tpu-base"}})
+	if switchedTpl.GetAte().GetTemplate() != "tpu-base" {
+		t.Errorf("switched ate.template = %+v, want tpu-base", switchedTpl)
 	}
 
-	gotTplOverWsImage := controller.EffectiveProfile(wsImageProfile, &v1alpha1.Profile{AteActorTemplate: "tpu-base"})
-	if gotTplOverWsImage.GetAteActorTemplate() != "tpu-base" || gotTplOverWsImage.GetImage() != "" || gotTplOverWsImage.GetResources() != nil {
+	gotTplOverWsImage := controller.EffectiveProfile(wsImageProfile, &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "tpu-base"}})
+	if gotTplOverWsImage.GetAte().GetTemplate() != "tpu-base" || gotTplOverWsImage.GetImage() != "" || gotTplOverWsImage.GetResources() != nil {
 		t.Errorf("EffectiveProfile(wsImageProfile, tpu-base) = %+v, want tpu-base only", gotTplOverWsImage)
 	}
 }
@@ -128,11 +128,11 @@ func TestResolveProfileTemplate(t *testing.T) {
 		},
 	}
 
-	n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r1")
+	_, n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p1): %v", err)
 	}
-	n2, _, err := controller.ResolveProfileTemplate("default", p2, "runner@sha256:r1")
+	_, n2, _, err := controller.ResolveProfileTemplate("default", p2, "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p2): %v", err)
 	}
@@ -150,11 +150,11 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Omitted CPU/memory equivalent to Substrate's defaults (1000m, 512Mi) hash identically.
-	nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "runner@sha256:r1")
+	_, nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "runner@sha256:r1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	nExplicitDefault, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{
+	_, nExplicitDefault, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{
 		Image:     "img@sha256:abc",
 		Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1000m", Memory: "512Mi"}},
 	}, "runner@sha256:r1")
@@ -166,7 +166,7 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Changing runner volume image produces a distinct template hash.
-	nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r2")
+	_, nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,9 +174,27 @@ func TestResolveProfileTemplate(t *testing.T) {
 		t.Errorf("expected distinct template name when runnerImage differs, got %q", nRunner2)
 	}
 
-	// Explicit ate_actor_template returns that name with nil template spec.
-	directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteActorTemplate: "gpu-base"}, "runner@sha256:r1")
-	if err != nil || directName != "gpu-base" || directTmpl != nil {
-		t.Fatalf("ResolveProfileTemplate(AteActorTemplate) = (%q, %v, %v), want (\"gpu-base\", nil, nil)", directName, directTmpl, err)
+	// Explicit ate.template returns that name with nil template spec.
+	directAtespace, directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "gpu-base"}}, "runner@sha256:r1")
+	if err != nil || directAtespace != "default" || directName != "gpu-base" || directTmpl != nil {
+		t.Fatalf("ResolveProfileTemplate(ate.template) = (%q, %q, %v, %v), want (\"default\", \"gpu-base\", nil, nil)", directAtespace, directName, directTmpl, err)
+	}
+
+	// ate.atespace points the lookup at another atespace.
+	crossAtespace, crossName, crossTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "gpu-base", Atespace: "shared"}}, "runner@sha256:r1")
+	if err != nil || crossAtespace != "shared" || crossName != "gpu-base" || crossTmpl != nil {
+		t.Fatalf("ResolveProfileTemplate(ate.atespace) = (%q, %q, %v, %v), want (\"shared\", \"gpu-base\", nil, nil)", crossAtespace, crossName, crossTmpl, err)
+	}
+}
+
+func TestProfileTemplateAtespace(t *testing.T) {
+	if got := controller.ProfileTemplateAtespace("team", &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "t"}}); got != "team" {
+		t.Errorf("ProfileTemplateAtespace(team, no ate.atespace) = %q, want team", got)
+	}
+	if got := controller.ProfileTemplateAtespace("", &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "t"}}); got != v1alpha1.DefaultAtespace {
+		t.Errorf("ProfileTemplateAtespace(\"\", no ate.atespace) = %q, want %q", got, v1alpha1.DefaultAtespace)
+	}
+	if got := controller.ProfileTemplateAtespace("team", &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "t", Atespace: "shared"}}); got != "shared" {
+		t.Errorf("ProfileTemplateAtespace(team, ate.atespace=shared) = %q, want shared", got)
 	}
 }
