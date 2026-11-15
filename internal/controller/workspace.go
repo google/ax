@@ -34,6 +34,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// SetupActorPrefix prefixes temporary Workspace setup actor names so the
+// runner control server routes their claims and events to the workspace setup
+// handler rather than looking up a Task row.
+const SetupActorPrefix = "ax-ws-setup-"
+
 const (
 	maxUint64Digits = 20
 	// maxTagWorkspacePrefix leaves room for "ws-" (3) + "-" (1) + 8-char ws
@@ -41,9 +46,9 @@ const (
 	// digits within apivalidation.MaxNameLength (63).
 	maxTagWorkspacePrefix = apivalidation.MaxNameLength - len("ws-") - 1 - 8 - 1 - 16 - len("-r") - maxUint64Digits
 
-	// maxSetupActorPrefix leaves room for "ws-setup-" (9) + "-" (1) + 8-char ws
-	// hash + "-" (1) + 8-char random nonce within apivalidation.MaxNameLength (63).
-	maxSetupActorPrefix = apivalidation.MaxNameLength - len("ws-setup-") - 1 - 8 - 1 - 8
+	// maxSetupActorPrefix leaves room for SetupActorPrefix (12) + "-" (1) +
+	// 8-char ws hash + "-" (1) + 8-char random nonce within MaxNameLength (63).
+	maxSetupActorPrefix = apivalidation.MaxNameLength - len(SetupActorPrefix) - 1 - 8 - 1 - 8
 
 	initialSnapshotRevision uint64 = 1
 	defaultMaxSetupAttempts        = 2
@@ -81,9 +86,9 @@ func setupActorPrefix(workspaceName string) string {
 	wsSum := sha256.Sum256([]byte(workspaceName))
 	prefix := strings.TrimRight(workspaceName[:min(len(workspaceName), maxSetupActorPrefix)], "-")
 	if prefix == "" {
-		return fmt.Sprintf("ws-setup-%x-", wsSum[:4])
+		return fmt.Sprintf("%s%x-", SetupActorPrefix, wsSum[:4])
 	}
-	return fmt.Sprintf("ws-setup-%s-%x-", prefix, wsSum[:4])
+	return fmt.Sprintf("%s%s-%x-", SetupActorPrefix, prefix, wsSum[:4])
 }
 
 func newSetupActorName(workspaceName string) (string, error) {
@@ -108,19 +113,20 @@ func NeedsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
 	return len(s.GetGit()) > 0 || len(s.GetFiles()) > 0 || s.GetSkills() != nil || len(s.GetCommands()) > 0
 }
 
-// SetupCoordinator is the rendezvous between WorkspaceManager and the
-// pull-based runner HTTP service (pkg/apis/runner/v1):
-//  1. WorkspaceManager calls AwaitSetup right after ResumeActor(setupActor),
-//     registering ws in memory keyed by "<atespace>/<setupActor>" and blocking.
+// SetupCoordinator coordinates Workspace setup execution across ax-server
+// replicas via shared storage:
+//  1. WorkspaceManager calls RegisterSetup after EnsureActor (recording the
+//     expected actorUID and ws) and before ResumeActor, avoiding any boot race
+//     if ax-task-runner claims its assignment immediately on startup.
 //  2. Inside the sandbox, ax-task-runner calls POST /runner/v1/assignment:claim
-//     (authenticated via the Substrate Egress Gateway's Actor JWT) and receives
-//     ASSIGNMENT_MODE_SETUP + ws + a one-time runner_token.
-//  3. After running workspace.SetupWorkspace, ax-task-runner calls
-//     POST /runner/v1/events with SetupFinished{ok, error_message}, which
-//     unblocks AwaitSetup with nil or the setup stderr before the setup actor
-//     is suspended and tagged.
+//     and POST /runner/v1/events (SetupFinished) against any ax-server replica.
+//  3. WorkspaceManager blocks in AwaitSetup until the setup record transitions
+//     to succeeded or failed, and always removes the temporary record via
+//     DeleteSetup on exit.
 type SetupCoordinator interface {
-	AwaitSetup(ctx context.Context, atespace, setupActor string, ws *v1alpha1.Workspace) error
+	RegisterSetup(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error
+	AwaitSetup(ctx context.Context, atespace, setupActor string) error
+	DeleteSetup(ctx context.Context, atespace, setupActor string) error
 }
 
 // WorkspaceManagerOptions configures a WorkspaceManager.
@@ -373,10 +379,10 @@ func (m *WorkspaceManager) ensureProfileTemplate(ctx context.Context, atespace s
 // buildSnapshotWithSetupActor runs one attempt of the setup actor lifecycle:
 //  1. Create temporary setup actor from the shared Profile ActorTemplate.
 //  2. Bind optional setupGateway egress rules (scoped only to this setup actor).
-//  3. Resume the setup actor and wait for the in-sandbox runner to pull and
-//     finish workspace.SetupWorkspace via AwaitSetup.
+//  3. Register the pending setup assignment via RegisterSetup before booting
+//     the sandbox, then ResumeActor and wait via AwaitSetup.
 //  4. Suspend synchronously (waiting for durable snapshot upload) and CreateTag.
-//  5. Always delete the temporary setup actor on exit (success or failure).
+//  5. Always delete the setup record and temporary setup actor on exit.
 func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *v1alpha1.Workspace, atespace, templateName, tagName string, setupGateway *v1alpha1.Gateway) error {
 	wsName := ws.GetMetadata().GetName()
 	actorName, err := newSetupActorName(wsName)
@@ -393,7 +399,8 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 		}
 	}()
 
-	if _, err := m.client.EnsureActor(ctx, atespace, actorName, atespace, templateName); err != nil {
+	actor, err := m.client.EnsureActor(ctx, atespace, actorName, atespace, templateName)
+	if err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorCreationFailed, underlyingErr: err}
 	}
 	if setupGateway != nil {
@@ -401,12 +408,25 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 			return &stageError{reason: v1alpha1.ReasonGatewayBindingFailed, nonRetryable: !substrate.IsTransientError(err), underlyingErr: err}
 		}
 	}
+
+	if err := m.coordinator.RegisterSetup(ctx, atespace, actorName, actor.GetMetadata().GetUid(), ws); err != nil {
+		return &stageError{reason: v1alpha1.WorkspaceReasonSetupFailed, underlyingErr: fmt.Errorf("registering workspace setup: %w", err)}
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if delErr := m.coordinator.DeleteSetup(cleanupCtx, atespace, actorName); delErr != nil {
+			slog.Warn("failed to clean up workspace setup record", "atespace", atespace, "actor", actorName, "error", delErr)
+		}
+	}()
+
 	if _, _, err := m.client.ResumeActor(ctx, atespace, actorName); err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorResumeFailed, underlyingErr: err}
 	}
-	if err := m.coordinator.AwaitSetup(ctx, atespace, actorName, ws); err != nil {
+	if err := m.coordinator.AwaitSetup(ctx, atespace, actorName); err != nil {
 		return &stageError{reason: v1alpha1.WorkspaceReasonSetupFailed, underlyingErr: fmt.Errorf("running workspace setup: %w", err)}
 	}
+
 	if err := m.client.SuspendActorAndWaitForSnapshot(ctx, atespace, actorName); err != nil {
 		return &stageError{reason: v1alpha1.WorkspaceReasonSnapshotTagFailed, setupDone: true, underlyingErr: err}
 	}
@@ -423,6 +443,7 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 		}
 		return &stageError{reason: v1alpha1.WorkspaceReasonSnapshotTagFailed, setupDone: true, underlyingErr: err}
 	}
+
 	return nil
 }
 

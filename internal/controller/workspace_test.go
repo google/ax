@@ -33,15 +33,30 @@ import (
 )
 
 type fakeSetupCoordinator struct {
-	calls atomic.Int32
-	fn    func(ctx context.Context, atespace, setupActor string, ws *v1alpha1.Workspace) error
+	calls        atomic.Int32
+	active       atomic.Int32
+	registerHook func(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error
+	fn           func(ctx context.Context, atespace, setupActor string) error
 }
 
-func (f *fakeSetupCoordinator) AwaitSetup(ctx context.Context, atespace, setupActor string, ws *v1alpha1.Workspace) error {
+func (f *fakeSetupCoordinator) RegisterSetup(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error {
+	f.active.Add(1)
+	if f.registerHook != nil {
+		return f.registerHook(ctx, atespace, setupActor, actorUID, ws)
+	}
+	return nil
+}
+
+func (f *fakeSetupCoordinator) AwaitSetup(ctx context.Context, atespace, setupActor string) error {
 	f.calls.Add(1)
 	if f.fn != nil {
-		return f.fn(ctx, atespace, setupActor, ws)
+		return f.fn(ctx, atespace, setupActor)
 	}
+	return nil
+}
+
+func (f *fakeSetupCoordinator) DeleteSetup(context.Context, string, string) error {
+	f.active.Add(-1)
 	return nil
 }
 
@@ -143,9 +158,25 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	ctx := t.Context()
 	sub := substratetest.NewServer(t)
 
-	var sawGatewayPolicy atomic.Bool
+	var (
+		registeredBeforeResume atomic.Bool
+		sawGatewayPolicy       atomic.Bool
+	)
 	coord := &fakeSetupCoordinator{
-		fn: func(_ context.Context, atespace, setupActor string, _ *v1alpha1.Workspace) error {
+		registerHook: func(ctx context.Context, atespace, setupActor, actorUID string, _ *v1alpha1.Workspace) error {
+			if err := apivalidation.ValidateName(setupActor); err != nil {
+				t.Errorf("invalid setup actor name %q: %v", setupActor, err)
+			}
+			if actorUID == "" {
+				t.Errorf("RegisterSetup(%q) received empty actorUID", setupActor)
+			}
+			actor, err := sub.Client().GetActor(ctx, atespace, setupActor)
+			if err == nil && actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+				registeredBeforeResume.Store(true)
+			}
+			return nil
+		},
+		fn: func(_ context.Context, atespace, setupActor string) error {
 			if _, ok := sub.EgressPolicy(atespace, setupActor); ok {
 				sawGatewayPolicy.Store(true)
 			}
@@ -194,8 +225,14 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	if err != nil || st.GetPhase() != v1alpha1.WorkspacePhaseReady {
 		t.Fatalf("Prepare(payments) = (%+v, %v), want Ready", st, err)
 	}
+	if !registeredBeforeResume.Load() {
+		t.Error("RegisterSetup was not called before ResumeActor")
+	}
 	if !sawGatewayPolicy.Load() {
 		t.Error("setup actor did not have setupGateway egress policy bound during AwaitSetup")
+	}
+	if got := coord.active.Load(); got != 0 {
+		t.Errorf("active setup records after Prepare = %d, want 0 (DeleteSetup not called)", got)
 	}
 	conds := st.GetConditions()
 	if len(conds) != 2 ||
@@ -305,7 +342,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			attempt    atomic.Int32
 		)
 		coord := &fakeSetupCoordinator{
-			fn: func(_ context.Context, _, setupActor string, _ *v1alpha1.Workspace) error {
+			fn: func(_ context.Context, _, setupActor string) error {
 				mu.Lock()
 				seenActors = append(seenActors, setupActor)
 				mu.Unlock()
@@ -329,8 +366,11 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		if len(seenActors) != 2 || seenActors[0] == seenActors[1] {
 			t.Errorf("setup actor names across attempts = %v, want 2 distinct actor names", seenActors)
 		}
-		if !strings.HasPrefix(seenActors[0], "ws-setup-flaky-ws-") {
-			t.Errorf("setup actor name %q missing workspace name prefix", seenActors[0])
+		if !strings.HasPrefix(seenActors[0], controller.SetupActorPrefix+"flaky-ws-") {
+			t.Errorf("setup actor name %q missing %sflaky-ws- prefix", seenActors[0], controller.SetupActorPrefix)
+		}
+		if got := coord.active.Load(); got != 0 {
+			t.Errorf("active setup records after retries = %d, want 0", got)
 		}
 	})
 
@@ -338,7 +378,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		ctx := t.Context()
 		sub := substratetest.NewServer(t)
 		coord := &fakeSetupCoordinator{
-			fn: func(context.Context, string, string, *v1alpha1.Workspace) error {
+			fn: func(context.Context, string, string) error {
 				return errors.New("npm ERR! code E404")
 			},
 		}

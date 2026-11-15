@@ -309,6 +309,12 @@ func (s *Server) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest
 		}
 	}
 	actor := proto.Clone(req.GetActor()).(*ateapipb.Actor)
+	if actor.Metadata == nil {
+		actor.Metadata = &ateapipb.ResourceMetadata{}
+	}
+	if actor.Metadata.Uid == "" {
+		actor.Metadata.Uid = "actor-uid-" + k
+	}
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
 	s.actors[k] = actor
 	return proto.Clone(actor).(*ateapipb.Actor), nil

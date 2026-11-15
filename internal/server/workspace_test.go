@@ -37,9 +37,17 @@ type testSetupCoordinator struct {
 	err   error
 }
 
-func (c *testSetupCoordinator) AwaitSetup(context.Context, string, string, *v1alpha1.Workspace) error {
+func (c *testSetupCoordinator) RegisterSetup(context.Context, string, string, string, *v1alpha1.Workspace) error {
+	return nil
+}
+
+func (c *testSetupCoordinator) AwaitSetup(context.Context, string, string) error {
 	c.calls.Add(1)
 	return c.err
+}
+
+func (c *testSetupCoordinator) DeleteSetup(context.Context, string, string) error {
+	return nil
 }
 
 func newWorkspaceTestServer(t *testing.T) *server.Server {
