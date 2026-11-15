@@ -66,17 +66,17 @@ message Profile {
   // Optional Agent Substrate template settings that point the Profile at an
   // existing ActorTemplate instead of generating an AX-managed template.
   // Mutually exclusive with image and resources.
-  ATETemplateSpec ate = 3;
+  ATETemplateRef ate = 3;
 }
 
-// ATETemplateSpec references an existing Substrate ActorTemplate to use for a
+// ATETemplateRef references an existing Substrate ActorTemplate to use for a
 // Profile directly. Because AX does not synthesize or mutate a user-supplied
 // template, it must already satisfy the AX sandbox contract
 // (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup probe on
 // port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
 // mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
 // traverses a Gateway).
-message ATETemplateSpec {
+message ATETemplateRef {
   // Name of an existing Substrate ActorTemplate.
   string template = 1;
   // Atespace the ActorTemplate lives in. Defaults to the resource's own

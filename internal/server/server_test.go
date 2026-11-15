@@ -1470,7 +1470,7 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	}{
 		{
 			name:      "ate.template",
-			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "user-tpl"}}},
+			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "user-tpl"}}},
 			wantField: "spec.profile.ate.template is not supported yet",
 		},
 		{
@@ -1510,7 +1510,7 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	//   completely and succeeds.
 	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "ws-tpl", Atespace: "default"},
-		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "ws-user-tpl"}}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "ws-user-tpl"}}},
 	}); err != nil {
 		t.Fatalf("SaveWorkspace: %v", err)
 	}

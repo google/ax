@@ -58,27 +58,27 @@ func TestValidateTask(t *testing.T) {
 		{
 			name: "profile ate.template",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "base-template"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "base-template"}},
 			},
 		},
 		{
 			name: "ate.atespace invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "base-template", Atespace: "Bad_Space"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "base-template", Atespace: "Bad_Space"}},
 			},
 			wantErr: "spec.profile.ate.atespace",
 		},
 		{
 			name: "ate.template empty",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Atespace: "shared"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Atespace: "shared"}},
 			},
 			wantErr: "spec.profile.ate.template: must be set",
 		},
 		{
 			name: "profile ate.template invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateSpec{Template: "Bad_Name"}},
+				Profile: &v1alpha1.Profile{Ate: &v1alpha1.ATETemplateRef{Template: "Bad_Name"}},
 			},
 			wantErr: "spec.profile.ate.template",
 		},
@@ -86,7 +86,7 @@ func TestValidateTask(t *testing.T) {
 			name: "profile ate.template combined with image",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:   &v1alpha1.ATETemplateSpec{Template: "base-template"},
+					Ate:   &v1alpha1.ATETemplateRef{Template: "base-template"},
 					Image: "us-docker.pkg.dev/p/img@sha256:abc",
 				},
 			},
@@ -96,7 +96,7 @@ func TestValidateTask(t *testing.T) {
 			name: "profile ate.template combined with resources",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					Ate:       &v1alpha1.ATETemplateSpec{Template: "base-template"},
+					Ate:       &v1alpha1.ATETemplateRef{Template: "base-template"},
 					Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
 				},
 			},
