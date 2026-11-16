@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -149,4 +150,25 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 	})
 	tmpl.SnapshotConfig.PreferredFidelity = resolved.snapshotFidelity
 	return name, tmpl, nil
+}
+
+// ensureProfileTemplate resolves p into a Substrate ActorTemplate name and
+// ensures it exists on Substrate: verifying user-supplied ate_actor_template
+// references via GetActorTemplate without mutating them, or provisioning
+// AX-managed templates via EnsureActorTemplate.
+func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, error) {
+	tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, defaultTaskImage, runnerImage)
+	if err != nil {
+		return "", err
+	}
+	if tplSpec == nil {
+		if _, err := client.GetActorTemplate(ctx, atespace, tplName); err != nil {
+			return "", fmt.Errorf("getting actor template %s/%s: %w", atespace, tplName, err)
+		}
+		return tplName, nil
+	}
+	if _, err := client.EnsureActorTemplate(ctx, tplSpec); err != nil {
+		return "", err
+	}
+	return tplName, nil
 }

@@ -148,8 +148,20 @@ func TestNeedsPrewarmSnapshot(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := controller.NeedsPrewarmSnapshot(tc.spec); got != tc.want {
-				t.Errorf("NeedsPrewarmSnapshot(%+v) = %v, want %v", tc.spec, got, tc.want)
+			sub := substratetest.NewServer(t)
+			coord := &fakeSetupCoordinator{}
+			mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
+				SetupCoordinator: coord,
+			})
+			st, err := mgr.Prepare(t.Context(), &v1alpha1.Workspace{
+				Metadata: &v1alpha1.ObjectMeta{Name: "ws", Atespace: "default", Uid: "uid-ws"},
+				Spec:     tc.spec,
+			}, nil)
+			if err != nil || st.GetPhase() != v1alpha1.WorkspacePhaseReady {
+				t.Fatalf("Prepare(%+v) = (%+v, %v), want Ready", tc.spec, st, err)
+			}
+			if got := coord.calls.Load() > 0; got != tc.want {
+				t.Errorf("Prepare(%+v) ran setup actor = %v, want %v", tc.spec, got, tc.want)
 			}
 		})
 	}

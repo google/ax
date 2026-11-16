@@ -101,12 +101,7 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	}
 	defer unlock()
 
-	setupGateway, err := s.lookupSetupGateway(ctx, atespace, ws.GetSpec())
-	if err != nil {
-		return nil, err
-	}
-
-	ws, err = s.saveOrLoadWorkspace(ctx, ws, prewarmEnabled)
+	ws, setupGateway, err := s.saveOrLoadWorkspace(ctx, ws, prewarmEnabled)
 	if err != nil || ws.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
 		return ws, err
 	}
@@ -130,31 +125,41 @@ func (s *Server) lookupSetupGateway(ctx context.Context, atespace string, spec *
 
 // saveOrLoadWorkspace handles repeated `ax apply` calls (enforcing immutability)
 // and persists a newly created Workspace. A Workspace that still needs pre-warming
-// is returned in Phase=Preparing; an already Ready Workspace (or one created
-// while pre-warming is disabled) is returned as-is.
-func (s *Server) saveOrLoadWorkspace(ctx context.Context, ws *v1alpha1.Workspace, prewarmEnabled bool) (*v1alpha1.Workspace, error) {
+// is returned in Phase=Preparing alongside its resolved setup.gateway; an already
+// Ready Workspace (or one created while pre-warming is disabled) returns early
+// without requiring setup.gateway to still exist.
+func (s *Server) saveOrLoadWorkspace(ctx context.Context, ws *v1alpha1.Workspace, prewarmEnabled bool) (*v1alpha1.Workspace, *v1alpha1.Gateway, error) {
 	atespace, wsName := ws.Metadata.Atespace, ws.Metadata.Name
 	existing, err := s.store.GetWorkspace(ctx, atespace, wsName)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, status.Errorf(codes.Internal, "checking existing workspace: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "checking existing workspace: %v", err)
 	}
 	if err == nil {
 		if !workspaceSpecEqual(existing.GetSpec(), ws.GetSpec()) {
-			return nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s already exists and is immutable", atespace, wsName)
+			return nil, nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s already exists and is immutable", atespace, wsName)
 		}
 		if existing.GetStatus().GetPhase() == v1alpha1.WorkspacePhaseFailed {
-			return nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s failed setup (%s); delete and recreate it", atespace, wsName, existing.GetStatus().GetLastSetupError())
+			return nil, nil, status.Errorf(codes.FailedPrecondition, "workspace %s/%s failed setup (%s); delete and recreate it", atespace, wsName, existing.GetStatus().GetLastSetupError())
 		}
-		return existing, nil
+		if existing.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
+			return existing, nil, nil
+		}
 	}
 
+	setupGateway, err := s.lookupSetupGateway(ctx, atespace, ws.GetSpec())
+	if err != nil {
+		return nil, nil, err
+	}
+	if existing != nil {
+		return existing, setupGateway, nil
+	}
 	if prewarmEnabled {
 		ws.Status = &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhasePreparing}
 	}
 	if err := s.store.SaveWorkspace(ctx, ws); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving workspace: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "saving workspace: %v", err)
 	}
-	return ws, nil
+	return ws, setupGateway, nil
 }
 
 func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, setupGateway *v1alpha1.Gateway) (*v1alpha1.Workspace, error) {

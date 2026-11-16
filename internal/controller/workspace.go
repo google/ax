@@ -91,10 +91,10 @@ func newSetupActorName(workspaceUID string) (string, error) {
 	return fmt.Sprintf("%s%x", setupActorPrefix(workspaceUID), nonce), nil
 }
 
-// NeedsPrewarmSnapshot reports whether spec declares any setup steps or compute
+// needsPrewarmSnapshot reports whether spec declares any setup steps or compute
 // profile that produce disk/rootfs state worth capturing in a Workspace Tag.
 // Pure spec.mcp or empty Workspaces require no setup actor.
-func NeedsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
+func needsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
 	if spec == nil {
 		return false
 	}
@@ -215,7 +215,7 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, 
 
 	// Skip spinning up a setup actor for empty or MCP-only Workspaces that
 	// write nothing to /workspace or the rootfs.
-	if !NeedsPrewarmSnapshot(ws.GetSpec()) {
+	if !needsPrewarmSnapshot(ws.GetSpec()) {
 		st.Phase = v1alpha1.WorkspacePhaseReady
 		return st, nil
 	}
@@ -283,7 +283,7 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 	if err := m.client.EnsureAtespace(ctx, atespace); err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonAtespaceCreationFailed, underlyingErr: fmt.Errorf("ensuring atespace %q: %w", atespace, err)}
 	}
-	templateName, err := m.ensureProfileTemplate(ctx, atespace, prof)
+	templateName, err := ensureProfileTemplate(ctx, m.client, atespace, prof, m.defaultTaskImage, m.runnerImage)
 	if err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonTemplateCreationFailed, underlyingErr: err}
 	}
@@ -366,24 +366,6 @@ func isNonRetryableSetupError(err error) bool {
 		return true
 	}
 	return false
-}
-
-func (m *WorkspaceManager) ensureProfileTemplate(ctx context.Context, atespace string, prof *v1alpha1.Profile) (string, error) {
-	tplName, tplSpec, err := ResolveProfileTemplate(atespace, prof, m.defaultTaskImage, m.runnerImage)
-	if err != nil {
-		return "", err
-	}
-	if tplSpec == nil {
-		// User-supplied ate_actor_template: verify it exists without creating or mutating it.
-		if _, err := m.client.GetActorTemplate(ctx, atespace, tplName); err != nil {
-			return "", fmt.Errorf("getting actor template %s/%s: %w", atespace, tplName, err)
-		}
-		return tplName, nil
-	}
-	if _, err := m.client.EnsureActorTemplate(ctx, tplSpec); err != nil {
-		return "", err
-	}
-	return tplName, nil
 }
 
 // buildSnapshotWithSetupActor runs one attempt of the setup actor lifecycle:

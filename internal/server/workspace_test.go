@@ -281,7 +281,11 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 		t.Fatalf("ListTags = (%+v, %v), want 1 prewarmed tag", tags, err)
 	}
 
-	// Idempotent re-apply returns Ready without re-running setup.
+	// Idempotent re-apply returns Ready without re-running setup, even if the
+	// temporary setup gateway has since been deleted.
+	if _, err := srv.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Name: "setup-gw"}); err != nil {
+		t.Fatalf("DeleteGateway(setup-gw): %v", err)
+	}
 	again, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "prewarm-ws"},
@@ -289,7 +293,15 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 		},
 	})
 	if err != nil || again.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseReady || coord.calls.Load() != 1 {
-		t.Fatalf("re-apply = (%+v, %v), calls=%d", again, err, coord.calls.Load())
+		t.Fatalf("re-apply after deleting setup-gw = (%+v, %v), calls=%d", again, err, coord.calls.Load())
+	}
+	if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "prewarm-ws"},
+			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"changed"}, Gateway: &v1alpha1.GatewayRef{Name: "setup-gw"}}},
+		},
+	}); status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("mutated re-apply after deleting setup-gw = %v, want immutable error", err)
 	}
 
 	// DeleteWorkspace sweeps Substrate tags as well as the store record.
