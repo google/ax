@@ -95,8 +95,6 @@ jobs:
         image: registry:3@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
         ports:
         - 5000:5000
-    # task_image is the base for agent images (#609 stage 2), so every image
-    # of a release is built from one ax-task-runner.
     outputs:
       server_image: ${{ steps.publish.outputs.AX_SERVER_IMAGE }}
       task_image: ${{ steps.publish.outputs.AX_DEFAULT_TASK_IMAGE }}

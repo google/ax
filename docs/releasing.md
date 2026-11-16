@@ -13,8 +13,8 @@ jobs:
 If the images job fails, no release is created. Every run's image digests are
 in its job summary.
 
-This is stage 1 of the build and release epic (#609). Each stage is validated
-on real runs before the next is turned on; record runs in #610.
+This workflow is the release-on-tag stage of the build and release epic
+(#609). Record validation runs in #610.
 
 ## Cutting a release
 
@@ -73,10 +73,9 @@ after the first release, an owner of the `google` organization must make both
 packages public and link them to this repository, otherwise clusters cannot
 pull them without credentials.
 
-Agent task images (`Dockerfile.claude-code`, and later Antigravity) are not
-published yet. They are stage 2 of #609: an opt-in job in this workflow that
-builds each enabled agent image on the `task_image` output of the images job,
-so a release's agent images share its `ax-task-runner`.
+Agent task images (Claude Code, Antigravity, ...) are not built here. Their
+builds and releases live in
+[agentexecutor/images](https://github.com/agentexecutor/images).
 
 `hack/publish-multiarch-images.sh` pushes images to a personal registry for
 development. It is not part of releases.
