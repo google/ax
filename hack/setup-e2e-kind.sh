@@ -363,6 +363,7 @@ k -n "${AX_SYSTEM_NAMESPACE}" create secret generic ax-postgres \
   --from-literal=password="$(openssl rand -hex 24)" --dry-run=client -o yaml | k apply -f -
 render_manifest postgres.yaml | k apply -f -
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status statefulset/ax-postgres --timeout=180s
+sed "s|ax-system|${AX_SYSTEM_NAMESPACE}|g" "${REPO_ROOT}/deploy/task-logs-rbac.yaml" | k apply -f -
 render_manifest ax-server.yaml | k apply -f -
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-server --timeout=120s
 

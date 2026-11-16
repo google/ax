@@ -27,6 +27,7 @@ import (
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/tasklogs"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/uuid"
@@ -40,6 +41,8 @@ import (
 
 // Options configures the AX API Server.
 type Options struct {
+	// TaskLogs enables live log streaming when non-nil. Disabled by default.
+	TaskLogs tasklogs.Source
 	// Locker serializes changes to a resource. It must be shared by all
 	// ax-server replicas; it defaults to an in-process lock.MemoryLocker.
 	Locker lock.Locker
@@ -61,6 +64,7 @@ type Server struct {
 	// task's status owned by its actor, which the store never holds.
 	substrate  *substrate.Client
 	grpcServer *grpc.Server
+	taskLogs   tasklogs.Source
 }
 
 // NewServer creates a new AX API server.
@@ -87,6 +91,7 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 
 	srv := &Server{
 		store:      s,
+		taskLogs:   opt.TaskLogs,
 		locker:     locker,
 		reconciler: reconciler,
 		workspaces: workspaces,

@@ -48,6 +48,7 @@ The control plane exposes the `ax.v1alpha1.AX` gRPC service. Health checks are p
 | `DeleteTask` | Delete a task. |
 | `SuspendTask` | Checkpoint actor state and pause the task. |
 | `ResumeTask` | Resume a suspended task. |
+| `StreamTaskLogs` | Follow live actor output when task logs are enabled. |
 
 **Workspaces**
 

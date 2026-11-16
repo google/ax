@@ -33,6 +33,7 @@ import (
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/tasklogs"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -42,6 +43,7 @@ import (
 
 func main() {
 	var (
+		enableTaskLogs          bool
 		listenAddr              string
 		runnerAddr              string
 		metricsAddr             string
@@ -80,6 +82,7 @@ func main() {
 	flag.StringVar(&actorJWTIssuer, "actor-jwt-issuer", "https://idp.ate-system.svc", "Substrate OIDC issuer URL for verifying Actor JWTs on :8081 (env: AX_ACTOR_JWT_ISSUER)")
 	flag.StringVar(&actorJWTAudience, "actor-jwt-audience", substrate.DefaultRunnerAudience, "Expected OIDC audience for Actor JWTs on :8081 (env: AX_ACTOR_JWT_AUDIENCE)")
 	flag.BoolVar(&enablePrewarm, "enable-prewarm", false, "Enable Workspace snapshot pre-warming via the :8081 runner setup coordinator (env: AX_ENABLE_PREWARM)")
+	flag.BoolVar(&enableTaskLogs, "enable-task-logs", false, "Enable live task log streaming (trusted clients only; see SECURITY.md)")
 	flag.Parse()
 
 	if envAddr := os.Getenv("ADDR"); envAddr != "" {
@@ -205,7 +208,16 @@ func main() {
 		RunnerEndpoint:   runnerEndpoint,
 		RunnerAudience:   actorJWTAudience,
 	})
+	var logs tasklogs.Source
+	if enableTaskLogs {
+		logs, err = tasklogs.InCluster()
+		if err != nil {
+			slog.Error("initializing task logs", "error", err)
+			os.Exit(1)
+		}
+	}
 	srv := server.NewServer(backend, reconciler, server.Options{
+		TaskLogs:         logs,
 		Locker:           backend,
 		WorkspaceManager: workspaces,
 	})

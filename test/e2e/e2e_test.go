@@ -16,6 +16,7 @@ package e2e_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -733,4 +734,64 @@ func TestE2E_GatewayEgress(t *testing.T) {
 		env.mustRunAX(t, ns, "resume", "task", bound)
 		assertContains(t, "request received after the gateway was "+change, received(), "Bearer e2e-token")
 	}
+}
+
+// TestE2E_TaskLogs is also the asserted terminal demo: all output is synthetic.
+func TestE2E_TaskLogs(t *testing.T) {
+	ns, name := defaultAtespace, uniqueName("logs")
+	env.deleteOnCleanup(t, ns, "task", name)
+	_, err := env.AXClient.CreateTask(t.Context(), &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: ns},
+		Spec:     &v1alpha1.TaskSpec{Commands: []string{"sh", "-c", "while true; do echo AX-LIVE-LOG; sleep 1; done"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("Request logs while the actor is suspended")
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	stream, err := env.AXClient.StreamTaskLogs(ctx, &v1alpha1.StreamTaskLogsRequest{Name: name, Atespace: ns})
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	cancel()
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("suspended log request: %v", err)
+	}
+	env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
+	t.Log("PASS: request refused; actor remains suspended")
+	if _, err := env.AXClient.ResumeTask(t.Context(), &v1alpha1.ResumeTaskRequest{Name: name, Atespace: ns}); err != nil {
+		t.Fatal(err)
+	}
+	actor := env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_RUNNING)
+	uid := actor.GetMetadata().GetUid()
+	t.Log("Follow new output from the running actor, filtering by UID")
+	ctx, cancel = context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	stream, err = env.AXClient.StreamTaskLogs(ctx, &v1alpha1.StreamTaskLogsRequest{Name: name, Atespace: ns})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for count := 0; count < 3; {
+		record, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var line struct {
+			Message string            `json:"message"`
+			Labels  map[string]string `json:"labels"`
+			GCE     map[string]string `json:"logging.googleapis.com/labels"`
+		}
+		if err := json.Unmarshal([]byte(record.Line), &line); err != nil {
+			t.Fatal(err)
+		}
+		if line.Labels["ate.actor.uid"] != uid && line.GCE["ate.actor.uid"] != uid {
+			t.Fatalf("record from another actor: %s", record.Line)
+		}
+		if line.Message == "AX-LIVE-LOG" {
+			t.Log(line.Message)
+			count++
+		}
+	}
+	cancel()
+	t.Log("PASS: three live records received; client stream cancelled")
 }
