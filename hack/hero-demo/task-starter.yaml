@@ -14,7 +14,7 @@
 
 # AX v1alpha1 Task manifest for Step 3 of the hero demo: Starter Task, Session & Resume.
 #
-# Runs the prebuilt Claude Code starter image against the hero-demo-ws workspace.
+# Runs the prebuilt Antigravity starter image against the hero-demo-ws workspace.
 apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
@@ -22,7 +22,7 @@ metadata:
   atespace: default
 spec:
   profile:
-    # TODO(@Lukeluds): Replace with the Claude Code starter image published from
+    # TODO(@Lukeluds): Replace with the Antigravity starter image published from
     # github.com/agentexecutor/images, pinned by digest. Substrate rejects tag-only
     # images when it creates the actor template.
     image: "<starter-image>@sha256:<digest>"
@@ -32,9 +32,13 @@ spec:
         memory: "4Gi"
   workspace:
     name: hero-demo-ws
-  # The Claude Code runner reads its prompt from spec.config.
-  # TODO(@itssimrank): Teach claude-code-runner to read spec.goal.text and move this to spec.goal.
-  # TODO(@Lukeluds): Bind a Gateway that injects ANTHROPIC_API_KEY, so the task can reach the model.
+  gateway:
+    name: hero-demo-gw
+  env:
+    - name: GEMINI_API_KEY
+      value: placeholder # replaced outside the sandbox by hero-demo-gw
+  # The Antigravity starter reads its prompt from spec.config.
+  # TODO(@itssimrank): Move this to spec.goal once the runner reads spec.goal.text.
   config:
     prompt: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
   debug: true # serve guest services so `ax ssh` works; off by default
