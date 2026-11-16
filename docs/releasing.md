@@ -10,7 +10,11 @@ jobs:
    images pinned by digest, and publishes the GitHub release with them
    attached.
 
-If the images job fails, no release is created.
+If the images job fails, no release is created. Every run's image digests are
+in its job summary.
+
+This is stage 1 of the build and release epic (#609). Each stage is validated
+on real runs before the next is turned on; record runs in #610.
 
 ## Cutting a release
 
@@ -53,18 +57,29 @@ Images go to `ghcr.io/google/ax/ax-server` and
 [`internal/version`](../internal/version/version.go)), tagged with the release
 tag. The highest stable release also moves `:latest`.
 
+Before building, the images job refuses Dockerfiles that pin
+`ARG TARGETARCH=amd64` (AX before v0.4), which would put amd64 binaries in the
+arm64 images. After pushing, it checks that each platform's image holds that
+platform's binary.
+
 The binaries are stamped with the tag through
-`github.com/google/ax/internal/version.Version`. Code that deploys AX images
-should use `version.Image("ax-server")`: a release build gets the images of
-its own release, and a dev build gets `:latest`.
+`github.com/google/ax/internal/version.Version`. `version.Image("ax-server")`
+returns the image of the binary's own release (`:latest` for a dev build), for
+`ax install` defaults once a release is published (see the `TODO(release)` in
+`internal/install/axdeploy`).
 
 GitHub creates a new package as private:
 after the first release, an owner of the `google` organization must make both
 packages public and link them to this repository, otherwise clusters cannot
 pull them without credentials.
 
-The Claude Code task image (`Dockerfile.claude-code`) is not published by
-releases.
+Agent task images (`Dockerfile.claude-code`, and later Antigravity) are not
+published yet. They are stage 2 of #609: an opt-in job in this workflow that
+builds each enabled agent image on the `task_image` output of the images job,
+so a release's agent images share its `ax-task-runner`.
+
+`hack/publish-multiarch-images.sh` pushes images to a personal registry for
+development. It is not part of releases.
 
 ## Reruns and existing releases
 
@@ -79,7 +94,14 @@ retry a failed release or to attach assets to a release created by hand.
 - If a release already exists for the tag, its notes are left alone and only
   the assets it lacks are uploaded. An attached asset is never replaced.
 
-The workflow runs only in `google/ax`; in a fork it does nothing.
+Only `google/ax` publishes; in a fork, only dry runs do anything.
+
+## Dry runs
+
+Pull requests that change the workflow, `hack/release`, a `Dockerfile.*`,
+`.dockerignore`, or `deploy/` do a dry run, and so does a manual run with
+`dry_run`. A dry run builds the images into a registry that exists only inside
+the job, builds the CLI, and renders the manifests, but publishes nothing.
 
 ## Building release artifacts by hand
 
@@ -96,4 +118,4 @@ hack/release/create-release.sh v0.4.0                 # publish the GitHub relea
 
 `publish-images.sh` needs `docker buildx` with a builder that can push
 multi-platform images (`docker buildx create --driver docker-container --use`)
-and QEMU for the non-native platform.
+QEMU for the non-native platform, and `file`.

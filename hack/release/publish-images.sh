@@ -36,7 +36,7 @@
 #
 # Needs Go, docker buildx with a builder that can push multi-platform images
 # (docker buildx create --driver docker-container --use) and QEMU for the
-# non-native platform, jq, and a docker login to the registry.
+# non-native platform, jq, file, and a docker login to the registry.
 
 set -o errexit -o nounset -o pipefail
 
@@ -58,19 +58,36 @@ cd "${ROOT}"
 
 PLATFORMS_CSV="$(IFS=,; echo "${RELEASE_PLATFORMS[*]}")"
 
-# existing_digest prints the index digest of $1 if it exists and holds an
-# image for every platform in RELEASE_PLATFORMS; otherwise it prints nothing.
+# Release Dockerfiles must take TARGETARCH from buildx. An `ARG TARGETARCH=amd64`
+# default (AX before v0.4) copies the amd64 binary into every platform's image.
+for image in "${RELEASE_IMAGES[@]}"; do
+  if grep -Eq '^ARG TARGETARCH=' "Dockerfile.${image#ax-}"; then
+    echo "error: Dockerfile.${image#ax-} pins TARGETARCH, so it cannot build multi-arch release images" >&2
+    exit 1
+  fi
+done
+
+# existing_digest prints the index digest of $1 and returns 0 if it exists and
+# holds an image for every platform in RELEASE_PLATFORMS. It returns 1 if the
+# registry reports it missing, or it lacks a platform. Any other error (auth,
+# rate limit, network) returns 2, so a transient failure never rebuilds and
+# replaces a published image.
 existing_digest() {
   local raw
-  raw="$(docker buildx imagetools inspect --raw "$1" 2>/dev/null)" || return 0
-  local p os arch
+  if ! raw="$(docker buildx imagetools inspect --raw "$1" 2>&1)"; then
+    if [[ "${raw}" == *": not found"* || "${raw}" == *"MANIFEST_UNKNOWN"* || "${raw}" == *"NAME_UNKNOWN"* ]]; then
+      return 1
+    fi
+    echo "error: cannot check whether $1 exists: ${raw}" >&2
+    return 2
+  fi
+  local p
   for p in "${RELEASE_PLATFORMS[@]}"; do
-    os="${p%/*}"
-    arch="${p#*/}"
-    if ! jq -e --arg os "${os}" --arg arch "${arch}" \
+    if ! jq -e --arg os "${p%/*}" --arg arch "${p#*/}" \
       '.manifests // [] | any(.platform.os == $os and .platform.architecture == $arch)' \
       <<<"${raw}" >/dev/null; then
-      return 0
+      echo "==> $1 exists but has no ${p} image" >&2
+      return 1
     fi
   done
   docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest
@@ -79,12 +96,13 @@ existing_digest() {
 declare -A DIGESTS
 complete=true
 for image in "${RELEASE_IMAGES[@]}"; do
-  digest="$(existing_digest "${AX_IMAGE_REPO}/${image}:${VERSION}")"
-  if [[ -z "${digest}" ]]; then
-    complete=false
-  else
-    DIGESTS[${image}]="${digest}"
-  fi
+  rc=0
+  digest="$(existing_digest "${AX_IMAGE_REPO}/${image}:${VERSION}")" || rc=$?
+  case "${rc}" in
+    0) DIGESTS[${image}]="${digest}" ;;
+    1) complete=false ;;
+    *) exit 1 ;;
+  esac
 done
 
 if [[ "${complete}" == true && "${OVERWRITE}" != true ]]; then
@@ -128,6 +146,26 @@ for image in "${RELEASE_IMAGES[@]}"; do
     echo "error: no digest recorded for ${image}" >&2
     exit 1
   fi
+done
+
+# Each platform's image must hold that platform's binary. Checked on existing
+# images too, so a rerun never records a broken set.
+for image in "${RELEASE_IMAGES[@]}"; do
+  for p in "${RELEASE_PLATFORMS[@]}"; do
+    case "${p#*/}" in
+      amd64) want=x86-64 ;;
+      arm64) want=aarch64 ;;
+      *) echo "error: no binary check for ${p}" >&2; exit 1 ;;
+    esac
+    cid="$(docker create --platform "${p}" "${AX_IMAGE_REPO}/${image}@${DIGESTS[${image}]}")"
+    got="$(docker cp "${cid}:/usr/local/bin/${image}" - | tar -xO | file -b -)"
+    docker rm "${cid}" >/dev/null
+    if [[ "${got}" != *"${want}"* ]]; then
+      echo "error: ${image} for ${p} holds the wrong binary: ${got}" >&2
+      exit 1
+    fi
+    echo "==> ${image} ${p}: ${want} binary"
+  done
 done
 
 # Point :latest at the newest stable release. Done from the recorded digests,
