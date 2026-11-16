@@ -22,12 +22,8 @@ metadata:
   name: hero-demo-ws
   atespace: default
 spec:
-  # No image is set, so setup runs on the server's default task image.
-  profile:
-    resources:
-      limits:
-        cpu: "2"
-        memory: "4Gi"
+  # TODO(@YoyinZyc): Add a spec.profile (image and resources) once workspace
+  # pre-warming is enabled; ax-server rejects spec.profile until then.
   setup:
     commands:
       - git init /workspace/app
