@@ -21,9 +21,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
 )
 
 // EventScope is the instrumentation scope of every event ax-server emits.
@@ -82,7 +82,7 @@ func Emit(ctx context.Context, ev Event, attrs ...slog.Attr) {
 // emitOTLP sends the OTLP record and reports whether it did. Init installs a
 // no-op provider when OTLP logs are off, so the check is cheap.
 func emitOTLP(ctx context.Context, ev Event, t time.Time, attrs []slog.Attr) bool {
-	logger := global.GetLoggerProvider().Logger(EventScope)
+	logger := otel.GetLoggerProvider().Logger(EventScope)
 	if !logger.Enabled(ctx, log.EnabledParameters{Severity: ev.Severity, EventName: ev.Name}) {
 		return false
 	}
