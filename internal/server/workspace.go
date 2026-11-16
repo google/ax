@@ -178,7 +178,7 @@ func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, s
 		return ws, nil
 	}
 	switch {
-	case errors.Is(prepErr, context.Canceled):
+	case errors.Is(prepErr, context.Canceled) || status.Code(prepErr) == codes.Canceled:
 		return nil, status.Errorf(codes.Canceled, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)
 	case substrate.IsTransientError(prepErr):
 		return nil, status.Errorf(codes.Unavailable, "preparing workspace %s/%s: %v", atespace, wsName, prepErr)

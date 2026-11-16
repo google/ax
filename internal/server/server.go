@@ -884,15 +884,15 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 		meta.Atespace = v1alpha1.DefaultAtespace
 	}
 	var prev *v1alpha1.ObjectMeta
-	if existing != nil && (meta.Uid == "" || meta.CreateTime == nil) {
+	if existing != nil {
 		prev = existing(meta.Atespace, meta.Name)
 	}
-	if meta.Uid == "" {
-		if prev.GetUid() != "" {
-			meta.Uid = prev.GetUid()
-		} else {
-			meta.Uid = uuid.NewString()
-		}
+	// metadata.uid is server-assigned; always ignore any client-supplied value,
+	// preserving prev.Uid on updates and generating a fresh UUID on creates.
+	if prev.GetUid() != "" {
+		meta.Uid = prev.GetUid()
+	} else {
+		meta.Uid = uuid.NewString()
 	}
 	if meta.CreateTime == nil {
 		if prev.GetCreateTime() != nil {

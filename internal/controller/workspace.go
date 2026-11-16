@@ -223,7 +223,7 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, 
 	tagName, err := m.EnsureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), setupGateway)
 	if err != nil {
 		msg := statusErrorMessage(err)
-		if substrate.IsTransientError(err) || errors.Is(err, context.Canceled) {
+		if substrate.IsTransientError(err) || errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 			setWorkspaceCondition(st, v1alpha1.WorkspaceConditionSetupComplete, "False", v1alpha1.ReasonSubstrateUnavailable, msg, now)
 			setWorkspaceCondition(st, v1alpha1.WorkspaceConditionSnapshotReady, "False", v1alpha1.ReasonSubstrateUnavailable, msg, now)
 			return st, err
@@ -362,7 +362,7 @@ func isNonRetryableSetupError(err error) bool {
 		return true
 	}
 	switch status.Code(err) {
-	case codes.InvalidArgument, codes.PermissionDenied, codes.Unauthenticated:
+	case codes.Canceled, codes.InvalidArgument, codes.PermissionDenied, codes.Unauthenticated:
 		return true
 	}
 	return false

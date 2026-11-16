@@ -493,3 +493,106 @@ func TestWorkspacePrewarm_DeleteAndRecreateUsesFreshUIDTag(t *testing.T) {
 		t.Errorf("recreated Workspace reused old tag name %q", tags2[0].GetMetadata().GetName())
 	}
 }
+
+func TestWorkspacePrewarm_IgnoresClientSuppliedUID(t *testing.T) {
+	coord := &testSetupCoordinator{}
+	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
+	ctx := t.Context()
+
+	wsA, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "ws-a"},
+			Spec: &v1alpha1.WorkspaceSpec{
+				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"echo a"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkspace(ws-a): %v", err)
+	}
+	if coord.calls.Load() != 1 {
+		t.Fatalf("setup calls after ws-a = %d, want 1", coord.calls.Load())
+	}
+
+	// Simulate copying `ax get workspace ws-a` (which includes metadata.uid),
+	// renaming metadata.name to ws-b, and applying it. The server must ignore
+	// the client-supplied UID so ws-b runs its own setup and gets its own Tag.
+	wsB, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{
+				Name: "ws-b",
+				Uid:  wsA.GetMetadata().GetUid(),
+			},
+			Spec: &v1alpha1.WorkspaceSpec{
+				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"echo b"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkspace(ws-b): %v", err)
+	}
+	if wsB.GetMetadata().GetUid() == "" || wsB.GetMetadata().GetUid() == wsA.GetMetadata().GetUid() {
+		t.Fatalf("ws-b UID = %q, want distinct from ws-a UID %q", wsB.GetMetadata().GetUid(), wsA.GetMetadata().GetUid())
+	}
+	if coord.calls.Load() != 2 {
+		t.Fatalf("setup calls after ws-b = %d, want 2 (ws-b must not reuse ws-a's Tag)", coord.calls.Load())
+	}
+	tags, err := sub.Client().ListTags(ctx, "default")
+	if err != nil || len(tags) != 2 {
+		t.Fatalf("tags after creating ws-a and ws-b = (%+v, %v), want 2", tags, err)
+	}
+
+	// Deleting ws-b must leave ws-a's Tag intact.
+	if _, err := srv.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Name: "ws-b"}); err != nil {
+		t.Fatalf("DeleteWorkspace(ws-b): %v", err)
+	}
+	remaining, err := sub.Client().ListTags(ctx, "default")
+	if err != nil || len(remaining) != 1 {
+		t.Fatalf("tags after DeleteWorkspace(ws-b) = (%+v, %v), want 1 (ws-a's tag)", remaining, err)
+	}
+	if !strings.HasPrefix(remaining[0].GetMetadata().GetName(), controller.WorkspaceTagPrefix(wsA.GetMetadata().GetUid())) {
+		t.Errorf("remaining tag = %q, want prefix %q", remaining[0].GetMetadata().GetName(), controller.WorkspaceTagPrefix(wsA.GetMetadata().GetUid()))
+	}
+}
+
+func TestWorkspacePrewarm_SubstrateGRPCCanceledStaysPreparing(t *testing.T) {
+	coord := &testSetupCoordinator{}
+	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
+	sub.SetErrors(substratetest.Errors{
+		CreateTag: status.Error(codes.Canceled, "context canceled"),
+	})
+
+	_, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws"},
+			Spec: &v1alpha1.WorkspaceSpec{
+				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+			},
+		},
+	})
+	if status.Code(err) != codes.Canceled {
+		t.Fatalf("CreateWorkspace(substrate gRPC Canceled) = %v, want Canceled", err)
+	}
+
+	stored, err := srv.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: "grpc-canceled-ws"})
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if stored.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
+		t.Fatalf("stored phase = %q, want Preparing", stored.GetStatus().GetPhase())
+	}
+
+	// Clearing the error and re-applying must succeed without delete-and-recreate.
+	sub.SetErrors(substratetest.Errors{})
+	ready, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws"},
+			Spec: &v1alpha1.WorkspaceSpec{
+				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+			},
+		},
+	})
+	if err != nil || ready.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseReady {
+		t.Fatalf("retry CreateWorkspace = (%+v, %v), want Ready", ready, err)
+	}
+}

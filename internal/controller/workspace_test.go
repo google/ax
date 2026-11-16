@@ -533,4 +533,31 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			t.Fatalf("Prepare(transient) = (%+v, %v), want Preparing", st, err)
 		}
 	})
+
+	t.Run("grpc_canceled_substrate_error_stays_preparing", func(t *testing.T) {
+		ctx := t.Context()
+		sub := substratetest.NewServer(t)
+		sub.SetErrors(substratetest.Errors{
+			CreateTag: status.Error(codes.Canceled, "context canceled"),
+		})
+		coord := &fakeSetupCoordinator{}
+		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
+			SetupCoordinator: coord,
+			MaxSetupAttempts: 2,
+		})
+		ws := &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws", Atespace: "default", Uid: "uid-grpc-canceled"},
+			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		}
+		st, err := mgr.Prepare(ctx, ws, nil)
+		if err == nil || status.Code(err) != codes.Canceled {
+			t.Fatalf("Prepare(grpc canceled) err = %v, want Canceled", err)
+		}
+		if st.GetPhase() != v1alpha1.WorkspacePhasePreparing {
+			t.Fatalf("Prepare(grpc canceled) phase = %q, want Preparing", st.GetPhase())
+		}
+		if coord.calls.Load() != 1 {
+			t.Errorf("AwaitSetup calls = %d, want 1 (should not retry after Canceled)", coord.calls.Load())
+		}
+	})
 }
