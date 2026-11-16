@@ -44,7 +44,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
-	"go.opentelemetry.io/otel/log/global"
 	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -102,10 +101,10 @@ func Init(ctx context.Context, serviceName string) (*Providers, error) {
 	otel.SetTracerProvider(p.Tracer)
 	otel.SetMeterProvider(p.Meter)
 	if p.Logger != nil {
-		global.SetLoggerProvider(p.Logger)
+		otel.SetLoggerProvider(p.Logger)
 	} else {
 		// Emit checks the global provider; a no-op one sends events to stdout.
-		global.SetLoggerProvider(lognoop.NewLoggerProvider())
+		otel.SetLoggerProvider(lognoop.NewLoggerProvider())
 	}
 	// Only trace context crosses process boundaries. Baggage from a caller is
 	// not trusted, so it is not propagated.
