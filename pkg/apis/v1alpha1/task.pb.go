@@ -300,39 +300,39 @@ type TaskSpec struct {
 	//     When this differs from WorkspaceSpec.profile, the task cold-boots and
 	//     runs workspace setup in its own compute profile instead of starting
 	//     from the pre-warmed snapshot.
-	Profile *Profile `protobuf:"bytes,8,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile *Profile `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Command argv; if empty, runs the resolved image's ENTRYPOINT + CMD in its WORKDIR.
-	Commands []string `protobuf:"bytes,9,rep,name=commands,proto3" json:"commands,omitempty"`
+	Commands []string `protobuf:"bytes,2,rep,name=commands,proto3" json:"commands,omitempty"`
 	// Non-secret environment variables merged on top of the image's Env.
 	Env []*EnvVar `protobuf:"bytes,3,rep,name=env,proto3" json:"env,omitempty"`
 	// workspace binds the Workspace the task works in. It is mounted at
 	// /workspace unless the binding sets a path, and that path is the task
 	// command's working directory. A task without a workspace gets an empty
 	// working directory at /workspace.
-	Workspace *WorkspaceRef `protobuf:"bytes,5,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	Workspace *WorkspaceRef `protobuf:"bytes,4,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	// debug enables the in-container guest services (process execution and file
 	// access) that back `ax ssh`. Off by default.
-	Debug bool `protobuf:"varint,6,opt,name=debug,proto3" json:"debug,omitempty"`
+	Debug bool `protobuf:"varint,5,opt,name=debug,proto3" json:"debug,omitempty"`
 	// config is free-form, runner-defined configuration. AX stores it and
 	// hands it to the runner as-is, as part of the Task in AX_TASK_YAML and
 	// the task metadata endpoint. The control plane only checks that it is an
 	// object within 16 KiB; it does not validate or interpret it.
 	// It is stored in plain text and shown by `ax get task`, so it must not
 	// hold secrets.
-	Config *structpb.Struct `protobuf:"bytes,7,opt,name=config,proto3" json:"config,omitempty"`
+	Config *structpb.Struct `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
 	// Optional natural-language task goal.
-	Goal *Goal `protobuf:"bytes,10,opt,name=goal,proto3" json:"goal,omitempty"`
+	Goal *Goal `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`
 	// Retries after a failed exit, sandbox crash, or lost runner.
-	Retry *RetryConfig `protobuf:"bytes,11,opt,name=retry,proto3" json:"retry,omitempty"`
+	Retry *RetryConfig `protobuf:"bytes,8,opt,name=retry,proto3" json:"retry,omitempty"`
 	// gateway binds the Gateway whose rules allow the task's external network
 	// traffic. Rules are copied onto the actor when the task is created (later
 	// edits or deletes of the gateway don't change existing tasks, and binding a
 	// missing gateway fails). A task without a Gateway has no external network
 	// access.
-	Gateway *GatewayRef `protobuf:"bytes,12,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	Gateway *GatewayRef `protobuf:"bytes,9,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	// Logical multi-turn session / conversation thread ID. Defaults to
 	// metadata.uid on CreateTask if unset.
-	SessionId     string `protobuf:"bytes,13,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId     string `protobuf:"bytes,10,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -613,12 +613,9 @@ type TaskOutcome struct {
 	ExitCode int32                  `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	// Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
 	// automatic stdout/stderr tail fallback (capped at 64 KiB).
-	Output string `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
-	// Optional structured JSON output from $AX_OUTPUT_JSON_FILE or
-	// POST :8099/.../output (<= 64 KiB).
-	StructuredOutput *structpb.Struct `protobuf:"bytes,5,opt,name=structured_output,json=structuredOutput,proto3" json:"structured_output,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	Output        string `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskOutcome) Reset() {
@@ -679,14 +676,7 @@ func (x *TaskOutcome) GetOutput() string {
 	return ""
 }
 
-func (x *TaskOutcome) GetStructuredOutput() *structpb.Struct {
-	if x != nil {
-		return x.StructuredOutput
-	}
-	return nil
-}
-
-type StatusDetail struct {
+type TaskStatusDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Reason        TaskStatusReason       `protobuf:"varint,1,opt,name=reason,proto3,enum=ax.v1alpha1.TaskStatusReason" json:"reason,omitempty"`
 	Detail        string                 `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
@@ -694,20 +684,20 @@ type StatusDetail struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *StatusDetail) Reset() {
-	*x = StatusDetail{}
+func (x *TaskStatusDetail) Reset() {
+	*x = TaskStatusDetail{}
 	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *StatusDetail) String() string {
+func (x *TaskStatusDetail) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*StatusDetail) ProtoMessage() {}
+func (*TaskStatusDetail) ProtoMessage() {}
 
-func (x *StatusDetail) ProtoReflect() protoreflect.Message {
+func (x *TaskStatusDetail) ProtoReflect() protoreflect.Message {
 	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -719,19 +709,19 @@ func (x *StatusDetail) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use StatusDetail.ProtoReflect.Descriptor instead.
-func (*StatusDetail) Descriptor() ([]byte, []int) {
+// Deprecated: Use TaskStatusDetail.ProtoReflect.Descriptor instead.
+func (*TaskStatusDetail) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *StatusDetail) GetReason() TaskStatusReason {
+func (x *TaskStatusDetail) GetReason() TaskStatusReason {
 	if x != nil {
 		return x.Reason
 	}
 	return TaskStatusReason_TASK_STATUS_REASON_UNSPECIFIED
 }
 
-func (x *StatusDetail) GetDetail() string {
+func (x *TaskStatusDetail) GetDetail() string {
 	if x != nil {
 		return x.Detail
 	}
@@ -739,29 +729,29 @@ func (x *StatusDetail) GetDetail() string {
 }
 
 type TaskStatus struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	Actor        string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	Conditions   []*Condition           `protobuf:"bytes,7,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	State        TaskState              `protobuf:"varint,8,opt,name=state,proto3,enum=ax.v1alpha1.TaskState" json:"state,omitempty"`
-	StatusDetail *StatusDetail          `protobuf:"bytes,9,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"`
-	Outcome      *TaskOutcome           `protobuf:"bytes,10,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Actor string                 `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	// actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
+	// Read from Substrate, never stored; empty when the actor cannot be read.
+	ActorUid         string            `protobuf:"bytes,2,opt,name=actor_uid,json=actorUid,proto3" json:"actor_uid,omitempty"`
+	AteActorTemplate string            `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
+	Conditions       []*Condition      `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	State            TaskState         `protobuf:"varint,5,opt,name=state,proto3,enum=ax.v1alpha1.TaskState" json:"state,omitempty"`
+	StatusDetail     *TaskStatusDetail `protobuf:"bytes,6,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"`
+	Outcome          *TaskOutcome      `protobuf:"bytes,7,opt,name=outcome,proto3" json:"outcome,omitempty"`
 	// 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
 	// Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
 	// retry (non-zero command exit, sandbox crash, or lost runner).
-	Attempt          int32  `protobuf:"varint,11,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	AteActorTemplate string `protobuf:"bytes,12,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
+	Attempt int32 `protobuf:"varint,8,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// Monotonic task revision.
-	Generation int64 `protobuf:"varint,13,opt,name=generation,proto3" json:"generation,omitempty"`
+	Generation int64 `protobuf:"varint,9,opt,name=generation,proto3" json:"generation,omitempty"`
 	// Effective command argv executed by each run: spec.commands if set,
 	// otherwise the image's ENTRYPOINT + CMD.
-	ResolvedArgv []string `protobuf:"bytes,14,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
+	ResolvedArgv []string `protobuf:"bytes,10,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
 	// Summary of the previous attempt's failure, provided as context on retry.
-	PreviousFailure string `protobuf:"bytes,15,opt,name=previous_failure,json=previousFailure,proto3" json:"previous_failure,omitempty"`
-	// actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
-	// Read from Substrate, never stored; empty when the actor cannot be read.
-	ActorUid      string `protobuf:"bytes,23,opt,name=actor_uid,json=actorUid,proto3" json:"actor_uid,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PreviousFailure string `protobuf:"bytes,11,opt,name=previous_failure,json=previousFailure,proto3" json:"previous_failure,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *TaskStatus) Reset() {
@@ -801,6 +791,20 @@ func (x *TaskStatus) GetActor() string {
 	return ""
 }
 
+func (x *TaskStatus) GetActorUid() string {
+	if x != nil {
+		return x.ActorUid
+	}
+	return ""
+}
+
+func (x *TaskStatus) GetAteActorTemplate() string {
+	if x != nil {
+		return x.AteActorTemplate
+	}
+	return ""
+}
+
 func (x *TaskStatus) GetConditions() []*Condition {
 	if x != nil {
 		return x.Conditions
@@ -815,7 +819,7 @@ func (x *TaskStatus) GetState() TaskState {
 	return TaskState_TASK_STATE_UNSPECIFIED
 }
 
-func (x *TaskStatus) GetStatusDetail() *StatusDetail {
+func (x *TaskStatus) GetStatusDetail() *TaskStatusDetail {
 	if x != nil {
 		return x.StatusDetail
 	}
@@ -836,13 +840,6 @@ func (x *TaskStatus) GetAttempt() int32 {
 	return 0
 }
 
-func (x *TaskStatus) GetAteActorTemplate() string {
-	if x != nil {
-		return x.AteActorTemplate
-	}
-	return ""
-}
-
 func (x *TaskStatus) GetGeneration() int64 {
 	if x != nil {
 		return x.Generation
@@ -860,13 +857,6 @@ func (x *TaskStatus) GetResolvedArgv() []string {
 func (x *TaskStatus) GetPreviousFailure() string {
 	if x != nil {
 		return x.PreviousFailure
-	}
-	return ""
-}
-
-func (x *TaskStatus) GetActorUid() string {
-	if x != nil {
-		return x.ActorUid
 	}
 	return ""
 }
@@ -1275,20 +1265,20 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x12)\n" +
 	"\x04spec\x18\x04 \x01(\v2\x15.ax.v1alpha1.TaskSpecR\x04spec\x12/\n" +
-	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xb8\x03\n" +
+	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xa6\x03\n" +
 	"\bTaskSpec\x12.\n" +
-	"\aprofile\x18\b \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x12\x1a\n" +
-	"\bcommands\x18\t \x03(\tR\bcommands\x12%\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x12\x1a\n" +
+	"\bcommands\x18\x02 \x03(\tR\bcommands\x12%\n" +
 	"\x03env\x18\x03 \x03(\v2\x13.ax.v1alpha1.EnvVarR\x03env\x127\n" +
-	"\tworkspace\x18\x05 \x01(\v2\x19.ax.v1alpha1.WorkspaceRefR\tworkspace\x12\x14\n" +
-	"\x05debug\x18\x06 \x01(\bR\x05debug\x12/\n" +
-	"\x06config\x18\a \x01(\v2\x17.google.protobuf.StructR\x06config\x12%\n" +
-	"\x04goal\x18\n" +
-	" \x01(\v2\x11.ax.v1alpha1.GoalR\x04goal\x12.\n" +
-	"\x05retry\x18\v \x01(\v2\x18.ax.v1alpha1.RetryConfigR\x05retry\x121\n" +
-	"\agateway\x18\f \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\x12\x1d\n" +
+	"\tworkspace\x18\x04 \x01(\v2\x19.ax.v1alpha1.WorkspaceRefR\tworkspace\x12\x14\n" +
+	"\x05debug\x18\x05 \x01(\bR\x05debug\x12/\n" +
+	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x12%\n" +
+	"\x04goal\x18\a \x01(\v2\x11.ax.v1alpha1.GoalR\x04goal\x12.\n" +
+	"\x05retry\x18\b \x01(\v2\x18.ax.v1alpha1.RetryConfigR\x05retry\x121\n" +
+	"\agateway\x18\t \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\r \x01(\tR\tsessionIdJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x04\x10\x05\"2\n" +
+	"session_id\x18\n" +
+	" \x01(\tR\tsessionId\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"\xdd\x01\n" +
@@ -1300,34 +1290,33 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"maxBackoff\x12-\n" +
 	"\x12backoff_multiplier\x18\x04 \x01(\x01R\x11backoffMultiplier\"\x1a\n" +
 	"\x04Goal\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xe5\x01\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\x9f\x01\n" +
 	"\vTaskOutcome\x12/\n" +
 	"\x06result\x18\x01 \x01(\x0e2\x17.ax.v1alpha1.TaskResultR\x06result\x12*\n" +
 	"\x06status\x18\x02 \x01(\v2\x12.google.rpc.StatusR\x06status\x12\x1b\n" +
 	"\texit_code\x18\x03 \x01(\x05R\bexitCode\x12\x16\n" +
-	"\x06output\x18\x04 \x01(\tR\x06output\x12D\n" +
-	"\x11structured_output\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x10structuredOutput\"]\n" +
-	"\fStatusDetail\x125\n" +
+	"\x06output\x18\x04 \x01(\tR\x06output\"a\n" +
+	"\x10TaskStatusDetail\x125\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.ax.v1alpha1.TaskStatusReasonR\x06reason\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xef\x03\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xd5\x03\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\x126\n" +
+	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
+	"\tactor_uid\x18\x02 \x01(\tR\bactorUid\x12,\n" +
+	"\x12ate_actor_template\x18\x03 \x01(\tR\x10ateActorTemplate\x126\n" +
 	"\n" +
-	"conditions\x18\a \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
+	"conditions\x18\x04 \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
 	"conditions\x12,\n" +
-	"\x05state\x18\b \x01(\x0e2\x16.ax.v1alpha1.TaskStateR\x05state\x12>\n" +
-	"\rstatus_detail\x18\t \x01(\v2\x19.ax.v1alpha1.StatusDetailR\fstatusDetail\x122\n" +
-	"\aoutcome\x18\n" +
-	" \x01(\v2\x18.ax.v1alpha1.TaskOutcomeR\aoutcome\x12\x18\n" +
-	"\aattempt\x18\v \x01(\x05R\aattempt\x12,\n" +
-	"\x12ate_actor_template\x18\f \x01(\tR\x10ateActorTemplate\x12\x1e\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x16.ax.v1alpha1.TaskStateR\x05state\x12B\n" +
+	"\rstatus_detail\x18\x06 \x01(\v2\x1d.ax.v1alpha1.TaskStatusDetailR\fstatusDetail\x122\n" +
+	"\aoutcome\x18\a \x01(\v2\x18.ax.v1alpha1.TaskOutcomeR\aoutcome\x12\x18\n" +
+	"\aattempt\x18\b \x01(\x05R\aattempt\x12\x1e\n" +
 	"\n" +
-	"generation\x18\r \x01(\x03R\n" +
+	"generation\x18\t \x01(\x03R\n" +
 	"generation\x12#\n" +
-	"\rresolved_argv\x18\x0e \x03(\tR\fresolvedArgv\x12)\n" +
-	"\x10previous_failure\x18\x0f \x01(\tR\x0fpreviousFailure\x12\x1b\n" +
-	"\tactor_uid\x18\x17 \x01(\tR\bactorUidJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\a\"@\n" +
+	"\rresolved_argv\x18\n" +
+	" \x03(\tR\fresolvedArgv\x12)\n" +
+	"\x10previous_failure\x18\v \x01(\tR\x0fpreviousFailure\"@\n" +
 	"\x0eGetTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\\\n" +
@@ -1395,7 +1384,7 @@ var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(*RetryConfig)(nil),         // 6: ax.v1alpha1.RetryConfig
 	(*Goal)(nil),                // 7: ax.v1alpha1.Goal
 	(*TaskOutcome)(nil),         // 8: ax.v1alpha1.TaskOutcome
-	(*StatusDetail)(nil),        // 9: ax.v1alpha1.StatusDetail
+	(*TaskStatusDetail)(nil),    // 9: ax.v1alpha1.TaskStatusDetail
 	(*TaskStatus)(nil),          // 10: ax.v1alpha1.TaskStatus
 	(*GetTaskRequest)(nil),      // 11: ax.v1alpha1.GetTaskRequest
 	(*ListTasksRequest)(nil),    // 12: ax.v1alpha1.ListTasksRequest
@@ -1429,19 +1418,18 @@ var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
 	24, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
 	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
 	25, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
-	22, // 14: ax.v1alpha1.TaskOutcome.structured_output:type_name -> google.protobuf.Struct
-	2,  // 15: ax.v1alpha1.StatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	26, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	0,  // 17: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
-	9,  // 18: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.StatusDetail
-	8,  // 19: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
-	3,  // 20: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	3,  // 21: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
+	26, // 15: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	0,  // 16: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
+	9,  // 17: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
+	8,  // 18: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
+	3,  // 19: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	3,  // 20: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }

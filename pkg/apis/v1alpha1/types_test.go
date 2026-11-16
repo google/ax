@@ -31,10 +31,6 @@ import (
 // fullTask returns a Task with every field populated so round trips exercise
 // the whole schema, including timestamps and status.
 func fullTask() *v1alpha1.Task {
-	structuredOut, err := structpb.NewStruct(map[string]any{"passed": true})
-	if err != nil {
-		panic(err)
-	}
 	return &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
 		Kind:       v1alpha1.KindTask,
@@ -70,7 +66,9 @@ func fullTask() *v1alpha1.Task {
 			SessionId: "sess-123",
 		},
 		Status: &v1alpha1.TaskStatus{
-			Actor: "actor-1",
+			Actor:            "actor-1",
+			ActorUid:         "actor-uid-1",
+			AteActorTemplate: "ax-3f9c1a2b5d7e9f01",
 			Conditions: []*v1alpha1.Condition{{
 				Type:       "Ready",
 				Status:     "True",
@@ -79,22 +77,20 @@ func fullTask() *v1alpha1.Task {
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
 			State: v1alpha1.TaskState_TASK_STATE_WORKING,
-			StatusDetail: &v1alpha1.StatusDetail{
+			StatusDetail: &v1alpha1.TaskStatusDetail{
 				Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED,
 				Detail: "OOMKilled",
 			},
 			Outcome: &v1alpha1.TaskOutcome{
-				Result:           v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-				Status:           &rpcstatus.Status{Code: 0, Message: "done"},
-				ExitCode:         0,
-				Output:           "all checks passed",
-				StructuredOutput: structuredOut,
+				Result:   v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
+				Status:   &rpcstatus.Status{Code: 0, Message: "done"},
+				ExitCode: 0,
+				Output:   "all checks passed",
 			},
-			Attempt:          1,
-			AteActorTemplate: "ax-3f9c1a2b5d7e9f01",
-			Generation:       3,
-			ResolvedArgv:     []string{"sh", "-c", "true"},
-			PreviousFailure:  "exit status 1",
+			Attempt:         1,
+			Generation:      3,
+			ResolvedArgv:    []string{"sh", "-c", "true"},
+			PreviousFailure: "exit status 1",
 		},
 	}
 }
@@ -130,7 +126,7 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"state: TASK_STATE_WORKING",
 		"reason: TASK_STATUS_REASON_SANDBOX_CRASHED",
 		"result: TASK_RESULT_SUCCEEDED",
-		"structuredOutput:",
+		"actorUid: actor-uid-1",
 		"ateActorTemplate: ax-3f9c1a2b5d7e9f01",
 		"resolvedArgv:",
 		"previousFailure: exit status 1",

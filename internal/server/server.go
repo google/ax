@@ -472,11 +472,11 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
 	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_FAILED
-	var detail *v1alpha1.StatusDetail
+	var detail *v1alpha1.TaskStatusDetail
 	if substrate.IsTransientError(err) {
 		code, state = codes.Unavailable, v1alpha1.TaskState_TASK_STATE_QUEUED
 	} else {
-		detail = &v1alpha1.StatusDetail{
+		detail = &v1alpha1.TaskStatusDetail{
 			Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED,
 			Detail: err.Error(),
 		}
@@ -655,7 +655,7 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 				message = "Actor is " + strings.ToLower(strings.TrimPrefix(actorState.String(), "ACTOR_STATE_"))
 			}
 			if actorState == ateapipb.ActorState_ACTOR_STATE_CRASHED && st.StatusDetail == nil {
-				st.StatusDetail = &v1alpha1.StatusDetail{
+				st.StatusDetail = &v1alpha1.TaskStatusDetail{
 					Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED,
 					Detail: message,
 				}

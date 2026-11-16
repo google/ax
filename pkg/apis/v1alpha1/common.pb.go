@@ -143,7 +143,7 @@ func (x *ObjectMeta) GetDeleteTime() *timestamppb.Timestamp {
 
 type ResourcesSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limits        *ResourceList          `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
+	Limits        *ResourceList          `protobuf:"bytes,1,opt,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -410,7 +410,7 @@ const file_pkg_apis_v1alpha1_common_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"B\n" +
 	"\rResourcesSpec\x121\n" +
-	"\x06limits\x18\x02 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
+	"\x06limits\x18\x01 \x01(\v2\x19.ax.v1alpha1.ResourceListR\x06limits\"8\n" +
 	"\fResourceList\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\"\xa6\x01\n" +
