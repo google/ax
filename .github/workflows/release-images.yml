@@ -1,0 +1,341 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Pushing a vX.Y.Z[-PRERELEASE] tag builds the AX images from that tag and
+# pushes them to ghcr.io/google/ax/<image>:<tag>.
+#
+#   base:   ax-server and ax-task-runner, for linux/amd64 and linux/arm64.
+#           Always built.
+#   agents: task images with an agent CLI preinstalled (Dockerfile.<agent>),
+#           built on the ax-task-runner image the base job just pushed.
+#           linux/amd64 only. Off unless enabled, see below.
+#
+# Agent images are opt-in because publishing one redistributes the agent CLI.
+# Enable them with the repository variable AX_RELEASE_AGENT_IMAGES, a
+# comma-separated list of names from AGENT_CATALOG below (e.g. "claude-code").
+# A manual run can override it with the agent_images input. See
+# docs/release-images.md, which also explains how to add an agent image.
+#
+# Images that already exist for the tag are not rebuilt, so a rerun never
+# changes the digests of a published tag; a manual run with overwrite replaces
+# them. This workflow never moves :latest.
+#
+# A dry run (pull requests that touch the image builds, or a manual run with
+# dry_run) builds everything but publishes nothing: images go to a registry
+# that exists only inside the job. Only google/ax publishes; in a fork only dry
+# runs do anything, since packages are billed to the owner.
+#
+# Scheduled (nightly) builds of main are deferred until the tag flow has been
+# validated (#609, #610).
+name: Release Images
+
+on:
+  push:
+    # The filter cannot express the whole release tag, so the plan job rejects
+    # anything but vMAJOR.MINOR.PATCH[-PRERELEASE] before building.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  pull_request:
+    branches: [ main ]
+    paths:
+    - '.github/workflows/release-images.yml'
+    - 'Dockerfile.*'
+    - '.dockerignore'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build images for (e.g. v0.4.0)'
+        required: true
+        type: string
+      agent_images:
+        description: 'Comma-separated agent images to build too, e.g. claude-code (default: the AX_RELEASE_AGENT_IMAGES variable; "none" builds none)'
+        required: false
+        default: ''
+        type: string
+      overwrite:
+        description: 'Rebuild and replace images that already exist for the tag'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Build everything but publish nothing: images go to a registry inside the job'
+        type: boolean
+        default: false
+
+# Each job requests the permissions it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-images-${{ github.event_name }}-${{ inputs.tag || github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'pull_request' || inputs.dry_run == true }}
+  # The dry-run registry is a service container of each job that pushes.
+  IMAGE_REPO: ${{ (github.event_name == 'pull_request' || inputs.dry_run == true) && 'localhost:5000/ax' || 'ghcr.io/google/ax' }}
+  # A pull request has no tag; its dry run uses a placeholder version.
+  TAG: ${{ inputs.tag || (github.event_name == 'pull_request' && 'v0.0.0-dryrun') || github.ref_name }}
+  # Pull requests build the merge commit; everything else builds the tag.
+  REF: ${{ github.event_name != 'pull_request' && format('refs/tags/{0}', inputs.tag || github.ref_name) || '' }}
+  OVERWRITE: ${{ inputs.overwrite == true }}
+  # Agent images that can be built. Each entry builds <dockerfile> with the
+  # runner cross-compiled from ./cmd/runners/<runner> into
+  # bin/linux_amd64/<runner>, and BASE_IMAGE set to this tag's ax-task-runner.
+  AGENT_CATALOG: |
+    [
+      {"name": "claude-code", "dockerfile": "Dockerfile.claude-code", "runner": "claude-code-runner"}
+    ]
+
+jobs:
+  plan:
+    if: github.repository == 'google/ax' || github.event_name == 'pull_request' || inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      agents: ${{ steps.plan.outputs.agents }}
+    steps:
+    - name: Plan the build
+      id: plan
+      env:
+        INPUT_AGENTS: ${{ inputs.agent_images }}
+        VAR_AGENTS: ${{ vars.AX_RELEASE_AGENT_IMAGES }}
+      run: |
+        if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::${TAG} is not a release tag (vMAJOR.MINOR.PATCH[-PRERELEASE])"
+          exit 1
+        fi
+
+        requested="${INPUT_AGENTS:-${VAR_AGENTS:-}}"
+        [[ "${requested}" == "none" ]] && requested=""
+        agents="$(jq -c --arg req "${requested}" '
+          ($req | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))) as $names
+          | ($names - map(.name)) as $unknown
+          | if ($unknown | length) > 0
+            then error("unknown agent image(s): \($unknown | join(", ")); known: \(map(.name) | join(", "))")
+            else map(select(.name as $n | $names | index($n)))
+            end' <<<"${AGENT_CATALOG}")"
+
+        echo "agents=${agents}" >> "${GITHUB_OUTPUT}"
+        {
+          echo "### Release images ${TAG}"
+          echo ""
+          echo "- Registry: \`${IMAGE_REPO}\` (dry run: ${DRY_RUN}, overwrite: ${OVERWRITE})"
+          echo "- Base images: ax-server, ax-task-runner"
+          echo "- Agent images: $(jq -r 'map(.name) | if length == 0 then "none (set AX_RELEASE_AGENT_IMAGES to enable)" else join(", ") end' <<<"${agents}")"
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+  base:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    # Receives the images in a dry run.
+    services:
+      registry:
+        image: registry:3@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+        - 5000:5000
+    outputs:
+      task_runner_image: ${{ steps.build.outputs.task_runner_image }}
+    env:
+      PLATFORMS: linux/amd64,linux/arm64
+    steps:
+    - name: Checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ env.REF }}
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+        # This job can write packages, so it restores no cache another
+        # workflow could have written.
+        cache: false
+
+    # The Dockerfiles RUN apk/apt-get, so the arm64 build needs emulation.
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+    # BuildKit is pinned by digest because it builds a published image with
+    # the ghcr.io login. Host networking lets it reach the dry-run registry.
+    - name: Set up buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      with:
+        driver-opts: |
+          image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          network=host
+
+    - name: Log in to ghcr.io
+      if: env.DRY_RUN != 'true'
+      env:
+        TOKEN: ${{ github.token }}
+      run: echo "${TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+    - name: Build and push ax-server and ax-task-runner
+      id: build
+      run: |
+        revision="$(git rev-parse HEAD)"
+        IFS=, read -ra platforms <<<"${PLATFORMS}"
+        for image in ax-server ax-task-runner; do
+          ref="${IMAGE_REPO}/${image}:${TAG}"
+          digest=""
+          if [[ "${OVERWRITE}" != true ]] && docker buildx imagetools inspect "${ref}" >/dev/null 2>&1; then
+            digest="$(docker buildx imagetools inspect "${ref}" --format '{{json .Manifest}}' | jq -r .digest)"
+            echo "==> ${ref} already exists (${digest}); not rebuilding"
+          else
+            for p in "${platforms[@]}"; do
+              echo "==> Cross-compiling ${image} for ${p}"
+              mkdir -p "bin/${p/\//_}"
+              GOOS="${p%/*}" GOARCH="${p#*/}" CGO_ENABLED=0 \
+                go build -trimpath -ldflags="-s -w" -o "bin/${p/\//_}/${image}" "./cmd/${image}"
+            done
+
+            metadata="$(mktemp)"
+            echo "==> Building and pushing ${ref} (${PLATFORMS})"
+            docker buildx build \
+              --platform "${PLATFORMS}" \
+              --file "Dockerfile.${image#ax-}" \
+              --tag "${ref}" \
+              --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+              --label "org.opencontainers.image.version=${TAG}" \
+              --label "org.opencontainers.image.revision=${revision}" \
+              --label "org.opencontainers.image.licenses=Apache-2.0" \
+              --provenance=false \
+              --metadata-file "${metadata}" \
+              --push \
+              .
+            digest="$(jq -r '."containerimage.digest"' "${metadata}")"
+          fi
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::No digest recorded for ${image}"
+            exit 1
+          fi
+          echo "- \`${IMAGE_REPO}/${image}@${digest}\`" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${image}" == ax-task-runner ]]; then
+            echo "task_runner_image=${IMAGE_REPO}/${image}@${digest}" >> "${GITHUB_OUTPUT}"
+          fi
+        done
+
+  agents:
+    needs: [ plan, base ]
+    if: needs.plan.outputs.agents != '[]'
+    name: agent (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.agents) }}
+    # Receives the images in a dry run.
+    services:
+      registry:
+        image: registry:3@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+        - 5000:5000
+    env:
+      # In a dry run the base job's registry is gone; the base image is rebuilt
+      # in this job instead.
+      BASE_IMAGE: ${{ needs.base.outputs.task_runner_image }}
+      NAME: ${{ matrix.name }}
+      DOCKERFILE: ${{ matrix.dockerfile }}
+      RUNNER: ${{ matrix.runner }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ env.REF }}
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+        cache: false
+
+    # Agent installers run the downloaded binary to finish setup, which fails
+    # under QEMU, so agent images are linux/amd64 only and need no emulation.
+    - name: Set up buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      with:
+        driver-opts: |
+          image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          network=host
+
+    - name: Log in to ghcr.io
+      if: env.DRY_RUN != 'true'
+      env:
+        TOKEN: ${{ github.token }}
+      run: echo "${TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+    - name: Build the base image (dry run)
+      if: env.DRY_RUN == 'true'
+      run: |
+        mkdir -p bin/linux_amd64
+        GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+          go build -trimpath -ldflags="-s -w" -o bin/linux_amd64/ax-task-runner ./cmd/ax-task-runner
+        metadata="$(mktemp)"
+        docker buildx build \
+          --platform linux/amd64 \
+          --file Dockerfile.task-runner \
+          --tag "${IMAGE_REPO}/ax-task-runner:${TAG}" \
+          --provenance=false \
+          --metadata-file "${metadata}" \
+          --push \
+          .
+        echo "BASE_IMAGE=${IMAGE_REPO}/ax-task-runner@$(jq -r '."containerimage.digest"' "${metadata}")" >> "${GITHUB_ENV}"
+
+    - name: Build and push ${{ matrix.name }}
+      run: |
+        if [[ -z "${BASE_IMAGE}" ]]; then
+          echo "::error::No ax-task-runner image to build ${NAME} on"
+          exit 1
+        fi
+        ref="${IMAGE_REPO}/${NAME}:${TAG}"
+        if [[ "${OVERWRITE}" != true ]] && docker buildx imagetools inspect "${ref}" >/dev/null 2>&1; then
+          digest="$(docker buildx imagetools inspect "${ref}" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "==> ${ref} already exists (${digest}); not rebuilding"
+        else
+          echo "==> Cross-compiling ${RUNNER} for linux/amd64"
+          mkdir -p bin/linux_amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o "bin/linux_amd64/${RUNNER}" "./cmd/runners/${RUNNER}"
+
+          metadata="$(mktemp)"
+          echo "==> Building and pushing ${ref} on ${BASE_IMAGE}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --file "${DOCKERFILE}" \
+            --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+            --tag "${ref}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.version=${TAG}" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            --label "org.opencontainers.image.base.name=${BASE_IMAGE}" \
+            --provenance=false \
+            --metadata-file "${metadata}" \
+            --push \
+            .
+          digest="$(jq -r '."containerimage.digest"' "${metadata}")"
+        fi
+        if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::No digest recorded for ${NAME}"
+          exit 1
+        fi
+        echo "- \`${IMAGE_REPO}/${NAME}@${digest}\`" >> "${GITHUB_STEP_SUMMARY}"

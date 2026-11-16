@@ -14,6 +14,9 @@ make install               # install the ax CLI into $(go env GOPATH)/bin
 make images                # build and push the ax-server and ax-task-runner images to $AX_IMAGE_REPO
 ```
 
+Pushing a release tag makes CI publish the images to
+`ghcr.io/google/ax/<image>:<tag>`; see [Release images](release-images.md).
+
 ## Test
 
 Runs everything, including the mock Substrate gRPC server, in-memory store validation, and API server tests:
