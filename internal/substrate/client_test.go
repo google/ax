@@ -45,17 +45,35 @@ type mockControlClient struct {
 	createTemplateErrs  []error
 	createdTemplates    []*ateapipb.ActorTemplate
 	createPolicyErr     error
+	createPolicyErrs    []error
+	createPolicyCalls   int
 	createActorErrs     []error
 	createdActors       []*ateapipb.Actor
 	tags                map[string]*ateapipb.Tag
 	createTagErrs       []error
 	deleteTagErrs       []error
 	deleteTagCalls      int
+	suspendCalls        []*ateapipb.SuspendActorRequest
+}
+
+func (m *mockControlClient) SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest, opts ...grpc.CallOption) (*ateapipb.SuspendActorResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.suspendCalls = append(m.suspendCalls, req)
+	return &ateapipb.SuspendActorResponse{}, nil
 }
 
 func (m *mockControlClient) CreateActorEgressPolicy(ctx context.Context, req *ateapipb.CreateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.createPolicyCalls++
+	if len(m.createPolicyErrs) > 0 {
+		err := m.createPolicyErrs[0]
+		m.createPolicyErrs = m.createPolicyErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	if m.createPolicyErr != nil {
 		return nil, m.createPolicyErr
 	}
@@ -556,6 +574,9 @@ func TestIsTransientError(t *testing.T) {
 	if !IsTransientError(status.Error(codes.DeadlineExceeded, "rpc deadline exceeded")) {
 		t.Error("expected codes.DeadlineExceeded to be transient")
 	}
+	if !IsTransientError(status.Error(codes.Aborted, "version conflict")) {
+		t.Error("expected codes.Aborted to be transient")
+	}
 	if !IsTransientError(context.DeadlineExceeded) {
 		t.Error("expected context.DeadlineExceeded to be transient")
 	}
@@ -721,4 +742,49 @@ func TestClient_EnsureActor_DeletingRaces(t *testing.T) {
 			t.Fatalf("status.Code(err) = %v (%v), want FailedPrecondition", status.Code(err), err)
 		}
 	})
+}
+
+func TestClient_SuspendActorAndWaitForSnapshot(t *testing.T) {
+	ctx := t.Context()
+	mock := &mockControlClient{}
+	c := &Client{control: mock}
+
+	if err := c.SuspendActor(ctx, "default", "task-async"); err != nil {
+		t.Fatalf("SuspendActor: %v", err)
+	}
+	if err := c.SuspendActorAndWaitForSnapshot(ctx, "default", "setup-sync"); err != nil {
+		t.Fatalf("SuspendActorAndWaitForSnapshot: %v", err)
+	}
+	if len(mock.suspendCalls) != 2 {
+		t.Fatalf("suspendCalls = %d, want 2", len(mock.suspendCalls))
+	}
+	if got := mock.suspendCalls[0].GetActor().GetName(); got != "task-async" {
+		t.Errorf("SuspendActor actor = %q, want %q", got, "task-async")
+	}
+	if got := mock.suspendCalls[0].GetOptions(); got != nil {
+		t.Errorf("SuspendActor options = %+v, want nil", got)
+	}
+	if got := mock.suspendCalls[1].GetActor().GetName(); got != "setup-sync" {
+		t.Errorf("SuspendActorAndWaitForSnapshot actor = %q, want %q", got, "setup-sync")
+	}
+	if got := mock.suspendCalls[1].GetOptions().GetMode(); got != ateapipb.DurabilityMode_DURABILITY_MODE_SYNCHRONOUS {
+		t.Errorf("SuspendActorAndWaitForSnapshot mode = %v, want DURABILITY_MODE_SYNCHRONOUS", got)
+	}
+}
+
+func TestClient_EnsureActorEgressPolicy_RetriesAborted(t *testing.T) {
+	mock := &mockControlClient{
+		createPolicyErrs: []error{
+			status.Error(codes.Aborted, "serialization conflict"),
+			nil,
+		},
+	}
+	c := &Client{control: mock}
+	rules := []*ateapipb.EgressRule{{Https: &ateapipb.HttpsRule{Hostnames: []string{"example.com"}}}}
+	if err := c.EnsureActorEgressPolicy(t.Context(), "default", "setup-actor", rules); err != nil {
+		t.Fatalf("EnsureActorEgressPolicy: %v", err)
+	}
+	if mock.createPolicyCalls != 2 {
+		t.Errorf("createPolicyCalls = %d, want 2", mock.createPolicyCalls)
+	}
 }

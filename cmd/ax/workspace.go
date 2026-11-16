@@ -23,9 +23,14 @@ import (
 )
 
 func printWorkspaceRow(w io.Writer, ws *v1alpha1.Workspace) {
-	fmt.Fprintf(w, "%s\t%s\t%d\t%d\n",
+	phase := ws.GetStatus().GetPhase()
+	if phase == "" {
+		phase = "-"
+	}
+	fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\n",
 		ws.GetMetadata().GetName(),
 		ws.GetMetadata().GetAtespace(),
+		phase,
 		len(ws.GetSpec().GetSetup().GetGit()),
 		len(ws.GetSpec().GetMcp().GetServers()),
 	)

@@ -26,11 +26,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SetupActorPrefix prefixes temporary Workspace setup actor names so the
+// runner control server routes their claims and events to the workspace setup
+// handler rather than looking up a Task row. Task names may not start with
+// this prefix because a Task's Substrate actor is named after metadata.name.
+const SetupActorPrefix = "ax-ws-setup-"
+
 // ValidateTask reports the first problem with a task that would make it
 // impossible to run correctly. It is called by the API server before saving.
 func ValidateTask(t *v1alpha1.Task) error {
 	if err := ValidateObjectMeta(t.GetMetadata()); err != nil {
 		return err
+	}
+	if strings.HasPrefix(t.GetMetadata().GetName(), SetupActorPrefix) {
+		return fmt.Errorf("metadata.name: prefix %q is reserved for workspace setup actors", SetupActorPrefix)
 	}
 	spec := t.GetSpec()
 	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {

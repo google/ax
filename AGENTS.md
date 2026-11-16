@@ -22,7 +22,7 @@ cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/delete/ctx/tun
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
-internal/controller    TaskReconciler: Substrate side of task suspend/resume/delete; reconciler_test.go is the test template
+internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)

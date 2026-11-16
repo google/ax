@@ -196,6 +196,26 @@ spec:
 		}
 	})
 
+	t.Run("preparing_reapply", func(t *testing.T) {
+		existing := &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "dev-ws", Atespace: "default"},
+			Spec:     decoded.GetSpec(),
+			Status:   &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhasePreparing},
+		}
+		client := &mockAXClient{
+			getWorkspaceFn: func(ctx context.Context, in *v1alpha1.GetWorkspaceRequest, opts ...grpc.CallOption) (*v1alpha1.Workspace, error) {
+				return existing, nil
+			},
+			createWorkspaceFn: func(ctx context.Context, in *v1alpha1.CreateWorkspaceRequest, opts ...grpc.CallOption) (*v1alpha1.Workspace, error) {
+				return in.GetWorkspace(), nil
+			},
+		}
+		_, _, outcome, err := applyDocument(t.Context(), client, docNode, nil)
+		if err != nil || outcome != "configured" {
+			t.Fatalf("applyDocument(preparing) = (%q, %v), want (\"configured\", nil)", outcome, err)
+		}
+	})
+
 	t.Run("mutated_reapply", func(t *testing.T) {
 		client := &mockAXClient{
 			getWorkspaceFn: func(ctx context.Context, in *v1alpha1.GetWorkspaceRequest, opts ...grpc.CallOption) (*v1alpha1.Workspace, error) {
@@ -209,4 +229,23 @@ spec:
 			t.Fatalf("applyDocument() error = %v, want FailedPrecondition", err)
 		}
 	})
+}
+
+func TestPrintWorkspaceRow(t *testing.T) {
+	var buf strings.Builder
+	printWorkspaceRow(&buf, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "empty-phase", Atespace: "default"},
+	})
+	printWorkspaceRow(&buf, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ready-ws", Atespace: "prod"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Setup: &v1alpha1.WorkspaceSetup{Git: []*v1alpha1.GitRepo{{Repo: "https://github.com/org/repo.git"}}},
+			Mcp:   &v1alpha1.MCPConfig{Servers: []*v1alpha1.MCPServer{{Name: "s1"}, {Name: "s2"}}},
+		},
+		Status: &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhaseReady},
+	})
+	want := "empty-phase\tdefault\t-\t0\t0\nready-ws\tprod\tReady\t1\t2\n"
+	if got := buf.String(); got != want {
+		t.Errorf("printWorkspaceRow() =\n%q\nwant:\n%q", got, want)
+	}
 }

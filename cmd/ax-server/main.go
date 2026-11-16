@@ -129,8 +129,13 @@ func main() {
 	defer subClient.Close()
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
+		Locker:           backend,
+		DefaultTaskImage: defaultTaskImage,
+	})
 	srv := server.NewServer(backend, reconciler, server.Options{
-		Locker: backend,
+		Locker:           backend,
+		WorkspaceManager: workspaces,
 	})
 
 	httpServer := &http.Server{

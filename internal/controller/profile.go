@@ -15,6 +15,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -87,8 +88,8 @@ func (p profile) templateName(runnerImage string) string {
 }
 
 // ResolveProfileTemplate resolves p into a deterministic Substrate
-// ActorTemplate name and specification. Callers in controller fill p.Image with
-// the server's configured default task image before calling when omitted.
+// ActorTemplate name and specification. When p omits image, defaultTaskImage is
+// used (falling back to v1alpha1.DefaultTaskImage if defaultTaskImage is empty).
 //
 // When p sets ate_actor_template, ResolveProfileTemplate returns that template
 // name with a nil *ateapipb.ActorTemplate so the caller looks up the existing
@@ -99,7 +100,7 @@ func (p profile) templateName(runnerImage string) string {
 // limits, SnapshotConfig.PreferredFidelity defaults to SNAPSHOT_FIDELITY_ROOTFS,
 // and the content-addressed template ("ax-<16-char-sha256>", hashed over the
 // profile and runner volume image) is returned ready for EnsureActorTemplate.
-func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage string) (string, *ateapipb.ActorTemplate, error) {
+func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, *ateapipb.ActorTemplate, error) {
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
@@ -107,9 +108,12 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage st
 		return tpl, nil, nil
 	}
 
+	if defaultTaskImage == "" {
+		defaultTaskImage = v1alpha1.DefaultTaskImage
+	}
 	image := p.GetImage()
 	if image == "" {
-		image = v1alpha1.DefaultTaskImage
+		image = defaultTaskImage
 	}
 
 	cpuMillicores := substrate.DefaultCPUMillicores
@@ -146,4 +150,25 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage st
 	})
 	tmpl.SnapshotConfig.PreferredFidelity = resolved.snapshotFidelity
 	return name, tmpl, nil
+}
+
+// ensureProfileTemplate resolves p into a Substrate ActorTemplate name and
+// ensures it exists on Substrate: verifying user-supplied ate_actor_template
+// references via GetActorTemplate without mutating them, or provisioning
+// AX-managed templates via EnsureActorTemplate.
+func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, error) {
+	tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, defaultTaskImage, runnerImage)
+	if err != nil {
+		return "", err
+	}
+	if tplSpec == nil {
+		if _, err := client.GetActorTemplate(ctx, atespace, tplName); err != nil {
+			return "", fmt.Errorf("getting actor template %s/%s: %w", atespace, tplName, err)
+		}
+		return tplName, nil
+	}
+	if _, err := client.EnsureActorTemplate(ctx, tplSpec); err != nil {
+		return "", err
+	}
+	return tplName, nil
 }

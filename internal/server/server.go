@@ -43,6 +43,11 @@ type Options struct {
 	// Locker serializes changes to a resource. It must be shared by all
 	// ax-server replicas; it defaults to an in-process lock.MemoryLocker.
 	Locker lock.Locker
+	// WorkspaceManager manages Workspace snapshot pre-warming and Tag cleanup.
+	// When omitted, NewServer constructs one backed by reconciler's Substrate
+	// client and Locker (with pre-warming gated off until a SetupCoordinator is
+	// provided).
+	WorkspaceManager *controller.WorkspaceManager
 }
 
 // Server provides the gRPC API for AX.
@@ -51,6 +56,7 @@ type Server struct {
 	store      store.Store
 	locker     lock.Locker
 	reconciler *controller.TaskReconciler
+	workspaces *controller.WorkspaceManager
 	// substrate is the reconciler's client. It is read for the parts of a
 	// task's status owned by its actor, which the store never holds.
 	substrate  *substrate.Client
@@ -70,11 +76,19 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
+	workspaces := opt.WorkspaceManager
+	if workspaces == nil {
+		workspaces = controller.NewWorkspaceManager(reconciler.Client(), controller.WorkspaceManagerOptions{
+			Locker:           locker,
+			DefaultTaskImage: reconciler.DefaultTaskImage(),
+		})
+	}
 
 	srv := &Server{
 		store:      s,
 		locker:     locker,
 		reconciler: reconciler,
+		workspaces: workspaces,
 		substrate:  reconciler.Client(),
 	}
 	srv.grpcServer = grpc.NewServer(grpc.StatsHandler(telemetry.ServerStatsHandler(func() map[string]grpc.ServiceInfo {
@@ -208,6 +222,12 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		}
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "getting workspace %q: %v", wsName, err)
+		}
+		switch workspace.GetStatus().GetPhase() {
+		case v1alpha1.WorkspacePhasePreparing:
+			return nil, status.Errorf(codes.FailedPrecondition, "workspace %q in atespace %q is still preparing", wsName, atespace)
+		case v1alpha1.WorkspacePhaseFailed:
+			return nil, status.Errorf(codes.FailedPrecondition, "workspace %q in atespace %q failed setup: %s", wsName, atespace, workspace.GetStatus().GetLastSetupError())
 		}
 	}
 	// A task gets its Gateway's rules when it is created, so the Gateway must
@@ -863,11 +883,18 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	if meta.Atespace == "" {
 		meta.Atespace = v1alpha1.DefaultAtespace
 	}
+	var prev *v1alpha1.ObjectMeta
+	if existing != nil {
+		prev = existing(meta.Atespace, meta.Name)
+	}
+	// metadata.uid is server-assigned; always ignore any client-supplied value,
+	// preserving prev.Uid on updates and generating a fresh UUID on creates.
+	if prev.GetUid() != "" {
+		meta.Uid = prev.GetUid()
+	} else {
+		meta.Uid = uuid.NewString()
+	}
 	if meta.CreateTime == nil {
-		var prev *v1alpha1.ObjectMeta
-		if existing != nil {
-			prev = existing(meta.Atespace, meta.Name)
-		}
 		if prev.GetCreateTime() != nil {
 			meta.CreateTime = prev.GetCreateTime()
 		} else {

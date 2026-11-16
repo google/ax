@@ -309,6 +309,12 @@ func (s *Server) CreateActor(_ context.Context, req *ateapipb.CreateActorRequest
 		}
 	}
 	actor := proto.Clone(req.GetActor()).(*ateapipb.Actor)
+	if actor.Metadata == nil {
+		actor.Metadata = &ateapipb.ResourceMetadata{}
+	}
+	if actor.Metadata.Uid == "" {
+		actor.Metadata.Uid = "actor-uid-" + k
+	}
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED}
 	s.actors[k] = actor
 	return proto.Clone(actor).(*ateapipb.Actor), nil
@@ -466,7 +472,14 @@ func (s *Server) CreateTag(_ context.Context, req *ateapipb.CreateTagRequest) (*
 		}
 	}
 	tag := proto.Clone(in).(*ateapipb.Tag)
-	tag.Status = &ateapipb.TagStatus{ActorTemplateUid: tmplUID}
+	tag.Status = &ateapipb.TagStatus{
+		ActorTemplateUid: tmplUID,
+		Snapshot: &ateapipb.Snapshot{
+			DurableSnapshot: &ateapipb.SnapshotStorage{
+				State: ateapipb.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED,
+			},
+		},
+	}
 	s.tags[k] = tag
 	return proto.Clone(tag).(*ateapipb.Tag), nil
 }
