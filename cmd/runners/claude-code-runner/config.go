@@ -18,13 +18,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"github.com/google/ax/runner"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -87,7 +87,7 @@ func claudeArgs(config *structpb.Struct, mcp *v1alpha1.MCPConfig) ([]string, err
 		args = append(args, flagArgs...)
 	}
 
-	if servers := mcpServers(mcp); len(servers) > 0 {
+	if servers := runner.MCPServers(mcp); len(servers) > 0 {
 		data, err := json.Marshal(map[string]any{"mcpServers": servers})
 		if err != nil {
 			return nil, fmt.Errorf("encoding workspace MCP servers: %w", err)
@@ -143,35 +143,6 @@ func scalar(v *structpb.Value) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported value %v", v.AsInterface())
 	}
-}
-
-// mcpServers converts the Workspace's MCP servers, both the static ones and
-// those listed under its registries, into the mcpServers object of Claude
-// Code's MCP config. A server with an endpoint is reached over streamable
-// HTTP; one with a command is started over stdio. Servers with neither, or
-// with a name already taken, are skipped.
-func mcpServers(mcp *v1alpha1.MCPConfig) map[string]any {
-	all := slices.Clone(mcp.GetServers())
-	for _, r := range mcp.GetRegistries() {
-		all = append(all, r.GetServers()...)
-	}
-	servers := map[string]any{}
-	for _, srv := range all {
-		name := srv.GetName()
-		if _, dup := servers[name]; dup || name == "" {
-			slog.Warn("skipping MCP server with a missing or duplicate name", "name", name)
-			continue
-		}
-		switch {
-		case srv.GetEndpoint() != "":
-			servers[name] = map[string]any{"type": "http", "url": srv.GetEndpoint()}
-		case srv.GetCommand() != "":
-			servers[name] = map[string]any{"type": "stdio", "command": srv.GetCommand(), "args": srv.GetArgs()}
-		default:
-			slog.Warn("skipping MCP server with neither an endpoint nor a command", "name", name)
-		}
-	}
-	return servers
 }
 
 // withClaudeCommand returns task with spec.commands set to the claude

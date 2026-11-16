@@ -78,6 +78,12 @@ type Config struct {
 	CABundle string
 	// OnCommandExit, when set, is called once the task command has exited.
 	OnCommandExit func(CommandExit)
+	// RunDir is where the goal, config, MCP and session files of the launcher
+	// contract are written. Empty means DefaultRunDir.
+	RunDir string
+	// LauncherPath is the image's launcher, started when the task has a goal
+	// but no spec.commands. Empty means DefaultLauncherPath.
+	LauncherPath string
 }
 
 // CommandExit describes how the task command finished.
@@ -93,9 +99,13 @@ type CommandExit struct {
 // Run executes the task-runner lifecycle and blocks until ctx is cancelled.
 //
 // The task's workspace is set up at its path, /workspace unless the binding
-// says otherwise. The task's spec.commands, if any, is then started as a child
-// process in its own process group with that path as its working directory and
-// AX_METADATA_URL plus spec.env in its environment. The metadata and guest
+// says otherwise, and the files of the launcher contract (see GoalFileEnv) are
+// written. The task's spec.commands is then started as a child process in its
+// own process group with that path as its working directory and
+// AX_METADATA_URL, spec.env and the launcher contract's variables in its
+// environment. Without spec.commands, a task with a goal starts the image's
+// launcher instead, unless the launcher already finished for the same input
+// before the sandbox was suspended. The metadata and guest
 // server keeps serving whether or not the command is still running. When ctx is
 // cancelled a running command is sent SIGTERM, given a grace period, and then
 // killed.
@@ -143,8 +153,18 @@ func Run(ctx context.Context, cfg Config) error {
 	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 
 	cmdArgs := cfg.Task.GetSpec().GetCommands()
+	launched := len(cmdArgs) == 0
+	files, err := writeLauncherFiles(cmp.Or(cfg.RunDir, DefaultRunDir), wsPath, cfg.Task, cfg.Workspace)
+	switch {
+	case err != nil && launched && cfg.Task.GetSpec().GetGoal().GetText() != "":
+		// The launcher would have nothing to read.
+		return fmt.Errorf("writing the launcher's files: %w", err)
+	case err != nil:
+		slog.Warn("failed to write the launcher contract files; the command runs without them", "error", err)
+	case launched:
+		cmdArgs = launcherCommand(cmp.Or(cfg.LauncherPath, DefaultLauncherPath), wsPath, cfg.Task, files)
+	}
 	if len(cmdArgs) == 0 {
-		slog.Info("no task command specified; serving metadata until stopped")
 		<-ctx.Done()
 		return nil
 	}
@@ -154,7 +174,7 @@ func Run(ctx context.Context, cfg Config) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = commandEnv(cfg.Task, metadataURL)
+	cmd.Env = append(commandEnv(cfg.Task, metadataURL), files.env...)
 	// A dedicated process group lets shutdown signal the command together with
 	// anything it spawned.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -169,6 +189,9 @@ func Run(ctx context.Context, cfg Config) error {
 
 	select {
 	case err := <-exited:
+		if launched {
+			markLauncherDone(wsPath, files)
+		}
 		reportExit(cfg, cmd, err)
 		// Keep the sandbox up and inspectable until told to stop.
 		<-ctx.Done()
