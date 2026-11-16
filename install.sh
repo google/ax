@@ -19,11 +19,16 @@
 #   curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
 #
 # Environment overrides:
-#   AX_INSTALL_DIR        Target directory for the `ax` binary (default: ~/.ax/bin)
-#   AX_GITHUB_REPO        GitHub org/repo for release assets (default: google/ax)
-#   AX_VERSION            Release tag (e.g. v0.1.0); empty uses latest release
-#   AX_RELEASE_BASE_URL   Explicit base URL hosting ax_<os>_<arch>.tar.gz and checksums.txt
-#   AX_INSTALL_LOCAL_BIN  Install from a local prebuilt `ax` binary (for CI / offline testing)
+#   AX_INSTALL_DIR          Target directory for `ax` and `ax-studio` (default: ~/.ax/bin)
+#   AX_GITHUB_REPO          GitHub org/repo for AX CLI releases (default: google/ax)
+#   AX_VERSION              AX CLI release tag (e.g. v0.1.0); empty uses latest release
+#   AX_RELEASE_BASE_URL     Explicit base URL hosting ax_<os>_<arch>.tar.gz and checksums.txt
+#   AX_INSTALL_LOCAL_BIN    Install `ax` from a local prebuilt binary (for CI / offline testing)
+#   AX_STUDIO_GITHUB_REPO   GitHub org/repo for AX Studio releases (default: agentexecutor/studio)
+#   AX_STUDIO_VERSION       AX Studio release tag; empty uses latest release
+#   AX_STUDIO_BASE_URL      Explicit base URL hosting ax-studio_<os>_<arch>.tar.gz and checksums.txt
+#   AX_STUDIO_LOCAL_BIN     Install `ax-studio` from a local prebuilt binary
+#   AX_SKIP_STUDIO          Set to "1" to skip installing the `ax-studio` web UI binary
 
 set -eu
 
@@ -31,6 +36,11 @@ AX_GITHUB_REPO="${AX_GITHUB_REPO:-google/ax}"
 AX_VERSION="${AX_VERSION:-}"
 AX_RELEASE_BASE_URL="${AX_RELEASE_BASE_URL:-}"
 AX_INSTALL_LOCAL_BIN="${AX_INSTALL_LOCAL_BIN:-}"
+AX_STUDIO_GITHUB_REPO="${AX_STUDIO_GITHUB_REPO:-agentexecutor/studio}"
+AX_STUDIO_VERSION="${AX_STUDIO_VERSION:-}"
+AX_STUDIO_BASE_URL="${AX_STUDIO_BASE_URL:-}"
+AX_STUDIO_LOCAL_BIN="${AX_STUDIO_LOCAL_BIN:-}"
+AX_SKIP_STUDIO="${AX_SKIP_STUDIO:-0}"
 
 detect_os() {
     _kernel="$(uname -s)"
@@ -173,6 +183,8 @@ install_main() {
     _ver="$("$_dest" version 2>/dev/null || echo "ax installed")"
     echo "==> Installed ${_ver} at ${_dest}"
 
+    install_studio
+
     case ":${PATH}:" in
         *":${INSTALL_DIR}:"*)
             _on_path=1
@@ -198,12 +210,65 @@ install_main() {
             echo ""
         fi
     fi
-    echo "Next step — connect to a cluster ('ax ctx') or start a local sandbox environment:"
+    echo "Next step — launch AX Studio ('ax studio'), connect to a cluster ('ax ctx'), or start a local sandbox:"
     if [ "$_on_path" -eq 1 ]; then
         echo "  ax local start --server-image <server-img>"
     else
         echo "  ${_dest} local start --server-image <server-img>"
     fi
+}
+
+install_studio() {
+    if [ "$AX_SKIP_STUDIO" = "1" ]; then
+        return 0
+    fi
+    _studio_dest="${INSTALL_DIR}/ax-studio"
+
+    if [ -n "$AX_STUDIO_LOCAL_BIN" ]; then
+        if [ ! -f "$AX_STUDIO_LOCAL_BIN" ]; then
+            echo "Warning: AX_STUDIO_LOCAL_BIN '$AX_STUDIO_LOCAL_BIN' does not exist; skipping ax-studio." >&2
+            return 0
+        fi
+        cp "$AX_STUDIO_LOCAL_BIN" "${_studio_dest}.tmp"
+        chmod 0755 "${_studio_dest}.tmp"
+        mv "${_studio_dest}.tmp" "$_studio_dest"
+    else
+        command -v curl >/dev/null 2>&1 || return 0
+        command -v tar >/dev/null 2>&1 || return 0
+
+        if [ -n "$AX_STUDIO_BASE_URL" ]; then
+            _sbase="${AX_STUDIO_BASE_URL%/}"
+        elif [ -n "$AX_STUDIO_VERSION" ]; then
+            _sbase="https://github.com/${AX_STUDIO_GITHUB_REPO}/releases/download/${AX_STUDIO_VERSION}"
+        else
+            _sbase="https://github.com/${AX_STUDIO_GITHUB_REPO}/releases/latest/download"
+        fi
+
+        _sasset="ax-studio_${OS}_${ARCH}.tar.gz"
+        _stmp="$(mktemp -d "${TMPDIR:-/tmp}/ax-studio-install.XXXXXX")"
+        if ! curl -fsSL "${_sbase}/${_sasset}" -o "${_stmp}/${_sasset}" 2>/dev/null || \
+           ! curl -fsSL "${_sbase}/checksums.txt" -o "${_stmp}/checksums.txt" 2>/dev/null; then
+            rm -rf "$_stmp"
+            return 0
+        fi
+        if ! verify_checksum "${_stmp}/${_sasset}" "$_sasset" "${_stmp}/checksums.txt"; then
+            rm -rf "$_stmp"
+            return 1
+        fi
+        tar -xzf "${_stmp}/${_sasset}" -C "$_stmp"
+        if [ ! -f "${_stmp}/ax-studio" ]; then
+            rm -rf "$_stmp"
+            return 1
+        fi
+        chmod 0755 "${_stmp}/ax-studio"
+        mv "${_stmp}/ax-studio" "$_studio_dest"
+        rm -rf "$_stmp"
+    fi
+
+    if [ "$OS" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+        xattr -d com.apple.quarantine "$_studio_dest" >/dev/null 2>&1 || true
+    fi
+    echo "==> Installed ax-studio at ${_studio_dest}"
 }
 
 if [ "${__INSTALL_SH_SOURCED:-0}" != "1" ]; then

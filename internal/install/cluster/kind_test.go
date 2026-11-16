@@ -166,6 +166,7 @@ func TestKindProviderDeletesOwnedKubeContext(t *testing.T) {
 
 	ownedKubeconfig := `apiVersion: v1
 kind: Config
+current-context: ax-local
 contexts:
 - name: ax-local
   context:
@@ -191,14 +192,21 @@ contexts:
 		t.Fatalf("Delete: %v", err)
 	}
 	sawDeleteCtx := false
+	sawUnsetCurrent := false
 	for _, c := range rr.calls {
 		joined := c.Name + " " + strings.Join(c.Args, " ")
 		if strings.Contains(joined, "config delete-context ax-local") {
 			sawDeleteCtx = true
 		}
+		if strings.Contains(joined, "config unset current-context") {
+			sawUnsetCurrent = true
+		}
 	}
 	if !sawDeleteCtx {
 		t.Fatal("expected Delete to remove owned ax-local context")
+	}
+	if !sawUnsetCurrent {
+		t.Fatal("expected Delete to unset current-context when active context was deleted")
 	}
 }
 
@@ -231,7 +239,34 @@ func TestKindProviderStatusSysctlWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
+	if st.Name != "ax-local" || st.KubeContext != "ax-local" {
+		t.Fatalf("expected Name=ax-local and KubeContext=ax-local when running, got %+v", st)
+	}
 	if !strings.Contains(st.SubstrateStatus, "0/1 available") || !strings.Contains(st.SubstrateStatus, "degraded: node sysctls reset") {
 		t.Fatalf("expected 0/1 replica ratio and sysctl reset warning in SubstrateStatus, got %q", st.SubstrateStatus)
+	}
+}
+
+func TestKindProviderStatusNotFound(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	rr := &recordedRunner{
+		runFn: func(spec executil.Spec) (executil.Result, error) {
+			cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+			if strings.HasSuffix(cmd, "kind version") {
+				return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+			}
+			return executil.Result{}, nil
+		},
+	}
+
+	p := NewKindProvider(rr, &bytes.Buffer{})
+	st, err := p.Status(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.State != StateAbsent || st.Name != "N/A" || st.KubeContext != "N/A" {
+		t.Fatalf("expected State=NotFound, Name=N/A, KubeContext=N/A when absent, got %+v", st)
 	}
 }

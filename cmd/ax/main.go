@@ -92,6 +92,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "studio":
+		if err := runStudio(axNamespace, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	case "tunnel":
 		if err := runTunnel(cleanArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -268,6 +274,7 @@ Available Commands:
   local <start|stop|status|delete> Manage local Kubernetes + Substrate + AX environment
   install                 Install or upgrade AX on a Substrate cluster
   uninstall               Uninstall AX from a Substrate cluster
+  studio                  Launch the AX Studio local Web UI in your browser
   ctx, context [name]     List or switch active Kubernetes context
   tunnel <list|stop>      Manage background tunnels to Kubernetes clusters
   version                 Print AX version

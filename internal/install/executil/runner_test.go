@@ -226,3 +226,38 @@ func TestValidateContainerHost(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveStudioBinary(t *testing.T) {
+	t.Run("prefers_AX_STUDIO_BIN_override", func(t *testing.T) {
+		tmp := t.TempDir()
+		custom := filepath.Join(tmp, "my-ax-studio")
+		if err := os.WriteFile(custom, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("AX_STUDIO_BIN", custom)
+
+		got, err := ResolveStudioBinary(&fakeRunner{})
+		if err != nil || got != custom {
+			t.Fatalf("ResolveStudioBinary = (%q, %v), want %q", got, err, custom)
+		}
+	})
+
+	t.Run("resolves_from_managed_ax_bin_dir", func(t *testing.T) {
+		t.Setenv("AX_STUDIO_BIN", "")
+		axHome := t.TempDir()
+		t.Setenv("AX_HOME", axHome)
+		binDir := filepath.Join(axHome, "bin")
+		if err := os.MkdirAll(binDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		installed := filepath.Join(binDir, "ax-studio")
+		if err := os.WriteFile(installed, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := ResolveStudioBinary(&fakeRunner{})
+		if err != nil || got != installed {
+			t.Fatalf("ResolveStudioBinary = (%q, %v), want %q", got, err, installed)
+		}
+	})
+}
