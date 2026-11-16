@@ -54,7 +54,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build images for (e.g. v0.4.0)'
+        description: 'Existing tag to build images for (e.g. v0.4.0); only tags that contain this workflow are supported'
         required: true
         type: string
       agent_images:
@@ -75,8 +75,10 @@ on:
 permissions:
   contents: read
 
+# Keyed by tag, not event, so a tag push and a manual run for the same tag
+# never race on the existence check and push.
 concurrency:
-  group: release-images-${{ github.event_name }}-${{ inputs.tag || github.event.pull_request.number || github.ref_name }}
+  group: release-images-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || inputs.tag || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -88,6 +90,23 @@ env:
   # Pull requests build the merge commit; everything else builds the tag.
   REF: ${{ github.event_name != 'pull_request' && format('refs/tags/{0}', inputs.tag || github.ref_name) || '' }}
   OVERWRITE: ${{ inputs.overwrite == true }}
+  # Sourced by the build steps. existing_digest prints the digest of $1 and
+  # returns 0 if it exists, returns 1 if the registry reports it missing, and
+  # fails the step on any other error (auth, rate limit, network), so a
+  # transient error never rebuilds and replaces a published image.
+  EXISTING_DIGEST_SH: |
+    existing_digest() {
+      local out
+      if out="$(docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' 2>&1)"; then
+        jq -r .digest <<<"${out}"
+        return 0
+      fi
+      if [[ "${out}" == *": not found"* || "${out}" == *"MANIFEST_UNKNOWN"* || "${out}" == *"NAME_UNKNOWN"* ]]; then
+        return 1
+      fi
+      echo "::error::Cannot check whether $1 exists: ${out}" >&2
+      exit 2
+    }
   # Agent images that can be built. Each entry builds <dockerfile> with the
   # runner cross-compiled from ./cmd/runners/<runner> into
   # bin/linux_amd64/<runner>, and BASE_IMAGE set to this tag's ax-task-runner.
@@ -138,6 +157,9 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # packages: write is granted on pull requests too (permissions cannot be
+    # conditional), but dry runs never log in, and fork PRs get a read-only
+    # token regardless.
     permissions:
       contents: read
       packages: write
@@ -188,13 +210,28 @@ jobs:
     - name: Build and push ax-server and ax-task-runner
       id: build
       run: |
+        eval "${EXISTING_DIGEST_SH}"
+        # Tags before this workflow have Dockerfiles that copy the amd64
+        # binary unconditionally, so their arm64 images would run amd64 code.
+        for f in Dockerfile.server Dockerfile.task-runner; do
+          if ! grep -q 'linux_${TARGETARCH}' "${f}"; then
+            echo "::error::${TAG}'s ${f} predates multi-arch builds; only tags that contain this workflow are supported"
+            exit 1
+          fi
+        done
+
         revision="$(git rev-parse HEAD)"
         IFS=, read -ra platforms <<<"${PLATFORMS}"
         for image in ax-server ax-task-runner; do
           ref="${IMAGE_REPO}/${image}:${TAG}"
           digest=""
-          if [[ "${OVERWRITE}" != true ]] && docker buildx imagetools inspect "${ref}" >/dev/null 2>&1; then
-            digest="$(docker buildx imagetools inspect "${ref}" --format '{{json .Manifest}}' | jq -r .digest)"
+          rc=1
+          if [[ "${OVERWRITE}" != true ]]; then
+            rc=0
+            digest="$(existing_digest "${ref}")" || rc=$?
+            [[ "${rc}" -ge 2 ]] && exit 1
+          fi
+          if [[ "${rc}" -eq 0 ]]; then
             echo "==> ${ref} already exists (${digest}); not rebuilding"
           else
             for p in "${platforms[@]}"; do
@@ -224,6 +261,19 @@ jobs:
             echo "::error::No digest recorded for ${image}"
             exit 1
           fi
+          # Each platform's image must hold that platform's binary; a wrong
+          # TARGETARCH would otherwise ship amd64 code in the arm64 image.
+          for p in "${platforms[@]}"; do
+            want="$([[ "${p#*/}" == arm64 ]] && echo aarch64 || echo x86-64)"
+            cid="$(docker create --platform "${p}" "${IMAGE_REPO}/${image}@${digest}")"
+            got="$(docker cp "${cid}:/usr/local/bin/${image}" - | tar -xO | file -b -)"
+            docker rm "${cid}" >/dev/null
+            if [[ "${got}" != *"${want}"* ]]; then
+              echo "::error::${image} for ${p} holds the wrong binary: ${got}"
+              exit 1
+            fi
+            echo "==> ${image} ${p}: ${got%%,*}, ${want}"
+          done
           echo "- \`${IMAGE_REPO}/${image}@${digest}\`" >> "${GITHUB_STEP_SUMMARY}"
           if [[ "${image}" == ax-task-runner ]]; then
             echo "task_runner_image=${IMAGE_REPO}/${image}@${digest}" >> "${GITHUB_OUTPUT}"
@@ -233,7 +283,6 @@ jobs:
   agents:
     needs: [ plan, base ]
     if: needs.plan.outputs.agents != '[]'
-    name: agent (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -307,9 +356,16 @@ jobs:
           echo "::error::No ax-task-runner image to build ${NAME} on"
           exit 1
         fi
+        eval "${EXISTING_DIGEST_SH}"
         ref="${IMAGE_REPO}/${NAME}:${TAG}"
-        if [[ "${OVERWRITE}" != true ]] && docker buildx imagetools inspect "${ref}" >/dev/null 2>&1; then
-          digest="$(docker buildx imagetools inspect "${ref}" --format '{{json .Manifest}}' | jq -r .digest)"
+        digest=""
+        rc=1
+        if [[ "${OVERWRITE}" != true ]]; then
+          rc=0
+          digest="$(existing_digest "${ref}")" || rc=$?
+          [[ "${rc}" -ge 2 ]] && exit 1
+        fi
+        if [[ "${rc}" -eq 0 ]]; then
           echo "==> ${ref} already exists (${digest}); not rebuilding"
         else
           echo "==> Cross-compiling ${RUNNER} for linux/amd64"

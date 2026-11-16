@@ -15,9 +15,15 @@ tag directly.
 | `claude-code` | `Dockerfile.claude-code` | linux/amd64 | only when enabled |
 
 If an image already exists for the tag, it isn't rebuilt, so rerunning the
-workflow never changes the digests of a published tag. To rebuild an existing
-tag and replace its images, run the workflow manually with `overwrite`. The
-workflow never moves `:latest`.
+workflow never changes the digests of a published tag. If the registry can't be
+checked (an auth, rate-limit, or network error), the run fails rather than
+rebuilding. To rebuild an existing tag and replace its images, run the workflow
+manually with `overwrite`. The workflow never moves `:latest`.
+
+Only tags that contain this workflow can be built. Earlier tags (v0.3.1 and
+before) have Dockerfiles that always copy the amd64 binary, so the workflow
+refuses them instead of publishing arm64 images with amd64 code in them. Every
+run also checks that each platform's image holds a binary for that platform.
 
 Scheduled (nightly) builds of `main` are deferred until the tag flow has been
 validated. See #609 and #610.
@@ -67,9 +73,19 @@ do a dry run, and so does a manual run with `dry_run`. A dry run builds every
 image it would publish, but pushes them to a registry that exists only inside
 the job. Forks can only do dry runs, because only `google/ax` publishes.
 
+A pull request's dry run builds agent images only if they are enabled in
+`AX_RELEASE_AGENT_IMAGES`. To check a change to an agent Dockerfile while it is
+disabled, run the workflow manually with `agent_images=<agent>` and
+`dry_run=true`.
+
 ## First publish
 
 GitHub creates a package the first time a workflow pushes to it, and an org
-package starts out private. After the first tagged run, an org owner has to set
-each new package (`ax-server`, `ax-task-runner`, and any agent image) to public
-and link it to `google/ax` under the package's settings.
+package starts out private. The images' `org.opencontainers.image.source`
+label links each new package to `google/ax`. After the first tagged run, an org
+owner has to set each new package (`ax-server`, `ax-task-runner`, and any agent
+image) to public.
+
+If a package with the same name already exists but isn't linked to `google/ax`
+(or doesn't grant this repository's Actions write access), the push fails with
+403. Fix that in the package's settings.
