@@ -562,8 +562,9 @@ func (x *RetryConfig) GetBackoffMultiplier() float64 {
 }
 
 type Goal struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Spec          string                 `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Goal as natural language.
+	Text          string `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -598,9 +599,9 @@ func (*Goal) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Goal) GetSpec() string {
+func (x *Goal) GetText() string {
 	if x != nil {
-		return x.Spec
+		return x.Text
 	}
 	return ""
 }
@@ -1299,7 +1300,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"maxBackoff\x12-\n" +
 	"\x12backoff_multiplier\x18\x04 \x01(\x01R\x11backoffMultiplier\"\x1a\n" +
 	"\x04Goal\x12\x12\n" +
-	"\x04spec\x18\x01 \x01(\tR\x04spec\"\xe5\x01\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xe5\x01\n" +
 	"\vTaskOutcome\x12/\n" +
 	"\x06result\x18\x01 \x01(\x0e2\x17.ax.v1alpha1.TaskResultR\x06result\x12*\n" +
 	"\x06status\x18\x02 \x01(\v2\x12.google.rpc.StatusR\x06status\x12\x1b\n" +

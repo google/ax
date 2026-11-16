@@ -110,7 +110,8 @@ message RetryConfig {
 }
 
 message Goal {
-  string spec = 1;
+  // Goal as natural language.
+  string text = 1;
 }
 
 enum TaskState {

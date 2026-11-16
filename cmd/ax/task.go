@@ -84,7 +84,7 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 		if cmds := spec.GetCommands(); len(cmds) > 0 {
 			fmt.Fprintf(out, "Commands:     %v\n", cmds)
 		}
-		if goal := spec.GetGoal().GetSpec(); goal != "" {
+		if goal := spec.GetGoal().GetText(); goal != "" {
 			fmt.Fprintf(out, "Goal:         %s\n", goal)
 		}
 		if config := spec.GetConfig().AsMap(); len(config) > 0 {

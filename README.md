@@ -37,7 +37,7 @@ spec:
   profile:
     image: "ghcr.io/my-org/my-coding-agent@sha256:..."
   goal:
-    spec: "Fix what's broken please."
+    text: "Fix what's broken please."
   workspace:
     name: golang
   debug: true   # enables `ax ssh`

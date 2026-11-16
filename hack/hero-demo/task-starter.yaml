@@ -33,7 +33,7 @@ spec:
   workspace:
     name: hero-demo-ws
   # The Claude Code runner reads its prompt from spec.config.
-  # TODO(@itssimrank): Teach claude-code-runner to read spec.goal.spec and move this to spec.goal.
+  # TODO(@itssimrank): Teach claude-code-runner to read spec.goal.text and move this to spec.goal.
   # TODO(@Lukeluds): Bind a Gateway that injects ANTHROPIC_API_KEY, so the task can reach the model.
   config:
     prompt: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
