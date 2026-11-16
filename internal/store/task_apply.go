@@ -92,9 +92,12 @@ func (r *TaskRow) LifecycleState() lifecycle.State {
 }
 
 // SetLifecycleState writes s onto r and recomputes NextReconcileAt at now.
-// Live Substrate actor identity fields (status.actor and status.actor_uid) are
-// scrubbed so they are never persisted.
+// It is a no-op if r is nil. Live Substrate actor identity fields
+// (status.actor and status.actor_uid) are scrubbed so they are never persisted.
 func (r *TaskRow) SetLifecycleState(s lifecycle.State, now time.Time) {
+	if r == nil {
+		return
+	}
 	c := s.Clone()
 	ScrubStoredTask(c.Task)
 	r.State = c
@@ -102,7 +105,8 @@ func (r *TaskRow) SetLifecycleState(s lifecycle.State, now time.Time) {
 }
 
 // ScrubStoredTask clears live Substrate-owned fields on t.Status (actor and
-// actor_uid) that must only be overlaid at read time (task.proto:162, 180).
+// actor_uid) that must only be overlaid at read time (see TaskStatus in
+// pkg/apis/v1alpha1/task.proto).
 func ScrubStoredTask(t *v1alpha1.Task) {
 	if t != nil && t.Status != nil {
 		t.Status.Actor = ""
@@ -177,8 +181,9 @@ var DeleteTaskRow = &TaskRow{}
 //
 //   - overwrites Task.Metadata.Atespace and Task.Metadata.Name with the
 //     normalized TaskKey passed to Apply;
-//   - assigns Generation (1 on insert, stored Generation + 1 on update) and
-//     mirrors it onto Task.Status.Generation;
+//   - assigns Generation (1 on insert, stored Generation + 1 on update),
+//     initializes Task.Status if nil, and mirrors Generation onto
+//     Task.Status.Generation;
 //   - preserves the task's saved_at position in ListTasks (unlike SaveTask,
 //     which moves updated tasks to the front);
 //   - clears any expired worker lease (LeaseExpiresAt <= now);

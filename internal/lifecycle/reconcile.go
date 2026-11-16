@@ -25,8 +25,9 @@ import (
 //
 // Rules:
 //  1. If pending actions exist, the row is due at max(now, actions[0].NotBefore).
-//  2. Otherwise, if the task is in QUEUED (not deleting) with a ClaimDeadline,
-//     the row is due at that exact ClaimDeadline (no periodic polling).
+//  2. Otherwise, if the task is in QUEUED (not deleting) with a non-zero
+//     ClaimDeadline, the row is due at that exact ClaimDeadline (no periodic
+//     polling).
 //  3. Steady-state tasks (WORKING, IDLE, SUSPENDED, terminal) return nil.
 func NextReconcileAt(state State, now time.Time) *time.Time {
 	if len(state.Actions) > 0 {
@@ -38,7 +39,7 @@ func NextReconcileAt(state State, now time.Time) *time.Time {
 	}
 	if state.Task.GetMetadata().GetDeleteTime() == nil &&
 		state.Task.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_QUEUED &&
-		state.ClaimDeadline != nil {
+		state.ClaimDeadline != nil && !state.ClaimDeadline.IsZero() {
 		deadline := *state.ClaimDeadline
 		return &deadline
 	}

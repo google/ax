@@ -80,6 +80,13 @@ func TestTaskRowLifecycleRoundTripAndScrubbing(t *testing.T) {
 		t.Fatalf("LifecycleState() = %+v", extracted)
 	}
 
+	// Nil receiver helpers are safe no-ops / zero returns.
+	var nilRow *store.TaskRow
+	nilRow.SetLifecycleState(state, now)
+	if nilRow.Clone() != nil || nilRow.LifecycleState().Task != nil {
+		t.Fatal("nil TaskRow helpers must return zero/nil values")
+	}
+
 	// DeleteTaskRow is matched strictly by pointer identity.
 	if store.DeleteTaskRow == nil || store.DeleteTaskRow.Clone() == store.DeleteTaskRow {
 		t.Fatal("DeleteTaskRow clone must not match sentinel pointer identity")

@@ -287,6 +287,12 @@ type Input interface {
 // --- gRPC API inputs ---
 
 // CreateInput initializes a new Task in TASK_STATE_QUEUED.
+//
+// CreateTask does not support starting directly in TASK_STATE_SUSPENDED:
+// TaskSpec has no initial-state field, any client-supplied Task.Status is
+// replaced by Transition, and CreateInput always starts new tasks in
+// TASK_STATE_QUEUED (to pause a task, callers invoke SuspendTask after
+// creation).
 type CreateInput struct {
 	// Task is the validated incoming Task manifest (any client-supplied Status
 	// is replaced by Transition).
