@@ -1,0 +1,220 @@
+apiVersion: v1
+data:
+  pg_hba.conf: |
+    # Local socket access is limited to processes in this pod and is used by
+    # health checks, the workload's idempotent database bootstrap, and the
+    # tls-reloader sidecar's configuration reloads.
+    local all all trust
+    # The setup user is local-only; application pods never receive it.
+    hostssl all postgres all reject
+    # Client certificate CNs must match the requested database username.
+    hostssl atepg substrate_owner_user,substrate_readwrite_user all cert
+  postgresql.conf: |
+    listen_addresses = '*'
+    ssl = on
+    ssl_cert_file = '/run/servicedns.podcert.ate.dev/credential-bundle.pem'
+    ssl_key_file = '/run/servicedns.podcert.ate.dev/credential-bundle.pem'
+    ssl_ca_file = '/run/postgres.podcert.ate.dev/trust-bundle.pem'
+    hba_file = '/etc/postgresql/pg_hba.conf'
+  reload-tls.sh: |
+    # PostgreSQL opens ssl_cert_file, ssl_key_file and ssl_ca_file at startup
+    # and on SIGHUP, and nowhere else. The kubelet replaces the projected pod
+    # certificate in place about 30 minutes before it expires, so without this
+    # loop the server keeps presenting the certificate it booted with until it
+    # expires about a day later and every client stops trusting it.
+    set -eu
+
+    # As PID 1 this shell only sees SIGTERM if a handler is installed, and only
+    # acts on it between commands, so the sleep below runs in the background
+    # and is waited on. Without both halves the pod takes the full termination
+    # grace period to go away.
+    trap 'exit 0' TERM INT
+
+    CERT=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+    CA=/run/postgres.podcert.ate.dev/trust-bundle.pem
+
+    # Comfortably inside the 30m headroom (notAfter - beginRefreshAt) that
+    # cmd/podcertcontroller/internal/servicednssigner/servicednssigner.go
+    # leaves; hashing two small files costs nothing.
+    INTERVAL=60
+
+    reloaded=""
+    while true; do
+      current="$(sha256sum "${CERT}" "${CA}" /etc/postgresql/pg_hba.conf)"
+      # Reloading fails until the server is accepting connections, which is
+      # where every pod starts out, so only record a hash once it has worked.
+      # Starting empty also means a restart of this container costs one
+      # redundant reload rather than a missed one.
+      if [ "${current}" != "${reloaded}" ] \
+        && psql -U "${POSTGRES_USER}" -d postgres -Atc 'SELECT pg_reload_conf()' >/dev/null 2>&1; then
+        reloaded="${current}"
+        echo "$(date -u +%FT%TZ) reloaded TLS configuration"
+      fi
+      sleep "${INTERVAL}" &
+      wait $!
+    done
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: ate-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: ate-system
+spec:
+  clusterIP: None
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ate-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  serviceName: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - args:
+        - -c
+        - config_file=/etc/postgresql/postgresql.conf
+        env:
+        - name: POSTGRES_DB
+          value: atepg
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -ec
+              - |
+                until psql -U "${POSTGRES_USER}" -d postgres -Atc 'SELECT 1' >/dev/null 2>&1; do
+                  sleep 1
+                done
+                if ! psql -U "${POSTGRES_USER}" -d postgres -Atc \
+                  "SELECT 1 FROM pg_database WHERE datname = 'atepg'" | grep -qx 1; then
+                  createdb -U "${POSTGRES_USER}" atepg
+                fi
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -ec
+            - pg_isready -U "${POSTGRES_USER}" -d postgres
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: postgres
+        ports:
+        - containerPort: 5432
+          name: postgres
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -ec
+            - nc -z 127.0.0.1 5432
+          initialDelaySeconds: 2
+          periodSeconds: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 2Gi
+          requests:
+            cpu: 250m
+            memory: 1Gi
+        volumeMounts:
+        - mountPath: /etc/postgresql
+          name: config
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+          readOnly: true
+        - mountPath: /run/postgres.podcert.ate.dev
+          name: postgres-ca
+          readOnly: true
+        - mountPath: /var/run/postgresql
+          name: socket
+        - mountPath: /var/lib/postgresql/data
+          name: data
+      initContainers:
+      - command:
+        - /bin/sh
+        - /etc/postgresql/reload-tls.sh
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+        name: tls-reloader
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        restartPolicy: Always
+        securityContext:
+          runAsUser: 70
+        volumeMounts:
+        - mountPath: /etc/postgresql
+          name: config
+        - mountPath: /run/servicedns.podcert.ate.dev
+          name: servicedns
+          readOnly: true
+        - mountPath: /run/postgres.podcert.ate.dev
+          name: postgres-ca
+          readOnly: true
+        - mountPath: /var/run/postgresql
+          name: socket
+      securityContext:
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+      volumes:
+      - configMap:
+          name: postgres-config
+        name: config
+      - name: servicedns
+        projected:
+          defaultMode: 384
+          sources:
+          - podCertificate:
+              credentialBundlePath: credential-bundle.pem
+              keyType: ECDSAP256
+              signerName: servicedns.podcert.ate.dev/identity
+      - emptyDir: {}
+        name: socket
+      - name: postgres-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
+              signerName: postgres.podcert.ate.dev/identity
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi

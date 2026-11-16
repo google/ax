@@ -18,7 +18,7 @@ metadata:
     team: platform
 spec:
   profile:
-    image: "ghcr.io/my-org/my-agent-image@sha256:..."
+    image: "ghcr.io/my-org/my-agent-image@sha256:..."   # optional; omit to use ax-server's digest-pinned default
     resources:
       limits:
         cpu: "2"
@@ -48,6 +48,16 @@ spec:
   sessionId: "session-42"   # optional; defaults to metadata.uid on creation
   debug: true               # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
+
+### Task lifecycle (initial `Suspended` phase)
+
+`ax apply` provisions a new task's `ActorTemplate` and `Actor` in the `Suspended` phase (`Ready=False`, `Reason=Suspended`) without running `spec.commands` immediately. Start execution by resuming the task:
+
+```bash
+ax resume task task123
+```
+
+`ax resume` waits for the sandbox and workspace to report `Ready=True`, which is also required before connecting with `ax ssh`. Run `ax suspend task task123` to checkpoint the sandbox and pause it again.
 
 ### Actor identity
 

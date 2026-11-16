@@ -130,8 +130,11 @@ step1_local_up() {
     return
   fi
   if ! live; then
-    # TODO(@YoyinZyc): Replace with 'ax local start' once local mode lands on main (#526).
-    mark_stub "${step}" "ax CLI found; wire 'ax local start' + Studio health check"
+    if "${AX_BIN}" local --help >/dev/null 2>&1; then
+      mark_stub "${step}" "ax local start ready; wire Studio health check (#543)"
+    else
+      mark_stub "${step}" "ax CLI found; wire 'ax local start' + Studio health check"
+    fi
     return
   fi
   if ! ax_quiet get workspaces; then

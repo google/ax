@@ -18,7 +18,7 @@ and `hack/setup-e2e-kind.sh` if they look stale.
 
 | Module | Pinned | Provides | Imported by |
 |---|---|---|---|
-| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, tags, snapshot fidelity, suspend/resume, egress rules) | `internal/substrate`, `internal/substrate/substratetest`, `internal/server`, `internal/controller`, `internal/apivalidation`, `test/e2e`, `pkg/apis/v1alpha1` (its `.proto` files import `ateapi.proto`) |
+| `go.ate.dev/substrate` | `v1.0.0` | Control API protos `api/ateapi/v1` (atespaces, actor templates, actors, tags, snapshot fidelity, suspend/resume, egress rules) and `pkg/postgressetup` | `internal/substrate`, `internal/substrate/substratetest`, `internal/install/substrate`, `internal/server`, `internal/controller`, `internal/apivalidation`, `test/e2e`, `pkg/apis/v1alpha1` (its `.proto` files import `ateapi.proto`) |
 | `github.com/agent-substrate/env` | `v0.0.11-0.20260912052224-4468a200b170` (pseudo-version) | Guest services served inside the sandbox (process exec + file system gRPC) and `proto/ateenv/v1alpha` | `internal/guest`, `internal/metadata` |
 
 There is no `replace` directive for either module. Local hacking against a
@@ -59,7 +59,7 @@ All Control API traffic goes through this package. It encapsulates:
 |---|---|
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
-| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml` |
+| namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
 
@@ -201,6 +201,7 @@ What the repo mechanically requires when `go.ate.dev/substrate` or
 go get go.ate.dev/substrate@vX.Y.Z            # and/or github.com/agent-substrate/env@<sha>
 go mod tidy                                    # CI diffs go.mod/go.sum
 make generate                                  # buf reads ateapi.proto from the new version
+./hack/sync-substrate-manifests.sh             # re-renders internal/install/substrate/manifests/ for `ax local`
 go build ./... && go test ./...                # unit tests compile against the new ateapipb
 make test-e2e                                  # hack/setup-e2e-kind.sh installs the go.mod version
 ```

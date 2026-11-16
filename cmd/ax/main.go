@@ -68,7 +68,25 @@ func main() {
 		printUsage()
 		return
 	case "ctx", "context":
-		if err := runContext(kubeContext); err != nil {
+		if err := runContext(kubeContext, cleanArgs, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "local":
+		if err := runLocal(axNamespace, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "install":
+		if err := runInstall(kubeContext, axNamespace, cleanArgs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	case "uninstall":
+		if err := runUninstall(kubeContext, axNamespace, cleanArgs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -233,7 +251,10 @@ Available Commands:
   delete workspace <name> Delete a workspace
   delete gateway <name>   Delete a gateway
   delete model <name>     Delete a model
-  ctx, context            Show active Kubernetes context and AX connection
+  local <start|stop|status|delete> Manage local Kubernetes + Substrate + AX environment
+  install                 Install or upgrade AX on a Substrate cluster
+  uninstall               Uninstall AX from a Substrate cluster
+  ctx, context [name]     List or switch active Kubernetes context
   tunnel <list|stop>      Manage background tunnels to Kubernetes clusters
   version                 Print AX version
 
@@ -857,26 +878,52 @@ func formatAge(d time.Duration) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-func runContext(kubeContext string) error {
-	ctxName, err := tunnel.CurrentContext(kubeContext)
-	if err != nil || ctxName == "" {
-		fmt.Println("No active Kubernetes context detected.")
-		fmt.Println("Fallback server: http://localhost:8080 (or set $AX_SERVER / --server)")
+func runContext(kubeContext string, args []string, out io.Writer) error {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprintln(out, "Usage:\n  ax ctx              List Kubernetes contexts and active AX tunnel status\n  ax ctx <name>       Switch active Kubernetes context in kubeconfig")
+		return nil
+	}
+	if len(args) > 1 {
+		return fmt.Errorf("too many arguments (usage: ax ctx [context-name])")
+	}
+	if len(args) == 1 {
+		if err := tunnel.SetCurrentContext(args[0]); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Switched to context %q.\n", args[0])
 		return nil
 	}
 
-	fmt.Printf("Active Kubernetes Context: %s\n", ctxName)
-	if t, err := tunnel.GetTunnel(ctxName); err == nil && t != nil {
-		status := "Healthy"
-		if !tunnel.IsTunnelHealthy(t.Port) {
-			status = "Stale / Not responding"
+	entries, err := tunnel.ListContexts(kubeContext)
+	if err != nil || len(entries) == 0 {
+		ctxName, _ := tunnel.CurrentContext(kubeContext)
+		if ctxName == "" {
+			fmt.Fprintln(out, "No active Kubernetes context detected.")
+			fmt.Fprintln(out, "Fallback server: http://localhost:8080 (or set $AX_SERVER / --server)")
+			return nil
 		}
-		fmt.Printf("AX Tunnel:                 http://127.0.0.1:%d -> %s/svc/%s:8080 (PID: %d, %s)\n",
-			t.Port, t.Namespace, t.Service, t.PID, status)
-	} else {
-		fmt.Println("AX Tunnel:                 No background tunnel running (will auto-connect on next command)")
+		fmt.Fprintf(out, "Active Kubernetes Context: %s\n", ctxName)
+		return nil
 	}
-	return nil
+
+	w := tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
+	fmt.Fprintln(w, "CURRENT\tNAME\tCLUSTER\tAX TUNNEL")
+	for _, e := range entries {
+		cur := ""
+		if e.Current {
+			cur = "*"
+		}
+		tunDesc := "-"
+		if t, err := tunnel.GetTunnel(e.Name); err == nil && t != nil {
+			status := "Healthy"
+			if !tunnel.IsTunnelHealthy(t.Port) {
+				status = "Stale"
+			}
+			tunDesc = fmt.Sprintf("127.0.0.1:%d -> %s/%s (%s)", t.Port, t.Namespace, t.Service, status)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cur, e.Name, e.Cluster, tunDesc)
+	}
+	return w.Flush()
 }
 
 func runTunnel(args []string) error {
