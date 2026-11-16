@@ -20,7 +20,8 @@ This workflow is the release-on-tag stage of the build and release epic
 
 1. Check that `main` is green, including the nightly E2E run, and that
    `go.mod` pins the Substrate release you want to ship against.
-2. Tag the commit and push the tag:
+2. Tag a commit on `main` (or a `release-*` branch; the workflow refuses any
+   other commit) and push the tag:
 
    ```sh
    git tag -a v0.4.0 -m v0.4.0 <commit>
@@ -82,25 +83,46 @@ development. It is not part of releases.
 
 ## Reruns and existing releases
 
-Run the workflow manually from the Actions tab with the tag as input to
-retry a failed release or to attach assets to a release created by hand.
+Run the workflow manually from the Actions tab with the tag as input to retry
+a failed release. A manual run uses the workflow and scripts of the tag
+itself, so it works only for tags that contain this workflow, not for v0.3.1
+and earlier.
 
-- If every image already exists for the tag on both platforms, nothing is
-  rebuilt and the existing digests are used, so a rerun never changes the
-  digests a release points at. An incomplete set is rebuilt in full.
-- `overwrite` rebuilds and replaces a complete set, but is refused once the
-  release is published.
-- If a release already exists for the tag, its notes are left alone and only
-  the assets it lacks are uploaded. An attached asset is never replaced.
+- An image that already exists for the tag on both platforms is never rebuilt;
+  its digest is reused. Only missing or incomplete images are built.
+- A registry error while checking (auth, rate limit, network) fails the run
+  rather than rebuilding. ghcr.io answers "denied" for a package that was
+  never pushed, so that case is confirmed through the packages API.
+- Once the release is published, nothing is built: if an image is missing, the
+  run fails. `overwrite` (rebuild every image) is refused too.
+- A **draft** release (for example, left by a failed run) gets this run's
+  assets and notes, replacing its own, and is published.
+- A **published** release keeps its notes and assets; only assets it lacks are
+  uploaded.
+- `:latest` is moved only after refetching tags, so an older release that
+  finishes late does not take it back from a newer one.
 
 Only `google/ax` publishes; in a fork, only dry runs do anything.
 
 ## Dry runs
 
 Pull requests that change the workflow, `hack/release`, a `Dockerfile.*`,
-`.dockerignore`, or `deploy/` do a dry run, and so does a manual run with
-`dry_run`. A dry run builds the images into a registry that exists only inside
-the job, builds the CLI, and renders the manifests, but publishes nothing.
+`.dockerignore`, `deploy/`, `install.sh`, `go.mod`/`go.sum`, the three
+binaries under `cmd/`, or `internal/version` do a dry run, and so does a manual
+run with `dry_run`. A dry run builds the images into a registry that exists
+only inside the job, then runs the image step again to check that it reuses
+them with the same digests. It also builds the CLI and renders the manifests,
+but publishes nothing.
+
+A dry run never moves `:latest` (pull requests use a prerelease version), and
+it cannot exercise the ghcr.io "denied" case.
+
+## Before the first release
+
+- A tag ruleset (#546) and, ideally, a `release` environment with required
+  reviewers, so only release managers can trigger a publish. Until then, any
+  writer can push a `v*` tag on `main`.
+- Cut `vX.Y.Z-rc.1` first and validate it against #610.
 
 ## Building release artifacts by hand
 
@@ -116,5 +138,6 @@ hack/release/create-release.sh v0.4.0                 # publish the GitHub relea
 ```
 
 `publish-images.sh` needs `docker buildx` with a builder that can push
-multi-platform images (`docker buildx create --driver docker-container --use`)
-QEMU for the non-native platform, and `file`.
+multi-platform images (`docker buildx create --driver docker-container --use`),
+QEMU for the non-native platform, `jq`, and `file`. `build-binaries.sh` needs
+GNU tar and coreutils (on macOS, `gtar` and `coreutils` from Homebrew).

@@ -18,15 +18,23 @@
 #
 #   hack/release/create-release.sh <tag> [asset-dir]
 #
-# Uploads every file in asset-dir (default bin/release) except images.env.
+# Uploads the release assets from asset-dir (default bin/release): the
+# ax_<os>_<arch>.tar.gz archives, checksums.txt, ax-server.yaml, postgres.yaml,
+# and install.sh if present. images.env must be there too; it supplies the
+# image digests for the notes.
 #
-# If there is no release for <tag>, creates and publishes one with GitHub's
-# generated notes. A -PRERELEASE tag is published as a pre-release, and a
-# release is marked Latest only if <tag> is the highest stable tag, so a patch
-# to an older line does not take Latest from a newer one.
+# Depending on the state of the release for <tag>:
 #
-# If a release for <tag> already exists, its notes and state are left alone and
-# only the assets it lacks are uploaded; an existing asset is never replaced.
+#   none       Creates and publishes it with install notes and GitHub's
+#              generated notes.
+#   draft      Replaces its assets and notes with this run's (a draft may hold
+#              stale digests, e.g. after an overwrite), then publishes it.
+#   published  Leaves its notes and assets alone and uploads only the assets
+#              it lacks; an attached asset is never replaced.
+#
+# A -PRERELEASE tag is published as a pre-release, and a release is marked
+# Latest only if <tag> is the highest stable tag, so a patch to an older line
+# does not take Latest from a newer one.
 #
 # Needs git (with tags fetched), jq, and gh authenticated with contents: write.
 # GITHUB_REPOSITORY selects the repository; it defaults to google/ax.
@@ -47,17 +55,28 @@ if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
   exit 1
 fi
 
+# Only the known release assets, so stale files in asset-dir are never
+# uploaded.
 assets=()
-while IFS= read -r -d '' f; do
-  assets+=("${f}")
-done < <(find "${ASSETS_DIR}" -maxdepth 1 -type f ! -name images.env -print0 | sort -z)
-if [[ ${#assets[@]} -eq 0 ]]; then
-  echo "error: no assets in ${ASSETS_DIR}" >&2
-  exit 1
+for p in "${CLI_PLATFORMS[@]}"; do
+  assets+=("${ASSETS_DIR}/ax_${p%/*}_${p#*/}.tar.gz")
+done
+assets+=("${ASSETS_DIR}/checksums.txt" "${ASSETS_DIR}/ax-server.yaml" "${ASSETS_DIR}/postgres.yaml")
+for f in "${assets[@]}" "${ASSETS_DIR}/images.env"; do
+  if [[ ! -f "${f}" ]]; then
+    echo "error: missing release asset ${f}" >&2
+    exit 1
+  fi
+done
+if [[ -f "${ASSETS_DIR}/install.sh" ]]; then
+  assets+=("${ASSETS_DIR}/install.sh")
 fi
 
-if existing="$(gh release view "${TAG}" --repo "${REPO}" --json assets 2>/dev/null)"; then
-  echo "==> Release ${TAG} exists; uploading only missing assets."
+state="$(release_state "${TAG}" "${REPO}")"
+echo "==> Release ${TAG}: ${state}"
+
+if [[ "${state}" == published ]]; then
+  existing="$(gh release view "${TAG}" --repo "${REPO}" --json assets)"
   missing=()
   for f in "${assets[@]}"; do
     name="$(basename "${f}")"
@@ -73,28 +92,26 @@ if existing="$(gh release view "${TAG}" --repo "${REPO}" --json assets 2>/dev/nu
   exit 0
 fi
 
-flags=(--repo "${REPO}" --verify-tag --title "${TAG}" --generate-notes)
+latest=(--latest=false)
+prerelease=()
 if is_prerelease "${TAG}"; then
-  flags+=(--prerelease --latest=false)
+  prerelease=(--prerelease)
 elif is_latest_stable "${TAG}"; then
-  flags+=(--latest)
-else
-  flags+=(--latest=false)
+  latest=(--latest)
 fi
 
 # Start notes at the previous stable tag, so a release's notes cover every
 # change since the last release rather than since the last pre-release.
 prev="$(git tag --list 'v*' --sort=-v:refname --merged "${TAG}^{commit}" \
-  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "${TAG}" | head -n1 || true)"
-if [[ -n "${prev}" ]]; then
-  flags+=(--notes-start-tag "${prev}")
-fi
+  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "${TAG}" | head -n1 || true)"
 
-# Install notes go above GitHub's generated notes (gh appends those after
-# --notes-file).
 # shellcheck disable=SC1091
 source "${ASSETS_DIR}/images.env"
 substrate="$(awk '$1 == "go.ate.dev/substrate" { print $2 }' "${ROOT}/go.mod")"
+if [[ -z "${substrate}" ]]; then
+  echo "error: no go.ate.dev/substrate version in go.mod" >&2
+  exit 1
+fi
 download="https://github.com/${REPO}/releases/download/${TAG}"
 notes="$(mktemp)"
 trap 'rm -f "${notes}"' EXIT
@@ -113,7 +130,7 @@ cat > "${notes}" <<EOF
 Requires [Agent Substrate](https://github.com/agent-substrate/substrate) \`${substrate}\`; see [docs/installation.md](https://github.com/${REPO}/blob/${TAG}/docs/installation.md).
 
 \`\`\`sh
-kubectl create namespace ax-system
+kubectl create namespace ax-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n ax-system create secret generic ax-postgres --from-literal=password="\$(openssl rand -hex 24)"
 kubectl apply -f ${download}/postgres.yaml
 kubectl apply -f ${download}/ax-server.yaml
@@ -130,5 +147,21 @@ ${cli_install}
 
 EOF
 
+if [[ "${state}" == draft ]]; then
+  # gh release edit cannot generate notes, so ask the API for them.
+  gen=(-f "tag_name=${TAG}")
+  [[ -n "${prev}" ]] && gen+=(-f "previous_tag_name=${prev}")
+  gh api "repos/${REPO}/releases/generate-notes" "${gen[@]}" --jq .body >> "${notes}"
+  echo "==> Replacing the assets of draft ${TAG} and publishing it"
+  gh release upload "${TAG}" --repo "${REPO}" --clobber "${assets[@]}"
+  gh release edit "${TAG}" --repo "${REPO}" --title "${TAG}" --notes-file "${notes}" \
+    --draft=false "${prerelease[@]}" "${latest[@]}"
+  exit 0
+fi
+
+flags=(--repo "${REPO}" --verify-tag --title "${TAG}" --generate-notes "${prerelease[@]}" "${latest[@]}")
+if [[ -n "${prev}" ]]; then
+  flags+=(--notes-start-tag "${prev}")
+fi
 echo "==> Publishing release ${TAG} (${flags[*]})"
 gh release create "${TAG}" "${flags[@]}" --notes-file "${notes}" "${assets[@]}"

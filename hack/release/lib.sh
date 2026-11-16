@@ -58,3 +58,42 @@ is_latest_stable() {
 go_ldflags() {
   echo "-s -w -X github.com/google/ax/internal/version.Version=$1"
 }
+
+# release_state prints the state of the GitHub release for tag $1 in
+# repository $2: none, draft, or published. Any error other than "release not
+# found" fails, so a flaky API never reads as "no release".
+release_state() {
+  local out err rc=0
+  err="$(mktemp)"
+  out="$(gh release view "$1" --repo "$2" --json isDraft --jq '.isDraft' 2>"${err}")" || rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    if grep -q 'release not found' "${err}"; then
+      rm -f "${err}"
+      echo none
+      return 0
+    fi
+    echo "error: cannot read release $1 in $2: $(cat "${err}")" >&2
+    rm -f "${err}"
+    return 1
+  fi
+  rm -f "${err}"
+  case "${out}" in
+    true) echo draft ;;
+    false) echo published ;;
+    *) echo "error: unexpected isDraft '${out}' for release $1" >&2; return 1 ;;
+  esac
+}
+
+# require_on_main fails unless tag $1 points at a commit on origin/main or an
+# origin/release-* branch, so a tag on an unreviewed branch cannot publish.
+# Needs those branches fetched.
+require_on_main() {
+  local b
+  for b in origin/main $(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release-*'); do
+    if git merge-base --is-ancestor "$1^{commit}" "${b}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  echo "error: $1 is not on origin/main or an origin/release-* branch" >&2
+  return 1
+}

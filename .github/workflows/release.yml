@@ -23,8 +23,7 @@
 # The highest stable tag also moves :latest; a prerelease never does.
 #
 # Part of #609 (stage 1); runs are validated in #610. See docs/releasing.md.
-# Run manually to (re)publish an existing tag, for example to attach assets to
-# a release created by hand.
+# Run manually to retry a release; only tags that contain this workflow work.
 #
 # A dry run (pull requests that touch the release, or a manual run with
 # dry_run) does everything except publish: images go to a registry that exists
@@ -45,14 +44,21 @@ on:
     - 'Dockerfile.*'
     - '.dockerignore'
     - 'deploy/**'
+    - 'install.sh'
+    - 'go.mod'
+    - 'go.sum'
+    - 'cmd/ax/**'
+    - 'cmd/ax-server/**'
+    - 'cmd/ax-task-runner/**'
+    - 'internal/version/**'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to release (e.g. v0.4.0)'
+        description: 'Existing tag to release (e.g. v0.4.0); only tags that contain this workflow'
         required: true
         type: string
       overwrite:
-        description: 'Rebuild and replace images that already exist for the tag (refused once the release is published)'
+        description: 'Rebuild and replace every image for the tag (refused once the release is published)'
         type: boolean
         default: false
       dry_run:
@@ -134,23 +140,28 @@ jobs:
         TOKEN: ${{ github.token }}
       run: echo "${TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
 
-    # Operators install a published release by digest; replacing its images
-    # would orphan those digests.
-    - name: Refuse to overwrite images of a published release
-      if: inputs.overwrite && env.DRY_RUN != 'true'
+    # Releases are cut from main or a release-* branch, and nothing is rebuilt
+    # once a release is published: operators install it by digest.
+    - name: Check the tag and release
+      id: check
+      if: env.DRY_RUN != 'true'
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq '.isDraft' 2>/dev/null | grep -qx false; then
-          echo "::error::Release ${TAG} is published; refusing to replace its images."
-          exit 1
-        fi
+        source hack/release/lib.sh
+        require_release_version "${TAG}"
+        require_on_main "${TAG}"
+        state="$(release_state "${TAG}" "${GITHUB_REPOSITORY}")"
+        echo "Release ${TAG}: ${state}"
+        echo "release_state=${state}" >> "${GITHUB_OUTPUT}"
 
     - name: Build and push images
       id: publish
       env:
         AX_IMAGE_REPO: ${{ env.DRY_RUN == 'true' && 'localhost:5000/ax' || 'ghcr.io/google/ax' }}
         AX_PUBLISH_OVERWRITE: ${{ inputs.overwrite == true }}
+        AX_RELEASE_STATE: ${{ steps.check.outputs.release_state || 'none' }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         hack/release/publish-images.sh "${TAG}" bin/release
         cat bin/release/images.env >> "${GITHUB_OUTPUT}"
@@ -159,6 +170,22 @@ jobs:
           echo ""
           sed -e 's/^[A-Z_]*=/- `/' -e 's/$/`/' bin/release/images.env
         } >> "${GITHUB_STEP_SUMMARY}"
+
+    # A rerun must reuse every image and record the same digests. The job's
+    # registry starts empty, so only a dry run can exercise this before a tag.
+    - name: Rerun reuses the images (dry run)
+      if: env.DRY_RUN == 'true'
+      env:
+        AX_IMAGE_REPO: localhost:5000/ax
+      run: |
+        set -o pipefail
+        cp bin/release/images.env /tmp/images.first.env
+        hack/release/publish-images.sh "${TAG}" bin/release | tee /tmp/rerun.log
+        diff /tmp/images.first.env bin/release/images.env
+        if grep -q 'Building and pushing' /tmp/rerun.log; then
+          echo "::error::The rerun rebuilt an image"
+          exit 1
+        fi
 
   release:
     needs: images

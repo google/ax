@@ -28,6 +28,9 @@
 # plus install.sh from the repository root, if there is one, so that
 # https://github.com/google/ax/releases/latest/download/install.sh serves the
 # installer that matches the archives.
+#
+# Needs Go, GNU tar, gzip, and sha256sum (coreutils); on macOS, use gtar and
+# coreutils from Homebrew.
 
 set -o errexit -o nounset -o pipefail
 
@@ -56,10 +59,11 @@ for platform in "${CLI_PLATFORMS[@]}"; do
   GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
     go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
     -o "${work}/${os}_${arch}/ax" ./cmd/ax
-  # Fixed owner, mode, and order so the archive depends only on the binary.
-  tar --create --gzip --file "${OUT}/${archive}" \
-    --directory "${work}/${os}_${arch}" \
-    --owner=0 --group=0 --numeric-owner --mode=0755 --sort=name ax
+  # Fixed owner, mode, order, and timestamps (tar and gzip) so the archive
+  # depends only on the binary.
+  tar --create --directory "${work}/${os}_${arch}" \
+    --owner=0 --group=0 --numeric-owner --mode=0755 --mtime=@0 --sort=name ax \
+    | gzip -n -9 > "${OUT}/${archive}"
   archives+=("${archive}")
 done
 

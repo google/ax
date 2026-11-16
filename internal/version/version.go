@@ -37,7 +37,8 @@ func IsRelease() bool {
 }
 
 // ImageTag is the image tag matching this binary: Version for a release build,
-// and "latest" (the newest stable release) for any other build.
+// and "latest" (the newest stable release) for any other build. :latest exists
+// only once a stable release has been published.
 func ImageTag() string {
 	if IsRelease() {
 		return Version
