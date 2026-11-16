@@ -107,7 +107,7 @@ func TestValidateTask(t *testing.T) {
 		{
 			name: "goal retry and session_id",
 			spec: &v1alpha1.TaskSpec{
-				Goal:      &v1alpha1.Goal{Spec: "Fix failing unit tests"},
+				Goal:      &v1alpha1.Goal{Text: "Fix failing unit tests"},
 				SessionId: "session-42",
 				Retry: &v1alpha1.RetryConfig{
 					MaxRetries:        3,

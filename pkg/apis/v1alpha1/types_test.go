@@ -59,7 +59,7 @@ func fullTask() *v1alpha1.Task {
 			Env:       []*v1alpha1.EnvVar{{Name: "A", Value: "1"}},
 			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace"},
 			Debug:     true,
-			Goal:      &v1alpha1.Goal{Spec: "Run verification suite"},
+			Goal:      &v1alpha1.Goal{Text: "Run verification suite"},
 			Retry: &v1alpha1.RetryConfig{
 				MaxRetries:        2,
 				InitialBackoff:    durationpb.New(30 * time.Second),
