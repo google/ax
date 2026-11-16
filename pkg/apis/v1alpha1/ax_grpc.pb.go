@@ -39,6 +39,7 @@ const (
 	AX_DeleteTask_FullMethodName      = "/ax.v1alpha1.AX/DeleteTask"
 	AX_SuspendTask_FullMethodName     = "/ax.v1alpha1.AX/SuspendTask"
 	AX_ResumeTask_FullMethodName      = "/ax.v1alpha1.AX/ResumeTask"
+	AX_StreamTaskLogs_FullMethodName  = "/ax.v1alpha1.AX/StreamTaskLogs"
 	AX_GetWorkspace_FullMethodName    = "/ax.v1alpha1.AX/GetWorkspace"
 	AX_ListWorkspaces_FullMethodName  = "/ax.v1alpha1.AX/ListWorkspaces"
 	AX_CreateWorkspace_FullMethodName = "/ax.v1alpha1.AX/CreateWorkspace"
@@ -67,6 +68,7 @@ type AXClient interface {
 	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
 	SuspendTask(ctx context.Context, in *SuspendTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	StreamTaskLogs(ctx context.Context, in *StreamTaskLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTaskLogsResponse], error)
 	// Workspaces
 	GetWorkspace(ctx context.Context, in *GetWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
@@ -152,6 +154,25 @@ func (c *aXClient) ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts .
 	}
 	return out, nil
 }
+
+func (c *aXClient) StreamTaskLogs(ctx context.Context, in *StreamTaskLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamTaskLogsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AX_ServiceDesc.Streams[0], AX_StreamTaskLogs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamTaskLogsRequest, StreamTaskLogsResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AX_StreamTaskLogsClient = grpc.ServerStreamingClient[StreamTaskLogsResponse]
 
 func (c *aXClient) GetWorkspace(ctx context.Context, in *GetWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -296,6 +317,7 @@ type AXServer interface {
 	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
 	SuspendTask(context.Context, *SuspendTaskRequest) (*Task, error)
 	ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error)
+	StreamTaskLogs(*StreamTaskLogsRequest, grpc.ServerStreamingServer[StreamTaskLogsResponse]) error
 	// Workspaces
 	GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error)
 	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
@@ -339,6 +361,9 @@ func (UnimplementedAXServer) SuspendTask(context.Context, *SuspendTaskRequest) (
 }
 func (UnimplementedAXServer) ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResumeTask not implemented")
+}
+func (UnimplementedAXServer) StreamTaskLogs(*StreamTaskLogsRequest, grpc.ServerStreamingServer[StreamTaskLogsResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamTaskLogs not implemented")
 }
 func (UnimplementedAXServer) GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetWorkspace not implemented")
@@ -507,6 +532,17 @@ func _AX_ResumeTask_Handler(srv interface{}, ctx context.Context, dec func(inter
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _AX_StreamTaskLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamTaskLogsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AXServer).StreamTaskLogs(m, &grpc.GenericServerStream[StreamTaskLogsRequest, StreamTaskLogsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AX_StreamTaskLogsServer = grpc.ServerStreamingServer[StreamTaskLogsResponse]
 
 func _AX_GetWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetWorkspaceRequest)
@@ -826,6 +862,12 @@ var AX_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AX_DeleteModel_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamTaskLogs",
+			Handler:       _AX_StreamTaskLogs_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "pkg/apis/v1alpha1/ax.proto",
 }

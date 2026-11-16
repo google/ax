@@ -213,3 +213,15 @@ message ResumeTaskRequest {
   string atespace = 1;
   string name = 2;
 }
+
+// Live-only logs, available only when ax-server enables task logs. The actor
+// must initially be running; requesting logs never resumes it.
+message StreamTaskLogsRequest {
+  string atespace = 1;
+  string name = 2;
+}
+
+message StreamTaskLogsResponse {
+  // One complete actorlog JSON record, without a trailing newline.
+  string line = 1;
+}

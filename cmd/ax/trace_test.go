@@ -35,7 +35,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // traceCaptureServer records the request metadata of every RPC it serves.
@@ -48,6 +47,12 @@ func (s *traceCaptureServer) ListTasks(ctx context.Context, _ *v1alpha1.ListTask
 	md, _ := metadata.FromIncomingContext(ctx)
 	s.headers <- md
 	return &v1alpha1.ListTasksResponse{}, nil
+}
+
+func (s *traceCaptureServer) StreamTaskLogs(_ *v1alpha1.StreamTaskLogsRequest, stream grpc.ServerStreamingServer[v1alpha1.StreamTaskLogsResponse]) error {
+	md, _ := metadata.FromIncomingContext(stream.Context())
+	s.headers <- md
+	return nil
 }
 
 // startTraceCaptureServer serves the AX API, and records the metadata of
@@ -401,19 +406,16 @@ func TestStreamRPCJoinsCommandTrace(t *testing.T) {
 	useTrace(t, ct)
 	defer ct.end(nil)
 
-	_, conn, err := getAXClient(addr)
+	client, conn, err := getAXClient(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	stream, err := conn.NewStream(context.Background(), &grpc.StreamDesc{ServerStreams: true}, "/ax.v1alpha1.AX/StreamTaskLogs")
+	stream, err := client.StreamTaskLogs(context.Background(), &v1alpha1.StreamTaskLogsRequest{Name: "demo"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.CloseSend(); err != nil {
-		t.Fatal(err)
-	}
-	if err := stream.RecvMsg(&emptypb.Empty{}); !errors.Is(err, io.EOF) {
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 		t.Fatalf("RecvMsg = %v, want io.EOF", err)
 	}
 	traceID, _, _ := traceparent(t, <-headers)
