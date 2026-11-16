@@ -68,25 +68,9 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 
 ## Quick start
 
-### Local environment in one command (`ax local`)
+### Prerequisites
 
-With Docker or Podman running on your machine (and a Linux 6.8+ kernel on the container host), `ax local start` provisions a local Kubernetes 1.36+ Kind cluster, bootstraps Agent Substrate (`v1.0.0`), deploys AX, and selects the `local` kubeconfig context:
-
-```bash
-GOTOOLCHAIN=auto go build -o ./bin/ax ./cmd/ax
-./bin/ax local start
-./bin/ax local status
-```
-
-To install AX onto an existing Kubernetes 1.36+ cluster that already runs Agent Substrate:
-
-```bash
-./bin/ax install --context <kube-ctx>
-```
-
-### Manual cluster deployment (`make images` / `ax install`)
-
-If you prefer deploying manually to an existing cluster (or see [docs/installation.md](docs/installation.md) for the full version-pinned audit recipe), you need:
+If you are deploying to a Kubernetes cluster (or see [docs/installation.md](docs/installation.md) for the full version-pinned audit recipe), you need:
 
 - A Kubernetes 1.36+ cluster with **Agent Substrate** installed (see the [Substrate README](https://github.com/agent-substrate/substrate#readme))
 - [Go](https://go.dev/doc/install) and `kubectl`
@@ -98,13 +82,13 @@ Substrate lands in the `ate-system` namespace and exposes its Control API at `ap
 kubectl get svc api -n ate-system
 ```
 
-#### 1. Build the CLI
+### 1. Build the CLI
 
 ```bash
 make install   # installs `ax` from this checkout into $(go env GOPATH)/bin
 ```
 
-#### 2. Build and push the images
+### 2. Build and push the images
 
 Point `AX_IMAGE_REPO` at your registry, then build the `ax-server` and `ax-task-runner` images and push them to it:
 
@@ -113,7 +97,7 @@ export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
 make images
 ```
 
-#### 3. Deploy the control plane
+### 3. Deploy the control plane
 
 Use `ax install` so `ax-system` is labeled (`ate.dev/api-access=true`) and `ax-server` is registered in Substrate's caller allowlists before deploying PostgreSQL and `ax-server`:
 
@@ -125,7 +109,7 @@ ax install \
 
 This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.profile.image`. Everything lands in the `ax-system` namespace.
 
-#### 4. Create a WorkerPool
+### 4. Create a WorkerPool
 
 Every task runs as a Substrate actor, and an actor needs a free worker from a `WorkerPool`. (`ax local start` creates one automatically; on an existing cluster neither `ax install` nor the Substrate installer creates one for you, so without a pool the first `ax resume` fails with `ResourceExhausted: no free workers available`.)
 
@@ -211,10 +195,10 @@ ax describe model default-model
 ax delete model default-model
 
 # Environment & connection plumbing
-ax local start                           # create/resume local Kind + Substrate + AX cluster
-ax local status                       # check local cluster, Substrate, and AX health
-ax local stop                         # stop local cluster containers while keeping state
-ax local delete                       # destroy local cluster and clean up context
+ax local start --server-image <img>   # create/resume local Kind + Substrate + AX cluster
+ax local status                       # check local environment, Substrate, and AX health
+ax local stop                         # stop local environment while keeping state
+ax local delete                       # destroy local environment and clean up owned context
 ax install / ax uninstall             # install or remove AX on the active Kubernetes cluster
 ax ctx                                # list kube contexts and active AX tunnel status
 ax ctx <name>                         # switch active Kubernetes context in kubeconfig

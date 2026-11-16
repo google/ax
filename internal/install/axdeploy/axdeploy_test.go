@@ -258,3 +258,27 @@ func TestReconcileCredProviderPolicyUsesMergePatch(t *testing.T) {
 		t.Fatalf("expected merge patch on ConfigMap, got %q", lastCall)
 	}
 }
+
+func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
+	t.Setenv("AX_SERVER_IMAGE", "")
+	t.Setenv("AX_DEFAULT_TASK_IMAGE", "")
+
+	if _, _, err := ResolveImageInputs("", ""); err == nil || !strings.Contains(err.Error(), "--server-image") {
+		t.Fatalf("expected --server-image gate error when unset, got: %v", err)
+	}
+
+	srvOnly, taskEmpty, err := ResolveImageInputs("ghcr.io/google/ax/ax-server:v0.1.0", "")
+	if err != nil || srvOnly != "ghcr.io/google/ax/ax-server:v0.1.0" || taskEmpty != "" {
+		t.Fatalf("expected server-only input to succeed with optional empty task image, got (%q, %q, %v)", srvOnly, taskEmpty, err)
+	}
+
+	t.Setenv("AX_SERVER_IMAGE", "ghcr.io/google/ax/ax-server:v0.1.0")
+	t.Setenv("AX_DEFAULT_TASK_IMAGE", "ghcr.io/agentexecutor/claude-code:v1")
+	srv, task, err := ResolveImageInputs("", "")
+	if err != nil {
+		t.Fatalf("ResolveImageInputs from env: %v", err)
+	}
+	if srv != "ghcr.io/google/ax/ax-server:v0.1.0" || task != "ghcr.io/agentexecutor/claude-code:v1" {
+		t.Fatalf("got (%q, %q)", srv, task)
+	}
+}

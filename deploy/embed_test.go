@@ -44,6 +44,17 @@ func TestRenderServer(t *testing.T) {
 		taskImg = "localhost:5001/ax-task-runner:local@sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	)
 
+	t.Run("allows empty default task image", func(t *testing.T) {
+		out, err := RenderServer(ServerConfig{
+			Namespace:   "ax-system",
+			ServerImage: srvImg,
+		})
+		if err != nil {
+			t.Fatalf("expected empty DefaultTaskImage to succeed, got %v", err)
+		}
+		assertValidMultiDocYAML(t, out)
+	})
+
 	t.Run("rejects unpinned task image", func(t *testing.T) {
 		_, err := RenderServer(ServerConfig{
 			Namespace:        "ax-system",

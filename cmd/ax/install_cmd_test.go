@@ -22,12 +22,13 @@ import (
 	"testing"
 
 	"github.com/google/ax/internal/install/axdeploy"
+	"github.com/google/ax/internal/install/cluster"
 )
 
 func TestParseLocalArgs(t *testing.T) {
 	def, err := parseLocalArgs([]string{"start"})
-	if err != nil || def.subcmd != "start" || def.workers != 1 {
-		t.Fatalf("expected default start flags (workers=1), got %+v, %v", def, err)
+	if err != nil || def.subcmd != "start" || def.workers != 1 || def.name != cluster.DefaultName {
+		t.Fatalf("expected default start flags, got %+v, %v", def, err)
 	}
 	if def.serverImage != axdeploy.DefaultServerImage || def.defaultTaskImage != axdeploy.DefaultTaskImage {
 		t.Fatalf("expected default serverImage=%q defaultTaskImage=%q, got %+v", axdeploy.DefaultServerImage, axdeploy.DefaultTaskImage, def)
@@ -85,6 +86,18 @@ func TestParseInstallArgs(t *testing.T) {
 	}
 }
 
+func TestRunLocalAndInstallGateWhenDefaultImagesEmpty(t *testing.T) {
+	t.Setenv("AX_SERVER_IMAGE", "")
+	t.Setenv("AX_DEFAULT_TASK_IMAGE", "")
+
+	if err := runLocal("ax-system", []string{"start"}); err == nil || !strings.Contains(err.Error(), "--server-image") {
+		t.Fatalf("expected runLocal start to fail fast on gated server image, got: %v", err)
+	}
+	if err := runInstall("", "ax-system", nil); err == nil || !strings.Contains(err.Error(), "--server-image") {
+		t.Fatalf("expected runInstall to fail fast on gated server image, got: %v", err)
+	}
+}
+
 func TestRunUninstallRejectsUnexpectedArgs(t *testing.T) {
 	if err := runUninstall("", "ax-system", []string{"--help"}); err != nil {
 		t.Fatalf("expected --help to succeed, got %v", err)
@@ -100,12 +113,12 @@ func TestRunContext(t *testing.T) {
 	kc := filepath.Join(tmp, "kubeconfig")
 	initial := `apiVersion: v1
 kind: Config
-current-context: local
+current-context: ax-local
 contexts:
-  - name: local
+  - name: ax-local
     context:
-      cluster: kind-local
-      user: kind-local
+      cluster: kind-ax-local
+      user: kind-ax-local
   - name: prod
     context:
       cluster: gke-prod
@@ -122,7 +135,7 @@ contexts:
 		t.Fatalf("runContext list: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "CURRENT") || !strings.Contains(out, "local") || !strings.Contains(out, "prod") {
+	if !strings.Contains(out, "CURRENT") || !strings.Contains(out, "ax-local") || !strings.Contains(out, "prod") {
 		t.Fatalf("unexpected context table output:\n%s", out)
 	}
 

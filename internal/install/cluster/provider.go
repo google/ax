@@ -20,7 +20,7 @@ import "context"
 
 const (
 	// DefaultName is the default local cluster name (`ax local start`).
-	DefaultName = "local"
+	DefaultName = "ax-local"
 	// DefaultNodeImage is the Kubernetes 1.36+ Kind node image required for
 	// ClusterTrustBundle and PodCertificateRequest projected volumes.
 	DefaultNodeImage = "kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5"
@@ -45,7 +45,6 @@ type UpOptions struct {
 type Info struct {
 	Name        string
 	KubeContext string
-	HasKVM      bool
 }
 
 // Status describes the observed state of a local cluster and its layers.
@@ -69,8 +68,8 @@ type Provider interface {
 }
 
 // KubeContextName returns the kubeconfig context name registered for a local
-// cluster. The default cluster ("local") registers context "local" directly so
-// `ax ctx local` works as documented; custom cluster names keep `kind-<name>`.
+// cluster. The default cluster ("ax-local") registers context "ax-local"
+// directly; custom cluster names keep `kind-<name>`.
 func KubeContextName(name string) string {
 	if name == "" || name == DefaultName {
 		return DefaultName

@@ -17,9 +17,12 @@ package executil
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,9 +70,13 @@ func TestEnsureKindDownloadsWhenSystemBinaryTooOld(t *testing.T) {
 	axHome := t.TempDir()
 	t.Setenv("AX_HOME", axHome)
 
+	payload := []byte("#!/bin/sh\necho 'kind v0.32.0'\n")
+	sum := sha256.Sum256(payload)
+	wantSHA := hex.EncodeToString(sum[:])
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("#!/bin/sh\necho 'kind v0.32.0'\n"))
+		_, _ = w.Write(payload)
 	}))
 	defer srv.Close()
 
@@ -84,7 +91,10 @@ func TestEnsureKindDownloadsWhenSystemBinaryTooOld(t *testing.T) {
 	}
 
 	var logBuf bytes.Buffer
-	got, err := EnsureKind(context.Background(), r, ToolURLs{KindBaseURL: srv.URL}, &logBuf)
+	got, err := EnsureKind(context.Background(), r, ToolURLs{
+		KindBaseURL: srv.URL,
+		KindSHA256:  wantSHA,
+	}, &logBuf)
 	if err != nil {
 		t.Fatalf("EnsureKind: %v", err)
 	}
@@ -94,6 +104,62 @@ func TestEnsureKindDownloadsWhenSystemBinaryTooOld(t *testing.T) {
 	}
 	if !strings.Contains(logBuf.String(), "Downloading kind") {
 		t.Fatalf("expected download log message, got %q", logBuf.String())
+	}
+}
+
+func TestEnsureKindRejectsChecksumMismatch(t *testing.T) {
+	axHome := t.TempDir()
+	t.Setenv("AX_HOME", axHome)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("tampered-binary"))
+	}))
+	defer srv.Close()
+
+	r := &fakeRunner{paths: map[string]string{}, runFn: func(Spec) (Result, error) { return Result{}, nil }}
+	_, err := EnsureKind(context.Background(), r, ToolURLs{
+		KindBaseURL: srv.URL,
+		KindSHA256:  strings.Repeat("0", 64),
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "SHA-256 checksum mismatch") {
+		t.Fatalf("expected SHA-256 mismatch error, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(axHome, "bin", "kind")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected ~/.ax/bin/kind not to exist after checksum mismatch, statErr=%v", statErr)
+	}
+}
+
+func TestEnsureToolsPreferSystemPathOverAxBin(t *testing.T) {
+	axHome := t.TempDir()
+	t.Setenv("AX_HOME", axHome)
+	binDir, err := BinDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"kubectl", "kind"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r := &fakeRunner{
+		paths: map[string]string{
+			"kubectl": "/usr/local/bin/kubectl",
+			"kind":    "/usr/local/bin/kind",
+		},
+		runFn: func(spec Spec) (Result, error) {
+			return Result{Stdout: "kind v0.32.0\n"}, nil
+		},
+	}
+
+	gotKubectl, err := EnsureKubectl(context.Background(), r, DefaultToolURLs(), nil)
+	if err != nil || gotKubectl != "/usr/local/bin/kubectl" {
+		t.Fatalf("EnsureKubectl = (%q, %v), want /usr/local/bin/kubectl", gotKubectl, err)
+	}
+	gotKind, err := EnsureKind(context.Background(), r, DefaultToolURLs(), nil)
+	if err != nil || gotKind != "/usr/local/bin/kind" {
+		t.Fatalf("EnsureKind = (%q, %v), want /usr/local/bin/kind", gotKind, err)
 	}
 }
 

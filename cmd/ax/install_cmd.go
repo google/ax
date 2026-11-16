@@ -29,7 +29,18 @@ import (
 	installsubstrate "github.com/google/ax/internal/install/substrate"
 )
 
-const localUsage = `Usage:
+func formatImageFlagDefault(def, envVar string, required bool) string {
+	if def != "" {
+		return fmt.Sprintf("(default: %q)", def)
+	}
+	if required {
+		return fmt.Sprintf("(required, or set $%s)", envVar)
+	}
+	return fmt.Sprintf("(optional, or set $%s)", envVar)
+}
+
+func localUsage() string {
+	return fmt.Sprintf(`Usage:
   ax local <start|stop|status|delete> [flags]
 
 Manage a self-contained local Kubernetes + Agent Substrate + AX environment.
@@ -41,13 +52,19 @@ Subcommands:
   delete   Destroy the local cluster and clean up its context
 
 Flags:
-  --name string                Local cluster name (default: "local")
+  --name string                Local cluster name (default: %q)
   --workers int                Number of gVisor worker replicas (default: 1)
-  --server-image string        ax-server image reference, tag or @sha256 (default: "` + axdeploy.DefaultServerImage + `")
-  --default-task-image string  Default task image when spec.profile.image is unset (default: "` + axdeploy.DefaultTaskImage + `")
-  -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")`
+  --server-image string        ax-server image reference, tag or @sha256 %s
+  --default-task-image string  Default task image when spec.profile.image is unset %s
+  -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")`,
+		cluster.DefaultName,
+		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
+		formatImageFlagDefault(axdeploy.DefaultTaskImage, "AX_DEFAULT_TASK_IMAGE", false),
+	)
+}
 
-const installUsage = `Usage:
+func installUsage() string {
+	return fmt.Sprintf(`Usage:
   ax install [flags]
 
 Install or upgrade AX (ax-postgres + ax-server) and register Substrate caller
@@ -56,8 +73,12 @@ permissions on an existing Kubernetes + Agent Substrate cluster.
 Flags:
   --context string             Kubernetes context (defaults to active current-context)
   -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")
-  --server-image string        ax-server image reference, tag or @sha256 (default: "` + axdeploy.DefaultServerImage + `")
-  --default-task-image string  Default task image when spec.profile.image is unset (default: "` + axdeploy.DefaultTaskImage + `")`
+  --server-image string        ax-server image reference, tag or @sha256 %s
+  --default-task-image string  Default task image when spec.profile.image is unset %s`,
+		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
+		formatImageFlagDefault(axdeploy.DefaultTaskImage, "AX_DEFAULT_TASK_IMAGE", false),
+	)
+}
 
 const uninstallUsage = `Usage:
   ax uninstall [flags]
@@ -120,11 +141,11 @@ func parseLocalArgs(args []string) (localFlags, error) {
 func runLocal(axNamespace string, args []string) error {
 	parsed, err := parseLocalArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, localUsage)
+		fmt.Fprintln(os.Stderr, localUsage())
 		return err
 	}
 	if parsed.help {
-		fmt.Println(localUsage)
+		fmt.Println(localUsage())
 		return nil
 	}
 
@@ -136,6 +157,11 @@ func runLocal(axNamespace string, args []string) error {
 
 	switch parsed.subcmd {
 	case "start":
+		// Fail fast if image inputs are gated before provisioning a Kind cluster.
+		srvImg, taskImg, err := axdeploy.ResolveImageInputs(parsed.serverImage, parsed.defaultTaskImage)
+		if err != nil {
+			return err
+		}
 		// Step 1: Provision or resume the local Kind cluster and select its kubeconfig context.
 		info, err := provider.Up(ctx, cluster.UpOptions{
 			Name: parsed.name,
@@ -156,8 +182,8 @@ func runLocal(axNamespace string, args []string) error {
 		if err := axdeploy.Install(ctx, axdeploy.InstallOptions{
 			KubeContext:      info.KubeContext,
 			Namespace:        axNamespace,
-			ServerImage:      parsed.serverImage,
-			DefaultTaskImage: parsed.defaultTaskImage,
+			ServerImage:      srvImg,
+			DefaultTaskImage: taskImg,
 			Out:              os.Stdout,
 		}); err != nil {
 			return err
@@ -193,7 +219,7 @@ func runLocal(axNamespace string, args []string) error {
 		return nil
 
 	default:
-		fmt.Fprintln(os.Stderr, localUsage)
+		fmt.Fprintln(os.Stderr, localUsage())
 		return fmt.Errorf("unknown subcommand %q (expected: start, stop, status, delete)", parsed.subcmd)
 	}
 }
@@ -224,11 +250,11 @@ func parseInstallArgs(args []string) (installFlags, error) {
 func runInstall(kubeContext, axNamespace string, args []string) error {
 	parsed, err := parseInstallArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, installUsage)
+		fmt.Fprintln(os.Stderr, installUsage())
 		return err
 	}
 	if parsed.help {
-		fmt.Println(installUsage)
+		fmt.Println(installUsage())
 		return nil
 	}
 

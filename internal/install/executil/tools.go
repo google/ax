@@ -24,6 +24,8 @@ package executil
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,12 +59,31 @@ const (
 var (
 	kindSemverRe   = regexp.MustCompile(`v?(\d+)\.(\d+)\.(\d+)`)
 	kernelMajorMin = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+	// Official SHA-256 digests from https://kind.sigs.k8s.io/dl/v0.32.0/kind-<os>-<arch>.sha256sum
+	pinnedKindSHA256 = map[string]string{
+		"linux/amd64":  "50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54",
+		"linux/arm64":  "b92cd615e97585de8ddade28ed5cd7feb4248d717c233eea5b03c37298900f5d",
+		"darwin/amd64": "295ac6d0d634c9819c9907df45e3017d1f13166bd13c3404c45e79f7faa47498",
+		"darwin/arm64": "dca67911095a110c2b5c36e26df6cac860c602033e456c0db47be498cdef1ebb",
+	}
+
+	// Official SHA-256 digests from https://dl.k8s.io/release/v1.36.0/bin/<os>/<arch>/kubectl.sha256
+	pinnedKubectlSHA256 = map[string]string{
+		"linux/amd64":  "123d8c8844f46b1244c547fffb3c17180c0c26dac9890589fe7e67763298748e",
+		"linux/arm64":  "9f9d9c44a7b5264515ac9da5991584e2395bd50662e651132337e7b4d0c56f8f",
+		"darwin/amd64": "06d7e9a3a26a326d43102c70b19f9d233db219d09890e558dbdc3647db732f06",
+		"darwin/arm64": "4bcf268eacdc1d2df74e37d86f639f27ca7dea3ae185b7b452b73b9fb5ddc14e",
+	}
 )
 
-// ToolURLs allows tests to point auto-downloads at an httptest.Server.
+// ToolURLs allows tests to point auto-downloads at an httptest.Server with
+// test-specific SHA-256 digests.
 type ToolURLs struct {
 	KindBaseURL    string // Default: https://kind.sigs.k8s.io/dl
+	KindSHA256     string // Optional override for custom test KindBaseURL
 	KubectlBaseURL string // Default: https://dl.k8s.io/release
+	KubectlSHA256  string // Optional override for custom test KubectlBaseURL
 }
 
 // DefaultToolURLs returns upstream release base URLs for kind and kubectl.
@@ -255,18 +276,22 @@ func parseKernelMajorMinor(kernel string) (major, minor int, ok bool) {
 // 3. Auto-Bootstrapping `kubectl` and `kind` into ~/.ax/bin
 // -----------------------------------------------------------------------------
 
-// EnsureKubectl locates kubectl in ~/.ax/bin or PATH, downloading a pinned
-// release binary into ~/.ax/bin if absent.
+// EnsureKubectl locates kubectl on PATH first, then ~/.ax/bin (checksum-verified),
+// downloading and SHA-256-verifying a pinned release binary into ~/.ax/bin if absent.
 func EnsureKubectl(ctx context.Context, r Runner, urls ToolURLs, logOut io.Writer) (string, error) {
-	// Check ~/.ax/bin first so a previously bootstrapped binary is reused directly.
-	if dir, err := BinDir(); err == nil {
-		localBin := filepath.Join(dir, "kubectl")
-		if isExecutable(localBin) {
-			return localBin, nil
-		}
-	}
 	if p, err := r.LookPath("kubectl"); err == nil {
 		return p, nil
+	}
+
+	expectedSHA, err := expectedToolSHA256(urls.KubectlSHA256, pinnedKubectlSHA256, "kubectl")
+	if err != nil {
+		return "", err
+	}
+	if dir, err := BinDir(); err == nil {
+		localBin := filepath.Join(dir, "kubectl")
+		if isExecutable(localBin) && fileMatchesSHA256(localBin, expectedSHA) {
+			return localBin, nil
+		}
 	}
 
 	// Fall back to downloading a pinned release binary into user-owned ~/.ax/bin
@@ -275,55 +300,85 @@ func EnsureKubectl(ctx context.Context, r Runner, urls ToolURLs, logOut io.Write
 	if err != nil {
 		return "", fmt.Errorf("kubectl not found and cannot create ~/.ax/bin: %w", err)
 	}
-	if urls.KubectlBaseURL == "" {
-		urls = DefaultToolURLs()
+	baseURL := urls.KubectlBaseURL
+	if baseURL == "" {
+		baseURL = DefaultToolURLs().KubectlBaseURL
 	}
 	dlURL := fmt.Sprintf("%s/%s/bin/%s/%s/kubectl",
-		strings.TrimRight(urls.KubectlBaseURL, "/"), defaultKubectlVersion, runtime.GOOS, runtime.GOARCH)
+		strings.TrimRight(baseURL, "/"), defaultKubectlVersion, runtime.GOOS, runtime.GOARCH)
 	dest := filepath.Join(dir, "kubectl")
 	if logOut != nil {
 		fmt.Fprintf(logOut, "Downloading kubectl %s to %s...\n", defaultKubectlVersion, dest)
 	}
-	if err := downloadExecutable(ctx, dlURL, dest); err != nil {
+	if err := downloadExecutable(ctx, dlURL, dest, expectedSHA); err != nil {
 		return "", fmt.Errorf("downloading kubectl: %w", err)
 	}
 	return dest, nil
 }
 
-// EnsureKind locates a Kubernetes 1.36-compatible kind CLI (>= v0.32.0) in
-// ~/.ax/bin or PATH, downloading defaultKindVersion into ~/.ax/bin if missing
-// or too old (for example, Cloudtop hosts shipping kind 0.11.x).
+// EnsureKind locates a Kubernetes 1.36-compatible kind CLI (>= v0.32.0) on PATH
+// first, then ~/.ax/bin (checksum-verified), downloading and SHA-256-verifying
+// defaultKindVersion into ~/.ax/bin if missing or too old (for example, hosts
+// shipping kind 0.11.x).
 func EnsureKind(ctx context.Context, r Runner, urls ToolURLs, logOut io.Writer) (string, error) {
-	// Prefer ~/.ax/bin/kind over system PATH so an auto-downloaded v0.32.0+
-	// binary wins even if an older system-wide kind (e.g. /usr/local/bin/kind)
-	// remains installed.
-	if dir, err := BinDir(); err == nil {
-		localBin := filepath.Join(dir, "kind")
-		if isExecutable(localBin) && kindMeetsMinVersion(ctx, r, localBin) {
-			return localBin, nil
-		}
-	}
 	if p, err := r.LookPath("kind"); err == nil && kindMeetsMinVersion(ctx, r, p) {
 		return p, nil
+	}
+
+	expectedSHA, err := expectedToolSHA256(urls.KindSHA256, pinnedKindSHA256, "kind")
+	if err != nil {
+		return "", err
+	}
+	if dir, err := BinDir(); err == nil {
+		localBin := filepath.Join(dir, "kind")
+		if isExecutable(localBin) && fileMatchesSHA256(localBin, expectedSHA) && kindMeetsMinVersion(ctx, r, localBin) {
+			return localBin, nil
+		}
 	}
 
 	dir, err := BinDir()
 	if err != nil {
 		return "", fmt.Errorf("compatible kind (>= v0.%d.0) not found and cannot create ~/.ax/bin: %w", minKindMinorVersion, err)
 	}
-	if urls.KindBaseURL == "" {
-		urls = DefaultToolURLs()
+	baseURL := urls.KindBaseURL
+	if baseURL == "" {
+		baseURL = DefaultToolURLs().KindBaseURL
 	}
 	dlURL := fmt.Sprintf("%s/%s/kind-%s-%s",
-		strings.TrimRight(urls.KindBaseURL, "/"), defaultKindVersion, runtime.GOOS, runtime.GOARCH)
+		strings.TrimRight(baseURL, "/"), defaultKindVersion, runtime.GOOS, runtime.GOARCH)
 	dest := filepath.Join(dir, "kind")
 	if logOut != nil {
 		fmt.Fprintf(logOut, "Downloading kind %s to %s...\n", defaultKindVersion, dest)
 	}
-	if err := downloadExecutable(ctx, dlURL, dest); err != nil {
+	if err := downloadExecutable(ctx, dlURL, dest, expectedSHA); err != nil {
 		return "", fmt.Errorf("downloading kind: %w", err)
 	}
 	return dest, nil
+}
+
+func expectedToolSHA256(override string, table map[string]string, tool string) (string, error) {
+	if s := strings.ToLower(strings.TrimSpace(override)); s != "" {
+		return s, nil
+	}
+	plat := runtime.GOOS + "/" + runtime.GOARCH
+	sum, ok := table[plat]
+	if !ok || sum == "" {
+		return "", fmt.Errorf("no pinned SHA-256 digest configured for %s on %s", tool, plat)
+	}
+	return sum, nil
+}
+
+func fileMatchesSHA256(path, expectedHex string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return hex.EncodeToString(h.Sum(nil)) == strings.ToLower(strings.TrimSpace(expectedHex))
 }
 
 func kindMeetsMinVersion(ctx context.Context, r Runner, bin string) bool {
@@ -356,10 +411,15 @@ func isExecutable(path string) bool {
 	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }
 
-// downloadExecutable streams url to a unique temporary sibling file with
-// executable permissions and atomically renames it into place so neither
-// interrupted downloads nor concurrent processes corrupt or race on dest.
-func downloadExecutable(ctx context.Context, url, dest string) error {
+// downloadExecutable streams url to a unique temporary sibling file, verifies
+// its SHA-256 digest against expectedSHA256 before setting executable bits or
+// renaming, and atomically moves it into place.
+func downloadExecutable(ctx context.Context, url, dest, expectedSHA256 string) error {
+	expectedSHA256 = strings.ToLower(strings.TrimSpace(expectedSHA256))
+	if expectedSHA256 == "" {
+		return fmt.Errorf("expected SHA-256 digest is required for %s", url)
+	}
+
 	client := &http.Client{Timeout: 2 * time.Minute}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -379,10 +439,17 @@ func downloadExecutable(ctx context.Context, url, dest string) error {
 		return err
 	}
 	tmp := f.Name()
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(f, hasher), resp.Body); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err
+	}
+	actualSHA256 := hex.EncodeToString(hasher.Sum(nil))
+	if actualSHA256 != expectedSHA256 {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("SHA-256 checksum mismatch for %s (expected %s, got %s)", url, expectedSHA256, actualSHA256)
 	}
 	if err := f.Chmod(0o755); err != nil {
 		_ = f.Close()

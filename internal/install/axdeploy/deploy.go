@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -35,23 +36,21 @@ import (
 
 const (
 	// DefaultServerImage is the default ax-server container image when
-	// --server-image is unset.
+	// --server-image and $AX_SERVER_IMAGE are unset. Kept empty to gate zero-flag
+	// installs until official org-hosted, @sha256-pinned release images exist.
 	//
-	// TODO(release): Switch DefaultServerImage from the temporary public staging
-	// image to "ghcr.io/google/ax/ax-server:<release-tag>" once official release
-	// images are published.
-	DefaultServerImage = "ghcr.io/yoyinzyc/ax/ax-server:latest"
+	// TODO(release): Populate with "ghcr.io/google/ax/ax-server:<tag>@sha256:<digest>"
+	// once official multi-arch release images are published.
+	DefaultServerImage = ""
 
-	// DefaultTaskImage is the default container image configured on ax-server
-	// (AX_DEFAULT_TASK_IMAGE) for tasks that omit spec.profile.image. It lives as
-	// its own full image reference because prebuilt agent images may be hosted in
-	// a separate registry/org (e.g. ghcr.io/agentexecutor/... or GCP Artifact
-	// Registry) and versioned independently of ax-server.
+	// DefaultTaskImage is the optional default container image configured on
+	// ax-server (AX_DEFAULT_TASK_IMAGE) for tasks that omit spec.profile.image
+	// when --default-task-image and $AX_DEFAULT_TASK_IMAGE are unset. When empty,
+	// tasks must specify spec.profile.image explicitly.
 	//
-	// TODO(release): Point DefaultTaskImage at the official published prebuilt
-	// default task image (and add DefaultRunnerImage / --runner-image once the
-	// read-only ax-task-runner volume mount lands).
-	DefaultTaskImage = "ghcr.io/yoyinzyc/ax/ax-task-runner:latest"
+	// TODO(release): Populate with "ghcr.io/agentexecutor/<image>:<tag>@sha256:<digest>"
+	// once the official published prebuilt default task image is live.
+	DefaultTaskImage = ""
 )
 
 // InstallOptions configures `ax install`.
@@ -96,9 +95,17 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if err := deploy.ValidateNamespace(ns); err != nil {
 		return err
 	}
+	if _, _, err := ResolveImageInputs(opts.ServerImage, opts.DefaultTaskImage); err != nil {
+		return err
+	}
 	timeout := opts.RolloutTimeout
 	if timeout <= 0 {
 		timeout = 3 * time.Minute
+	}
+
+	srvImg, taskImg, err := resolveImages(ctx, opts)
+	if err != nil {
+		return err
 	}
 
 	kubectlBin, err := executil.EnsureKubectl(ctx, r, opts.ToolURLs, out)
@@ -106,11 +113,6 @@ func Install(ctx context.Context, opts InstallOptions) error {
 		return err
 	}
 	k := &kubectlClient{runner: r, kubectl: kubectlBin, context: opts.KubeContext}
-
-	srvImg, taskImg, err := resolveImages(ctx, opts)
-	if err != nil {
-		return err
-	}
 
 	fmt.Fprintf(out, "==> Configuring Agent Substrate permissions for %s/ax-server...\n", ns)
 	if err := GrantSubstrateAccess(ctx, k, ns, timeout, out); err != nil {
@@ -143,7 +145,11 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "==> Deploying ax-server (%s) with default task image (%s)...\n", srvImg, taskImg)
+	if taskImg != "" {
+		fmt.Fprintf(out, "==> Deploying ax-server (%s) with default task image (%s)...\n", srvImg, taskImg)
+	} else {
+		fmt.Fprintf(out, "==> Deploying ax-server (%s)...\n", srvImg)
+	}
 	if _, err := k.run(ctx, bytes.NewReader(srvManifest), "apply", "-f", "-"); err != nil {
 		return fmt.Errorf("applying ax-server: %w", err)
 	}
@@ -223,19 +229,44 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 	return nil
 }
 
-func resolveImages(ctx context.Context, opts InstallOptions) (string, string, error) {
-	srvImg := strings.TrimSpace(opts.ServerImage)
+// ResolveImageInputs resolves the server and optional default task image
+// references from explicit flags, environment overrides ($AX_SERVER_IMAGE /
+// $AX_DEFAULT_TASK_IMAGE), or package defaults (DefaultServerImage /
+// DefaultTaskImage), failing fast only when the server image is unset.
+func ResolveImageInputs(serverImage, defaultTaskImage string) (string, string, error) {
+	srvImg := strings.TrimSpace(serverImage)
+	if srvImg == "" {
+		srvImg = strings.TrimSpace(os.Getenv("AX_SERVER_IMAGE"))
+	}
 	if srvImg == "" {
 		srvImg = DefaultServerImage
 	}
-	rawTaskImg := strings.TrimSpace(opts.DefaultTaskImage)
+	if srvImg == "" {
+		return "", "", fmt.Errorf("--server-image (or $AX_SERVER_IMAGE) is required until official release images are published")
+	}
+
+	rawTaskImg := strings.TrimSpace(defaultTaskImage)
+	if rawTaskImg == "" {
+		rawTaskImg = strings.TrimSpace(os.Getenv("AX_DEFAULT_TASK_IMAGE"))
+	}
 	if rawTaskImg == "" {
 		rawTaskImg = DefaultTaskImage
+	}
+	return srvImg, rawTaskImg, nil
+}
+
+func resolveImages(ctx context.Context, opts InstallOptions) (string, string, error) {
+	srvImg, rawTaskImg, err := ResolveImageInputs(opts.ServerImage, opts.DefaultTaskImage)
+	if err != nil {
+		return "", "", err
 	}
 
 	pinnedSrvImg, err := EnsureDigestPinned(ctx, srvImg, opts.HTTPClient)
 	if err != nil {
 		return "", "", err
+	}
+	if rawTaskImg == "" {
+		return pinnedSrvImg, "", nil
 	}
 	pinnedTaskImg, err := EnsureDigestPinned(ctx, rawTaskImg, opts.HTTPClient)
 	if err != nil {

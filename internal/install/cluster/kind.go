@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/google/ax/internal/install/executil"
 	"github.com/google/ax/internal/tunnel"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"gopkg.in/yaml.v3"
 )
 
 // KindProvider implements Provider using Kubernetes-in-Docker (Kind) over
@@ -34,7 +34,6 @@ type KindProvider struct {
 	ToolURLs    executil.ToolURLs
 	Out         io.Writer
 	AXNamespace string
-	ProbeKVM    func(ctx context.Context, rt executil.ContainerRuntime) bool
 }
 
 // NewKindProvider constructs a KindProvider with sensible defaults.
@@ -72,8 +71,10 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 	if err := executil.CheckContainerHost(ctx, p.Runner, rt, p.Out); err != nil {
 		return Info{}, err
 	}
+	if err := p.verifyContextOwnership(ctx, kubectlBin, name); err != nil {
+		return Info{}, err
+	}
 
-	hasKVM := p.hasKVM(ctx, rt)
 	exists, err := p.clusterExists(ctx, rt, kindBin, name)
 	if err != nil {
 		return Info{}, err
@@ -81,7 +82,7 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 
 	if !exists {
 		fmt.Fprintf(p.Out, "==> Creating Kind cluster %q (%s)...\n", name, nodeImage)
-		cfgYAML := BuildKindConfig(hasKVM)
+		cfgYAML := BuildKindConfig()
 		cfgFile, err := os.CreateTemp("", "ax-kind-config-*.yaml")
 		if err != nil {
 			return Info{}, fmt.Errorf("creating temporary kind config: %w", err)
@@ -151,14 +152,13 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	if err := p.configureNodes(ctx, rt, nodes, hasKVM); err != nil {
+	if err := p.configureNodes(ctx, rt, nodes); err != nil {
 		return Info{}, err
 	}
 
 	return Info{
 		Name:        name,
 		KubeContext: kubeCtx,
-		HasKVM:      hasKVM,
 	}, nil
 }
 
@@ -284,6 +284,14 @@ func (p *KindProvider) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
+	rawCtx := "kind-" + name
+	ownsTargetCtx := false
+	if kubeCtx != rawCtx {
+		if existingCluster, exists, err := p.contextCluster(ctx, kubectlBin, kubeCtx); err == nil && exists && existingCluster == rawCtx {
+			ownsTargetCtx = true
+		}
+	}
+
 	fmt.Fprintf(p.Out, "==> Deleting Kind cluster %q...\n", name)
 	if _, err := p.Runner.Run(ctx, executil.Spec{
 		Name:   kindBin,
@@ -295,32 +303,25 @@ func (p *KindProvider) Delete(ctx context.Context, name string) error {
 		return fmt.Errorf("deleting kind cluster %q: %w", name, err)
 	}
 
-	if name == DefaultName {
+	if ownsTargetCtx {
 		_, _ = p.Runner.Run(ctx, executil.Spec{
 			Name: kubectlBin,
-			Args: []string{"config", "delete-context", DefaultName},
+			Args: []string{"config", "delete-context", kubeCtx},
 		})
 	}
 	return nil
 }
 
 // BuildKindConfig renders the Kind v1alpha4 cluster configuration required by
-// Agent Substrate v1.0+ (K8s >= 1.36 certificate feature gates, parallel image
-// pulls, and optional /dev/kvm passthrough for Kata microVMs).
-func BuildKindConfig(hasKVM bool) string {
-	var b strings.Builder
-	b.WriteString(`kind: Cluster
+// Agent Substrate v1.0+ (K8s >= 1.36 certificate feature gates and parallel
+// image pulls). Note that `ax local` runs gVisor (`systrap`) workers and never
+// bind-mounts or mutates host `/dev/kvm`.
+func BuildKindConfig() string {
+	return `kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
-`)
-	if hasKVM {
-		b.WriteString(`  extraMounts:
-  - hostPath: /dev/kvm
-    containerPath: /dev/kvm
-`)
-	}
-	b.WriteString(`featureGates:
+featureGates:
   ClusterTrustBundle: true
   ClusterTrustBundleProjection: true
   PodCertificateRequest: true
@@ -333,8 +334,7 @@ kubeadmConfigPatches:
   kind: KubeletConfiguration
   serializeImagePulls: false
   maxParallelImagePulls: 4
-`)
-	return b.String()
+`
 }
 
 func (p *KindProvider) resolveTools(ctx context.Context) (executil.ContainerRuntime, string, string, error) {
@@ -358,21 +358,6 @@ func kindEnv(rt executil.ContainerRuntime) []string {
 		return []string{"KIND_EXPERIMENTAL_PROVIDER=podman"}
 	}
 	return nil
-}
-
-func (p *KindProvider) hasKVM(ctx context.Context, rt executil.ContainerRuntime) bool {
-	if p.ProbeKVM != nil {
-		return p.ProbeKVM(ctx, rt)
-	}
-	if runtime.GOOS == "linux" && os.Getenv("DOCKER_HOST") == "" && os.Getenv("CONTAINER_HOST") == "" {
-		_, err := os.Stat("/dev/kvm")
-		return err == nil
-	}
-	_, err := p.Runner.Run(ctx, executil.Spec{
-		Name: rt.Binary,
-		Args: []string{"run", "--rm", "--device", "/dev/kvm", "alpine:3.21", "true"},
-	})
-	return err == nil
 }
 
 func (p *KindProvider) clusterExists(ctx context.Context, rt executil.ContainerRuntime, kindBin, name string) (bool, error) {
@@ -421,6 +406,48 @@ func (p *KindProvider) containerRunning(ctx context.Context, rt executil.Contain
 	return strings.TrimSpace(res.Stdout) == "true", nil
 }
 
+func (p *KindProvider) contextCluster(ctx context.Context, kubectlBin, ctxName string) (string, bool, error) {
+	res, err := p.Runner.Run(ctx, executil.Spec{
+		Name: kubectlBin,
+		Args: []string{"config", "view", "-o", "yaml"},
+	})
+	if err != nil {
+		return "", false, err
+	}
+	var cfg struct {
+		Contexts []struct {
+			Name    string `yaml:"name"`
+			Context struct {
+				Cluster string `yaml:"cluster"`
+			} `yaml:"context"`
+		} `yaml:"contexts"`
+	}
+	if err := yaml.Unmarshal([]byte(res.Stdout), &cfg); err != nil {
+		return "", false, err
+	}
+	for _, c := range cfg.Contexts {
+		if c.Name == ctxName {
+			return strings.TrimSpace(c.Context.Cluster), true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// verifyContextOwnership ensures that aliasing `kind-<name>` to `targetCtx` will
+// not clobber a pre-existing kubeconfig context pointing at a different cluster.
+func (p *KindProvider) verifyContextOwnership(ctx context.Context, kubectlBin, name string) error {
+	rawCtx := "kind-" + name
+	targetCtx := KubeContextName(name)
+	if targetCtx == rawCtx {
+		return nil
+	}
+	existingCluster, exists, err := p.contextCluster(ctx, kubectlBin, targetCtx)
+	if err != nil || !exists || existingCluster == "" || existingCluster == rawCtx {
+		return nil
+	}
+	return fmt.Errorf("kubeconfig context %q already exists and points to cluster %q (expected %q); pass --name to choose a different local cluster name", targetCtx, existingCluster, rawCtx)
+}
+
 func (p *KindProvider) ensureKubeContext(ctx context.Context, kubectlBin, name string) (string, error) {
 	rawCtx := "kind-" + name
 	targetCtx := KubeContextName(name)
@@ -431,9 +458,12 @@ func (p *KindProvider) ensureKubeContext(ctx context.Context, kubectlBin, name s
 		})
 		return targetCtx, err
 	}
+	if err := p.verifyContextOwnership(ctx, kubectlBin, name); err != nil {
+		return "", err
+	}
 
-	// Alias "kind-local" -> "local" and drop the duplicate "kind-local" entry so
-	// `ax ctx` and `ax ctx local` behave cleanly and idempotently.
+	// Alias "kind-ax-local" -> "ax-local" and drop the duplicate "kind-ax-local"
+	// entry so `ax ctx` and `ax ctx ax-local` behave cleanly and idempotently.
 	if _, err := p.Runner.Run(ctx, executil.Spec{
 		Name: kubectlBin,
 		Args: []string{"config", "set-context", targetCtx, "--cluster=" + rawCtx, "--user=" + rawCtx},
@@ -453,7 +483,7 @@ func (p *KindProvider) ensureKubeContext(ctx context.Context, kubectlBin, name s
 	return targetCtx, nil
 }
 
-func (p *KindProvider) configureNodes(ctx context.Context, rt executil.ContainerRuntime, nodes []string, hasKVM bool) error {
+func (p *KindProvider) configureNodes(ctx context.Context, rt executil.ContainerRuntime, nodes []string) error {
 	for _, node := range nodes {
 		if _, err := p.Runner.Run(ctx, executil.Spec{
 			Name: rt.Binary,
@@ -469,12 +499,6 @@ func (p *KindProvider) configureNodes(ctx context.Context, rt executil.Container
 			Name: rt.Binary,
 			Args: []string{"exec", node, "sysctl", "-w", "fs.inotify.max_user_instances=8192"},
 		})
-		if hasKVM {
-			_, _ = p.Runner.Run(ctx, executil.Spec{
-				Name: rt.Binary,
-				Args: []string{"exec", node, "chmod", "666", "/dev/kvm"},
-			})
-		}
 	}
 	return nil
 }

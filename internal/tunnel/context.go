@@ -79,14 +79,14 @@ func resolveKubectl(ctx context.Context) (string, error) {
 }
 
 func kubectlIfInstalled() string {
+	if p, err := exec.LookPath("kubectl"); err == nil {
+		return p
+	}
 	if dir, err := executil.BinDir(); err == nil {
 		candidate := filepath.Join(dir, "kubectl")
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return candidate
 		}
-	}
-	if p, err := exec.LookPath("kubectl"); err == nil {
-		return p
 	}
 	return ""
 }

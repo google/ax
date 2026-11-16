@@ -198,11 +198,11 @@ install_main() {
             echo ""
         fi
     fi
-    echo "Next step — bootstrap a local sandbox environment (or switch to a remote cluster with 'ax ctx'):"
+    echo "Next step — connect to a cluster ('ax ctx') or start a local sandbox environment:"
     if [ "$_on_path" -eq 1 ]; then
-        echo "  ax local start"
+        echo "  ax local start --server-image <server-img>"
     else
-        echo "  ${_dest} local start"
+        echo "  ${_dest} local start --server-image <server-img>"
     fi
 }
 

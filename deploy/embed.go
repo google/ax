@@ -94,11 +94,10 @@ func RenderServer(cfg ServerConfig) ([]byte, error) {
 		return nil, fmt.Errorf("invalid server image %q: %w", cfg.ServerImage, err)
 	}
 	taskImg := strings.TrimSpace(cfg.DefaultTaskImage)
-	if taskImg == "" {
-		return nil, fmt.Errorf("default task image must not be empty")
-	}
-	if _, err := name.NewDigest(taskImg); err != nil {
-		return nil, fmt.Errorf("default task image %q must be digest-pinned (@sha256:...): %w", cfg.DefaultTaskImage, err)
+	if taskImg != "" {
+		if _, err := name.NewDigest(taskImg); err != nil {
+			return nil, fmt.Errorf("default task image %q must be digest-pinned (@sha256:...): %w", cfg.DefaultTaskImage, err)
+		}
 	}
 
 	rendered := rawServerYAML
