@@ -118,6 +118,10 @@ instead. No mocking library is in `go.mod`.
   `internal/server/server.go` and cleared by `storedStatus` before writes.
   It changes when Substrate recreates the actor and is empty when the actor
   is missing or cannot be read. `ax describe task` shows it as `Actor UID`.
+- `internal/tasklogs` opens the `worker` container's Kubernetes log stream with
+  `sinceTime=now` and filters both actorlog label groups (`labels` and
+  `logging.googleapis.com/labels`) by `ate.actor.uid`. The optional
+  `deploy/task-logs-rbac.yaml` grants only namespaced `get` on `pods/log`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
   connect otherwise.

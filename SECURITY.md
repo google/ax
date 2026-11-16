@@ -14,3 +14,23 @@ AX is in heavy development. Until authentication and isolation land, treat a dep
 - Atespaces organize resources. They are not a tenant isolation boundary.
 - Setting `spec.debug: true` turns on the guest services, which allow arbitrary command execution and file access inside the sandbox. Whoever can create a Task can set it.
 - Anything inside a task's sandbox, including the agent and the task runner, should be treated as untrusted. Don't rely on values reported from inside the sandbox for security decisions.
+
+## Opt-in task log streaming
+
+Task log streaming must stay off by default. Before enabling it, restrict
+API access to trusted clients: the API still has no authentication or
+atespace authorization ([#376](https://github.com/google/ax/issues/376)). Any
+reachable client can request another task's logs. Filtering by actor UID
+selects records; it does not authorize their reader.
+
+Task output is untrusted and is forwarded without secret redaction. A real
+`GEMINI_API_KEY` or other credential in a task can appear in stdout/stderr and
+therefore in worker logs and this stream. Use egress credential injection
+and placeholders instead of real credentials in tasks
+([#475](https://github.com/google/ax/issues/475)). Enabling streaming does not
+resolve either risk.
+
+The optional `deploy/task-logs-rbac.yaml` grants `get` on `pods/log` only in
+the worker-pool namespace. Kubernetes cannot restrict this permission by
+actor UID: ax-server can read all container logs in that namespace. Bind it
+only in namespaces whose worker logs the deployment is trusted to read.
