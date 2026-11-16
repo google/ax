@@ -1,0 +1,40 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# AX v1alpha1 Gateway manifest for Step 3 of the hero demo: Starter Task, Session & Resume.
+#
+# Lets the starter task reach the Gemini API, and adds the API key outside the
+# sandbox. The key comes from a Secret that each cluster needs:
+#
+#   kubectl -n ax-system create secret generic hero-demo-gemini --from-literal=api-key="AIzaSy..."
+#   kubectl -n ax-system label secret hero-demo-gemini ax.io/credential=true
+#
+# The cluster must also grant atespace default the ax-system namespace in
+# Substrate's k8s-credential-provider-namespace-policy; without the grant, the
+# request gets a 403. See "Injecting credentials" in docs/manifests.md.
+#
+# TODO(@Lukeluds): Add any other hosts the starter image needs, such as the ones it installs agy from.
+apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: hero-demo-gw
+  atespace: default
+spec:
+  egress:
+    - https:
+        hostnames: ["generativelanguage.googleapis.com"]
+        effects:
+          replaceHeaders:
+            - header: x-goog-api-key
+              credentialUri: "ate-secret://k8s.io/default/ax-system/hero-demo-gemini/api-key"

@@ -50,9 +50,11 @@ AX_TIMEOUT="${AX_TIMEOUT:-120}"
 ONLY_STEP=""
 
 WORKSPACE_MANIFEST="${HERO_DIR}/workspace.yaml"
+GATEWAY_MANIFEST="${HERO_DIR}/gateway.yaml"
 STARTER_MANIFEST="${HERO_DIR}/task-starter.yaml"
 CUSTOM_MANIFEST="${HERO_DIR}/task-custom.yaml"
 WORKSPACE_NAME="hero-demo-ws"
+GATEWAY_NAME="hero-demo-gw"
 STARTER_TASK="hero-demo-starter-task"
 CUSTOM_TASK="hero-demo-custom-task"
 
@@ -119,6 +121,9 @@ ax_quiet() {
   return 1
 }
 
+# TODO(@Lukeluds): Drop this once task-starter.yaml has the published image.
+starter_image_is_placeholder() { grep -q '<starter-image>' "${STARTER_MANIFEST}"; }
+
 # ------------------------------------------------------------------------------
 # Step 1: Local Up & AX Studio
 # ------------------------------------------------------------------------------
@@ -179,6 +184,15 @@ step3_starter_task_session() {
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the starter task lifecycle"
     return
   fi
+  # A task can only bind a Gateway that already exists.
+  if ! ax_quiet apply -f "${GATEWAY_MANIFEST}"; then
+    mark_fail "${step}" "ax apply -f gateway.yaml failed"
+    return
+  fi
+  if starter_image_is_placeholder; then
+    mark_stub "${step}" "Gateway ${GATEWAY_NAME} applied; the starter image is still a placeholder"
+    return
+  fi
   # Tasks are immutable, so start from a fresh one on every run.
   run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
   if ! ax_quiet apply -f "${STARTER_MANIFEST}"; then
@@ -229,9 +243,17 @@ step5_remote_promote() {
     return
   fi
   # Promotion applies the same manifests, unchanged, to the remote cluster.
+  if ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${GATEWAY_MANIFEST}" ||
+    ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${WORKSPACE_MANIFEST}"; then
+    mark_fail "${step}" "Applying the manifests to ${REMOTE_CONTEXT} failed"
+    return
+  fi
+  if starter_image_is_placeholder; then
+    mark_stub "${step}" "Gateway and Workspace applied to ${REMOTE_CONTEXT}; the starter image is still a placeholder"
+    return
+  fi
   run_ax --context "${REMOTE_CONTEXT}" delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
-  if ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${WORKSPACE_MANIFEST}" &&
-    ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${STARTER_MANIFEST}"; then
+  if ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${STARTER_MANIFEST}"; then
     # TODO(@siyuanfoundation): Promote in one command instead of one apply per manifest.
     mark_pass "${step}" "Manifests applied unchanged to ${REMOTE_CONTEXT}"
   else
