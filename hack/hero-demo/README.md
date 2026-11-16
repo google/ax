@@ -32,7 +32,7 @@ With `RUN_LIVE_STEPS=1`, the harness calls:
 - Step 3: `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, `ax suspend` and `ax resume`.
 - Step 5: `ax --context <remote> apply -f` for the three manifests.
 
-Two things stop these calls early on `main`, and the step then reports `🟡 STUB`: `ax-server` does not accept the workspace's `spec.profile` until snapshot pre-warming is enabled (#584), and the starter image is a placeholder until it is published (Substrate requires images pinned by digest).
+The starter image is a placeholder until it is published (Substrate requires images pinned by digest), so Steps 3 and 5 stop before `ax apply -f task-starter.yaml` and report `🟡 STUB`.
 
 Still stubbed: local mode and the AX Studio health check (Step 1), the warm snapshot check (Step 2), the second Session turn (Step 3), the custom image task, which needs automatic `ax-task-runner` injection (Step 4), and promotion in one command (Step 5).
 

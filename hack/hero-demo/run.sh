@@ -121,24 +121,6 @@ ax_quiet() {
   return 1
 }
 
-# apply_workspace applies workspace.yaml for the given step, with any ax flags
-# that follow. If that fails, it marks the step and returns non-zero.
-apply_workspace() {
-  local step="$1" out
-  shift
-  if out="$(run_ax "$@" apply -f "${WORKSPACE_MANIFEST}" 2>&1)"; then
-    return 0
-  fi
-  # TODO(@YoyinZyc): Drop this case once ax-server accepts the workspace's spec.profile (#584).
-  if [[ "${out}" == *"spec.profile is not supported yet"* ]]; then
-    mark_stub "${step}" "ax-server does not accept the workspace's spec.profile yet (#584)"
-  else
-    printf '    %s\n' "${out//$'\n'/$'\n'    }" >&2
-    mark_fail "${step}" "ax apply -f workspace.yaml failed"
-  fi
-  return 1
-}
-
 # TODO(@Lukeluds): Drop this once task-starter.yaml has the published image.
 starter_image_is_placeholder() { grep -q '<starter-image>' "${STARTER_MANIFEST}"; }
 
@@ -180,7 +162,10 @@ step2_warm_workspace() {
     return
   fi
   # Workspaces are immutable, and applying an identical spec again is a no-op.
-  apply_workspace "${step}" || return
+  if ! ax_quiet apply -f "${WORKSPACE_MANIFEST}"; then
+    mark_fail "${step}" "ax apply -f workspace.yaml failed"
+    return
+  fi
   # TODO(@YoyinZyc): Check that the workspace reaches Ready from a warm snapshot
   # once pre-warmed workspace snapshots land on main (#584).
   mark_stub "${step}" "Workspace ${WORKSPACE_NAME} applied; wire the warm snapshot check"
@@ -196,7 +181,7 @@ step3_starter_task_session() {
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the starter task lifecycle"
     return
   fi
-  # A task can only bind a Gateway and a Workspace that already exist.
+  # A task can only bind a Gateway that already exists.
   if ! ax_quiet apply -f "${GATEWAY_MANIFEST}"; then
     mark_fail "${step}" "ax apply -f gateway.yaml failed"
     return
@@ -205,7 +190,6 @@ step3_starter_task_session() {
     mark_stub "${step}" "Gateway ${GATEWAY_NAME} applied; the starter image is still a placeholder"
     return
   fi
-  apply_workspace "${step}" || return
   # Tasks are immutable, so start from a fresh one on every run.
   run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
   if ! ax_quiet apply -f "${STARTER_MANIFEST}"; then
@@ -256,11 +240,11 @@ step5_remote_promote() {
     return
   fi
   # Promotion applies the same manifests, unchanged, to the remote cluster.
-  if ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${GATEWAY_MANIFEST}"; then
+  if ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${GATEWAY_MANIFEST}" ||
+    ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${WORKSPACE_MANIFEST}"; then
     mark_fail "${step}" "Applying the manifests to ${REMOTE_CONTEXT} failed"
     return
   fi
-  apply_workspace "${step}" --context "${REMOTE_CONTEXT}" || return
   if starter_image_is_placeholder; then
     mark_stub "${step}" "Gateway and Workspace applied to ${REMOTE_CONTEXT}; the starter image is still a placeholder"
     return
