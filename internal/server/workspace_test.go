@@ -21,8 +21,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
@@ -73,16 +75,25 @@ func newWorkspaceTestServer(t *testing.T) *server.Server {
 }
 
 func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupCoordinator) (*server.Server, *substratetest.Server) {
+	srv, sub, _ := newPrewarmWorkspaceTestServerWithManager(t, coord)
+	return srv, sub
+}
+
+func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.SetupCoordinator) (*server.Server, *substratetest.Server, *controller.WorkspaceManager) {
 	t.Helper()
 	sub := substratetest.NewServer(t)
 	st := &ctxCheckingWorkspaceStore{Store: memory.NewStore()}
+	locker := lock.NewMemoryLocker()
 	wsMgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
+		Locker:           locker,
+		Store:            st,
 		SetupCoordinator: coord,
 	})
 	srv := server.NewServer(st, newTestReconciler(sub), server.Options{
+		Locker:           locker,
 		WorkspaceManager: wsMgr,
 	})
-	return srv, sub
+	return srv, sub, wsMgr
 }
 
 func TestCreateWorkspace_Immutability(t *testing.T) {
@@ -594,5 +605,88 @@ func TestWorkspacePrewarm_SubstrateGRPCCanceledStaysPreparing(t *testing.T) {
 	})
 	if err != nil || ready.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseReady {
 		t.Fatalf("retry CreateWorkspace = (%+v, %v), want Ready", ready, err)
+	}
+}
+
+func TestDeleteWorkspace_CoordinatesWithLazyEnsureSnapshotTag(t *testing.T) {
+	ctx := t.Context()
+	inLazySetup := make(chan struct{})
+	releaseLazySetup := make(chan struct{})
+	var lazyHookArmed atomic.Bool
+
+	coord := &testSetupCoordinator{
+		fn: func(ctx context.Context, _, _ string) error {
+			if lazyHookArmed.Load() {
+				close(inLazySetup)
+				select {
+				case <-releaseLazySetup:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		},
+	}
+	srv, sub, wsMgr := newPrewarmWorkspaceTestServerWithManager(t, coord)
+
+	ws, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "race-ws"},
+			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkspace: %v", err)
+	}
+
+	// Start an in-flight lazy EnsureSnapshotTag that holds RLock("workspace").
+	lazyHookArmed.Store(true)
+	lazyDone := make(chan error, 1)
+	go func() {
+		_, tagErr := wsMgr.EnsureSnapshotTag(ctx, ws, &v1alpha1.Profile{Image: "ghcr.io/org/custom@sha256:999"}, nil)
+		lazyDone <- tagErr
+	}()
+	<-inLazySetup
+
+	// Start DeleteWorkspace concurrently: it must block on Lock("workspace")
+	// until the in-flight EnsureSnapshotTag releases its RLock.
+	deleteDone := make(chan error, 1)
+	go func() {
+		_, delErr := srv.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Name: "race-ws"})
+		deleteDone <- delErr
+	}()
+
+	select {
+	case delErr := <-deleteDone:
+		t.Fatalf("DeleteWorkspace returned (%v) while lazy EnsureSnapshotTag still held RLock", delErr)
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	// Let the lazy build finish creating its Tag; DeleteWorkspace then unblocks
+	// and sweeps both the default Tag and the lazy Tag, leaving zero orphans.
+	close(releaseLazySetup)
+	if err := <-lazyDone; err != nil {
+		t.Fatalf("in-flight EnsureSnapshotTag: %v", err)
+	}
+	if err := <-deleteDone; err != nil {
+		t.Fatalf("DeleteWorkspace: %v", err)
+	}
+	if tags, err := sub.Client().ListTags(ctx, "default"); err != nil || len(tags) != 0 {
+		t.Fatalf("tags remaining after DeleteWorkspace = (%+v, %v), want 0 orphaned tags", tags, err)
+	}
+
+	// Any lazy EnsureSnapshotTag arriving after DeleteWorkspace sees the deleted
+	// Workspace under RLock and aborts without spawning a setup actor or Tag.
+	lazyHookArmed.Store(false)
+	callsBefore := coord.calls.Load()
+	_, err = wsMgr.EnsureSnapshotTag(ctx, ws, &v1alpha1.Profile{Image: "ghcr.io/org/late@sha256:888"}, nil)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("EnsureSnapshotTag after DeleteWorkspace = %v, want FailedPrecondition", err)
+	}
+	if coord.calls.Load() != callsBefore {
+		t.Errorf("post-delete EnsureSnapshotTag spawned a setup actor")
+	}
+	if tags, _ := sub.Client().ListTags(ctx, "default"); len(tags) != 0 {
+		t.Errorf("post-delete EnsureSnapshotTag created orphan tags: %+v", tags)
 	}
 }
