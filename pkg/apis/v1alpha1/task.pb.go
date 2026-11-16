@@ -1254,6 +1254,105 @@ func (x *ResumeTaskRequest) GetName() string {
 	return ""
 }
 
+// Live-only logs, available only when ax-server enables task logs. The actor
+// must initially be running; requesting logs never resumes it.
+type StreamTaskLogsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamTaskLogsRequest) Reset() {
+	*x = StreamTaskLogsRequest{}
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamTaskLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamTaskLogsRequest) ProtoMessage() {}
+
+func (x *StreamTaskLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamTaskLogsRequest.ProtoReflect.Descriptor instead.
+func (*StreamTaskLogsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *StreamTaskLogsRequest) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
+	}
+	return ""
+}
+
+func (x *StreamTaskLogsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type StreamTaskLogsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One complete actorlog JSON record, without a trailing newline.
+	Line          string `protobuf:"bytes,1,opt,name=line,proto3" json:"line,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamTaskLogsResponse) Reset() {
+	*x = StreamTaskLogsResponse{}
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamTaskLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamTaskLogsResponse) ProtoMessage() {}
+
+func (x *StreamTaskLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamTaskLogsResponse.ProtoReflect.Descriptor instead.
+func (*StreamTaskLogsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *StreamTaskLogsResponse) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
+}
+
 var File_pkg_apis_v1alpha1_task_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
@@ -1337,7 +1436,12 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
 	"\x11ResumeTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name*\x8b\x02\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"G\n" +
+	"\x15StreamTaskLogsRequest\x12\x1a\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\",\n" +
+	"\x16StreamTaskLogsResponse\x12\x12\n" +
+	"\x04line\x18\x01 \x01(\tR\x04line*\x8b\x02\n" +
 	"\tTaskState\x12\x1a\n" +
 	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fTASK_STATE_IDLE\x10\x01\x12\x16\n" +
@@ -1373,53 +1477,55 @@ func file_pkg_apis_v1alpha1_task_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
-	(TaskState)(0),              // 0: ax.v1alpha1.TaskState
-	(TaskResult)(0),             // 1: ax.v1alpha1.TaskResult
-	(TaskStatusReason)(0),       // 2: ax.v1alpha1.TaskStatusReason
-	(*Task)(nil),                // 3: ax.v1alpha1.Task
-	(*TaskSpec)(nil),            // 4: ax.v1alpha1.TaskSpec
-	(*EnvVar)(nil),              // 5: ax.v1alpha1.EnvVar
-	(*RetryConfig)(nil),         // 6: ax.v1alpha1.RetryConfig
-	(*Goal)(nil),                // 7: ax.v1alpha1.Goal
-	(*TaskOutcome)(nil),         // 8: ax.v1alpha1.TaskOutcome
-	(*TaskStatusDetail)(nil),    // 9: ax.v1alpha1.TaskStatusDetail
-	(*TaskStatus)(nil),          // 10: ax.v1alpha1.TaskStatus
-	(*GetTaskRequest)(nil),      // 11: ax.v1alpha1.GetTaskRequest
-	(*ListTasksRequest)(nil),    // 12: ax.v1alpha1.ListTasksRequest
-	(*ListTasksResponse)(nil),   // 13: ax.v1alpha1.ListTasksResponse
-	(*CreateTaskRequest)(nil),   // 14: ax.v1alpha1.CreateTaskRequest
-	(*DeleteTaskRequest)(nil),   // 15: ax.v1alpha1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),  // 16: ax.v1alpha1.DeleteTaskResponse
-	(*SuspendTaskRequest)(nil),  // 17: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),   // 18: ax.v1alpha1.ResumeTaskRequest
-	(*ObjectMeta)(nil),          // 19: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),             // 20: ax.v1alpha1.Profile
-	(*WorkspaceRef)(nil),        // 21: ax.v1alpha1.WorkspaceRef
-	(*structpb.Struct)(nil),     // 22: google.protobuf.Struct
-	(*GatewayRef)(nil),          // 23: ax.v1alpha1.GatewayRef
-	(*durationpb.Duration)(nil), // 24: google.protobuf.Duration
-	(*status.Status)(nil),       // 25: google.rpc.Status
-	(*Condition)(nil),           // 26: ax.v1alpha1.Condition
+	(TaskState)(0),                 // 0: ax.v1alpha1.TaskState
+	(TaskResult)(0),                // 1: ax.v1alpha1.TaskResult
+	(TaskStatusReason)(0),          // 2: ax.v1alpha1.TaskStatusReason
+	(*Task)(nil),                   // 3: ax.v1alpha1.Task
+	(*TaskSpec)(nil),               // 4: ax.v1alpha1.TaskSpec
+	(*EnvVar)(nil),                 // 5: ax.v1alpha1.EnvVar
+	(*RetryConfig)(nil),            // 6: ax.v1alpha1.RetryConfig
+	(*Goal)(nil),                   // 7: ax.v1alpha1.Goal
+	(*TaskOutcome)(nil),            // 8: ax.v1alpha1.TaskOutcome
+	(*TaskStatusDetail)(nil),       // 9: ax.v1alpha1.TaskStatusDetail
+	(*TaskStatus)(nil),             // 10: ax.v1alpha1.TaskStatus
+	(*GetTaskRequest)(nil),         // 11: ax.v1alpha1.GetTaskRequest
+	(*ListTasksRequest)(nil),       // 12: ax.v1alpha1.ListTasksRequest
+	(*ListTasksResponse)(nil),      // 13: ax.v1alpha1.ListTasksResponse
+	(*CreateTaskRequest)(nil),      // 14: ax.v1alpha1.CreateTaskRequest
+	(*DeleteTaskRequest)(nil),      // 15: ax.v1alpha1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),     // 16: ax.v1alpha1.DeleteTaskResponse
+	(*SuspendTaskRequest)(nil),     // 17: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),      // 18: ax.v1alpha1.ResumeTaskRequest
+	(*StreamTaskLogsRequest)(nil),  // 19: ax.v1alpha1.StreamTaskLogsRequest
+	(*StreamTaskLogsResponse)(nil), // 20: ax.v1alpha1.StreamTaskLogsResponse
+	(*ObjectMeta)(nil),             // 21: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),                // 22: ax.v1alpha1.Profile
+	(*WorkspaceRef)(nil),           // 23: ax.v1alpha1.WorkspaceRef
+	(*structpb.Struct)(nil),        // 24: google.protobuf.Struct
+	(*GatewayRef)(nil),             // 25: ax.v1alpha1.GatewayRef
+	(*durationpb.Duration)(nil),    // 26: google.protobuf.Duration
+	(*status.Status)(nil),          // 27: google.rpc.Status
+	(*Condition)(nil),              // 28: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
-	19, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	21, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	4,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
 	10, // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	20, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
+	22, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
 	5,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	21, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
-	22, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
+	23, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
+	24, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
 	7,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
 	6,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
-	23, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
-	24, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
-	24, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
+	25, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	26, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
+	26, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
 	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
-	25, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
+	27, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
 	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	26, // 15: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	28, // 15: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
 	0,  // 16: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
 	9,  // 17: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
 	8,  // 18: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
@@ -1446,7 +1552,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_task_proto_rawDesc), len(file_pkg_apis_v1alpha1_task_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
