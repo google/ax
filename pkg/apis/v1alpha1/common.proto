@@ -37,7 +37,7 @@ message ObjectMeta {
 }
 
 message ResourcesSpec {
-  ResourceList limits = 2;
+  ResourceList limits = 1;
 }
 
 message ResourceList {

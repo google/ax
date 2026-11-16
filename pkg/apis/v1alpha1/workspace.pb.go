@@ -173,7 +173,7 @@ type WorkspaceSpec struct {
 	// Runtime MCP capability definitions shared across tasks in this Workspace.
 	// Resolved dynamically by ax-server on every Task wakeup (create/resume) and
 	// delivered to the runner rather than baked into an immutable snapshot.
-	Mcp *MCPConfig `protobuf:"bytes,3,opt,name=mcp,proto3" json:"mcp,omitempty"`
+	Mcp *MCPConfig `protobuf:"bytes,1,opt,name=mcp,proto3" json:"mcp,omitempty"`
 	// Default compute profile (image, resources, ate_actor_template) used to
 	// pre-warm the workspace snapshot upon Workspace creation for fast warm task
 	// startup, and used as the fallback profile for Tasks binding this Workspace
@@ -183,10 +183,10 @@ type WorkspaceSpec struct {
 	// TaskSpec.profile: if a Task sets its own profile and it differs from
 	// WorkspaceSpec.profile, the Task uses its own profile as-is and cold-boots
 	// workspace setup rather than starting from the pre-warmed snapshot.
-	Profile *Profile `protobuf:"bytes,5,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile *Profile `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Setup steps executed once in a setup actor and captured into the workspace
 	// snapshot.
-	Setup         *WorkspaceSetup `protobuf:"bytes,6,opt,name=setup,proto3" json:"setup,omitempty"`
+	Setup         *WorkspaceSetup `protobuf:"bytes,3,opt,name=setup,proto3" json:"setup,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -336,10 +336,10 @@ type GitRepo struct {
 	Repo string `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	// Checkout directory relative to the workspace root (defaults to "." when set
 	// explicitly, or derived from name / repo URL when omitted).
-	Dir   string `protobuf:"bytes,4,opt,name=dir,proto3" json:"dir,omitempty"`
-	Depth int32  `protobuf:"varint,5,opt,name=depth,proto3" json:"depth,omitempty"`
+	Dir   string `protobuf:"bytes,3,opt,name=dir,proto3" json:"dir,omitempty"`
+	Depth int32  `protobuf:"varint,4,opt,name=depth,proto3" json:"depth,omitempty"`
 	// Target branch, tag, or commit SHA to check out (defaults to "main").
-	Ref           string `protobuf:"bytes,6,opt,name=ref,proto3" json:"ref,omitempty"`
+	Ref           string `protobuf:"bytes,5,opt,name=ref,proto3" json:"ref,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1133,9 +1133,9 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\x04spec\x18\x04 \x01(\v2\x1a.ax.v1alpha1.WorkspaceSpecR\x04spec\x124\n" +
 	"\x06status\x18\x05 \x01(\v2\x1c.ax.v1alpha1.WorkspaceStatusR\x06status\"\x9c\x01\n" +
 	"\rWorkspaceSpec\x12(\n" +
-	"\x03mcp\x18\x03 \x01(\v2\x16.ax.v1alpha1.MCPConfigR\x03mcp\x12.\n" +
-	"\aprofile\x18\x05 \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x121\n" +
-	"\x05setup\x18\x06 \x01(\v2\x1b.ax.v1alpha1.WorkspaceSetupR\x05setup\"\xe3\x01\n" +
+	"\x03mcp\x18\x01 \x01(\v2\x16.ax.v1alpha1.MCPConfigR\x03mcp\x12.\n" +
+	"\aprofile\x18\x02 \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x121\n" +
+	"\x05setup\x18\x03 \x01(\v2\x1b.ax.v1alpha1.WorkspaceSetupR\x05setup\"\xe3\x01\n" +
 	"\x0eWorkspaceSetup\x12&\n" +
 	"\x03git\x18\x01 \x03(\v2\x14.ax.v1alpha1.GitRepoR\x03git\x12'\n" +
 	"\x05files\x18\x02 \x03(\v2\x11.ax.v1alpha1.FileR\x05files\x121\n" +
@@ -1145,9 +1145,9 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\aGitRepo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x10\n" +
-	"\x03dir\x18\x04 \x01(\tR\x03dir\x12\x14\n" +
-	"\x05depth\x18\x05 \x01(\x05R\x05depth\x12\x10\n" +
-	"\x03ref\x18\x06 \x01(\tR\x03ref\"4\n" +
+	"\x03dir\x18\x03 \x01(\tR\x03dir\x12\x14\n" +
+	"\x05depth\x18\x04 \x01(\x05R\x05depth\x12\x10\n" +
+	"\x03ref\x18\x05 \x01(\tR\x03ref\"4\n" +
 	"\x04File\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\"w\n" +

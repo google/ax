@@ -34,8 +34,6 @@ message Task {
 }
 
 message TaskSpec {
-  reserved 1, 2, 4;
-
   // Optional compute profile (image, resources, ate_actor_template) for this
   // task's sandbox.
   //
@@ -49,10 +47,10 @@ message TaskSpec {
   //     When this differs from WorkspaceSpec.profile, the task cold-boots and
   //     runs workspace setup in its own compute profile instead of starting
   //     from the pre-warmed snapshot.
-  Profile profile = 8;
+  Profile profile = 1;
 
   // Command argv; if empty, runs the resolved image's ENTRYPOINT + CMD in its WORKDIR.
-  repeated string commands = 9;
+  repeated string commands = 2;
 
   // Non-secret environment variables merged on top of the image's Env.
   repeated EnvVar env = 3;
@@ -61,11 +59,11 @@ message TaskSpec {
   // /workspace unless the binding sets a path, and that path is the task
   // command's working directory. A task without a workspace gets an empty
   // working directory at /workspace.
-  WorkspaceRef workspace = 5;
+  WorkspaceRef workspace = 4;
 
   // debug enables the in-container guest services (process execution and file
   // access) that back `ax ssh`. Off by default.
-  bool debug = 6;
+  bool debug = 5;
 
   // config is free-form, runner-defined configuration. AX stores it and
   // hands it to the runner as-is, as part of the Task in AX_TASK_YAML and
@@ -73,24 +71,24 @@ message TaskSpec {
   // object within 16 KiB; it does not validate or interpret it.
   // It is stored in plain text and shown by `ax get task`, so it must not
   // hold secrets.
-  google.protobuf.Struct config = 7;
+  google.protobuf.Struct config = 6;
 
   // Optional natural-language task goal.
-  Goal goal = 10;
+  Goal goal = 7;
 
   // Retries after a failed exit, sandbox crash, or lost runner.
-  RetryConfig retry = 11;
+  RetryConfig retry = 8;
 
   // gateway binds the Gateway whose rules allow the task's external network
   // traffic. Rules are copied onto the actor when the task is created (later
   // edits or deletes of the gateway don't change existing tasks, and binding a
   // missing gateway fails). A task without a Gateway has no external network
   // access.
-  GatewayRef gateway = 12;
+  GatewayRef gateway = 9;
 
   // Logical multi-turn session / conversation thread ID. Defaults to
   // metadata.uid on CreateTask if unset.
-  string session_id = 13;
+  string session_id = 10;
 }
 
 message EnvVar {
@@ -141,9 +139,6 @@ message TaskOutcome {
   // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
   // automatic stdout/stderr tail fallback (capped at 64 KiB).
   string output = 4;
-  // Optional structured JSON output from $AX_OUTPUT_JSON_FILE or
-  // POST :8099/.../output (<= 64 KiB).
-  google.protobuf.Struct structured_output = 5;
 }
 
 enum TaskStatusReason {
@@ -152,34 +147,32 @@ enum TaskStatusReason {
   TASK_STATUS_REASON_SANDBOX_CRASHED = 2;
 }
 
-message StatusDetail {
+message TaskStatusDetail {
   TaskStatusReason reason = 1;
   string detail = 2;
 }
 
 message TaskStatus {
-  reserved 1, 2, 4, 5, 6;
-
-  string actor = 3;
-  repeated Condition conditions = 7;
-  TaskState state = 8;
-  StatusDetail status_detail = 9;
-  TaskOutcome outcome = 10;
+  string actor = 1;
+  // actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
+  // Read from Substrate, never stored; empty when the actor cannot be read.
+  string actor_uid = 2;
+  string ate_actor_template = 3;
+  repeated Condition conditions = 4;
+  TaskState state = 5;
+  TaskStatusDetail status_detail = 6;
+  TaskOutcome outcome = 7;
   // 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
   // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
   // retry (non-zero command exit, sandbox crash, or lost runner).
-  int32 attempt = 11;
-  string ate_actor_template = 12;
+  int32 attempt = 8;
   // Monotonic task revision.
-  int64 generation = 13;
+  int64 generation = 9;
   // Effective command argv executed by each run: spec.commands if set,
   // otherwise the image's ENTRYPOINT + CMD.
-  repeated string resolved_argv = 14;
+  repeated string resolved_argv = 10;
   // Summary of the previous attempt's failure, provided as context on retry.
-  string previous_failure = 15;
-  // actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
-  // Read from Substrate, never stored; empty when the actor cannot be read.
-  string actor_uid = 23;
+  string previous_failure = 11;
 }
 
 // --- RPC Request & Response Messages ---
