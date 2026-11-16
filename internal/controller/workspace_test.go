@@ -561,3 +561,57 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		}
 	})
 }
+
+func TestWorkspaceManager_ParallelProfilesUnderSharedLock(t *testing.T) {
+	ctx := t.Context()
+	sub := substratetest.NewServer(t)
+
+	// Barrier inside AwaitSetup: both distinct profiles must enter AwaitSetup
+	// concurrently. If EnsureSnapshotTag held an exclusive Workspace lock rather
+	// than RLock, the second profile would never reach the barrier.
+	var arrived atomic.Int32
+	bothInSetup := make(chan struct{})
+	coord := &fakeSetupCoordinator{
+		fn: func(ctx context.Context, _, _ string) error {
+			if arrived.Add(1) == 2 {
+				close(bothInSetup)
+			}
+			select {
+			case <-bothInSetup:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+
+	mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
+		SetupCoordinator: coord,
+	})
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "parallel-ws", Atespace: "default", Uid: "uid-parallel"},
+		Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		Status:   &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhaseReady},
+	}
+
+	profA := &v1alpha1.Profile{Image: "ghcr.io/org/a@sha256:aaa"}
+	profB := &v1alpha1.Profile{Image: "ghcr.io/org/b@sha256:bbb"}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, prof := range []*v1alpha1.Profile{profA, profB} {
+		wg.Add(1)
+		go func(p *v1alpha1.Profile) {
+			defer wg.Done()
+			_, err := mgr.EnsureSnapshotTag(ctx, ws, p, nil)
+			errs <- err
+		}(prof)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("parallel EnsureSnapshotTag failed: %v", err)
+		}
+	}
+}

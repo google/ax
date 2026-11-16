@@ -24,20 +24,32 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/lock"
+	"github.com/jackc/pgx/v5"
 )
 
-// Lock implements lock.Locker with leases stored in the locks table. All
-// lease times are taken from the database clock, so ax-server replicas do not
-// need synchronized clocks.
+type lockMode string
+
+const (
+	lockModeShared    lockMode = "S"
+	lockModeExclusive lockMode = "X"
+)
+
+// Lock and RLock implement lock.Locker with leases stored in the locks table.
+// All lease times are taken from the database clock, so ax-server replicas do
+// not need synchronized clocks.
 //
-// A lock is a row holding a random token and an expiry. Acquiring inserts the
-// row, or takes it over if its lease has expired; releasing deletes it (only
-// if it still holds the caller's token). Waiters retry every
-// LockRetryInterval.
+// Each acquired lock is a (key, token) row holding its mode ('S' shared or 'X'
+// exclusive) and an expiry. Multiple 'S' rows may coexist for the same key as
+// long as no unexpired 'X' row exists; acquiring 'X' requires no unexpired rows
+// of either mode for that key. Waiters retry every LockRetryInterval.
 //
-// Advisory locks were not used because they belong to a database session: a
-// lock held across a long Substrate call would pin a pooled connection for
-// that long, and would be released silently if that connection dropped.
+// Session-level advisory locks were not used to hold leases across operations
+// because they belong to a database session: a lock held across a long
+// Substrate call would pin a pooled connection for that long, and would be
+// released silently if that connection dropped. Instead, tryAcquire uses a
+// transaction-scoped advisory lock (pg_advisory_xact_lock) only for the
+// sub-millisecond check-and-insert transaction so concurrent shared and
+// exclusive acquisitions on the same key serialize cleanly under READ COMMITTED.
 //
 // # Lease renewal
 //
@@ -67,7 +79,17 @@ import (
 // keep failing for longer than the TTL (e.g. a prolonged database outage), the
 // lease can expire while the holder is still working, and the holder is not
 // interrupted; the loss is only logged.
+// Lock acquires an exclusive distributed lease for (kind, atespace, name).
 func (s *Store) Lock(ctx context.Context, kind, atespace, name string) (func(), error) {
+	return s.acquireLock(ctx, kind, atespace, name, lockModeExclusive)
+}
+
+// RLock acquires a shared distributed lease for (kind, atespace, name).
+func (s *Store) RLock(ctx context.Context, kind, atespace, name string) (func(), error) {
+	return s.acquireLock(ctx, kind, atespace, name, lockModeShared)
+}
+
+func (s *Store) acquireLock(ctx context.Context, kind, atespace, name string, mode lockMode) (func(), error) {
 	key := lock.Key(kind, atespace, name)
 
 	tokenBytes := make([]byte, 16)
@@ -80,8 +102,8 @@ func (s *Store) Lock(ctx context.Context, kind, atespace, name string) (func(), 
 		return nil, err
 	}
 
-	// Fast path: the lock is usually free.
-	ok, err := s.tryLock(ctx, key, token)
+	// Fast path: the lock is usually available.
+	ok, err := s.tryAcquire(ctx, key, token, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +111,7 @@ func (s *Store) Lock(ctx context.Context, kind, atespace, name string) (func(), 
 		return s.makeUnlock(key, token), nil
 	}
 
-	// Slow path: retry until the holder releases the lock or its lease
-	// expires.
+	// Slow path: retry until conflicting holders release or their leases expire.
 	ticker := time.NewTicker(s.opts.LockRetryInterval)
 	defer ticker.Stop()
 	for {
@@ -99,7 +120,7 @@ func (s *Store) Lock(ctx context.Context, kind, atespace, name string) (func(), 
 			return nil, ctx.Err()
 		case <-ticker.C:
 		}
-		ok, err := s.tryLock(ctx, key, token)
+		ok, err := s.tryAcquire(ctx, key, token, mode)
 		if err != nil {
 			return nil, err
 		}
@@ -109,23 +130,53 @@ func (s *Store) Lock(ctx context.Context, kind, atespace, name string) (func(), 
 	}
 }
 
-// tryLock attempts to take the lease for key, succeeding if no lease exists or
-// the existing one has expired.
-func (s *Store) tryLock(ctx context.Context, key, token string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `
-		INSERT INTO locks (key, token, expires_at)
-		VALUES ($1, $2, clock_timestamp() + $3 * interval '1 millisecond')
-		ON CONFLICT (key) DO UPDATE
-		SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at
-		WHERE locks.expires_at <= clock_timestamp()`,
-		key, token, s.ttlMillis())
+// tryAcquire atomically purges expired leases for key and inserts a new lease
+// row if no conflicting lease is currently held.
+func (s *Store) tryAcquire(ctx context.Context, key, token string, mode lockMode) (bool, error) {
+	var acquired bool
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		// 1. Serialize concurrent RLock/Lock attempts on the same key (2-arg int4
+		// advisory lock space, released automatically when BeginFunc commits).
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('ax:lock'), hashtext($1))`, key); err != nil {
+			return err
+		}
+
+		// 2. Reclaim any expired leases left behind by crashed holders.
+		if _, err := tx.Exec(ctx, `DELETE FROM locks WHERE key = $1 AND expires_at <= clock_timestamp()`, key); err != nil {
+			return err
+		}
+
+		// 3. Check for conflicting active leases: exclusive ('X') conflicts with
+		// any active row; shared ('S') conflicts only with an active 'X' row.
+		conflictSQL := `SELECT EXISTS (SELECT 1 FROM locks WHERE key = $1)`
+		if mode == lockModeShared {
+			conflictSQL = `SELECT EXISTS (SELECT 1 FROM locks WHERE key = $1 AND mode = 'X')`
+		}
+		var blocked bool
+		if err := tx.QueryRow(ctx, conflictSQL, key).Scan(&blocked); err != nil {
+			return err
+		}
+		if blocked {
+			return nil
+		}
+
+		// 4. No conflict: record this holder's lease row.
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO locks (key, token, mode, expires_at)
+			VALUES ($1, $2, $3, clock_timestamp() + $4 * interval '1 millisecond')`,
+			key, token, string(mode), s.ttlMillis()); err != nil {
+			return err
+		}
+		acquired = true
+		return nil
+	})
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return false, ctxErr
 		}
-		return false, fmt.Errorf("acquiring lock %s: %w", key, err)
+		return false, fmt.Errorf("acquiring lock %s (%s): %w", key, mode, err)
 	}
-	return tag.RowsAffected() == 1, nil
+	return acquired, nil
 }
 
 func (s *Store) ttlMillis() int64 {

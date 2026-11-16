@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/lock"
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
@@ -121,9 +122,17 @@ type SetupCoordinator interface {
 	DeleteSetup(ctx context.Context, atespace, setupActor string) error
 }
 
+// WorkspaceStore reads the stored Workspace record under a shared Workspace
+// lock so lazy EnsureSnapshotTag builds abort cleanly if the Workspace was
+// deleted or recreated before RLock was acquired. Satisfied by store.Store.
+type WorkspaceStore interface {
+	GetWorkspace(ctx context.Context, atespace, name string) (*v1alpha1.Workspace, error)
+}
+
 // WorkspaceManagerOptions configures a WorkspaceManager.
 type WorkspaceManagerOptions struct {
 	Locker           lock.Locker
+	Store            WorkspaceStore
 	SetupCoordinator SetupCoordinator
 	// DefaultTaskImage is used when a Profile omits image and ate_actor_template
 	// (defaults to v1alpha1.DefaultTaskImage).
@@ -143,6 +152,7 @@ type WorkspaceManagerOptions struct {
 type WorkspaceManager struct {
 	client           *substrate.Client
 	locker           lock.Locker
+	store            WorkspaceStore
 	coordinator      SetupCoordinator
 	defaultTaskImage string
 	runnerImage      string
@@ -170,6 +180,7 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	return &WorkspaceManager{
 		client:           client,
 		locker:           locker,
+		store:            opt.Store,
 		coordinator:      opt.SetupCoordinator,
 		defaultTaskImage: defaultTaskImage,
 		runnerImage:      opt.RunnerImage,
@@ -220,7 +231,9 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, 
 		return st, nil
 	}
 
-	tagName, err := m.EnsureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), setupGateway)
+	// Prepare is invoked by CreateWorkspace while already holding the exclusive
+	// "workspace" lock, so pass holdWorkspaceRLock=false to avoid self-deadlock.
+	tagName, err := m.ensureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), setupGateway, false)
 	if err != nil {
 		msg := statusErrorMessage(err)
 		if substrate.IsTransientError(err) || errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
@@ -254,15 +267,24 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, 
 }
 
 // EnsureSnapshotTag resolves or builds the cached Substrate Tag for a given
-// (Workspace, Profile) pair. It serves two callers:
-//  1. Eager pre-warming in Prepare (using ws.Spec.Profile).
-//  2. Future lazy snapshot caching in CreateTask (when a Task specifies a
-//     custom Profile that has no Tag for this Workspace yet).
+// (Workspace, Profile) pair on behalf of lazy Task provisioning.
 //
-// Why it locks on (atespace, tagName): if 10 Tasks with the same new Profile
-// arrive at once on a cold miss, only the first lock holder runs a setup actor
-// while the remaining 9 wait on the lock, re-check GetTag, and reuse the Tag.
+// On a cold miss, EnsureSnapshotTag acquires two locks in strict order:
+//  1. Shared RLock("workspace", atespace, wsName): allows distinct custom
+//     Profiles on the same Workspace to pre-warm in parallel while blocking
+//     DeleteWorkspace (which acquires exclusive Lock("workspace")) until all
+//     in-flight snapshot builds finish.
+//  2. Exclusive Lock("workspace-tag", atespace, tagName): if 10 Tasks with the
+//     same custom Profile cold-miss at once, only the first lock holder runs a
+//     setup actor while the remaining 9 wait and reuse the completed Tag.
+//
+// Callers that already hold the exclusive "workspace" lock (CreateWorkspace)
+// must call Prepare rather than EnsureSnapshotTag.
 func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.Workspace, prof *v1alpha1.Profile, setupGateway *v1alpha1.Gateway) (string, error) {
+	return m.ensureSnapshotTag(ctx, ws, prof, setupGateway, true)
+}
+
+func (m *WorkspaceManager) ensureSnapshotTag(ctx context.Context, ws *v1alpha1.Workspace, prof *v1alpha1.Profile, setupGateway *v1alpha1.Gateway, holdWorkspaceRLock bool) (string, error) {
 	if !m.PrewarmEnabled() {
 		return "", errors.New("workspace snapshot pre-warming is not configured")
 	}
@@ -297,13 +319,22 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 		return "", fmt.Errorf("checking tag %s/%s: %w", atespace, tagName, err)
 	}
 
-	// Step 3: Cold miss (or incomplete stranded Tag) — acquire a per-Tag
-	// distributed lock so concurrent requests for the same Profile coalesce
-	// onto one setup actor while distinct Profiles for the same Workspace still
-	// build in parallel.
-	//
-	// TODO: Coordinate lazy EnsureSnapshotTag builds with DeleteWorkspace via a
-	// shared/exclusive (RLock/Lock) Workspace lock once lock.Locker supports it.
+	// Step 3: Cold miss (or incomplete stranded Tag) — coordinate with
+	// DeleteWorkspace via a shared Workspace RLock (unless called from Prepare,
+	// which already holds the exclusive Workspace Lock), then coalesce same-tag
+	// builders via an exclusive per-Tag Lock.
+	if holdWorkspaceRLock {
+		wsUnlock, err := m.locker.RLock(ctx, "workspace", atespace, wsName)
+		if err != nil {
+			return "", fmt.Errorf("acquiring shared lock on workspace %s/%s: %w", atespace, wsName, err)
+		}
+		defer wsUnlock()
+
+		if err := m.verifyLiveWorkspace(ctx, atespace, wsName, wsUID); err != nil {
+			return "", err
+		}
+	}
+
 	unlock, err := m.locker.Lock(ctx, "workspace-tag", atespace, tagName)
 	if err != nil {
 		return "", fmt.Errorf("locking workspace tag %s/%s: %w", atespace, tagName, err)
@@ -346,6 +377,34 @@ func (m *WorkspaceManager) EnsureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 		}
 	}
 	return "", lastErr
+}
+
+// verifyLiveWorkspace re-checks the stored Workspace after acquiring
+// RLock("workspace") and requires all three invariants to hold before spawning
+// a lazy setup actor:
+//  1. Existence: (atespace, wsName) still exists in the store (was not deleted
+//     before RLock was acquired).
+//  2. Identity: metadata.uid still matches expectedUID (the Workspace was not
+//     deleted and recreated under the same name with a new UID).
+//  3. Readiness: status.phase is Ready.
+func (m *WorkspaceManager) verifyLiveWorkspace(ctx context.Context, atespace, wsName, expectedUID string) error {
+	if m.store == nil {
+		return nil
+	}
+	live, err := m.store.GetWorkspace(ctx, atespace, wsName)
+	if errors.Is(err, store.ErrNotFound) {
+		return status.Errorf(codes.FailedPrecondition, "workspace %q not found in atespace %q", wsName, atespace)
+	}
+	if err != nil {
+		return fmt.Errorf("getting workspace %s/%s: %w", atespace, wsName, err)
+	}
+	if live.GetMetadata().GetUid() != expectedUID {
+		return status.Errorf(codes.FailedPrecondition, "workspace %q in atespace %q was recreated", wsName, atespace)
+	}
+	if phase := live.GetStatus().GetPhase(); phase != v1alpha1.WorkspacePhaseReady {
+		return status.Errorf(codes.FailedPrecondition, "workspace %q in atespace %q is not Ready (phase %q)", wsName, atespace, phase)
+	}
+	return nil
 }
 
 // isTagCompleted reports whether tag's durable snapshot copy has finished. In
