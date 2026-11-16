@@ -39,6 +39,10 @@ type ServerConfig struct {
 	Namespace        string
 	ServerImage      string
 	DefaultTaskImage string
+	// RunnerVolumeImage is the digest-pinned runner volume image ax-server
+	// mounts into task containers. Empty runs the runner baked into each
+	// task image.
+	RunnerVolumeImage string
 }
 
 // ValidateNamespace checks that ns is a valid Kubernetes namespace name.
@@ -99,10 +103,17 @@ func RenderServer(cfg ServerConfig) ([]byte, error) {
 			return nil, fmt.Errorf("default task image %q must be digest-pinned (@sha256:...): %w", cfg.DefaultTaskImage, err)
 		}
 	}
+	runnerImg := strings.TrimSpace(cfg.RunnerVolumeImage)
+	if runnerImg != "" {
+		if _, err := name.NewDigest(runnerImg); err != nil {
+			return nil, fmt.Errorf("runner volume image %q must be digest-pinned (@sha256:...): %w", cfg.RunnerVolumeImage, err)
+		}
+	}
 
 	rendered := rawServerYAML
 	rendered = strings.ReplaceAll(rendered, "${AX_SERVER_IMAGE}", srvImg)
 	rendered = strings.ReplaceAll(rendered, "${AX_DEFAULT_TASK_IMAGE}", taskImg)
+	rendered = strings.ReplaceAll(rendered, "${AX_RUNNER_VOLUME_IMAGE}", runnerImg)
 	rendered = rewriteNamespace(rendered, ns)
 
 	if ns != v1alpha1.DefaultSystemNamespace {

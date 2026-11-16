@@ -70,10 +70,26 @@ func TestRenderServer(t *testing.T) {
 		for _, tc := range []ServerConfig{
 			{Namespace: "ax-system", ServerImage: "repo/img:tag\n          evil: true", DefaultTaskImage: taskImg},
 			{Namespace: "ax-system", ServerImage: srvImg, DefaultTaskImage: "localhost:5001/ax-task-runner@sha256:short"},
+			{Namespace: "ax-system", ServerImage: srvImg, RunnerVolumeImage: "localhost:5001/ax-runner-volume:latest"},
 		} {
 			if _, err := RenderServer(tc); err == nil {
 				t.Fatalf("expected error for %+v, got nil", tc)
 			}
+		}
+	})
+
+	t.Run("renders the runner volume image", func(t *testing.T) {
+		const runnerImg = "localhost:5001/ax-runner-volume@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+		for _, img := range []string{runnerImg, ""} {
+			out, err := RenderServer(ServerConfig{Namespace: "ax-system", ServerImage: srvImg, RunnerVolumeImage: img})
+			if err != nil {
+				t.Fatalf("RenderServer: %v", err)
+			}
+			s := string(out)
+			if want := "name: AX_RUNNER_VOLUME_IMAGE\n              value: \"" + img + "\""; !strings.Contains(s, want) {
+				t.Fatalf("missing %q in rendered server manifest:\n%s", want, s)
+			}
+			assertValidMultiDocYAML(t, out)
 		}
 	})
 

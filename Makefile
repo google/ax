@@ -27,6 +27,10 @@ AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
 # Image holding only the runner binary, mounted read-only into task containers;
 # see Dockerfile.runner-volume.
 AX_RUNNER_VOLUME_BUILD_IMAGE ?= $(AX_IMAGE_REPO)/ax-runner-volume:$(IMAGE_TAG)
+# Digest-pinned runner volume image that `make deploy` configures ax-server to
+# mount into task containers. Empty (the default) keeps running the runner baked
+# into each task image.
+AX_RUNNER_VOLUME_IMAGE ?=
 # Image the server runs for tasks that do not set spec.profile.image. Substrate only
 # accepts images pinned by digest, so after `make images` this defaults to the
 # digest it recorded for the pushed ax-task-runner image.
@@ -158,6 +162,7 @@ deploy-server: check-image-repo
 	@echo "==> Deploying ax-server ($(AX_SERVER_IMAGE))..."
 	sed -e 's|$${AX_SERVER_IMAGE}|$(AX_SERVER_IMAGE)|g' \
 		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_DEFAULT_TASK_IMAGE)|g' \
+		-e 's|$${AX_RUNNER_VOLUME_IMAGE}|$(AX_RUNNER_VOLUME_IMAGE)|g' \
 		deploy/ax-server.yaml | kubectl apply -f -
 
 # Apply example task and resources

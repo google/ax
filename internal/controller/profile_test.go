@@ -20,7 +20,9 @@ import (
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
 
 func TestEffectiveProfile(t *testing.T) {
@@ -196,4 +198,44 @@ func TestResolveProfileTemplate(t *testing.T) {
 	if err != nil || directName != "gpu-base" || directTmpl != nil {
 		t.Fatalf("ResolveProfileTemplate(AteActorTemplate) = (%q, %v, %v), want (\"gpu-base\", nil, nil)", directName, directTmpl, err)
 	}
+}
+
+// A runner image is mounted read-only into the Profile template and run from
+// there; without one the template runs the runner baked into the image.
+func TestResolveProfileTemplate_MountsRunnerVolume(t *testing.T) {
+	const runner = "ghcr.io/google/ax/ax-runner-volume@sha256:r1"
+	p := &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}
+
+	_, tmpl, err := controller.ResolveProfileTemplate("default", p, "", runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := tmpl.GetContainers()[0].GetCommand(), v1alpha1.RunnerMountPath+"/ax-task-runner"; len(got) != 1 || got[0] != want {
+		t.Errorf("command = %v, want [%s]", got, want)
+	}
+	if !hasImageVolume(tmpl.GetVolumes(), runner) {
+		t.Errorf("volumes = %v, want an image volume of %q", tmpl.GetVolumes(), runner)
+	}
+
+	_, tmpl, err = controller.ResolveProfileTemplate("default", p, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasImageVolume(tmpl.GetVolumes(), "") {
+		t.Errorf("volumes = %v, want no image volume without a runner image", tmpl.GetVolumes())
+	}
+	if got := tmpl.GetContainers()[0].GetCommand(); len(got) != 1 || got[0] != substrate.DefaultGuestCommand {
+		t.Errorf("command = %v, want [%s]", got, substrate.DefaultGuestCommand)
+	}
+}
+
+// hasImageVolume reports whether vols has an image volume of ref, or of any
+// image when ref is empty.
+func hasImageVolume(vols []*ateapipb.Volume, ref string) bool {
+	for _, v := range vols {
+		if img := v.GetImage(); img != nil && (ref == "" || img.GetReference() == ref) {
+			return true
+		}
+	}
+	return false
 }
