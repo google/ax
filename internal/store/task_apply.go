@@ -44,7 +44,7 @@ func (k TaskKey) Normalized() TaskKey {
 // Embedding [lifecycle.State] promotes Task, Actions, ActorUID, ActiveRunID,
 // RunSeq, ActionSeq, RunnerToken*, LastAckedRunnerSeq, ClaimDeadline, and
 // LastResumedAt directly onto TaskRow while keeping storage-only fields out of
-// [lifecycle.Transition].
+// [lifecycle.TransitionFunc].
 type TaskRow struct {
 	lifecycle.State
 
@@ -196,11 +196,11 @@ type ApplyFunc func(current *TaskRow, now time.Time) (*TaskRow, error)
 // task write methods (SaveTask, UpdateTaskStatus, SetTaskDeleteTime,
 // DeleteTask) remain only until the gRPC Task handlers migrate to Apply.
 //
-// # Usage with lifecycle.Transition
+// # Usage with lifecycle.TransitionFunc
 //
 // Perform any external reads (Workspace, Gateway, OCI image config, or Agent
-// Substrate RPCs) BEFORE calling Apply, then run the pure [lifecycle.Transition]
-// inside ApplyFunc using the store's now timestamp:
+// Substrate RPCs) BEFORE calling Apply, then run the pure
+// [lifecycle.TransitionFunc] inside ApplyFunc using the store's now timestamp:
 //
 //	// 1. Creating a new task (ax-server CreateTask):
 //	written, err := applier.Apply(ctx, key, func(current *store.TaskRow, now time.Time) (*store.TaskRow, error) {

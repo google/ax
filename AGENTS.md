@@ -25,7 +25,7 @@ deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
-internal/lifecycle     Pure Task lifecycle contract (State, Input, Transition, NextReconcileAt) and action queue types
+internal/lifecycle     Pure Task lifecycle contract (State, Input, TransitionFunc, NextReconcileAt) and action queue types
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends, plus TaskApplier contract (schema.sql and schema.go change together)

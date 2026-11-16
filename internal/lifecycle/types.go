@@ -32,30 +32,20 @@ const (
 	// ax-task-runner to claim its assignment before TimerExpired fires.
 	ClaimWatchdogTimeout = 5 * time.Minute
 
-	// MaxQueueWaitDuration is the maximum cumulative wall-clock time
-	// (now - Action.Since) that RESUME_ACTOR may spend waiting on
-	// RESOURCE_EXHAUSTED across all retry attempts before failing the task.
-	MaxQueueWaitDuration = 30 * time.Minute
-
 	// DefaultActionInitialBackoff is the sleep delay after the first retryable
 	// action or capacity failure (before exponential growth).
 	DefaultActionInitialBackoff = time.Second
 
 	// DefaultActionMaxBackoff caps the per-attempt sleep interval between
 	// individual action or capacity retries (1s -> 2s -> ... -> 60s), so a
-	// queued task keeps polling at least once a minute up to MaxQueueWaitDuration.
+	// queued task keeps polling at least once a minute while waiting on
+	// transient errors or worker capacity.
 	DefaultActionMaxBackoff = 60 * time.Second
 )
 
-var (
-	// ErrInvalidTransition indicates an operation is invalid for the task's
-	// current state (maps to gRPC FailedPrecondition).
-	ErrInvalidTransition = errors.New("invalid task state transition")
-
-	// ErrUnimplemented is returned by the contract stub [Transition] until the
-	// state machine subworkstream lands its implementation.
-	ErrUnimplemented = errors.New("lifecycle.Transition not implemented")
-)
+// ErrInvalidTransition indicates an operation is invalid for the task's
+// current state (maps to gRPC FailedPrecondition).
+var ErrInvalidTransition = errors.New("invalid task state transition")
 
 // ActionKind identifies one idempotent Agent Substrate operation stored in
 // tasks.pending_actions.
@@ -118,10 +108,8 @@ type Action struct {
 	Tries int `json:"tries"`
 
 	// Since is the timestamp when this Action was originally enqueued (set by
-	// State.NextAction and preserved across retries). Used to measure cumulative
-	// queue wait time (now.Sub(Action.Since)) against MaxQueueWaitDuration when
-	// RESUME_ACTOR repeatedly hits RESOURCE_EXHAUSTED, so capacity waits
-	// eventually time out and fail the task rather than retrying forever.
+	// State.NextAction and preserved across retries) for observability and
+	// queue-wait diagnostics.
 	Since time.Time `json:"since"`
 
 	// NotBefore is the earliest timestamp at which a worker may execute this
@@ -264,8 +252,16 @@ type Output struct {
 	DeleteRow bool
 }
 
-// TransitionFunc is the signature of [Transition], allowing reconciler unit
-// tests to inject deterministic state machine stubs.
+// TransitionFunc computes the next task state and complete pending action list
+// for input in at timestamp now.
+//
+// Contract invariants for implementations and callers:
+//   - Pure & I/O-free: never mutates its input State in place, performs zero
+//     I/O, returns the complete replacement State.Actions slice (preserving
+//     head Action.ID when an in-flight action must remain valid), and sets
+//     Output.DeleteRow = true only when ActionDeleteActor completes.
+//   - Level-triggered observations: ObservedActorInput and HeartbeatLostInput
+//     are idempotent across repeated sweeps (see their type docs).
 type TransitionFunc func(state State, in Input, now time.Time) (State, Output, error)
 
 // Input is the sealed sum type of every event that can mutate a Task.
@@ -367,8 +363,8 @@ type ActionFailedInput struct {
 func (*ActionFailedInput) isInput() {}
 
 // CapacityUnavailableInput reports RESOURCE_EXHAUSTED on RESUME_ACTOR, backing
-// off the head action via Action.Tries / Action.NotBefore until cumulative wait
-// time (now - Action.Since) reaches MaxQueueWaitDuration.
+// off the head action via Action.Tries / Action.NotBefore while keeping the
+// task in TASK_STATE_QUEUED (never failing the task for capacity exhaustion).
 type CapacityUnavailableInput struct {
 	// ActionID is the RESUME_ACTOR Action.ID that received RESOURCE_EXHAUSTED.
 	ActionID string
