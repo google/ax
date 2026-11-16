@@ -42,7 +42,19 @@ is_prerelease() {
   [[ "$1" == *-* ]]
 }
 
+# is_latest_stable succeeds if $1 is a stable tag and the highest stable tag in
+# the clone. Such a release is marked Latest and its images are also tagged
+# :latest, which is what dev builds of `ax install` deploy. Needs every tag
+# fetched.
+is_latest_stable() {
+  is_prerelease "$1" && return 1
+  local highest
+  highest="$(git tag --list 'v*' --sort=-v:refname \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+  [[ -n "${highest}" && "${highest}" == "$1" ]]
+}
+
 # go_ldflags prints the -ldflags for a release build of version $1.
 go_ldflags() {
-  echo "-s -w -X main.version=$1"
+  echo "-s -w -X github.com/google/ax/internal/version.Version=$1"
 }

@@ -76,14 +76,10 @@ fi
 flags=(--repo "${REPO}" --verify-tag --title "${TAG}" --generate-notes)
 if is_prerelease "${TAG}"; then
   flags+=(--prerelease --latest=false)
+elif is_latest_stable "${TAG}"; then
+  flags+=(--latest)
 else
-  highest="$(git tag --list 'v*' --sort=-v:refname \
-    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
-  if [[ "${highest}" == "${TAG}" ]]; then
-    flags+=(--latest)
-  else
-    flags+=(--latest=false)
-  fi
+  flags+=(--latest=false)
 fi
 
 # Start notes at the previous stable tag, so a release's notes cover every
@@ -102,6 +98,15 @@ substrate="$(awk '$1 == "go.ate.dev/substrate" { print $2 }' "${ROOT}/go.mod")"
 download="https://github.com/${REPO}/releases/download/${TAG}"
 notes="$(mktemp)"
 trap 'rm -f "${notes}"' EXIT
+if [[ -f "${ASSETS_DIR}/install.sh" ]]; then
+  cli_install="\`\`\`sh
+curl -fsSL ${download}/install.sh | AX_VERSION=${TAG} sh
+\`\`\`
+
+or download \`ax_<os>_<arch>.tar.gz\` and check it against \`checksums.txt\`."
+else
+  cli_install="Download \`ax_<os>_<arch>.tar.gz\`, check it against \`checksums.txt\`, and put \`ax\` on your PATH."
+fi
 cat > "${notes}" <<EOF
 ## Install
 
@@ -114,13 +119,9 @@ kubectl apply -f ${download}/postgres.yaml
 kubectl apply -f ${download}/ax-server.yaml
 \`\`\`
 
-The \`ax\` CLI is attached for linux and darwin (amd64, arm64):
+The \`ax\` CLI is attached for linux and darwin (amd64, arm64).
 
-\`\`\`sh
-curl -fsSLO ${download}/ax-linux-amd64
-curl -fsSLO ${download}/ax-linux-amd64.sha256
-sha256sum -c ax-linux-amd64.sha256 && install -m 0755 ax-linux-amd64 ~/.local/bin/ax
-\`\`\`
+${cli_install}
 
 | Image | Reference |
 |---|---|

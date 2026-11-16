@@ -29,6 +29,7 @@ import (
 
 	"github.com/google/ax/internal/guest"
 	"github.com/google/ax/internal/tunnel"
+	"github.com/google/ax/internal/version"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -62,7 +63,7 @@ func main() {
 	// Commands that don't require an AX server connection
 	switch cmd {
 	case "version":
-		fmt.Printf("ax version %s (API v1alpha1)\n", version)
+		fmt.Printf("ax version %s (API v1alpha1)\n", version.Version)
 		return
 	case "help", "-h", "--help":
 		printUsage()

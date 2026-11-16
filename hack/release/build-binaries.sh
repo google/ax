@@ -14,13 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds the ax CLI release binaries.
+# Builds the ax CLI release archives.
 #
 #   hack/release/build-binaries.sh <version> [out-dir]
 #
-# Writes ax-<os>-<arch> and ax-<os>-<arch>.sha256 for every platform in
-# CLI_PLATFORMS (hack/release/lib.sh) to out-dir (default bin/release). The
-# binaries are static and report <version> from `ax version`.
+# Writes to out-dir (default bin/release), for every platform in CLI_PLATFORMS
+# (hack/release/lib.sh):
+#
+#   ax_<os>_<arch>.tar.gz  holding the static `ax` binary, which reports
+#                          <version> from `ax version`
+#   checksums.txt          "<sha256>  <archive>" for every archive
+#
+# plus install.sh from the repository root, if there is one, so that
+# https://github.com/google/ax/releases/latest/download/install.sh serves the
+# installer that matches the archives.
 
 set -o errexit -o nounset -o pipefail
 
@@ -33,15 +40,33 @@ OUT="${2:-${ROOT}/bin/release}"
 require_release_version "${VERSION}"
 
 mkdir -p "${OUT}"
+OUT="$(cd "${OUT}" && pwd)"
 cd "${ROOT}"
 
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
+archives=()
 for platform in "${CLI_PLATFORMS[@]}"; do
   os="${platform%/*}"
   arch="${platform#*/}"
-  name="ax-${os}-${arch}"
-  echo "==> Building ${name} (${VERSION})"
+  archive="ax_${os}_${arch}.tar.gz"
+  echo "==> Building ${archive} (${VERSION})"
+  mkdir -p "${work}/${os}_${arch}"
   GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
-    go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" -o "${OUT}/${name}" ./cmd/ax
-  # Written relative to OUT so `sha256sum -c` works after download.
-  (cd "${OUT}" && sha256sum "${name}" > "${name}.sha256")
+    go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
+    -o "${work}/${os}_${arch}/ax" ./cmd/ax
+  # Fixed owner, mode, and order so the archive depends only on the binary.
+  tar --create --gzip --file "${OUT}/${archive}" \
+    --directory "${work}/${os}_${arch}" \
+    --owner=0 --group=0 --numeric-owner --mode=0755 --sort=name ax
+  archives+=("${archive}")
 done
+
+(cd "${OUT}" && sha256sum "${archives[@]}" > checksums.txt)
+echo "==> Wrote ${OUT}/checksums.txt"
+
+if [[ -f "${ROOT}/install.sh" ]]; then
+  install -m 0755 "${ROOT}/install.sh" "${OUT}/install.sh"
+  echo "==> Copied install.sh"
+fi

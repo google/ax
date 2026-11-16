@@ -31,6 +31,9 @@
 # digests of a release. Set AX_PUBLISH_OVERWRITE=true to rebuild and replace
 # them anyway. An incomplete set is always rebuilt in full.
 #
+# If <version> is the highest stable tag, :latest is moved to it as well; dev
+# builds of `ax install` deploy :latest (internal/version).
+#
 # Needs Go, docker buildx with a builder that can push multi-platform images
 # (docker buildx create --driver docker-container --use) and QEMU for the
 # non-native platform, jq, and a docker login to the registry.
@@ -126,6 +129,17 @@ for image in "${RELEASE_IMAGES[@]}"; do
     exit 1
   fi
 done
+
+# Point :latest at the newest stable release. Done from the recorded digests,
+# so a rerun that built nothing still moves it.
+if is_latest_stable "${VERSION}"; then
+  for image in "${RELEASE_IMAGES[@]}"; do
+    echo "==> Tagging ${AX_IMAGE_REPO}/${image}:latest -> ${VERSION}"
+    docker buildx imagetools create \
+      --tag "${AX_IMAGE_REPO}/${image}:latest" \
+      "${AX_IMAGE_REPO}/${image}@${DIGESTS[${image}]}"
+  done
+fi
 
 cat > "${OUT}/images.env" <<EOF
 AX_SERVER_IMAGE=${AX_IMAGE_REPO}/ax-server@${DIGESTS[ax-server]}

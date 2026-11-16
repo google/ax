@@ -36,7 +36,9 @@ stable tag, so a patch to an older line does not take Latest from a newer one.
 
 | Asset | Contents |
 |---|---|
-| `ax-<os>-<arch>`, `ax-<os>-<arch>.sha256` | The `ax` CLI for linux and darwin, amd64 and arm64. Static, and `ax version` prints the tag. |
+| `ax_<os>_<arch>.tar.gz` | The `ax` CLI for linux and darwin, amd64 and arm64. Static, and `ax version` prints the tag. |
+| `checksums.txt` | SHA-256 of every archive, in `sha256sum` format. |
+| `install.sh` | The CLI installer from the repository root, when the tag has one, so `releases/latest/download/install.sh` always matches the latest archives. |
 | `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` and the default task image pinned by digest. |
 | `postgres.yaml` | [`deploy/postgres.yaml`](../deploy/postgres.yaml), unchanged. |
 
@@ -44,8 +46,19 @@ The release notes start with install commands, the Substrate version from
 `go.mod`, and the image digests, followed by GitHub's generated notes since the
 previous stable tag.
 
+## Images
+
 Images go to `ghcr.io/google/ax/ax-server` and
-`ghcr.io/google/ax/ax-task-runner`. GitHub creates a new package as private:
+`ghcr.io/google/ax/ax-task-runner` (`version.ImageRepo` in
+[`internal/version`](../internal/version/version.go)), tagged with the release
+tag. The highest stable release also moves `:latest`.
+
+The binaries are stamped with the tag through
+`github.com/google/ax/internal/version.Version`. Code that deploys AX images
+should use `version.Image("ax-server")`: a release build gets the images of
+its own release, and a dev build gets `:latest`.
+
+GitHub creates a new package as private:
 after the first release, an owner of the `google` organization must make both
 packages public and link them to this repository, otherwise clusters cannot
 pull them without credentials.
@@ -74,7 +87,7 @@ Each workflow step is a script in [`hack/release`](../hack/release) that also
 runs locally from a clean checkout of the tag:
 
 ```sh
-hack/release/build-binaries.sh v0.4.0                 # ax CLI -> bin/release
+hack/release/build-binaries.sh v0.4.0                 # ax CLI archives -> bin/release
 AX_IMAGE_REPO=registry.example.com/ax \
   hack/release/publish-images.sh v0.4.0               # push images, write bin/release/images.env
 hack/release/render-manifests.sh                      # bin/release/{ax-server,postgres}.yaml
