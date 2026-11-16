@@ -1,0 +1,48 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Shared helpers for the hack/release scripts. Source, do not execute.
+# shellcheck shell=bash disable=SC2034  # the arrays are read by the sourcing scripts
+
+# Release images, in the order they are built. Each is built from
+# Dockerfile.<name minus the ax- prefix> and published as
+# $AX_IMAGE_REPO/<name>:<version>. Adding an image here is what publishes it.
+RELEASE_IMAGES=(ax-server ax-task-runner)
+
+# Platforms the release images and the linux CLI are built for.
+RELEASE_PLATFORMS=(linux/amd64 linux/arm64)
+
+# Platforms the ax CLI is built for.
+CLI_PLATFORMS=(linux/amd64 linux/arm64 darwin/amd64 darwin/arm64)
+
+# require_release_version fails unless $1 is vMAJOR.MINOR.PATCH or
+# vMAJOR.MINOR.PATCH-PRERELEASE. The workflow's tag filter cannot express this,
+# so every script checks it before building or publishing anything.
+require_release_version() {
+  local v="${1:-}"
+  if [[ ! "${v}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+    echo "error: '${v}' is not a release version (vX.Y.Z or vX.Y.Z-PRERELEASE)" >&2
+    exit 1
+  fi
+}
+
+# is_prerelease succeeds if $1 has a -PRERELEASE suffix.
+is_prerelease() {
+  [[ "$1" == *-* ]]
+}
+
+# go_ldflags prints the -ldflags for a release build of version $1.
+go_ldflags() {
+  echo "-s -w -X main.version=$1"
+}
