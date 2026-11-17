@@ -56,10 +56,12 @@ Flags:
   --workers int                Number of gVisor worker replicas (default: 1)
   --server-image string        ax-server image reference, tag or @sha256 %s
   --default-task-image string  Default task image when spec.profile.image is unset %s
+  --runner-volume-image string Runner volume image mounted into tasks; empty runs each image's own runner %s
   -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")`,
 		cluster.DefaultName,
 		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
 		formatImageFlagDefault(axdeploy.DefaultTaskImage, "AX_DEFAULT_TASK_IMAGE", false),
+		formatImageFlagDefault(axdeploy.DefaultRunnerVolumeImage, "AX_RUNNER_VOLUME_IMAGE", false),
 	)
 }
 
@@ -74,9 +76,11 @@ Flags:
   --context string             Kubernetes context (defaults to active current-context)
   -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")
   --server-image string        ax-server image reference, tag or @sha256 %s
-  --default-task-image string  Default task image when spec.profile.image is unset %s`,
+  --default-task-image string  Default task image when spec.profile.image is unset %s
+  --runner-volume-image string Runner volume image mounted into tasks; empty runs each image's own runner %s`,
 		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
 		formatImageFlagDefault(axdeploy.DefaultTaskImage, "AX_DEFAULT_TASK_IMAGE", false),
+		formatImageFlagDefault(axdeploy.DefaultRunnerVolumeImage, "AX_RUNNER_VOLUME_IMAGE", false),
 	)
 }
 
@@ -93,13 +97,15 @@ Flags:
 // imageFlags holds independent full container image references shared by `ax local` and `ax install`.
 // Each image may come from a distinct registry, repository, and release cadence.
 type imageFlags struct {
-	serverImage      string
-	defaultTaskImage string
+	serverImage       string
+	defaultTaskImage  string
+	runnerVolumeImage string
 }
 
 func (f *imageFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.serverImage, "server-image", axdeploy.DefaultServerImage, "ax-server container image reference (repo:tag or repo@sha256:...)")
 	fs.StringVar(&f.defaultTaskImage, "default-task-image", axdeploy.DefaultTaskImage, "default task container image when spec.profile.image is unset (repo:tag or repo@sha256:...)")
+	fs.StringVar(&f.runnerVolumeImage, "runner-volume-image", axdeploy.DefaultRunnerVolumeImage, "runner volume image ax-server mounts into task containers; empty runs the runner baked into each task image (repo:tag or repo@sha256:...)")
 }
 
 type localFlags struct {
@@ -158,7 +164,7 @@ func runLocal(axNamespace string, args []string) error {
 	switch parsed.subcmd {
 	case "start":
 		// Fail fast if image inputs are gated before provisioning a Kind cluster.
-		srvImg, taskImg, err := axdeploy.ResolveImageInputs(parsed.serverImage, parsed.defaultTaskImage)
+		srvImg, taskImg, runnerImg, err := axdeploy.ResolveImageInputs(parsed.serverImage, parsed.defaultTaskImage, parsed.runnerVolumeImage)
 		if err != nil {
 			return err
 		}
@@ -180,11 +186,12 @@ func runLocal(axNamespace string, args []string) error {
 		}
 		// Step 3: Resolve AX image digests, register Substrate caller permissions, and deploy AX.
 		if err := axdeploy.Install(ctx, axdeploy.InstallOptions{
-			KubeContext:      info.KubeContext,
-			Namespace:        axNamespace,
-			ServerImage:      srvImg,
-			DefaultTaskImage: taskImg,
-			Out:              os.Stdout,
+			KubeContext:       info.KubeContext,
+			Namespace:         axNamespace,
+			ServerImage:       srvImg,
+			DefaultTaskImage:  taskImg,
+			RunnerVolumeImage: runnerImg,
+			Out:               os.Stdout,
 		}); err != nil {
 			return err
 		}
@@ -270,11 +277,12 @@ func runInstall(kubeContext, axNamespace string, args []string) error {
 	defer stop()
 
 	return axdeploy.Install(ctx, axdeploy.InstallOptions{
-		KubeContext:      kubeContext,
-		Namespace:        axNamespace,
-		ServerImage:      parsed.serverImage,
-		DefaultTaskImage: parsed.defaultTaskImage,
-		Out:              os.Stdout,
+		KubeContext:       kubeContext,
+		Namespace:         axNamespace,
+		ServerImage:       parsed.serverImage,
+		DefaultTaskImage:  parsed.defaultTaskImage,
+		RunnerVolumeImage: parsed.runnerVolumeImage,
+		Out:               os.Stdout,
 	})
 }
 

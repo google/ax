@@ -20,6 +20,8 @@ export PATH="$HOME/.ax/bin:$PATH"
 #    (or export AX_SERVER_IMAGE and AX_DEFAULT_TASK_IMAGE).
 export AX_SERVER_IMAGE="<registry>/ax-server:<tag>"
 export AX_DEFAULT_TASK_IMAGE="<registry>/ax-task-runner:<tag>"
+#    Optional: mount the runner from a runner volume image, so task images need no runner baked in.
+# export AX_RUNNER_VOLUME_IMAGE="<registry>/ax-runner-volume:<tag>"
 ax local start
 ax local status
 ```
@@ -81,7 +83,7 @@ ax local --help
 
 ### Expected Behavior
 - Produces a single self-contained `ax` binary (with `@sha256`-pinned Agent Substrate `v1.0.0` manifests and canonical AX deployment manifests embedded via `//go:embed`).
-- `ax local --help` lists the `start`, `status`, `stop`, and `delete` subcommands along with `--name`, `--workers`, `--server-image`, `--default-task-image`, and `-n`/`--namespace`.
+- `ax local --help` lists the `start`, `status`, `stop`, and `delete` subcommands along with `--name`, `--workers`, `--server-image`, `--default-task-image`, `--runner-volume-image`, and `-n`/`--namespace`.
 
 ---
 
@@ -92,6 +94,8 @@ ax local start \
   --server-image "$AX_SERVER_IMAGE" \
   --default-task-image "$AX_DEFAULT_TASK_IMAGE"
 ```
+
+*(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
@@ -105,7 +109,7 @@ The installer prints progress (`==>`) across three stages:
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
-   - Resolves multi-arch (`linux/amd64` + `linux/arm64`) `@sha256:...` digests for `--server-image` and `--default-task-image`.
+   - Resolves multi-arch (`linux/amd64` + `linux/arm64`) `@sha256:...` digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image`.
    - Labels `ax-system` (`ate.dev/api-access=true`) and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider` (scoped strictly to Secrets carrying `ax.io/credential: "true"`).
    - Generates a one-time `ax-postgres` password Secret, deploys `ax-postgres` and `ax-server`, waits for readiness, and prints:
      ```text
@@ -216,10 +220,10 @@ ax install \
   --default-task-image "$AX_DEFAULT_TASK_IMAGE"
 ```
 
-*(Pass `--server-image <ref>` and `--default-task-image <ref>`, or set `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`.)*
+*(Pass `--server-image <ref>` and `--default-task-image <ref>`, or set `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
 
 #### Expected Behavior
-- Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and `--default-task-image` via `crane`.
+- Resolves `@sha256:...` multi-arch OCI digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image` via `crane`.
 - Creates `ax-system` with `ate.dev/api-access=true` and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider-namespace-policy`, waiting for rollouts to finish.
 - Provisions the `ax-postgres` PVC and rolls out `ax-postgres` and `ax-server`.
 
