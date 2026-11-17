@@ -83,12 +83,24 @@ func TunnelDir() (string, error) {
 	return p, os.MkdirAll(p, 0755)
 }
 
-func GetTunnel(ctxName string) (*TunnelInfo, error) {
+// tunnelKey names the state and log files of the tunnel to namespace in a
+// context, so that a context can have a tunnel to each AX installation in it.
+// The default namespace keeps the name that every tunnel had before the
+// namespace was part of it.
+func tunnelKey(ctxName, namespace string) string {
+	key := SanitizeContext(ctxName)
+	if namespace != "" && namespace != v1alpha1.DefaultSystemNamespace {
+		key += "." + SanitizeContext(namespace)
+	}
+	return key
+}
+
+func GetTunnel(ctxName, namespace string) (*TunnelInfo, error) {
 	dir, err := TunnelDir()
 	if err != nil {
 		return nil, err
 	}
-	statePath := filepath.Join(dir, SanitizeContext(ctxName)+".json")
+	statePath := filepath.Join(dir, tunnelKey(ctxName, namespace)+".json")
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil, err
@@ -105,7 +117,7 @@ func SaveTunnel(info *TunnelInfo) error {
 	if err != nil {
 		return err
 	}
-	statePath := filepath.Join(dir, SanitizeContext(info.Context)+".json")
+	statePath := filepath.Join(dir, tunnelKey(info.Context, info.Namespace)+".json")
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return err
@@ -125,17 +137,24 @@ func StopTunnel(info *TunnelInfo) error {
 
 	dir, err := TunnelDir()
 	if err == nil {
-		_ = os.Remove(filepath.Join(dir, SanitizeContext(info.Context)+".json"))
+		_ = os.Remove(filepath.Join(dir, tunnelKey(info.Context, info.Namespace)+".json"))
 	}
 	return nil
 }
 
+// StopTunnelByContext stops the context's tunnels, in every namespace.
 func StopTunnelByContext(ctxName string) error {
-	info, err := GetTunnel(ctxName)
+	tunnels, err := ListTunnels()
 	if err != nil {
 		return err
 	}
-	return StopTunnel(info)
+	err = os.ErrNotExist
+	for _, info := range tunnels {
+		if info.Context == ctxName {
+			err = StopTunnel(info)
+		}
+	}
+	return err
 }
 
 func ListTunnels() ([]*TunnelInfo, error) {
@@ -212,7 +231,7 @@ func EnsureServerURL(opts Options) (string, error) {
 	}
 
 	// Check for existing active tunnel
-	if existing, err := GetTunnel(ctxName); err == nil && existing != nil {
+	if existing, err := GetTunnel(ctxName, opts.Namespace); err == nil && existing != nil {
 		// Empty Namespace/Service means the tunnel was recorded before these fields
 		// existed; treat it as matching for backward compatibility.
 		sameTarget := (existing.Namespace == "" || existing.Namespace == opts.Namespace) &&
@@ -229,7 +248,7 @@ func EnsureServerURL(opts Options) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("creating tunnel directory: %w", err)
 	}
-	logPath := filepath.Join(dir, SanitizeContext(ctxName)+".log")
+	logPath := filepath.Join(dir, tunnelKey(ctxName, opts.Namespace)+".log")
 
 	var kArgs []string
 	if ctxName != "" {

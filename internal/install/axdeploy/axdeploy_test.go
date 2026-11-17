@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/google/ax/internal/install/executil"
+	"github.com/google/ax/internal/tunnel"
 )
 
 func TestEnsureDigestPinnedWithBearerChallenge(t *testing.T) {
@@ -280,5 +281,22 @@ func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
 	}
 	if srv != "ghcr.io/google/ax/ax-server:v0.1.0" || task != "ghcr.io/agentexecutor/claude-code:v1" {
 		t.Fatalf("got (%q, %q)", srv, task)
+	}
+}
+
+func TestStopTunnel(t *testing.T) {
+	// One kube context has a tunnel to each of two AX installations.
+	t.Setenv("AX_HOME", t.TempDir())
+	for _, ns := range []string{"ax-system", "ax-remote"} {
+		if err := tunnel.SaveTunnel(&tunnel.TunnelInfo{Context: "kind-local", Namespace: ns}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stopTunnel("kind-local", "ax-remote")
+
+	tunnels, err := tunnel.ListTunnels()
+	if err != nil || len(tunnels) != 1 || tunnels[0].Namespace != "ax-system" {
+		t.Errorf("expected only the tunnel to ax-system to be left, got %+v, error %v", tunnels, err)
 	}
 }

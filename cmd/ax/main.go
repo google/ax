@@ -920,6 +920,8 @@ func runContext(kubeContext string, args []string, out io.Writer) error {
 		return nil
 	}
 
+	// A context has a tunnel for each namespace AX has been reached in.
+	tunnels, _ := tunnel.ListTunnels()
 	w := tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
 	fmt.Fprintln(w, "CURRENT\tNAME\tCLUSTER\tAX TUNNEL")
 	for _, e := range entries {
@@ -927,13 +929,20 @@ func runContext(kubeContext string, args []string, out io.Writer) error {
 		if e.Current {
 			cur = "*"
 		}
-		tunDesc := "-"
-		if t, err := tunnel.GetTunnel(e.Name); err == nil && t != nil {
+		var tunDescs []string
+		for _, t := range tunnels {
+			if t.Context != e.Name {
+				continue
+			}
 			status := "Healthy"
 			if !tunnel.IsTunnelHealthy(t.Port) {
 				status = "Stale"
 			}
-			tunDesc = fmt.Sprintf("127.0.0.1:%d -> %s/%s (%s)", t.Port, t.Namespace, t.Service, status)
+			tunDescs = append(tunDescs, fmt.Sprintf("127.0.0.1:%d -> %s/%s (%s)", t.Port, t.Namespace, t.Service, status))
+		}
+		tunDesc := "-"
+		if len(tunDescs) > 0 {
+			tunDesc = strings.Join(tunDescs, ", ")
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", cur, e.Name, e.Cluster, tunDesc)
 	}
