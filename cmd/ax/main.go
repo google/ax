@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sort"
 	"strings"
@@ -94,6 +95,10 @@ func main() {
 		return
 	case "studio":
 		if err := runStudio(axNamespace, cleanArgs); err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
+				os.Exit(exitErr.ExitCode())
+			}
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

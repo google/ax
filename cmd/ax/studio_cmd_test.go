@@ -33,53 +33,30 @@ import (
 	"testing"
 )
 
-func TestParseStudioArgs(t *testing.T) {
-	t.Run("defaults", func(t *testing.T) {
-		got, err := parseStudioArgs(nil)
-		if err != nil {
-			t.Fatalf("parseStudioArgs(nil): %v", err)
-		}
-		if got.port != 8080 || got.addr != "" || got.noOpen || got.help {
-			t.Fatalf("unexpected defaults: %+v", got)
-		}
-	})
-
-	t.Run("rejects_non_loopback_addr", func(t *testing.T) {
-		for _, bad := range []string{"0.0.0.0:8080", ":8080", "192.168.1.5:8080", "[::]:8080"} {
-			if _, err := parseStudioArgs([]string{"--addr", bad}); err == nil {
-				t.Errorf("expected non-loopback --addr %q to fail", bad)
-			}
-		}
-	})
-
-	t.Run("accepts_loopback_variants", func(t *testing.T) {
-		for _, good := range []string{"127.0.0.1:9091", "localhost:8080", "[::1]:8080"} {
-			if _, err := parseStudioArgs([]string{"--addr", good, "--no-open"}); err != nil {
-				t.Errorf("expected loopback --addr %q to succeed, got %v", good, err)
-			}
-		}
-	})
-
-	t.Run("rejects_positional_arg", func(t *testing.T) {
-		if _, err := parseStudioArgs([]string{"extra"}); err == nil {
-			t.Fatal("expected unexpected positional argument error")
-		}
-	})
-}
-
 func TestBuildStudioChildArgs(t *testing.T) {
-	parsed, err := parseStudioArgs([]string{"--port", "18080", "--no-open"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := buildStudioChildArgs("custom-ax", "/usr/local/bin/ax", parsed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"-n", "custom-ax", "--addr", "127.0.0.1:18080", "--ax-bin", "/usr/local/bin/ax", "--no-open"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("buildStudioChildArgs = %#v, want %#v", got, want)
-	}
+	t.Run("forwards_arbitrary_studio_flags_verbatim", func(t *testing.T) {
+		got := buildStudioChildArgs("custom-ax", "/usr/local/bin/ax", []string{"--port", "18080", "--no-open", "--future-flag", "v"})
+		want := []string{"-n", "custom-ax", "--ax-bin", "/usr/local/bin/ax", "--port", "18080", "--no-open", "--future-flag", "v"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("buildStudioChildArgs = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("maps_bare_help_to_flag", func(t *testing.T) {
+		got := buildStudioChildArgs("", "/usr/local/bin/ax", []string{"help"})
+		want := []string{"-n", "ax-system", "--ax-bin", "/usr/local/bin/ax", "--help"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("buildStudioChildArgs(help) = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("respects_explicit_overrides", func(t *testing.T) {
+		got := buildStudioChildArgs("ax-system", "/usr/local/bin/ax", []string{"-n", "other-ns", "--ax-bin=/custom/ax", "--help"})
+		want := []string{"-n", "other-ns", "--ax-bin=/custom/ax", "--help"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("buildStudioChildArgs(overrides) = %#v, want %#v", got, want)
+		}
+	})
 }
 
 func TestRunStudioDelegatesToStudioBinary(t *testing.T) {
@@ -92,7 +69,7 @@ func TestRunStudioDelegatesToStudioBinary(t *testing.T) {
 	}
 	t.Setenv("AX_STUDIO_BIN", fakeStudio)
 
-	if err := runStudio("ax-system", []string{"--port", "18088", "--no-open"}); err != nil {
+	if err := runStudio("ax-system", []string{"--port", "18088", "--no-open", "--custom-studio-opt"}); err != nil {
 		t.Fatalf("runStudio failed: %v", err)
 	}
 
@@ -101,7 +78,7 @@ func TestRunStudioDelegatesToStudioBinary(t *testing.T) {
 		t.Fatalf("reading recorded args: %v", err)
 	}
 	text := string(recorded)
-	for _, expected := range []string{"-n\nax-system", "--addr\n127.0.0.1:18088", "--no-open"} {
+	for _, expected := range []string{"-n\nax-system", "--port\n18088", "--no-open", "--custom-studio-opt"} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("expected delegated args to contain %q, got:\n%s", expected, text)
 		}

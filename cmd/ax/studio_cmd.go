@@ -16,14 +16,10 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 
@@ -31,122 +27,49 @@ import (
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
-const studioUsage = `Usage:
-  ax studio [flags]
-
-Launch the AX Studio local Web UI in your browser (127.0.0.1 only).
-Stopping this command (Ctrl-C) closes only the local web server; any local Kind
-cluster and running Tasks inside Kubernetes continue running unaffected.
-
-Flags:
-  --port int       Loopback port to listen on (default: 8080)
-  --addr string    Explicit loopback address (overrides --port, e.g. "127.0.0.1:8080")
-  --no-open        Do not open a browser automatically (for SSH/remote sessions or scripts)`
-
-type studioFlags struct {
-	port   int
-	addr   string
-	noOpen bool
-	help   bool
-}
-
-func parseStudioArgs(args []string) (studioFlags, error) {
-	fs := flag.NewFlagSet("ax studio", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	var out studioFlags
-	fs.IntVar(&out.port, "port", 8080, "loopback port")
-	fs.StringVar(&out.addr, "addr", "", "explicit loopback address")
-	fs.BoolVar(&out.noOpen, "no-open", false, "do not open a browser automatically (for SSH/remote sessions or scripts)")
-	fs.BoolVar(&out.help, "h", false, "help")
-	fs.BoolVar(&out.help, "help", false, "help")
-
-	if err := fs.Parse(args); err != nil {
-		return studioFlags{}, err
-	}
-	if fs.NArg() > 0 {
-		return studioFlags{}, fmt.Errorf("unexpected argument %q", fs.Arg(0))
-	}
-	if !out.help {
-		if _, err := resolveStudioListenAddr(out); err != nil {
-			return studioFlags{}, err
+func hasStudioArgFlag(args []string, names ...string) bool {
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		for _, n := range names {
+			if a == n || strings.HasPrefix(a, n+"=") {
+				return true
+			}
 		}
 	}
-	return out, nil
+	return false
 }
 
-func resolveStudioListenAddr(parsed studioFlags) (string, error) {
-	addr := strings.TrimSpace(parsed.addr)
-	if addr == "" {
-		if parsed.port < 0 || parsed.port > 65535 {
-			return "", fmt.Errorf("invalid port %d", parsed.port)
+// buildStudioChildArgs constructs the argv forwarded verbatim to `ax-studio`.
+// `ax` intentionally does not parse or mirror `ax-studio` flags so the two
+// repositories stay loosely coupled as `ax-studio` evolves.
+func buildStudioChildArgs(axNamespace, axExecutable string, args []string) []string {
+	var childArgs []string
+	if !hasStudioArgFlag(args, "-n", "--namespace") {
+		ns := strings.TrimSpace(axNamespace)
+		if ns == "" {
+			ns = v1alpha1.DefaultSystemNamespace
 		}
-		addr = net.JoinHostPort("127.0.0.1", strconv.Itoa(parsed.port))
+		childArgs = append(childArgs, "-n", ns)
 	}
-	if err := validateStudioLoopbackAddr(addr); err != nil {
-		return "", err
-	}
-	return addr, nil
-}
-
-func validateStudioLoopbackAddr(addr string) error {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return fmt.Errorf("invalid listen address %q: %w", addr, err)
-	}
-	if host == "" {
-		return errors.New("refusing to bind AX Studio to all interfaces; specify 127.0.0.1:<port> or localhost:<port>")
-	}
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("refusing to bind AX Studio to non-loopback host %q (must be 127.0.0.1, ::1, or localhost)", host)
-	}
-	return nil
-}
-
-func buildStudioChildArgs(axNamespace, axExecutable string, parsed studioFlags) ([]string, error) {
-	addr, err := resolveStudioListenAddr(parsed)
-	if err != nil {
-		return nil, err
-	}
-	ns := strings.TrimSpace(axNamespace)
-	if ns == "" {
-		ns = v1alpha1.DefaultSystemNamespace
-	}
-	childArgs := []string{"-n", ns, "--addr", addr}
-	if strings.TrimSpace(axExecutable) != "" {
+	if strings.TrimSpace(axExecutable) != "" && !hasStudioArgFlag(args, "--ax-bin") {
 		childArgs = append(childArgs, "--ax-bin", axExecutable)
 	}
-	if parsed.noOpen {
-		childArgs = append(childArgs, "--no-open")
+	if len(args) == 1 && args[0] == "help" {
+		return append(childArgs, "--help")
 	}
-	return childArgs, nil
+	return append(childArgs, args...)
 }
 
 func runStudio(axNamespace string, args []string) error {
-	parsed, err := parseStudioArgs(args)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, studioUsage)
-		return err
-	}
-	if parsed.help {
-		fmt.Println(studioUsage)
-		return nil
-	}
-
 	studioBin, err := executil.ResolveStudioBinary(executil.OSRunner{})
 	if err != nil {
 		return err
 	}
 
 	axExe, _ := os.Executable()
-	childArgs, err := buildStudioChildArgs(axNamespace, axExe, parsed)
-	if err != nil {
-		return err
-	}
+	childArgs := buildStudioChildArgs(axNamespace, axExe, args)
 
 	cmd := exec.Command(studioBin, childArgs...)
 	cmd.Stdin = os.Stdin
