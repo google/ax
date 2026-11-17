@@ -18,8 +18,11 @@ This workflow is the release-on-tag stage of the build and release epic
 
 ## Cutting a release
 
-1. Check that `main` is green, including the nightly E2E run, and that
-   `go.mod` pins the Substrate release you want to ship against.
+1. Check that `main` is green, including the nightly E2E run, that `go.mod`
+   pins the Substrate release you want to ship against, and (once
+   `agentexecutor/studio` has published releases) that `PINNED_STUDIO_VERSION`
+   and `pinned_studio_sha256` in [`install.sh`](../install.sh) match an AX
+   Studio release built against this `v1alpha1` API.
 2. Tag a commit on `main` (or a `release-*` branch; the workflow refuses any
    other commit) and push the tag:
 
