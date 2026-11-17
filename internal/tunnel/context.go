@@ -103,14 +103,8 @@ func CurrentContext(override string) (string, error) {
 	if env := os.Getenv("KUBECONTEXT"); env != "" {
 		return env, nil
 	}
-
-	for _, path := range kubeconfigPaths() {
-		if data, err := os.ReadFile(path); err == nil {
-			var cfg kubeConfig
-			if err := yaml.Unmarshal(data, &cfg); err == nil && cfg.CurrentContext != "" {
-				return cfg.CurrentContext, nil
-			}
-		}
+	if ctx, parsed := readCurrentContext(kubeconfigPaths()); parsed {
+		return ctx, nil
 	}
 
 	kubectlBin := kubectlIfInstalled()
@@ -118,13 +112,38 @@ func CurrentContext(override string) (string, error) {
 		return "", nil
 	}
 	out, err := exec.Command(kubectlBin, "config", "current-context").Output()
-	if err == nil {
-		ctx := strings.TrimSpace(string(out))
-		if ctx != "" {
-			return ctx, nil
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func readCurrentContext(paths []string) (string, bool) {
+	var active string
+	known := make(map[string]bool)
+	parsed := false
+
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var cfg kubeConfig
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+		parsed = true
+		if active == "" && cfg.CurrentContext != "" {
+			active = cfg.CurrentContext
+		}
+		for _, c := range cfg.Contexts {
+			known[c.Name] = true
 		}
 	}
-	return "", err
+	if !known[active] {
+		return "", parsed
+	}
+	return active, parsed
 }
 
 // ListContexts returns all contexts defined in the user's kubeconfig files,

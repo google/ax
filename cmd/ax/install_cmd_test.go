@@ -151,3 +151,44 @@ contexts:
 		t.Fatal("expected error switching to missing context")
 	}
 }
+
+func TestFormatLocalStatus(t *testing.T) {
+	var absentBuf bytes.Buffer
+	if err := formatLocalStatus(&absentBuf, cluster.Status{
+		Name:            "N/A",
+		Backend:         "kind",
+		State:           cluster.StateAbsent,
+		KubeContext:     "N/A",
+		SubstrateStatus: "N/A",
+		AXStatus:        "N/A",
+	}); err != nil {
+		t.Fatalf("formatLocalStatus absent: %v", err)
+	}
+	wantAbsent := strings.Join([]string{
+		"Cluster:       N/A",
+		"State:         NotFound",
+		"Kube Context:  N/A",
+		"Substrate:     N/A",
+		"AX Server:     N/A",
+		"",
+	}, "\n")
+	if absentBuf.String() != wantAbsent {
+		t.Fatalf("unexpected absent status output:\ngot:\n%s\nwant:\n%s", absentBuf.String(), wantAbsent)
+	}
+
+	var runningBuf bytes.Buffer
+	if err := formatLocalStatus(&runningBuf, cluster.Status{
+		Name:            "ax-local",
+		Backend:         "kind",
+		State:           cluster.StateRunning,
+		KubeContext:     "ax-local",
+		SubstrateStatus: "ate-api-server (1/1 available)",
+		AXStatus:        "ax-server (1/1 available in ax-system)",
+	}); err != nil {
+		t.Fatalf("formatLocalStatus running: %v", err)
+	}
+	if !strings.Contains(runningBuf.String(), "Cluster:       ax-local (kind)\n") ||
+		!strings.Contains(runningBuf.String(), "Kube Context:  ax-local\n") {
+		t.Fatalf("unexpected running status output:\n%s", runningBuf.String())
+	}
+}

@@ -68,6 +68,8 @@ ax version
 ax local --help
 ```
 
+*(When an AX Studio release is available, `install.sh` also installs `~/.ax/bin/ax-studio` so you can launch the local web UI via `ax studio`; set `AX_SKIP_STUDIO=1` to install only `ax`.)*
+
 ### Option B: Build from a local repository checkout
 
 ```bash
@@ -273,28 +275,48 @@ ax get tasks
 
 ---
 
-## Step 6: Uninstall AX and Clean Up (`ax uninstall` & `ax local delete`)
+## Step 6: Uninstall AX and Clean Up
 
 > [!TIP]
 > If you also want to verify idempotent re-runs (**Optional A**) or local cluster pause/resume (**Optional B**), run the appendix steps below before deleting the clusters.
 
+### 6.1 Remove AX from a Remote Cluster (`ax uninstall`)
+
 ```bash
-# 1. Uninstall AX from the remote cluster (revokes Substrate allowlists; keeps PVCs by default)
 ax ctx "$GKE_CTX"
-ax delete task demo-task || true
+ax delete task demo-task
 ax uninstall
 kubectl -n ax-system get all,pvc,secret
+```
 
-# 2. Destroy the local Kind cluster and remove its owned kubeconfig context
+- `ax uninstall` removes `ax-server` and `ax-postgres` workloads and revokes `ax-server` from `ate-api-server`, `atenet-router`, and `k8s-credential-provider`, while preserving `pvc/data-ax-postgres-0` and `secret/ax-postgres` by default to prevent accidental data loss.
+- To permanently delete the PostgreSQL data volume and namespace as well, run `kubectl --context "$GKE_CTX" delete ns ax-system`.
+
+### 6.2 Destroy the Local Sandbox Cluster & Background Tunnels (`ax local delete`)
+
+```bash
 ax local delete
 ax local status
 ```
 
-*(To reset local tool caches and tunnel state completely from scratch, you can also run `rm -rf ~/.ax` after `ax local delete`.)*
+- `ax local delete` stops any background tunnel for `ax-local`, destroys the `ax-local` Kind cluster, deletes the `ax-local` kubeconfig context (and unsets `current-context` if `ax-local` was active), and reports `State: NotFound` on `ax local status`.
+- If you also opened tunnels to remote clusters during the session, stop any remaining background `kubectl port-forward` processes with `ax tunnel stop <context>` (inspect active tunnels via `ax tunnel list`).
 
-### Expected Behavior
-- `ax uninstall` removes `ax-server` and `ax-postgres` workloads and cleanly revokes `ax-server` from `ate-api-server`, `atenet-router`, and `k8s-credential-provider`, while preserving `pvc/data-ax-postgres-0` and `secret/ax-postgres` by default to prevent accidental data loss.
-- `ax local delete` stops any background tunnel for `ax-local`, destroys the `ax-local` Kind cluster, and deletes the `ax-local` kubeconfig context if owned by `kind-ax-local` (`ax local status` reports `State: NotFound`).
+### 6.3 Remove Local AX Binaries & Caches (`~/.ax`)
+
+All host-side binaries and runtime caches created by `install.sh` and `ax` live exclusively under `~/.ax/` (no files are written to `/usr/local/bin` or system directories):
+
+- `~/.ax/bin/`: `ax`, `ax-studio`, and any auto-bootstrapped `kind` / `kubectl` binaries (if your `PATH` already provided `kubectl` and `kind >= v0.32.0`, `ax` reused them and did not download duplicates into `~/.ax/bin/`)
+- `~/.ax/tunnels/`: port-forward metadata and logs
+- `~/.ax/router-tls/`: short-lived `ax ssh` client certificates
+
+To completely remove AX and AX Studio from your machine after running `ax local delete`:
+
+```bash
+rm -rf ~/.ax
+```
+
+Finally, if you added `export PATH="$HOME/.ax/bin:$PATH"` to `~/.zshrc` or `~/.bashrc`, remove that line. Pre-existing host tools (`docker`, `podman`, Homebrew/system `kubectl` and `kind`) and other `~/.kube/config` contexts remain untouched.
 
 ---
 

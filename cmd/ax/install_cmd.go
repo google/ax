@@ -196,13 +196,7 @@ func runLocal(axNamespace string, args []string) error {
 		if err != nil {
 			return err
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintf(w, "Cluster:\t%s (%s)\n", st.Name, st.Backend)
-		fmt.Fprintf(w, "State:\t%s\n", st.State)
-		fmt.Fprintf(w, "Kube Context:\t%s\n", st.KubeContext)
-		fmt.Fprintf(w, "Substrate:\t%s\n", st.SubstrateStatus)
-		fmt.Fprintf(w, "AX Server:\t%s\n", st.AXStatus)
-		return w.Flush()
+		return formatLocalStatus(os.Stdout, st)
 
 	case "stop":
 		if err := provider.Stop(ctx, parsed.name); err != nil {
@@ -222,6 +216,20 @@ func runLocal(axNamespace string, args []string) error {
 		fmt.Fprintln(os.Stderr, localUsage())
 		return fmt.Errorf("unknown subcommand %q (expected: start, stop, status, delete)", parsed.subcmd)
 	}
+}
+
+func formatLocalStatus(out io.Writer, st cluster.Status) error {
+	w := tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
+	clusterLabel := "N/A"
+	if st.State != cluster.StateAbsent && st.Name != "" && st.Name != "N/A" {
+		clusterLabel = fmt.Sprintf("%s (%s)", st.Name, st.Backend)
+	}
+	fmt.Fprintf(w, "Cluster:\t%s\n", clusterLabel)
+	fmt.Fprintf(w, "State:\t%s\n", st.State)
+	fmt.Fprintf(w, "Kube Context:\t%s\n", st.KubeContext)
+	fmt.Fprintf(w, "Substrate:\t%s\n", st.SubstrateStatus)
+	fmt.Fprintf(w, "AX Server:\t%s\n", st.AXStatus)
+	return w.Flush()
 }
 
 type installFlags struct {

@@ -201,6 +201,7 @@ ax local status                       # check local environment, Substrate, and 
 ax local stop                         # stop local environment while keeping state
 ax local delete                       # destroy local environment and clean up owned context
 ax install / ax uninstall             # install or remove AX on the active Kubernetes cluster
+ax studio                             # launch the AX Studio local Web UI on 127.0.0.1:8080
 ax ctx                                # list kube contexts and active AX tunnel status
 ax ctx <name>                         # switch active Kubernetes context in kubeconfig
 ax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)

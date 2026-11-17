@@ -356,6 +356,33 @@ func EnsureKind(ctx context.Context, r Runner, urls ToolURLs, logOut io.Writer) 
 	return dest, nil
 }
 
+// ResolveStudioBinary locates the standalone `ax-studio` binary installed by
+// `install.sh`, checking $AX_STUDIO_BIN first, then ~/.ax/bin/ax-studio, then PATH.
+func ResolveStudioBinary(r Runner) (string, error) {
+	if r == nil {
+		r = OSRunner{}
+	}
+	if explicit := strings.TrimSpace(os.Getenv("AX_STUDIO_BIN")); explicit != "" {
+		if isExecutable(explicit) {
+			return explicit, nil
+		}
+		if p, err := r.LookPath(explicit); err == nil {
+			return p, nil
+		}
+		return "", fmt.Errorf("AX_STUDIO_BIN=%q is not an executable file", explicit)
+	}
+	if dir, err := BinDir(); err == nil {
+		localBin := filepath.Join(dir, "ax-studio")
+		if isExecutable(localBin) {
+			return localBin, nil
+		}
+	}
+	if p, err := r.LookPath("ax-studio"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("ax-studio binary not found in ~/.ax/bin or PATH: re-run install.sh or download from https://github.com/agentexecutor/studio/releases")
+}
+
 func expectedToolSHA256(override string, table map[string]string, tool string) (string, error) {
 	if s := strings.ToLower(strings.TrimSpace(override)); s != "" {
 		return s, nil
