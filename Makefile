@@ -24,6 +24,13 @@ IMAGE_TAG ?= latest
 IMAGE_ARCH ?= amd64
 AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
 AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
+# Image holding only the runner binary, mounted read-only into task containers;
+# see Dockerfile.runner-volume.
+AX_RUNNER_VOLUME_BUILD_IMAGE ?= $(AX_IMAGE_REPO)/ax-runner-volume:$(IMAGE_TAG)
+# Digest-pinned runner volume image that `make deploy` configures ax-server to
+# mount into task containers. Empty (the default) keeps running the runner baked
+# into each task image.
+AX_RUNNER_VOLUME_IMAGE ?=
 # Image the server runs for tasks that do not set spec.profile.image. Substrate only
 # accepts images pinned by digest, so after `make images` this defaults to the
 # digest it recorded for the pushed ax-task-runner image.
@@ -41,7 +48,7 @@ CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/d
 BUF := go tool -modfile=hack/tools/buf/go.mod buf
 GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
 
-.PHONY: build install images check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images push-runner-volume check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -78,14 +85,30 @@ images: check-image-repo
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_SERVER_IMAGE) -f Dockerfile.server .
 	@echo "==> Building $(AX_TASK_RUNNER_IMAGE) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_TASK_RUNNER_IMAGE) -f Dockerfile.task-runner .
+	@echo "==> Building $(AX_RUNNER_VOLUME_BUILD_IMAGE) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_RUNNER_VOLUME_BUILD_IMAGE) -f Dockerfile.runner-volume .
 	$(call push_image,$(AX_SERVER_IMAGE),ax-server)
 	$(call push_image,$(AX_TASK_RUNNER_IMAGE),ax-task-runner)
+	$(call push_image,$(AX_RUNNER_VOLUME_BUILD_IMAGE),ax-runner-volume)
 	@echo ""
 	@echo "==> Pushed images. To deploy exactly these builds, run:"
 	@echo ""
 	@echo "    export AX_SERVER_IMAGE=$(AX_SERVER_IMAGE)@$$(cat bin/ax-server.digest)"
 	@echo "    export AX_DEFAULT_TASK_IMAGE=$(AX_TASK_RUNNER_IMAGE)@$$(cat bin/ax-task-runner.digest)"
+	@echo "    export AX_RUNNER_VOLUME_IMAGE=$(AX_RUNNER_VOLUME_BUILD_IMAGE)@$$(cat bin/ax-runner-volume.digest)"
 	@echo ""
+
+# Build and push only the runner volume image (see Dockerfile.runner-volume)
+# and print the digest to pin.
+push-runner-volume: check-image-repo
+	@if [ -z "$(CONTAINER_CLI)" ]; then \
+		echo "error: neither podman nor docker found in PATH (or set CONTAINER_CLI)"; exit 1; \
+	fi
+	@mkdir -p bin/linux_$(IMAGE_ARCH)
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-task-runner ./cmd/ax-task-runner
+	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_RUNNER_VOLUME_BUILD_IMAGE) -f Dockerfile.runner-volume .
+	$(call push_image,$(AX_RUNNER_VOLUME_BUILD_IMAGE),ax-runner-volume)
+	@echo "==> Pushed digest: $(AX_RUNNER_VOLUME_BUILD_IMAGE)@$$(cat bin/ax-runner-volume.digest)"
 
 # push_image pushes image $(1) and writes its manifest digest to bin/$(2).digest.
 # podman reports the exact pushed digest via --digestfile; docker records it in
@@ -139,6 +162,7 @@ deploy-server: check-image-repo
 	@echo "==> Deploying ax-server ($(AX_SERVER_IMAGE))..."
 	sed -e 's|$${AX_SERVER_IMAGE}|$(AX_SERVER_IMAGE)|g' \
 		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_DEFAULT_TASK_IMAGE)|g' \
+		-e 's|$${AX_RUNNER_VOLUME_IMAGE}|$(AX_RUNNER_VOLUME_IMAGE)|g' \
 		deploy/ax-server.yaml | kubectl apply -f -
 
 # Apply example task and resources

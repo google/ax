@@ -17,6 +17,7 @@ package substrate
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -445,6 +446,7 @@ func TestClient_EnsureActorTemplateWithImage_Success(t *testing.T) {
 		"default",
 		"task-1-tmpl-abcd",
 		"custom-image:v1",
+		"",
 		nil,
 		map[string]string{"FOO": "BAR"},
 	)
@@ -480,6 +482,7 @@ func TestClient_EnsureActorTemplateWithImage_PropagatesError(t *testing.T) {
 		"default",
 		"task-1-tmpl-abcd",
 		"custom-image:v1",
+		"",
 		nil,
 	)
 	if err == nil {
@@ -492,6 +495,43 @@ func TestClient_EnsureActorTemplateWithImage_PropagatesError(t *testing.T) {
 	defer mock.mu.Unlock()
 	if len(mock.createdTemplates) != 0 {
 		t.Errorf("expected no created templates on failure, got %d", len(mock.createdTemplates))
+	}
+}
+
+func TestMountRunnerVolume(t *testing.T) {
+	const runner = "ghcr.io/google/ax/ax-runner-volume@sha256:0123"
+	tmpl := BuildActorTemplate("default", "t", "ghcr.io/agent@sha256:abc", nil, nil, "", nil)
+	MountRunnerVolume(tmpl, runner)
+
+	var vol *ateapipb.Volume
+	for _, v := range tmpl.GetVolumes() {
+		if v.GetName() == RunnerVolumeName {
+			vol = v
+		}
+	}
+	if vol.GetImage().GetReference() != runner {
+		t.Fatalf("runner volume = %v, want an image volume of %q", vol, runner)
+	}
+	c := tmpl.GetContainers()[0]
+	if got, want := c.GetCommand(), []string{v1alpha1.RunnerMountPath + "/ax-task-runner"}; !slices.Equal(got, want) {
+		t.Errorf("command = %v, want %v", got, want)
+	}
+	if !slices.ContainsFunc(c.GetVolumeMounts(), func(m *ateapipb.VolumeMount) bool {
+		return m.GetName() == RunnerVolumeName && m.GetMountPath() == v1alpha1.RunnerMountPath
+	}) {
+		t.Errorf("container mounts %v, want %s at %s", c.GetVolumeMounts(), RunnerVolumeName, v1alpha1.RunnerMountPath)
+	}
+	if c.GetImage() != "ghcr.io/agent@sha256:abc" {
+		t.Errorf("container image = %q, want the agent image unchanged", c.GetImage())
+	}
+}
+
+func TestMountRunnerVolume_EmptyImageIsNoop(t *testing.T) {
+	tmpl := BuildActorTemplate("default", "t", "img@sha256:abc", nil, nil, "", nil)
+	want := proto.Clone(tmpl)
+	MountRunnerVolume(tmpl, "")
+	if !proto.Equal(tmpl, want) {
+		t.Errorf("MountRunnerVolume with no image changed the template:\n got %v\nwant %v", tmpl, want)
 	}
 }
 

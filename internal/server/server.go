@@ -80,6 +80,7 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 	if workspaces == nil {
 		workspaces = controller.NewWorkspaceManager(reconciler.Client(), controller.WorkspaceManagerOptions{
 			Locker:           locker,
+			Store:            s,
 			DefaultTaskImage: reconciler.DefaultTaskImage(),
 		})
 	}

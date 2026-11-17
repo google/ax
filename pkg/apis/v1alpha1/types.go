@@ -372,6 +372,12 @@ const DefaultWorkspacePath = "/workspace"
 // certificates to trust for outbound TLS, including the egress gateway's.
 const EgressTrustBundlePath = "/run/ate/egress-trust-bundle/trust-bundle.pem"
 
+// RunnerMountPath is where the runner volume image (Dockerfile.runner-volume)
+// is mounted read-only in a task's container when ax-server is configured with
+// one; the container then runs RunnerMountPath/ax-task-runner. It is not /ax,
+// because the runner writes its own state there.
+const RunnerMountPath = "/opt/ax"
+
 // WorkspacePath returns the task command's working directory: the bound
 // workspace's path when set, otherwise DefaultWorkspacePath.
 func (s *TaskSpec) WorkspacePath() string {

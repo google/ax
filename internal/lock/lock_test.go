@@ -94,3 +94,51 @@ func TestMemoryLocker_Timeout(t *testing.T) {
 		t.Fatalf("expected timeout error, got nil")
 	}
 }
+
+func TestMemoryLocker_SharedRLockAndExclusiveLock(t *testing.T) {
+	locker := lock.NewMemoryLocker()
+	ctx := t.Context()
+
+	// Multiple RLock holders acquire concurrently on the same resource.
+	rUnlock1, err := locker.RLock(ctx, "workspace", "default", "ws-1")
+	if err != nil {
+		t.Fatalf("first RLock: %v", err)
+	}
+	rUnlock2, err := locker.RLock(ctx, "workspace", "default", "ws-1")
+	if err != nil {
+		t.Fatalf("second RLock: %v", err)
+	}
+
+	// Exclusive Lock must block while any RLock is held.
+	shortCtx, cancel := context.WithTimeout(ctx, 25*time.Millisecond)
+	defer cancel()
+	if _, err := locker.Lock(shortCtx, "workspace", "default", "ws-1"); err == nil {
+		t.Fatal("expected exclusive Lock to time out while RLock is held")
+	}
+
+	rUnlock1()
+	shortCtx2, cancel2 := context.WithTimeout(ctx, 25*time.Millisecond)
+	defer cancel2()
+	if _, err := locker.Lock(shortCtx2, "workspace", "default", "ws-1"); err == nil {
+		t.Fatal("expected exclusive Lock to remain blocked while second RLock is still held")
+	}
+
+	// Releasing the last RLock unblocks exclusive Lock, which in turn blocks RLock.
+	rUnlock2()
+	wUnlock, err := locker.Lock(ctx, "workspace", "default", "ws-1")
+	if err != nil {
+		t.Fatalf("Lock after all RLock released: %v", err)
+	}
+	shortCtx3, cancel3 := context.WithTimeout(ctx, 25*time.Millisecond)
+	defer cancel3()
+	if _, err := locker.RLock(shortCtx3, "workspace", "default", "ws-1"); err == nil {
+		t.Fatal("expected RLock to time out while exclusive Lock is held")
+	}
+	wUnlock()
+
+	rUnlock3, err := locker.RLock(ctx, "workspace", "default", "ws-1")
+	if err != nil {
+		t.Fatalf("RLock after exclusive Lock released: %v", err)
+	}
+	rUnlock3()
+}

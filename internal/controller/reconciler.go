@@ -68,6 +68,13 @@ type TaskReconciler struct {
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
 	// to report ready before recording it as still initializing.
 	WorkspaceReadyTimeout time.Duration
+
+	// RunnerVolumeImage, when set, is a digest-pinned runner volume image
+	// (Dockerfile.runner-volume) that task templates mount read-only and run
+	// the runner from, so task images do not need the runner baked in. It is
+	// part of the template name, so a new digest provisions new templates.
+	// Empty keeps running the runner baked into the task image.
+	RunnerVolumeImage string
 }
 
 // NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
@@ -270,11 +277,11 @@ func (r *TaskReconciler) ensureTaskTemplate(
 
 	if image != "" || len(extraEnv) > 0 {
 		slog.Info("ensuring custom ActorTemplate for task", "image", image)
-		customTemplateName := taskTemplateName(task.Metadata.Name, image, extraEnv)
+		customTemplateName := taskTemplateName(task.Metadata.Name, image, r.RunnerVolumeImage, extraEnv)
 
 		// spec.profile.resources rides along in AX_TASK_YAML / AX_WORKSPACE_YAML, so a
 		// limits change is already part of the template digest and re-provisions the template.
-		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, image, resources, extraEnv)
+		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, image, r.RunnerVolumeImage, resources, extraEnv)
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
@@ -523,10 +530,15 @@ func setCondition(task *v1alpha1.Task, condType, status, reason, message string,
 }
 
 // taskTemplateName derives the per-task ActorTemplate name from the task name and a
-// digest of the image and container environment, so a spec change yields a new template.
-func taskTemplateName(taskName, image string, env map[string]string) string {
+// digest of the image, the runner volume image, and container environment, so a
+// spec or runner change yields a new template. An empty runnerVolumeImage leaves
+// the digest as it was before runner volumes existed.
+func taskTemplateName(taskName, image, runnerVolumeImage string, env map[string]string) string {
 	h := sha256.New()
 	h.Write([]byte(image))
+	if runnerVolumeImage != "" {
+		h.Write([]byte("\x00runner=" + runnerVolumeImage + ";"))
+	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
 		keys = append(keys, k)

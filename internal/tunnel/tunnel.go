@@ -49,6 +49,9 @@ type Options struct {
 	Service   string // default: ax-server
 	Target    string // e.g. "pod/name" or "svc/name" (overrides Service if set)
 	Port      int    // remote port, default: 8080
+	// IgnoreEnv skips AX_SERVER and AX_SYSTEM_NAMESPACE, which describe the
+	// cluster a command runs against, when resolving another cluster.
+	IgnoreEnv bool
 }
 
 func SanitizeContext(name string) string {
@@ -184,7 +187,7 @@ func EnsureServerURL(opts Options) (string, error) {
 	if opts.ServerURL != "" {
 		return opts.ServerURL, nil
 	}
-	if env := os.Getenv("AX_SERVER"); env != "" {
+	if env := os.Getenv("AX_SERVER"); env != "" && !opts.IgnoreEnv {
 		return env, nil
 	}
 
@@ -195,7 +198,7 @@ func EnsureServerURL(opts Options) (string, error) {
 	}
 
 	if opts.Namespace == "" {
-		if envNs := os.Getenv("AX_SYSTEM_NAMESPACE"); envNs != "" {
+		if envNs := os.Getenv("AX_SYSTEM_NAMESPACE"); envNs != "" && !opts.IgnoreEnv {
 			opts.Namespace = envNs
 		} else {
 			opts.Namespace = v1alpha1.DefaultSystemNamespace

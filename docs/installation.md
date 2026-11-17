@@ -311,4 +311,9 @@ After the check succeeds, remove the task and stop the tunnel:
 
 When upgrading, select a new AX ref and its recorded Substrate dependency,
 rebuild all AX components, and repeat these checks. Keep release and development
-components together at the chosen ref.
+components together at the chosen ref. Because pre-release `main` commits may
+evolve PostgreSQL constraints in place on startup (for example `locks` moving
+from `PRIMARY KEY (key)` to `PRIMARY KEY (key, token)`), scale
+`deployment/ax-server` down to `0` replicas before applying a new `main` image
+against an existing PostgreSQL volume rather than rolling old and new pods
+concurrently.

@@ -33,6 +33,7 @@ import (
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc"
 )
@@ -51,6 +52,7 @@ func main() {
 		defaultTemplate         string
 		defaultTemplateAtespace string
 		defaultTaskImage        string
+		runnerVolumeImage       string
 	)
 
 	flag.StringVar(&listenAddr, "addr", ":8080", "HTTP listen address")
@@ -65,6 +67,7 @@ func main() {
 	flag.StringVar(&defaultTemplate, "template", "default-template", "Default Substrate ActorTemplate name")
 	flag.StringVar(&defaultTemplateAtespace, "template-atespace", v1alpha1.DefaultSystemNamespace, "Default Substrate ActorTemplate atespace")
 	flag.StringVar(&defaultTaskImage, "default-task-image", v1alpha1.DefaultTaskImage, "Container image for tasks that do not set spec.profile.image (env: AX_DEFAULT_TASK_IMAGE)")
+	flag.StringVar(&runnerVolumeImage, "runner-volume-image", "", "Digest-pinned runner volume image (Dockerfile.runner-volume) to mount read-only into task containers and run the runner from; empty runs the runner baked into the task image (env: AX_RUNNER_VOLUME_IMAGE)")
 	flag.Parse()
 
 	if envAddr := os.Getenv("ADDR"); envAddr != "" {
@@ -79,9 +82,17 @@ func main() {
 	if envImage := os.Getenv("AX_DEFAULT_TASK_IMAGE"); envImage != "" {
 		defaultTaskImage = envImage
 	}
+	if envImage := os.Getenv("AX_RUNNER_VOLUME_IMAGE"); envImage != "" {
+		runnerVolumeImage = envImage
+	}
 
 	logger := slog.New(telemetry.NewLogHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.SetDefault(logger)
+
+	if err := validateRunnerVolumeImage(runnerVolumeImage); err != nil {
+		slog.Error("invalid runner volume image", "error", err)
+		os.Exit(1)
+	}
 
 	tel, err := telemetry.Init(context.Background(), "ax-server")
 	if err != nil {
@@ -103,6 +114,7 @@ func main() {
 		"substrateEndpoint", substrateEndpoint,
 		"template", defaultTemplate,
 		"defaultTaskImage", defaultTaskImage,
+		"runnerVolumeImage", runnerVolumeImage,
 	)
 
 	openCtx, openCancel := context.WithTimeout(context.Background(), time.Minute)
@@ -129,9 +141,12 @@ func main() {
 	defer subClient.Close()
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+	reconciler.RunnerVolumeImage = runnerVolumeImage
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:           backend,
+		Store:            backend,
 		DefaultTaskImage: defaultTaskImage,
+		RunnerImage:      runnerVolumeImage,
 	})
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
@@ -179,6 +194,19 @@ func main() {
 	if metricsServer != nil {
 		_ = metricsServer.Shutdown(shutdownCtx)
 	}
+}
+
+// validateRunnerVolumeImage checks that a configured runner volume image is
+// pinned by digest, which Substrate requires of image volumes. Failing at
+// startup beats failing every task's template creation later.
+func validateRunnerVolumeImage(image string) error {
+	if image == "" {
+		return nil
+	}
+	if _, err := name.NewDigest(image); err != nil {
+		return fmt.Errorf("%q must be pinned by digest (name@sha256:...): %w", image, err)
+	}
+	return nil
 }
 
 // describeStore summarizes a store connection string for logs. It parses the

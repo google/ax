@@ -290,3 +290,78 @@ func TestRestartKeepsTasksAndReleasesLocks(t *testing.T) {
 	}
 	unlock()
 }
+
+func TestSharedRLockAndExclusiveLock(t *testing.T) {
+	ttl := 300 * time.Millisecond
+	s := openTest(t, Options{LockTTL: ttl, LockRetryInterval: 20 * time.Millisecond})
+	ctx := t.Context()
+
+	// Multiple shared RLock holders coexist and renew independently past ttl.
+	rUnlock1, err := s.RLock(ctx, "workspace", "default", "ws-rw")
+	if err != nil {
+		t.Fatalf("first RLock: %v", err)
+	}
+	rUnlock2, err := s.RLock(ctx, "workspace", "default", "ws-rw")
+	if err != nil {
+		t.Fatalf("second RLock: %v", err)
+	}
+
+	// Exclusive Lock must wait across multiple renewal intervals while RLock is held.
+	waitCtx, cancel := context.WithTimeout(ctx, 2*ttl)
+	defer cancel()
+	if _, err := s.Lock(waitCtx, "workspace", "default", "ws-rw"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Lock while RLock held = %v, want DeadlineExceeded", err)
+	}
+
+	// Releasing only one of the two shared locks keeps exclusive Lock blocked.
+	rUnlock1()
+	shortCtx, cancel2 := context.WithTimeout(ctx, 80*time.Millisecond)
+	defer cancel2()
+	if _, err := s.Lock(shortCtx, "workspace", "default", "ws-rw"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Lock with one RLock remaining = %v, want DeadlineExceeded", err)
+	}
+
+	// Releasing the last RLock unblocks exclusive Lock, which in turn blocks RLock.
+	rUnlock2()
+	wUnlock, err := s.Lock(ctx, "workspace", "default", "ws-rw")
+	if err != nil {
+		t.Fatalf("Lock after all RLock released: %v", err)
+	}
+	shortCtx2, cancel3 := context.WithTimeout(ctx, 80*time.Millisecond)
+	defer cancel3()
+	if _, err := s.RLock(shortCtx2, "workspace", "default", "ws-rw"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RLock while exclusive Lock held = %v, want DeadlineExceeded", err)
+	}
+	wUnlock()
+}
+
+func TestSchemaUpgradesLegacySingleColumnLocksPK(t *testing.T) {
+	s := openTest(t, Options{LockTTL: time.Second, LockRetryInterval: 20 * time.Millisecond})
+	ctx := t.Context()
+
+	// Recreate the pre-RLock locks schema (single-column PRIMARY KEY on key, no mode).
+	if _, err := s.pool.Exec(ctx, `
+		DROP TABLE locks;
+		CREATE TABLE locks (
+			key        text        PRIMARY KEY,
+			token      text        NOT NULL,
+			expires_at timestamptz NOT NULL
+		);
+	`); err != nil {
+		t.Fatalf("recreating legacy locks table: %v", err)
+	}
+	if err := createSchema(ctx, s.pool); err != nil {
+		t.Fatalf("createSchema upgrade: %v", err)
+	}
+
+	u1, err := s.RLock(ctx, "workspace", "default", "upgraded")
+	if err != nil {
+		t.Fatalf("first RLock after upgrade: %v", err)
+	}
+	defer u1()
+	u2, err := s.RLock(ctx, "workspace", "default", "upgraded")
+	if err != nil {
+		t.Fatalf("second RLock after upgrade: %v", err)
+	}
+	defer u2()
+}

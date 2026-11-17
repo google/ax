@@ -81,7 +81,7 @@ k() {
 
 # render_manifest substitutes only the AX_* variables below so any other `$`
 # in the manifests is left untouched.
-MANIFEST_VARS=(AX_SYSTEM_NAMESPACE AX_WORKER_REPLICAS AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE)
+MANIFEST_VARS=(AX_SYSTEM_NAMESPACE AX_WORKER_REPLICAS AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE AX_RUNNER_VOLUME_IMAGE)
 render_manifest() {
   local manifest="${E2E_DIR}/manifests/$1"
   if command -v envsubst > /dev/null 2>&1; then
@@ -328,8 +328,16 @@ docker build -q -t "${REGISTRY_ADDR}/ax-task-runner:base" \
   --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.task-runner" "${REPO_ROOT}" > /dev/null
 AX_DEFAULT_TASK_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-task-runner:e2e" \
   --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-task-runner:base" -f "${E2E_DIR}/Dockerfile.task-runner.e2e")"
-export AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE
-printf '  AX_SERVER_IMAGE=%s\n  AX_DEFAULT_TASK_IMAGE=%s\n' "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}"
+# ax-server mounts the runner volume into every task, so tasks run the runner
+# built here rather than one baked into their image.
+AX_RUNNER_VOLUME_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner-volume:e2e" \
+  --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.runner-volume")"
+# A pure image (no runner inside) with a stand-in launcher.
+AX_E2E_LAUNCHER_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-e2e-launcher:e2e" \
+  -f "${E2E_DIR}/launcher/Dockerfile")"
+export AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE AX_RUNNER_VOLUME_IMAGE AX_E2E_LAUNCHER_IMAGE
+printf '  AX_SERVER_IMAGE=%s\n  AX_DEFAULT_TASK_IMAGE=%s\n  AX_RUNNER_VOLUME_IMAGE=%s\n  AX_E2E_LAUNCHER_IMAGE=%s\n' \
+  "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}" "${AX_RUNNER_VOLUME_IMAGE}" "${AX_E2E_LAUNCHER_IMAGE}"
 
 # 5. Deploy Postgres and ax-server. Delete existing workloads and Postgres's
 #    volume first so every run starts from an empty database.
@@ -364,6 +372,7 @@ export AX_SYSTEM_NAMESPACE="${AX_SYSTEM_NAMESPACE}"
 export AX_BIN="${TMP_DIR}/bin/ax"
 export SUBSTRATE_REF="${SUBSTRATE_REF}"
 export SUBSTRATE_COMMIT="${SUBSTRATE_COMMIT}"
+export AX_E2E_LAUNCHER_IMAGE="${AX_E2E_LAUNCHER_IMAGE}"
 EOF
 
 log "Kind E2E environment is ready (configuration written to ${TMP_DIR}/e2e.env)."

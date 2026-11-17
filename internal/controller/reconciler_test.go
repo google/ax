@@ -356,6 +356,79 @@ func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
 	}
 }
 
+// TestTaskReconciler_RunnerVolumeImage verifies that a configured runner volume
+// image is mounted into the task's template and run from there, that the
+// runner digest is part of the template name, and that leaving it unset keeps
+// today's template (and its name) unchanged.
+func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
+	resume := func(t *testing.T, runner string) *ateapipb.ActorTemplate {
+		t.Helper()
+		lis, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+		t.Cleanup(func() { lis.Close() })
+		mockSrv := &mockControlServer{}
+		grpcServer := grpc.NewServer()
+		ateapipb.RegisterControlServer(grpcServer, mockSrv)
+		go grpcServer.Serve(lis)
+		t.Cleanup(grpcServer.Stop)
+		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("failed to create substrate client: %v", err)
+		}
+		t.Cleanup(func() { client.Close() })
+
+		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+		reconciler.RunnerVolumeImage = runner
+		task := &v1alpha1.Task{
+			ApiVersion: v1alpha1.APIVersion,
+			Kind:       v1alpha1.KindTask,
+			Metadata:   &v1alpha1.ObjectMeta{Name: "pure", Atespace: "default"},
+			Spec:       &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}},
+		}
+		if err := reconciler.Resume(context.Background(), task, nil, nil); err != nil {
+			t.Fatalf("Resume failed: %v", err)
+		}
+		if len(mockSrv.createdTemplates) != 1 {
+			t.Fatalf("created %d templates, want 1", len(mockSrv.createdTemplates))
+		}
+		return mockSrv.createdTemplates[0]
+	}
+
+	const runner1 = "ghcr.io/google/ax/ax-runner-volume@sha256:r1"
+	tmpl := resume(t, runner1)
+	c := tmpl.GetContainers()[0]
+	if got, want := c.GetCommand(), v1alpha1.RunnerMountPath+"/ax-task-runner"; len(got) != 1 || got[0] != want {
+		t.Errorf("command = %v, want [%s]", got, want)
+	}
+	var mounted bool
+	for _, v := range tmpl.GetVolumes() {
+		mounted = mounted || v.GetImage().GetReference() == runner1
+	}
+	if !mounted {
+		t.Errorf("volumes = %v, want an image volume of %q", tmpl.GetVolumes(), runner1)
+	}
+
+	if other := resume(t, "ghcr.io/google/ax/ax-runner-volume@sha256:r2"); other.GetMetadata().GetName() == tmpl.GetMetadata().GetName() {
+		t.Errorf("a new runner digest kept template name %q", tmpl.GetMetadata().GetName())
+	}
+
+	baked := resume(t, "")
+	if baked.GetMetadata().GetName() == tmpl.GetMetadata().GetName() {
+		t.Errorf("unset runner volume image kept template name %q", tmpl.GetMetadata().GetName())
+	}
+	if got := baked.GetContainers()[0].GetCommand(); len(got) != 1 || got[0] != substrate.DefaultGuestCommand {
+		t.Errorf("unset runner volume image: command = %v, want [%s]", got, substrate.DefaultGuestCommand)
+	}
+	for _, v := range baked.GetVolumes() {
+		if v.GetImage() != nil {
+			t.Errorf("unset runner volume image: unexpected image volume %v", v)
+		}
+	}
+}
+
 func TestTaskReconciler_Suspend(t *testing.T) {
 	ctx := context.Background()
 

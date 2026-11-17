@@ -19,6 +19,22 @@ import (
 	"testing"
 )
 
+func TestValidateRunnerVolumeImage(t *testing.T) {
+	for _, tt := range []struct {
+		image   string
+		wantErr bool
+	}{
+		{image: ""},
+		{image: "ghcr.io/google/ax/ax-runner-volume@sha256:" + strings.Repeat("a", 64)},
+		{image: "ghcr.io/google/ax/ax-runner-volume:latest", wantErr: true},
+		{image: "ghcr.io/google/ax/ax-runner-volume", wantErr: true},
+	} {
+		if err := validateRunnerVolumeImage(tt.image); (err != nil) != tt.wantErr {
+			t.Errorf("validateRunnerVolumeImage(%q) = %v, want error: %v", tt.image, err, tt.wantErr)
+		}
+	}
+}
+
 func TestDescribeStore(t *testing.T) {
 	tests := []struct {
 		name string

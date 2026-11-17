@@ -261,6 +261,7 @@ func newHarness(t *testing.T) *harness {
 		Port:          freePort(t),
 		MetadataPort:  freePort(t),
 		Task:          h.task,
+		RunDir:        filepath.Join(dir, "run"),
 		OnCommandExit: func(e runner.CommandExit) { h.exited <- e },
 	}
 	return h

@@ -23,8 +23,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// schema creates every table and index the store needs. It only adds what is
-// missing, so it is safe to run on every start.
+// schema creates every table and index the store needs (and idempotently
+// upgrades pre-release tables such as shared/exclusive lock columns), so it is
+// safe to run on every start. Because pre-release constraint upgrades (such as
+// locks moving from PRIMARY KEY (key) to PRIMARY KEY (key, token)) are not
+// backward-compatible with older main replicas' SQL, stop existing ax-server
+// replicas before upgrading across breaking pre-release schema changes.
 //
 // TODO: Add versioned migrations before the schema first changes after release.
 //

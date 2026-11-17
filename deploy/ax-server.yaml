@@ -127,6 +127,9 @@ spec:
               value: "https://atenet-router.ate-system.svc.cluster.local:443"
             - name: AX_DEFAULT_TASK_IMAGE
               value: "${AX_DEFAULT_TASK_IMAGE}"
+            # Empty runs the runner baked into each task image.
+            - name: AX_RUNNER_VOLUME_IMAGE
+              value: "${AX_RUNNER_VOLUME_IMAGE}"
           ports:
             - containerPort: 8080
               name: http
