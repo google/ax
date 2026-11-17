@@ -159,12 +159,22 @@ func Install(ctx context.Context, opts InstallOptions) error {
 
 	// Stop any stale port-forward tunnel so the next CLI call reconnects cleanly
 	// to the newly rolled pod.
-	if ctxName, err := tunnel.CurrentContext(opts.KubeContext); err == nil && ctxName != "" {
-		_ = tunnel.StopTunnelByContext(ctxName)
-	}
+	stopTunnel(opts.KubeContext, ns)
 
 	fmt.Fprintf(out, "==> AX is ready in namespace %q.\n", ns)
 	return nil
+}
+
+// stopTunnel stops the CLI's tunnel to AX in namespace ns of the kube context.
+// The context's tunnels to AX in other namespaces stay.
+func stopTunnel(kubeContext, ns string) {
+	ctxName, err := tunnel.CurrentContext(kubeContext)
+	if err != nil || ctxName == "" {
+		return
+	}
+	if t, err := tunnel.GetTunnel(ctxName, ns); err == nil {
+		_ = tunnel.StopTunnel(t)
+	}
 }
 
 // Uninstall removes AX workloads and RBAC from Namespace (preserving
@@ -191,9 +201,7 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 		timeout = 3 * time.Minute
 	}
 
-	if ctxName, err := tunnel.CurrentContext(opts.KubeContext); err == nil && ctxName != "" {
-		_ = tunnel.StopTunnelByContext(ctxName)
-	}
+	stopTunnel(opts.KubeContext, ns)
 
 	kubectlBin, err := executil.EnsureKubectl(ctx, r, opts.ToolURLs, out)
 	if err != nil {
