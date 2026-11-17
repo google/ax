@@ -32,6 +32,7 @@
 #   RECREATE_KIND            Set to true to delete and recreate the Kind cluster
 #   FORCE_INSTALL_SUBSTRATE  Set to true to reinstall Substrate even if the commit is unchanged
 #   SUBSTRATE_IMAGE_REPO     Registry holding Substrate release images (default: ghcr.io/agent-substrate/substrate)
+#   SKIP_REMOTE_KIND         Set to true to not set up the second cluster, ${KIND_CLUSTER_NAME}-remote
 
 set -euo pipefail
 export GOWORK=off
@@ -255,6 +256,14 @@ for img in "${SUBSTRATE_IMAGES[@]}"; do
   fi
 done
 log "Using Substrate ${SUBSTRATE_REF} release images from ${SUBSTRATE_IMAGE_REPO}."
+
+# TestE2E_Promote promotes a task to a second cluster. Set it up first, with
+# this script and one worker, in the same kubeconfig.
+if [[ "${SKIP_REMOTE_KIND:-false}" != "true" ]]; then
+  KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}-remote" AX_WORKER_REPLICAS=1 SKIP_REMOTE_KIND=true "${BASH_SOURCE[0]}"
+  # Written again below, for this cluster.
+  rm -f "${TMP_DIR}/e2e.env"
+fi
 
 # 1. Ensure the Kind cluster and local registry exist.
 if [[ "${RECREATE_KIND:-false}" == "true" ]] || ! kind get clusters 2> /dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
