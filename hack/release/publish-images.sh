@@ -25,6 +25,11 @@
 #
 #   AX_SERVER_IMAGE=<repo>/ax-server@sha256:...
 #   AX_DEFAULT_TASK_IMAGE=<repo>/ax-task-runner@sha256:...
+#   AX_RUNNER_VOLUME_REF=<repo>/ax-runner-volume@sha256:...
+#
+# AX_RUNNER_VOLUME_REF is published but not deployed by default: the release
+# manifest leaves AX_RUNNER_VOLUME_IMAGE empty (the runner baked into each task
+# image), as deploy/ax-server.yaml and the Makefile do.
 #
 # An image that already exists for <version> on every platform is not rebuilt;
 # its digest is recorded as is, so a rerun never changes the digest of an image
@@ -162,11 +167,15 @@ if [[ ${#build[@]} -gt 0 ]]; then
     os="${p%/*}"
     arch="${p#*/}"
     mkdir -p "bin/${os}_${arch}"
+    bins=()
     for image in "${build[@]}"; do
-      echo "==> Cross-compiling ${image} for ${p}"
+      bin="$(image_binary "${image}")"
+      [[ " ${bins[*]} " == *" ${bin} "* ]] && continue
+      bins+=("${bin}")
+      echo "==> Cross-compiling ${bin} for ${p}"
       GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
         go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
-        -o "bin/${os}_${arch}/${image}" "./cmd/${image}"
+        -o "bin/${os}_${arch}/${bin}" "./cmd/${bin}"
     done
   done
 
@@ -213,8 +222,10 @@ for image in "${RELEASE_IMAGES[@]}"; do
       arm64) want=aarch64 ;;
       *) echo "error: no binary check for ${p}" >&2; exit 1 ;;
     esac
-    cid="$(docker create --platform "${p}" "${AX_IMAGE_REPO}/${image}@${DIGESTS[${image}]}")"
-    got="$(docker cp "${cid}:/usr/local/bin/${image}" - | tar -xO | file -b -)"
+    # The command is never run; it only lets docker create an image that has
+    # none (the FROM-scratch runner volume).
+    cid="$(docker create --platform "${p}" "${AX_IMAGE_REPO}/${image}@${DIGESTS[${image}]}" /none)"
+    got="$(docker cp "${cid}:$(image_binary_path "${image}")" - | tar -xO | file -b -)"
     docker rm "${cid}" >/dev/null
     if [[ "${got}" != *"${want}"* ]]; then
       echo "error: ${image} for ${p} holds the wrong binary: ${got}" >&2
@@ -243,6 +254,7 @@ fi
 cat > "${OUT}/images.env" <<EOF
 AX_SERVER_IMAGE=${AX_IMAGE_REPO}/ax-server@${DIGESTS[ax-server]}
 AX_DEFAULT_TASK_IMAGE=${AX_IMAGE_REPO}/ax-task-runner@${DIGESTS[ax-task-runner]}
+AX_RUNNER_VOLUME_REF=${AX_IMAGE_REPO}/ax-runner-volume@${DIGESTS[ax-runner-volume]}
 EOF
 echo "==> Wrote ${OUT}/images.env:"
 cat "${OUT}/images.env"

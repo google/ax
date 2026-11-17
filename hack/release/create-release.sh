@@ -113,6 +113,12 @@ if [[ -z "${substrate}" ]]; then
   exit 1
 fi
 download="https://github.com/${REPO}/releases/download/${TAG}"
+if grep -q 'AX_RUNNER_VOLUME_IMAGE' "${ASSETS_DIR}/ax-server.yaml" \
+  && grep -A1 'name: AX_RUNNER_VOLUME_IMAGE' "${ASSETS_DIR}/ax-server.yaml" | grep -qF "${AX_RUNNER_VOLUME_REF}"; then
+  runner_volume_note="mounted into every task by this release's ax-server.yaml"
+else
+  runner_volume_note="opt-in: set \`AX_RUNNER_VOLUME_IMAGE\` on ax-server"
+fi
 notes="$(mktemp)"
 trap 'rm -f "${notes}"' EXIT
 if [[ -f "${ASSETS_DIR}/install.sh" ]]; then
@@ -144,6 +150,7 @@ ${cli_install}
 |---|---|
 | ax-server | \`${AX_SERVER_IMAGE}\` |
 | ax-task-runner (default task image) | \`${AX_DEFAULT_TASK_IMAGE}\` |
+| ax-runner-volume (${runner_volume_note}) | \`${AX_RUNNER_VOLUME_REF}\` |
 
 EOF
 
