@@ -186,10 +186,27 @@ spec:
   selector:
     app.kubernetes.io/name: ax-server
 ---
-# ax-server does not authenticate its callers yet, so code running in a task
-# must not reach it: that rules out the worker pods, which run the sandboxes,
-# and the egress gateway, which connects on their behalf. Other pods may
-# connect, and kubectl port-forward is not affected.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ax-runner
+  namespace: ${AX_SYSTEM_NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ax-runner
+    app.kubernetes.io/part-of: ax
+spec:
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: runner
+  selector:
+    app.kubernetes.io/name: ax-server
+---
+# ax-server's gRPC control plane (:8080) and metrics (:9090) do not
+# authenticate callers, so worker pods and the egress gateway must not reach
+# them. The internal runner HTTP endpoint (:8081, Service ax-runner) is
+# reachable only from Substrate's egress gateway (atenet-egress), which
+# injects the Actor JWT; worker pods cannot reach ax-server on any port.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -202,7 +219,12 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - from:
+    - ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+      from:
         - namespaceSelector: {}
           podSelector:
             matchExpressions:
@@ -211,3 +233,13 @@ spec:
               - key: app
                 operator: NotIn
                 values: ["atenet-egress"]
+    - ports:
+        - protocol: TCP
+          port: 8081
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ate-system
+          podSelector:
+            matchLabels:
+              app: atenet-egress
