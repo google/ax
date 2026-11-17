@@ -22,8 +22,9 @@
 # bin/release) and writes:
 #
 #   ax-server.yaml  deploy/ax-server.yaml with both images pinned by digest and
-#                   AX_RUNNER_VOLUME_IMAGE empty (the runner baked into each task
-#                   image), the same default as the Makefile
+#                   AX_RUNNER_VOLUME_IMAGE empty: the runner volume (#619, #620)
+#                   is not released yet, so tasks run the runner baked into
+#                   their image
 #   postgres.yaml   deploy/postgres.yaml, unchanged
 #
 # Fails if a ${...} placeholder is left in a rendered manifest.
@@ -35,7 +36,7 @@ OUT="${1:-${ROOT}/bin/release}"
 
 # shellcheck disable=SC1091
 source "${OUT}/images.env"
-for v in AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE AX_RUNNER_VOLUME_REF; do
+for v in AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE; do
   if [[ ! "${!v:-}" =~ @sha256:[0-9a-f]{64}$ ]]; then
     echo "error: ${v} in ${OUT}/images.env is not pinned by digest: '${!v:-}'" >&2
     exit 1

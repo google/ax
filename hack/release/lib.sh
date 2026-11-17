@@ -18,22 +18,7 @@
 # Release images, in the order they are built. Each is built from
 # Dockerfile.<name minus the ax- prefix> and published as
 # $AX_IMAGE_REPO/<name>:<version>. Adding an image here is what publishes it.
-RELEASE_IMAGES=(ax-server ax-task-runner ax-runner-volume)
-
-# image_binary prints the Go binary (./cmd/<binary>) image $1 holds, and
-# image_binary_path where the image holds it.
-image_binary() {
-  case "$1" in
-    ax-runner-volume) echo ax-task-runner ;;
-    *) echo "$1" ;;
-  esac
-}
-image_binary_path() {
-  case "$1" in
-    ax-runner-volume) echo /ax-task-runner ;;
-    *) echo "/usr/local/bin/$1" ;;
-  esac
-}
+RELEASE_IMAGES=(ax-server ax-task-runner)
 
 # Platforms the release images and the linux CLI are built for.
 RELEASE_PLATFORMS=(linux/amd64 linux/arm64)
