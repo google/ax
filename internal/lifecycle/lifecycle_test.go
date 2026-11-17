@@ -260,3 +260,72 @@ func TestIsExecutionTerminal(t *testing.T) {
 		})
 	}
 }
+
+func TestClaimInMemoryRestoreAndInteractiveIdle(t *testing.T) {
+	now := time.Unix(1700000000, 0).UTC()
+
+	t.Run("in_memory_run_id_prevents_false_crash_on_restore", func(t *testing.T) {
+		row := testTaskRow(true)
+		row.RunnerTokenHash = HashToken("tok")
+		row.RunnerTokenConfirmed = true
+		row.ActiveRunID = "r-1"
+
+		next, resp, err := Claim(row, &runnerv1.ClaimAssignmentRequest{
+			InMemoryRunId:    "r-1",
+			LastStartedRunId: "r-1",
+			ChildAlive:       false,
+		}, nil, "tok", nil, now)
+		if err != nil {
+			t.Fatalf("Claim() error = %v", err)
+		}
+		if next.Task.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_FAILED {
+			t.Fatalf("expected non-FAILED state when in_memory_run_id is set, got %+v", next.Task.GetStatus())
+		}
+		if resp.GetMode() != runnerv1.AssignmentMode_ASSIGNMENT_MODE_RUN {
+			t.Fatalf("Claim() mode = %v, want RUN", resp.GetMode())
+		}
+	})
+
+	t.Run("interactive_task_without_commands_or_goal_gets_idle", func(t *testing.T) {
+		row := &store.TaskRow{
+			Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "ssh-only"},
+				Spec:     &v1alpha1.TaskSpec{},
+				Status:   &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED},
+			},
+			Runnable: true,
+		}
+		next, resp, err := Claim(row, &runnerv1.ClaimAssignmentRequest{Nonce: "n-1"}, nil, "", fixedTokenMinter("tok"), now)
+		if err != nil {
+			t.Fatalf("Claim() error = %v", err)
+		}
+		if resp.GetMode() != runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE || next.ActiveRunID != "" {
+			t.Fatalf("expected IDLE and empty ActiveRunID for interactive task, got mode=%v runID=%q", resp.GetMode(), next.ActiveRunID)
+		}
+	})
+}
+
+func TestApplyEventsDoesNotOverwriteCancelled(t *testing.T) {
+	now := time.Unix(1700000000, 0).UTC()
+	row := testTaskRow(false)
+	row.RunnerTokenHash = HashToken("tok")
+	row.ActiveRunID = "r-1"
+	row.Task.Status.State = v1alpha1.TaskState_TASK_STATE_CANCELLED
+
+	next, resp, park, err := ApplyEvents(row, &runnerv1.ReportEventsRequest{
+		RunId: "r-1",
+		Events: []*runnerv1.RunnerEvent{{
+			Seq:   1,
+			Event: &runnerv1.RunnerEvent_CommandExited{CommandExited: &runnerv1.CommandExited{ExitCode: 0}},
+		}},
+	}, "tok", now)
+	if err != nil {
+		t.Fatalf("ApplyEvents() error = %v", err)
+	}
+	if park || resp.GetAckSeq() != 1 || resp.GetNext().GetMode() != runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE {
+		t.Fatalf("unexpected response for cancelled task: park=%v resp=%+v", park, resp)
+	}
+	if next.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_CANCELLED {
+		t.Fatalf("expected CANCELLED to be preserved, got %v", next.Task.GetStatus().GetState())
+	}
+}
