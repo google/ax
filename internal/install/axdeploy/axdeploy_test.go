@@ -262,23 +262,53 @@ func TestReconcileCredProviderPolicyUsesMergePatch(t *testing.T) {
 func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
 	t.Setenv("AX_SERVER_IMAGE", "")
 	t.Setenv("AX_DEFAULT_TASK_IMAGE", "")
+	t.Setenv("AX_RUNNER_VOLUME_IMAGE", "")
 
-	if _, _, err := ResolveImageInputs("", ""); err == nil || !strings.Contains(err.Error(), "--server-image") {
+	if _, _, _, err := ResolveImageInputs("", "", ""); err == nil || !strings.Contains(err.Error(), "--server-image") {
 		t.Fatalf("expected --server-image gate error when unset, got: %v", err)
 	}
 
-	srvOnly, taskEmpty, err := ResolveImageInputs("ghcr.io/google/ax/ax-server:v0.1.0", "")
-	if err != nil || srvOnly != "ghcr.io/google/ax/ax-server:v0.1.0" || taskEmpty != "" {
-		t.Fatalf("expected server-only input to succeed with optional empty task image, got (%q, %q, %v)", srvOnly, taskEmpty, err)
+	srv, task, runner, err := ResolveImageInputs("ghcr.io/google/ax/ax-server:v0.1.0", "", "")
+	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.1.0" || task != "" || runner != "" {
+		t.Fatalf("expected server-only input to succeed with the optional images empty, got (%q, %q, %q, %v)", srv, task, runner, err)
 	}
 
 	t.Setenv("AX_SERVER_IMAGE", "ghcr.io/google/ax/ax-server:v0.1.0")
 	t.Setenv("AX_DEFAULT_TASK_IMAGE", "ghcr.io/agentexecutor/claude-code:v1")
-	srv, task, err := ResolveImageInputs("", "")
+	t.Setenv("AX_RUNNER_VOLUME_IMAGE", "ghcr.io/google/ax/ax-runner-volume:v0.1.0")
+	srv, task, runner, err = ResolveImageInputs("", "", "")
 	if err != nil {
 		t.Fatalf("ResolveImageInputs from env: %v", err)
 	}
-	if srv != "ghcr.io/google/ax/ax-server:v0.1.0" || task != "ghcr.io/agentexecutor/claude-code:v1" {
-		t.Fatalf("got (%q, %q)", srv, task)
+	if srv != "ghcr.io/google/ax/ax-server:v0.1.0" || task != "ghcr.io/agentexecutor/claude-code:v1" || runner != "ghcr.io/google/ax/ax-runner-volume:v0.1.0" {
+		t.Fatalf("got (%q, %q, %q)", srv, task, runner)
+	}
+
+	// An explicit flag wins over the environment.
+	_, _, runner, err = ResolveImageInputs("", "", " ghcr.io/example/runner-volume:dev ")
+	if err != nil || runner != "ghcr.io/example/runner-volume:dev" {
+		t.Fatalf("expected the flag to override $AX_RUNNER_VOLUME_IMAGE, got (%q, %v)", runner, err)
+	}
+}
+
+func TestResolveImagesPinsRunnerVolumeImage(t *testing.T) {
+	t.Setenv("AX_SERVER_IMAGE", "")
+	t.Setenv("AX_DEFAULT_TASK_IMAGE", "")
+	t.Setenv("AX_RUNNER_VOLUME_IMAGE", "")
+
+	const digest = "@sha256:5382526a63b0cabf694ac3e0b7ac5fe95c94975c563677e7078169f05ff911b0"
+	srvIn := "ghcr.io/google/ax/ax-server" + digest
+	runnerIn := "ghcr.io/google/ax/ax-runner-volume" + digest
+
+	srv, task, runner, err := resolveImages(context.Background(), InstallOptions{ServerImage: srvIn, RunnerVolumeImage: runnerIn})
+	if err != nil {
+		t.Fatalf("resolveImages: %v", err)
+	}
+	if srv != srvIn || task != "" || runner != runnerIn {
+		t.Fatalf("got (%q, %q, %q), want (%q, \"\", %q)", srv, task, runner, srvIn, runnerIn)
+	}
+
+	if _, _, _, err := resolveImages(context.Background(), InstallOptions{ServerImage: srvIn, RunnerVolumeImage: "not a valid ref"}); err == nil {
+		t.Fatal("expected an invalid runner volume image reference to fail")
 	}
 }

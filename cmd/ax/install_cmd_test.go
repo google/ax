@@ -30,7 +30,7 @@ func TestParseLocalArgs(t *testing.T) {
 	if err != nil || def.subcmd != "start" || def.workers != 1 || def.name != cluster.DefaultName {
 		t.Fatalf("expected default start flags, got %+v, %v", def, err)
 	}
-	if def.serverImage != axdeploy.DefaultServerImage || def.defaultTaskImage != axdeploy.DefaultTaskImage {
+	if def.serverImage != axdeploy.DefaultServerImage || def.defaultTaskImage != axdeploy.DefaultTaskImage || def.runnerVolumeImage != axdeploy.DefaultRunnerVolumeImage {
 		t.Fatalf("expected default serverImage=%q defaultTaskImage=%q, got %+v", axdeploy.DefaultServerImage, axdeploy.DefaultTaskImage, def)
 	}
 
@@ -40,13 +40,15 @@ func TestParseLocalArgs(t *testing.T) {
 		"--workers", "2",
 		"--server-image", "ghcr.io/google/ax/ax-server:v0.1.0",
 		"--default-task-image", "ghcr.io/agentexecutor/antigravity:1.5.8",
+		"--runner-volume-image", "ghcr.io/google/ax/ax-runner-volume:v0.1.0",
 	})
 	if err != nil {
 		t.Fatalf("parseLocalArgs: %v", err)
 	}
 	if got.subcmd != "start" || got.name != "dev" || got.workers != 2 ||
 		got.serverImage != "ghcr.io/google/ax/ax-server:v0.1.0" ||
-		got.defaultTaskImage != "ghcr.io/agentexecutor/antigravity:1.5.8" {
+		got.defaultTaskImage != "ghcr.io/agentexecutor/antigravity:1.5.8" ||
+		got.runnerVolumeImage != "ghcr.io/google/ax/ax-runner-volume:v0.1.0" {
 		t.Fatalf("unexpected parsed flags: %+v", got)
 	}
 
@@ -65,19 +67,21 @@ func TestParseInstallArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseInstallArgs defaults: %v", err)
 	}
-	if def.serverImage != axdeploy.DefaultServerImage || def.defaultTaskImage != axdeploy.DefaultTaskImage {
+	if def.serverImage != axdeploy.DefaultServerImage || def.defaultTaskImage != axdeploy.DefaultTaskImage || def.runnerVolumeImage != axdeploy.DefaultRunnerVolumeImage {
 		t.Fatalf("expected default serverImage=%q defaultTaskImage=%q, got %+v", axdeploy.DefaultServerImage, axdeploy.DefaultTaskImage, def)
 	}
 
 	got, err := parseInstallArgs([]string{
 		"--server-image", "ghcr.io/google/ax/ax-server:v0.1.0",
 		"--default-task-image", "us-docker.pkg.dev/ax-prod/images/claude-code:v1",
+		"--runner-volume-image", "us-docker.pkg.dev/ax-prod/images/ax-runner-volume:v1",
 	})
 	if err != nil {
 		t.Fatalf("parseInstallArgs: %v", err)
 	}
 	if got.serverImage != "ghcr.io/google/ax/ax-server:v0.1.0" ||
-		got.defaultTaskImage != "us-docker.pkg.dev/ax-prod/images/claude-code:v1" {
+		got.defaultTaskImage != "us-docker.pkg.dev/ax-prod/images/claude-code:v1" ||
+		got.runnerVolumeImage != "us-docker.pkg.dev/ax-prod/images/ax-runner-volume:v1" {
 		t.Fatalf("unexpected parsed flags: %+v", got)
 	}
 

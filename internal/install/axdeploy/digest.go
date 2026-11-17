@@ -51,7 +51,7 @@ func EnsureDigestPinned(ctx context.Context, imageRef string, client *http.Clien
 	}
 	digest, err := crane.Digest(imageRef, opts...)
 	if err != nil {
-		return "", fmt.Errorf("resolving digest for %q: %w (override with --server-image / --default-task-image if using a custom registry)", imageRef, err)
+		return "", fmt.Errorf("resolving digest for %q: %w (check the --server-image, --default-task-image, and --runner-volume-image references and your registry credentials)", imageRef, err)
 	}
 	return imageRef + "@" + digest, nil
 }
