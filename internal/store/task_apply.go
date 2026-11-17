@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,23 +37,19 @@ func (k TaskKey) Normalized() TaskKey {
 	return k
 }
 
-// TaskRow holds the persisted Task lifecycle state together with the
-// provisioning, queue-lease, and liveness fields owned by storage.
+// TaskRow holds the persisted Task resource and runner control state together
+// with the storage-owned row revision.
 //
-// Embedding [lifecycle.State] promotes Task, Actions, ActorUID, ActiveRunID,
-// RunSeq, ActionSeq, RunnerToken*, LastAckedRunnerSeq, ClaimDeadline, and
-// LastResumedAt directly onto TaskRow while keeping storage-only fields out of
-// [lifecycle.TransitionFunc].
+// Embedding [lifecycle.State] promotes Task, ActorUID, Runnable, ActiveRunID,
+// RunSeq, RunnerTokenHash, RunnerTokenConfirmed, ClaimNonce, and
+// LastAckedRunnerSeq directly onto TaskRow while keeping storage-only fields
+// out of [lifecycle.TransitionFunc].
 type TaskRow struct {
 	lifecycle.State
 
-	EffectiveProfile *v1alpha1.Profile      // Resolved compute Profile snapshot at CreateTask.
-	EgressRules      []*ateapipb.EgressRule // Snapped Gateway egress rules at CreateTask.
-	Generation       int64                  // Monotonic row revision (+1 per write; never resets).
-	LastHeartbeatAt  *time.Time             // Updated by batched heartbeat flushes.
-	NextReconcileAt  *time.Time             // Queue wakeup timestamp; nil when task is at rest.
-	LeaseOwner       string                 // Active queue worker lease holder ("<worker>:<token>").
-	LeaseExpiresAt   *time.Time
+	// Generation is the monotonic row revision (+1 per committed Apply write;
+	// never resets), mirrored onto Task.Status.Generation.
+	Generation int64
 }
 
 // Clone returns a deep copy of r safe to mutate inside an ApplyFunc.
@@ -64,22 +59,6 @@ func (r *TaskRow) Clone() *TaskRow {
 	}
 	out := *r
 	out.State = r.State.Clone()
-	if r.EffectiveProfile != nil {
-		out.EffectiveProfile = proto.Clone(r.EffectiveProfile).(*v1alpha1.Profile)
-	}
-	if len(r.EgressRules) > 0 {
-		out.EgressRules = make([]*ateapipb.EgressRule, len(r.EgressRules))
-		for i, rule := range r.EgressRules {
-			if rule != nil {
-				out.EgressRules[i] = proto.Clone(rule).(*ateapipb.EgressRule)
-			}
-		}
-	} else {
-		out.EgressRules = nil
-	}
-	out.LastHeartbeatAt = cloneTimePtr(r.LastHeartbeatAt)
-	out.NextReconcileAt = cloneTimePtr(r.NextReconcileAt)
-	out.LeaseExpiresAt = cloneTimePtr(r.LeaseExpiresAt)
 	return &out
 }
 
@@ -91,35 +70,44 @@ func (r *TaskRow) LifecycleState() lifecycle.State {
 	return r.State.Clone()
 }
 
-// SetLifecycleState writes s onto r and recomputes NextReconcileAt at now.
-// It is a no-op if r is nil. Live Substrate actor identity fields
-// (status.actor and status.actor_uid) are scrubbed so they are never persisted.
-func (r *TaskRow) SetLifecycleState(s lifecycle.State, now time.Time) {
+// SetLifecycleState writes s onto r, scrubbing Task.Status via [StoredStatus]
+// so Substrate-owned live fields and non-AX states are never persisted. It is a
+// no-op if r is nil.
+func (r *TaskRow) SetLifecycleState(s lifecycle.State) {
 	if r == nil {
 		return
 	}
 	c := s.Clone()
-	ScrubStoredTask(c.Task)
+	if c.Task != nil {
+		c.Task.Status = StoredStatus(c.Task.Status)
+	}
 	r.State = c
-	r.NextReconcileAt = lifecycle.NextReconcileAt(c, now)
 }
 
-// ScrubStoredTask clears live Substrate-owned fields on t.Status (actor and
-// actor_uid) that must only be overlaid at read time (see TaskStatus in
-// pkg/apis/v1alpha1/task.proto).
-func ScrubStoredTask(t *v1alpha1.Task) {
-	if t != nil && t.Status != nil {
-		t.Status.Actor = ""
-		t.Status.ActorUid = ""
+// StoredStatus returns the part of a task's status that AX owns and stores. The
+// actor name, actor UID, and (for states outside [v1alpha1.IsAXTaskState]) the
+// state, status detail, and Ready condition that follow from the actor's live
+// state on Agent Substrate are dropped. st is not modified; a nil st returns an
+// empty non-nil TaskStatus.
+func StoredStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
+	out := &v1alpha1.TaskStatus{}
+	if st != nil {
+		out = proto.Clone(st).(*v1alpha1.TaskStatus)
 	}
-}
-
-func cloneTimePtr(t *time.Time) *time.Time {
-	if t == nil {
-		return nil
+	out.Actor = ""
+	out.ActorUid = ""
+	if !v1alpha1.IsAXTaskState(out.State) {
+		out.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+		out.StatusDetail = nil
+		conds := out.Conditions[:0]
+		for _, c := range out.Conditions {
+			if c.GetType() != v1alpha1.ConditionReady {
+				conds = append(conds, c)
+			}
+		}
+		out.Conditions = conds
 	}
-	v := *t
-	return &v
+	return out
 }
 
 // DeleteTaskRow is a sentinel value that an [ApplyFunc] returns to delete a
@@ -138,12 +126,6 @@ func cloneTimePtr(t *time.Time) *time.Time {
 // Passing a copy or clone instead of DeleteTaskRow itself will not match the
 // sentinel; Apply will treat it as an ordinary TaskRow, reject its nil Task
 // field, and return an error without modifying storage.
-//
-// In normal operation, only the handler for a completed DELETE_ACTOR action
-// should return DeleteTaskRow: once Agent Substrate confirms that the task's
-// actor has been deleted, lifecycle.Transition sets Output.DeleteRow, and the
-// caller's ApplyFunc returns DeleteTaskRow to remove the database row in the
-// same transaction.
 var DeleteTaskRow = &TaskRow{}
 
 // ApplyFunc computes an atomic state transition for a single task row.
@@ -181,67 +163,29 @@ var DeleteTaskRow = &TaskRow{}
 //
 //   - overwrites Task.Metadata.Atespace and Task.Metadata.Name with the
 //     normalized TaskKey passed to Apply;
-//   - assigns Generation (1 on insert, stored Generation + 1 on update),
-//     initializes Task.Status if nil, and mirrors Generation onto
-//     Task.Status.Generation;
-//   - preserves the task's saved_at position in ListTasks (unlike SaveTask,
-//     which moves updated tasks to the front);
-//   - clears any expired worker lease (LeaseExpiresAt <= now);
-//   - clamps NextReconcileAt to at least LeaseExpiresAt while an active lease
-//     is held, preventing another worker from claiming the row early.
+//   - scrubs Task.Status via [StoredStatus] (initializing Task.Status if nil),
+//     assigns Generation (1 on insert, stored Generation + 1 on update), and
+//     mirrors Generation onto Task.Status.Generation;
+//   - preserves the task's saved_at position in ListTasks on updates (unlike
+//     SaveTask, which moves updated tasks to the front).
 type ApplyFunc func(current *TaskRow, now time.Time) (*TaskRow, error)
 
-// TaskApplier is the transactional write interface for task rows. New task
-// lifecycle code mutates tasks exclusively through Apply; the legacy [Store]
-// task write methods (SaveTask, UpdateTaskStatus, SetTaskDeleteTime,
-// DeleteTask) remain only until the gRPC Task handlers migrate to Apply.
+// TaskApplier is the transactional write interface for task rows shared by
+// ax-server's gRPC (:8080) and pull-based runner (:8081) handlers.
 //
-// # Usage with lifecycle.TransitionFunc
+// Perform any external reads or Agent Substrate RPCs outside Apply, and run
+// pure [lifecycle.TransitionFunc] mutations inside ApplyFunc:
 //
-// Perform any external reads (Workspace, Gateway, OCI image config, or Agent
-// Substrate RPCs) BEFORE calling Apply, then run the pure
-// [lifecycle.TransitionFunc] inside ApplyFunc using the store's now timestamp:
-//
-//	// 1. Creating a new task (ax-server CreateTask):
-//	written, err := applier.Apply(ctx, key, func(current *store.TaskRow, now time.Time) (*store.TaskRow, error) {
-//		if current != nil {
-//			return nil, ErrAlreadyExists
-//		}
-//		nextState, _, err := lifecycle.Transition(lifecycle.State{}, &lifecycle.CreateInput{
-//			Task:             task,
-//			AteActorTemplate: tmplName,
-//			ResolvedArgv:     resolvedArgv,
-//			SourceTag:        sourceTag,
-//			WorkspaceReady:   wsReady,
-//		}, now)
-//		if err != nil {
-//			return nil, err
-//		}
-//		row := &store.TaskRow{
-//			EffectiveProfile: effProfile,
-//			EgressRules:      egressRules,
-//		}
-//		row.SetLifecycleState(nextState, now)
-//		return row, nil
-//	})
-//
-//	// 2. Advancing an existing task (API/runner handler, queue worker, or drift sweep):
 //	written, err := applier.Apply(ctx, key, func(current *store.TaskRow, now time.Time) (*store.TaskRow, error) {
 //		if current == nil {
-//			return nil, store.ErrNotFound // or (nil, nil) in background reconcilers if already deleted
+//			return nil, store.ErrNotFound
 //		}
-//		// Background callers can fence stale writes here before mutating:
-//		//   - drift sweep:  if current.Generation != observedGen { return nil, nil }
-//		//   - queue worker: verify current.LeaseOwner matches its active lease
-//		nextState, out, err := lifecycle.Transition(current.LifecycleState(), in, now)
+//		nextState, _, err := transition(current.LifecycleState(), in, now)
 //		if err != nil {
 //			return nil, err
 //		}
-//		if out.DeleteRow {
-//			return store.DeleteTaskRow, nil
-//		}
 //		next := current.Clone()
-//		next.SetLifecycleState(nextState, now)
+//		next.SetLifecycleState(nextState)
 //		return next, nil
 //	})
 type TaskApplier interface {
@@ -258,10 +202,6 @@ type TaskApplier interface {
 	//     it returns (nil, nil);
 	//   - when fn returns a non-nil error, it leaves storage unchanged and
 	//     returns (nil, err).
-	//
-	// If acquiring the row lock or executing the transaction exceeds the store
-	// timeout, Apply returns [ErrLockTimeout], which callers should treat as
-	// retryable.
 	Apply(ctx context.Context, key TaskKey, fn ApplyFunc) (*TaskRow, error)
 	// GetTaskRow returns the row for key without locking it, or [ErrNotFound]
 	// if no such task exists.
