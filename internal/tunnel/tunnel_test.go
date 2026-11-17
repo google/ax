@@ -59,20 +59,37 @@ func TestPortForwardRegex(t *testing.T) {
 	}
 }
 
-func TestEnsureServerURLIgnoreEnv(t *testing.T) {
-	// A healthy tunnel is already recorded for the context, so no kubectl runs.
-	healthz := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer healthz.Close()
-	port := healthz.Listener.Addr().(*net.TCPAddr).Port
+func TestEnsureServerURL(t *testing.T) {
+	// Healthy tunnels are already recorded for two AX installations in one
+	// cluster, so no kubectl runs. The first is recorded without a namespace,
+	// as tunnels were before the namespace was part of the file name.
 	t.Setenv("AX_HOME", t.TempDir())
-	if err := SaveTunnel(&TunnelInfo{Context: "remote", Namespace: "ax-system", Port: port}); err != nil {
+	urls := map[string]string{}
+	for _, namespace := range []string{"", "ax-remote"} {
+		healthz := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		t.Cleanup(healthz.Close)
+		port := healthz.Listener.Addr().(*net.TCPAddr).Port
+		if err := SaveTunnel(&TunnelInfo{Context: "kind-local", Namespace: namespace, Port: port}); err != nil {
+			t.Fatal(err)
+		}
+		urls[namespace] = fmt.Sprintf("http://127.0.0.1:%d", port)
+	}
+	// With IgnoreEnv, neither variable decides which installation is reached.
+	t.Setenv("AX_SERVER", "http://explicit:8080")
+	t.Setenv("AX_SYSTEM_NAMESPACE", "ax-remote")
+
+	// Each namespace has its own tunnel.
+	for _, namespace := range []string{"", "ax-remote"} {
+		if got, err := EnsureServerURL(Options{Context: "kind-local", Namespace: namespace, IgnoreEnv: true}); err != nil || got != urls[namespace] {
+			t.Errorf("EnsureServerURL(namespace %q) = %q, %v; want %q", namespace, got, err, urls[namespace])
+		}
+	}
+
+	// Stopping the context's tunnels stops both.
+	if err := StopTunnelByContext("kind-local"); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("AX_SERVER", "http://explicit:8080")
-	t.Setenv("AX_SYSTEM_NAMESPACE", "other-namespace")
-
-	want := fmt.Sprintf("http://127.0.0.1:%d", port)
-	if got, err := EnsureServerURL(Options{Context: "remote", IgnoreEnv: true}); err != nil || got != want {
-		t.Errorf("EnsureServerURL() = %q, %v; want %q", got, err, want)
+	if tunnels, err := ListTunnels(); err != nil || len(tunnels) != 0 {
+		t.Errorf("expected no tunnels after stopping the context's, got %v, error %v", tunnels, err)
 	}
 }
