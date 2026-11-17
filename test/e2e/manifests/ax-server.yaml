@@ -189,10 +189,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ax-runner
+  name: ax-server-runner
   namespace: ${AX_SYSTEM_NAMESPACE}
   labels:
-    app.kubernetes.io/name: ax-runner
+    app.kubernetes.io/name: ax-server-runner
     app.kubernetes.io/part-of: ax
 spec:
   ports:
@@ -204,7 +204,7 @@ spec:
 ---
 # ax-server's gRPC control plane (:8080) and metrics (:9090) do not
 # authenticate callers, so worker pods and the egress gateway must not reach
-# them. The internal runner HTTP endpoint (:8081, Service ax-runner) is
+# them. The internal runner HTTP endpoint (:8081, Service ax-server-runner) is
 # reachable only from Substrate's egress gateway (atenet-egress), which
 # injects the Actor JWT; worker pods cannot reach ax-server on any port.
 apiVersion: networking.k8s.io/v1
