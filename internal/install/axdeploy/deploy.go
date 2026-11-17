@@ -59,8 +59,14 @@ const (
 	// task containers and runs the runner from it, so task images need no
 	// runner baked in. When empty, tasks run the runner baked into their image.
 	//
+	// The setting is cluster-wide: in every AX-managed task template the
+	// mounted runner replaces the one in the image. An image that relies on
+	// its own runner (today's Claude Code image) needs a launcher at
+	// /usr/local/bin/ax-harness before it works with a runner volume (#620).
+	//
 	// TODO(release): Populate with "ghcr.io/google/ax/ax-runner-volume:<tag>@sha256:<digest>"
-	// once releases publish the runner volume image.
+	// once releases publish the runner volume image and the prebuilt agent
+	// images ship a launcher.
 	DefaultRunnerVolumeImage = ""
 )
 
