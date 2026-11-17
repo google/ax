@@ -25,7 +25,7 @@ import (
 const (
 	// DefaultRunnerEndpoint is the in-cluster host:port of ax-server's :8081
 	// pull-based runner control service.
-	DefaultRunnerEndpoint = "ax-runner.ax-system.svc.cluster.local:8081"
+	DefaultRunnerEndpoint = "ax-server-runner.ax-system.svc.cluster.local:8081"
 	// DefaultRunnerAudience is the expected OIDC audience for Actor JWTs
 	// injected by Substrate's egress gateway on requests to DefaultRunnerEndpoint.
 	DefaultRunnerAudience = "ax-runner"
