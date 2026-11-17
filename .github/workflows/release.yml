@@ -1,0 +1,231 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Pushing a vX.Y.Z[-PRERELEASE] tag publishes a release:
+#
+#   1. images:  builds ax-server and ax-task-runner for linux/amd64 and
+#               linux/arm64 and pushes them to ghcr.io/google/ax/<image>:<tag>.
+#   2. release: builds the ax CLI, renders deploy/ax-server.yaml with both
+#               images pinned by digest, and publishes the GitHub release with
+#               generated notes and those files attached.
+#
+# The highest stable tag also moves :latest; a prerelease never does.
+#
+# Part of #609 (stage 1); runs are validated in #610. See docs/releasing.md.
+# Run manually to retry a release; only tags that contain this workflow work.
+#
+# A dry run (pull requests that touch the release, or a manual run with
+# dry_run) does everything except publish: images go to a registry that exists
+# only inside the job, and no release is created. Only google/ax publishes; in
+# a fork only dry runs do anything, since packages are billed to the owner.
+name: Release
+
+on:
+  push:
+    # The filter cannot express the whole release tag, so hack/release/lib.sh
+    # rejects anything but vMAJOR.MINOR.PATCH[-PRERELEASE] before publishing.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  pull_request:
+    branches: [ main ]
+    paths:
+    - '.github/workflows/release.yml'
+    - 'hack/release/**'
+    - 'Dockerfile.*'
+    - '.dockerignore'
+    - 'deploy/**'
+    - 'install.sh'
+    - 'go.mod'
+    - 'go.sum'
+    - 'cmd/ax/**'
+    - 'cmd/ax-server/**'
+    - 'cmd/ax-task-runner/**'
+    - 'internal/version/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release (e.g. v0.4.0); only tags that contain this workflow'
+        required: true
+        type: string
+      overwrite:
+        description: 'Rebuild and replace every image for the tag (refused once the release is published)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Build everything but publish nothing: images go to a registry inside the job, no release is created'
+        type: boolean
+        default: false
+
+# Each job requests the permissions it needs.
+permissions:
+  contents: read
+
+# Keyed by tag, not event, so a tag push and a manual run for the same tag
+# never race on the existence check and push.
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || inputs.tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'pull_request' || inputs.dry_run == true }}
+  # A pull request has no tag; its dry run builds a placeholder version.
+  TAG: ${{ inputs.tag || (github.event_name == 'pull_request' && 'v0.0.0-dryrun') || github.ref_name }}
+  # Pull requests build the merge commit; everything else builds the tag.
+  REF: ${{ github.event_name != 'pull_request' && format('refs/tags/{0}', inputs.tag || github.ref_name) || '' }}
+
+jobs:
+  # The only job that writes to a registry.
+  images:
+    if: github.repository == 'google/ax' || github.event_name == 'pull_request' || inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # packages: write is granted on pull requests too (permissions cannot be
+    # conditional), but dry runs never log in, and fork PRs get a read-only
+    # token regardless.
+    permissions:
+      contents: read
+      packages: write
+    # Receives the images in a dry run.
+    services:
+      registry:
+        image: registry:3@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+        ports:
+        - 5000:5000
+    outputs:
+      server_image: ${{ steps.publish.outputs.AX_SERVER_IMAGE }}
+      task_image: ${{ steps.publish.outputs.AX_DEFAULT_TASK_IMAGE }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ env.REF }}
+        # publish-images.sh reads every tag to decide whether to move :latest.
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+        # This job can write packages, so it restores no cache another
+        # workflow could have written.
+        cache: false
+
+    # The Dockerfiles RUN apk/apt-get, so the arm64 build needs emulation.
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+    # BuildKit is pinned by digest because it builds a published image with
+    # the ghcr.io login. Host networking lets it reach the dry-run registry.
+    - name: Set up buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      with:
+        driver-opts: |
+          image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+          network=host
+
+    - name: Log in to ghcr.io
+      if: env.DRY_RUN != 'true'
+      env:
+        TOKEN: ${{ github.token }}
+      run: echo "${TOKEN}" | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+
+    # Releases are cut from main or a release-* branch, and nothing is rebuilt
+    # once a release is published: operators install it by digest.
+    - name: Check the tag and release
+      id: check
+      if: env.DRY_RUN != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        source hack/release/lib.sh
+        require_release_version "${TAG}"
+        require_on_main "${TAG}"
+        state="$(release_state "${TAG}" "${GITHUB_REPOSITORY}")"
+        echo "Release ${TAG}: ${state}"
+        echo "release_state=${state}" >> "${GITHUB_OUTPUT}"
+
+    - name: Build and push images
+      id: publish
+      env:
+        AX_IMAGE_REPO: ${{ env.DRY_RUN == 'true' && 'localhost:5000/ax' || 'ghcr.io/google/ax' }}
+        AX_PUBLISH_OVERWRITE: ${{ inputs.overwrite == true }}
+        AX_RELEASE_STATE: ${{ steps.check.outputs.release_state || 'none' }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        hack/release/publish-images.sh "${TAG}" bin/release
+        cat bin/release/images.env >> "${GITHUB_OUTPUT}"
+        {
+          echo "### Release images ${TAG} (dry run: ${DRY_RUN})"
+          echo ""
+          sed -e 's/^[A-Z_]*=/- `/' -e 's/$/`/' bin/release/images.env
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+    # A rerun must reuse every image and record the same digests. The job's
+    # registry starts empty, so only a dry run can exercise this before a tag.
+    - name: Rerun reuses the images (dry run)
+      if: env.DRY_RUN == 'true'
+      env:
+        AX_IMAGE_REPO: localhost:5000/ax
+      run: |
+        set -o pipefail
+        cp bin/release/images.env /tmp/images.first.env
+        hack/release/publish-images.sh "${TAG}" bin/release | tee /tmp/rerun.log
+        diff /tmp/images.first.env bin/release/images.env
+        if grep -q 'Building and pushing' /tmp/rerun.log; then
+          echo "::error::The rerun rebuilt an image"
+          exit 1
+        fi
+
+  release:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ env.REF }}
+        # create-release.sh reads every tag to pick the notes start and Latest.
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+        cache: false
+
+    - name: Build ax CLI
+      run: hack/release/build-binaries.sh "${TAG}" bin/release
+
+    - name: Render install manifests
+      env:
+        AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
+        AX_DEFAULT_TASK_IMAGE: ${{ needs.images.outputs.task_image }}
+      run: |
+        printf 'AX_SERVER_IMAGE=%s\nAX_DEFAULT_TASK_IMAGE=%s\n' \
+          "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}" > bin/release/images.env
+        hack/release/render-manifests.sh bin/release
+
+    - name: Publish release
+      if: env.DRY_RUN != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: hack/release/create-release.sh "${TAG}" bin/release
+
+    - name: List release assets (dry run)
+      if: env.DRY_RUN == 'true'
+      run: ls -l bin/release && cat bin/release/images.env

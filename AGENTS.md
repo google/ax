@@ -33,12 +33,15 @@ internal/workspace     spec.setup execution (git clone / inline files / skills d
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 internal/telemetry     ax-server's OpenTelemetry setup: OTLP traces, metrics, and events (Emit, stdout fallback), Prometheus /metrics (:9090), JSON slog with trace IDs
 internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTEL_*_EXPORTER parsing and the resource
+internal/version       Release version stamped by hack/release, and the matching ghcr.io/google/ax image refs
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
 hack/                  E2E provisioning, Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
+hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
+docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install
 docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
 ```
