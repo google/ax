@@ -502,3 +502,59 @@ func TestTaskApplier(t *testing.T) {
 		t.Fatalf("GetTaskRow after delete = %v, want ErrNotFound", err)
 	}
 }
+
+func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := t.Context()
+	key := store.TaskKey{Name: "t-legacy-apply"}
+
+	// Legacy SaveTask + UpdateTaskStatus bump Status.Generation in JSON without
+	// updating the generation column (which defaults to 1).
+	if err := s.SaveTask(ctx, &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: key.Name},
+		Spec:     &v1alpha1.TaskSpec{SessionId: "sess-legacy"},
+		Status:   &v1alpha1.TaskStatus{Generation: 1},
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	if err := s.UpdateTaskStatus(ctx, "", key.Name, &v1alpha1.TaskStatus{
+		State:      v1alpha1.TaskState_TASK_STATE_WORKING,
+		Generation: 3,
+	}); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
+	}
+
+	got, err := s.GetTaskRow(ctx, key)
+	if err != nil {
+		t.Fatalf("GetTaskRow: %v", err)
+	}
+	if got.Generation != 3 || got.Task.GetStatus().GetGeneration() != 3 {
+		t.Fatalf("GetTaskRow generation = (%d, %d), want (3, 3)", got.Generation, got.Task.GetStatus().GetGeneration())
+	}
+
+	applied, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			t.Fatal("expected non-nil current row")
+		}
+		if current.Generation != 3 || current.Task.GetStatus().GetGeneration() != 3 {
+			t.Fatalf("Apply current generation = (%d, %d), want (3, 3)", current.Generation, current.Task.GetStatus().GetGeneration())
+		}
+		next := current.Clone()
+		next.Runnable = true
+		return next, nil
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if applied.Generation != 4 || applied.Task.GetStatus().GetGeneration() != 4 {
+		t.Fatalf("Apply returned generation = (%d, %d), want (4, 4)", applied.Generation, applied.Task.GetStatus().GetGeneration())
+	}
+
+	reloaded, err := s.GetTaskRow(ctx, key)
+	if err != nil {
+		t.Fatalf("GetTaskRow after Apply: %v", err)
+	}
+	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || !reloaded.Runnable {
+		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 Runnable=true", reloaded, reloaded.Task.GetStatus())
+	}
+}

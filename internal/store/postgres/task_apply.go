@@ -195,7 +195,8 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 
 // scanTaskRow scans one row from the tasks table (in the column order selected
 // by GetTaskRow and Apply) into a TaskRow, unmarshals the protojson data
-// column, and mirrors Generation onto Task.Status.Generation.
+// column, and reconciles Generation via max(column, Status.Generation) so
+// legacy SaveTask/UpdateTaskStatus writes are preserved before Apply runs.
 func scanTaskRow(row pgx.Row) (*store.TaskRow, error) {
 	var (
 		data                 []byte
@@ -240,7 +241,7 @@ func scanTaskRow(row pgx.Row) (*store.TaskRow, error) {
 
 	out := &store.TaskRow{
 		Task:                 &task,
-		Generation:           generation,
+		Generation:           max(generation, task.GetStatus().GetGeneration()),
 		ActorUID:             actorUID,
 		Runnable:             runnable,
 		ActiveRunID:          activeRunID,
