@@ -1,0 +1,138 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package ax.runner.v1;
+
+import "google/protobuf/timestamp.proto";
+import "pkg/apis/v1alpha1/task.proto";
+import "pkg/apis/v1alpha1/workspace.proto";
+
+option go_package = "github.com/google/ax/pkg/apis/runner/v1;runnerv1";
+
+// AssignmentMode tells ax-task-runner how to act upon claiming work from
+// ax-server's internal runner control endpoint (:8081).
+enum AssignmentMode {
+  ASSIGNMENT_MODE_UNSPECIFIED = 0;
+  // Sit idle without running a task command (for example, a newly provisioned
+  // suspended actor, a paused task woken via ax ssh, or a finished task).
+  ASSIGNMENT_MODE_IDLE = 1;
+  // Materialize runtime files and spawn a fresh command execution under run_id.
+  ASSIGNMENT_MODE_RUN = 2;
+  // Keep supervising the live child process restored from a MEMORY snapshot.
+  ASSIGNMENT_MODE_RESUME = 3;
+  // Materialize WorkspaceSpec.setup inside a temporary workspace setup actor.
+  ASSIGNMENT_MODE_SETUP = 4;
+}
+
+// ClaimAssignmentRequest is sent by ax-task-runner to
+// POST /runner/v1/assignment:claim on startup and after each wakeup probe.
+message ClaimAssignmentRequest {
+  // Run ID currently held in memory by this runner process (non-empty across a
+  // live MEMORY snapshot restore).
+  string in_memory_run_id = 1;
+  // Run ID most recently recorded to durable state (/var/lib/ax/state.json)
+  // before spawning the task command for the current actor incarnation.
+  string last_started_run_id = 2;
+  // Whether the runner currently supervises a live child process.
+  bool child_alive = 3;
+  // Random per-wakeup nonce making lost-response retries of the initial
+  // token-minting claim idempotent until the runner confirms its bearer token.
+  string nonce = 4;
+}
+
+// ClaimAssignmentResponse describes the assignment granted to ax-task-runner.
+message ClaimAssignmentResponse {
+  AssignmentMode mode = 1;
+  // Monotonic server-allocated execution identifier ("r-1", "r-2", ...) when
+  // mode is RUN or RESUME.
+  string run_id = 2;
+  // 1-based execution attempt number reported on Task.status.attempt.
+  int32 attempt = 3;
+  // Newly minted per-actor bearer token, populated only on the initial
+  // unconfirmed claim for an actor incarnation.
+  string runner_token = 4;
+  // Snapshot of the Task resource for metadata serving and config rendering.
+  ax.v1alpha1.Task task = 5;
+  // Bound Workspace resource (including dynamically resolved spec.mcp) for RUN,
+  // or the Workspace being prepared for SETUP.
+  ax.v1alpha1.Workspace workspace = 6;
+  // Command execution specification for ASSIGNMENT_MODE_RUN.
+  ExecSpec exec = 7;
+  // Natural-language goal payload for ASSIGNMENT_MODE_RUN.
+  GoalPayload goal = 8;
+}
+
+// ExecSpec specifies the command argv, working directory, and environment
+// variables for a single task command execution.
+message ExecSpec {
+  repeated string argv = 1;
+  string workdir = 2;
+  map<string, string> env = 3;
+}
+
+// GoalPayload carries the task's natural-language goal text.
+message GoalPayload {
+  // Populated from Task.spec.goal.text.
+  string text = 1;
+}
+
+// ReportEventsRequest delivers ordered lifecycle events for a run (or
+// workspace setup actor) to POST /runner/v1/events.
+message ReportEventsRequest {
+  // Server-issued run_id being reported (empty for ASSIGNMENT_MODE_SETUP).
+  string run_id = 1;
+  repeated RunnerEvent events = 2;
+}
+
+// RunnerEvent is a single sequenced event emitted by ax-task-runner.
+message RunnerEvent {
+  // 1-based per-run monotonic sequence number used to deduplicate retries.
+  int64 seq = 1;
+  google.protobuf.Timestamp time = 2;
+  oneof event {
+    SetupFinished setup_finished = 3;
+    CommandStarted command_started = 4;
+    CommandExited command_exited = 5;
+  }
+}
+
+// SetupFinished reports the outcome of WorkspaceSpec.setup inside a temporary
+// workspace setup actor.
+message SetupFinished {
+  bool ok = 1;
+  string message = 2;
+}
+
+// CommandStarted reports that the task command process has launched.
+message CommandStarted {
+  int32 pid = 1;
+}
+
+// CommandExited reports that the task command exited and carries its captured
+// unstructured output.
+message CommandExited {
+  int32 exit_code = 1;
+  string output = 2;
+}
+
+// ReportEventsResponse acknowledges processed events and optionally supplies
+// the runner's next assignment without an extra round-trip.
+message ReportEventsResponse {
+  // Highest sequence number acknowledged for the reported run.
+  int64 ack_seq = 1;
+  // Optional follow-up assignment (for example ASSIGNMENT_MODE_IDLE on exit).
+  ClaimAssignmentResponse next = 2;
+}
