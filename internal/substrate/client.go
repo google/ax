@@ -216,6 +216,10 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 const (
 	DefaultGuestCommand = "/usr/local/bin/ax-task-runner"
 
+	// RunnerVolumeName names the read-only image volume that carries the
+	// runner when a template mounts one; see MountRunnerVolume.
+	RunnerVolumeName = "ax-runner"
+
 	// defaultRetryAttempts is the maximum number of calls retryOnCodes makes. With
 	// exponential backoff from defaultRetryInterval capped at maxRetryInterval
 	// (±50% jitter), the total wait across all attempts is roughly 6s-20s.
@@ -430,6 +434,28 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	}
 }
 
+// MountRunnerVolume makes tmpl's container run ax-task-runner from image, a
+// digest-pinned runner volume image (Dockerfile.runner-volume), instead of the
+// runner baked into the container image. Substrate mounts image read-only at
+// v1alpha1.RunnerMountPath, so the container image needs no AX binaries. An
+// empty image leaves tmpl unchanged.
+func MountRunnerVolume(tmpl *ateapipb.ActorTemplate, image string) {
+	if image == "" {
+		return
+	}
+	tmpl.Volumes = append(tmpl.Volumes, &ateapipb.Volume{
+		Name:  RunnerVolumeName,
+		Image: &ateapipb.ImageVolumeSource{Reference: image},
+	})
+	for _, c := range tmpl.GetContainers() {
+		c.Command = []string{path.Join(v1alpha1.RunnerMountPath, "ax-task-runner")}
+		c.VolumeMounts = append(c.VolumeMounts, &ateapipb.VolumeMount{
+			Name:      RunnerVolumeName,
+			MountPath: v1alpha1.RunnerMountPath,
+		})
+	}
+}
+
 // EnsureActorTemplate returns the named ActorTemplate if it already exists, or
 // creates it from tmpl idempotently.
 func (c *Client) EnsureActorTemplate(ctx context.Context, tmpl *ateapipb.ActorTemplate) (*ateapipb.ActorTemplate, error) {
@@ -459,16 +485,19 @@ func (c *Client) EnsureActorTemplate(ctx context.Context, tmpl *ateapipb.ActorTe
 }
 
 // EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
-// resource limits (nil for default limits), and optional environment variables.
+// runner volume image (empty to run the runner baked into image; see
+// MountRunnerVolume), resource limits (nil for default limits), and optional
+// environment variables.
 //
 // TODO: Remove once TaskReconciler migrates from per-task templates to shared
 // Profile ActorTemplates via EnsureActorTemplate.
-func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
+func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image, runnerVolumeImage string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	envMap := make(map[string]string)
 	for _, envs := range extraEnv {
 		maps.Copy(envMap, envs)
 	}
 	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "", resources)
+	MountRunnerVolume(tmpl, runnerVolumeImage)
 	return c.EnsureActorTemplate(ctx, tmpl)
 }
 

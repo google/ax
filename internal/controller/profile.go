@@ -100,6 +100,8 @@ func (p profile) templateName(runnerImage string) string {
 // limits, SnapshotConfig.PreferredFidelity defaults to SNAPSHOT_FIDELITY_ROOTFS,
 // and the content-addressed template ("ax-<16-char-sha256>", hashed over the
 // profile and runner volume image) is returned ready for EnsureActorTemplate.
+// A non-empty runnerImage is mounted read-only into the template's container,
+// which then runs the runner from it (see substrate.MountRunnerVolume).
 func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, *ateapipb.ActorTemplate, error) {
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
@@ -149,6 +151,7 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 		},
 	})
 	tmpl.SnapshotConfig.PreferredFidelity = resolved.snapshotFidelity
+	substrate.MountRunnerVolume(tmpl, runnerImage)
 	return name, tmpl, nil
 }
 
