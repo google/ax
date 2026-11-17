@@ -60,8 +60,9 @@ type Store struct {
 }
 
 var (
-	_ store.Store = (*Store)(nil)
-	_ lock.Locker = (*Store)(nil)
+	_ store.Store       = (*Store)(nil)
+	_ store.TaskApplier = (*Store)(nil)
+	_ lock.Locker       = (*Store)(nil)
 )
 
 // Open connects to the database at connURL and creates any missing tables.

@@ -15,10 +15,12 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -364,4 +366,195 @@ func TestSchemaUpgradesLegacySingleColumnLocksPK(t *testing.T) {
 		t.Fatalf("second RLock after upgrade: %v", err)
 	}
 	defer u2()
+}
+
+func TestTaskApplier(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := t.Context()
+	key := store.TaskKey{Name: "t-apply"} // empty Atespace normalizes to "default"
+
+	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskRow(missing) = %v, want ErrNotFound", err)
+	}
+	if got, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current != nil {
+			t.Fatalf("expected nil current on missing row, got %+v", current)
+		}
+		return nil, nil
+	}); err != nil || got != nil {
+		t.Fatalf("Apply(missing -> nil) = (%v, %v), want (nil, nil)", got, err)
+	}
+
+	// Concurrent insert race: one winner inserts at Generation 1; contenders
+	// retry against the winner's row and return errExists.
+	errExists := errors.New("already exists")
+	const racers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, racers)
+	for range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+				if current != nil {
+					return nil, errExists
+				}
+				return &store.TaskRow{
+					Task: &v1alpha1.Task{
+						Spec: &v1alpha1.TaskSpec{SessionId: "sess-1"},
+						Status: &v1alpha1.TaskStatus{
+							State:    v1alpha1.TaskState_TASK_STATE_WORKING,
+							Actor:    "live-actor",
+							ActorUid: "live-uid",
+							Conditions: []*v1alpha1.Condition{
+								{Type: v1alpha1.ConditionReady, Status: "True"},
+								{Type: v1alpha1.ConditionWorkspaceReady, Status: "True"},
+							},
+						},
+					},
+					ActorUID:        "actor-uid-1",
+					Runnable:        true,
+					RunnerTokenHash: []byte{1, 2, 3},
+					ClaimNonce:      "nonce-1",
+				}, nil
+			})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	var wins, conflicts int
+	for err := range errs {
+		switch {
+		case err == nil:
+			wins++
+		case errors.Is(err, errExists):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent Apply error: %v", err)
+		}
+	}
+	if wins != 1 || conflicts != racers-1 {
+		t.Fatalf("concurrent insert wins=%d conflicts=%d, want 1 and %d", wins, conflicts, racers-1)
+	}
+
+	// Insert a newer task so we can verify Apply updates preserve saved_at ordering.
+	if _, err := s.Apply(ctx, store.TaskKey{Name: "t-newer"}, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
+		return &store.TaskRow{Task: &v1alpha1.Task{}}, nil
+	}); err != nil {
+		t.Fatalf("Apply(t-newer): %v", err)
+	}
+
+	// Returning current after mutating it in place leaves storage unchanged.
+	noopRow, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		current.ActorUID = "mutated-in-place"
+		return current, nil
+	})
+	if err != nil || noopRow.ActorUID != "actor-uid-1" || noopRow.Generation != 1 {
+		t.Fatalf("Apply(return current) = (%+v, %v), want ActorUID=actor-uid-1 Gen=1", noopRow, err)
+	}
+
+	// Update advances Generation to 2 without moving t-apply ahead of t-newer in ListTasks.
+	updated, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		next := current.Clone()
+		runID := next.NextRunID()
+		next.Runnable = false
+		next.RunnerTokenConfirmed = true
+		next.ClaimNonce = ""
+		next.LastAckedRunnerSeq = 3
+		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
+		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
+			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
+			Output: "done " + runID,
+		}
+		return next, nil
+	})
+	if err != nil {
+		t.Fatalf("Apply(update): %v", err)
+	}
+	if updated.Generation != 2 || updated.Task.GetStatus().GetGeneration() != 2 ||
+		updated.RunSeq != 1 || !updated.RunnerTokenConfirmed || updated.LastAckedRunnerSeq != 3 ||
+		!bytes.Equal(updated.RunnerTokenHash, []byte{1, 2, 3}) ||
+		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
+		updated.Task.GetStatus().GetOutcome().GetOutput() != "done r-1" {
+		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
+	}
+
+	listed, err := s.ListTasks(ctx, "default", 10, 0)
+	if err != nil || len(listed) != 2 || listed[0].GetMetadata().GetName() != "t-newer" || listed[1].GetMetadata().GetName() != "t-apply" {
+		t.Fatalf("ListTasks = %v, %v; want [t-newer, t-apply]", listed, err)
+	}
+
+	// DeleteTaskRow removes the row; Clone() of DeleteTaskRow does not.
+	if _, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
+		return store.DeleteTaskRow.Clone(), nil
+	}); err == nil {
+		t.Fatal("expected error when returning DeleteTaskRow.Clone()")
+	}
+	deleted, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
+		return store.DeleteTaskRow, nil
+	})
+	if err != nil || deleted != nil {
+		t.Fatalf("Apply(DeleteTaskRow) = (%v, %v), want (nil, nil)", deleted, err)
+	}
+	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskRow after delete = %v, want ErrNotFound", err)
+	}
+}
+
+func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := t.Context()
+	key := store.TaskKey{Name: "t-legacy-apply"}
+
+	// Legacy SaveTask + UpdateTaskStatus bump Status.Generation in JSON without
+	// updating the generation column (which defaults to 1).
+	if err := s.SaveTask(ctx, &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: key.Name},
+		Spec:     &v1alpha1.TaskSpec{SessionId: "sess-legacy"},
+		Status:   &v1alpha1.TaskStatus{Generation: 1},
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
+	}
+	if err := s.UpdateTaskStatus(ctx, "", key.Name, &v1alpha1.TaskStatus{
+		State:      v1alpha1.TaskState_TASK_STATE_WORKING,
+		Generation: 3,
+	}); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
+	}
+
+	got, err := s.GetTaskRow(ctx, key)
+	if err != nil {
+		t.Fatalf("GetTaskRow: %v", err)
+	}
+	if got.Generation != 3 || got.Task.GetStatus().GetGeneration() != 3 {
+		t.Fatalf("GetTaskRow generation = (%d, %d), want (3, 3)", got.Generation, got.Task.GetStatus().GetGeneration())
+	}
+
+	applied, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			t.Fatal("expected non-nil current row")
+		}
+		if current.Generation != 3 || current.Task.GetStatus().GetGeneration() != 3 {
+			t.Fatalf("Apply current generation = (%d, %d), want (3, 3)", current.Generation, current.Task.GetStatus().GetGeneration())
+		}
+		next := current.Clone()
+		next.Runnable = true
+		return next, nil
+	})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if applied.Generation != 4 || applied.Task.GetStatus().GetGeneration() != 4 {
+		t.Fatalf("Apply returned generation = (%d, %d), want (4, 4)", applied.Generation, applied.Task.GetStatus().GetGeneration())
+	}
+
+	reloaded, err := s.GetTaskRow(ctx, key)
+	if err != nil {
+		t.Fatalf("GetTaskRow after Apply: %v", err)
+	}
+	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || !reloaded.Runnable {
+		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 Runnable=true", reloaded, reloaded.Task.GetStatus())
+	}
 }

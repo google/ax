@@ -10,6 +10,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     saved_at timestamptz NOT NULL,
     PRIMARY KEY (atespace, name)
 );
+ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS generation             bigint  NOT NULL DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS actor_uid              text    NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS runnable               boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS active_run_id          text    NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS run_seq                bigint  NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS runner_token_hash      bytea,
+    ADD COLUMN IF NOT EXISTS runner_token_confirmed boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS claim_nonce            text    NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS last_acked_runner_seq  bigint  NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS tasks_saved_at_idx ON tasks (saved_at DESC, atespace, name);
 CREATE INDEX IF NOT EXISTS tasks_atespace_saved_at_idx ON tasks (atespace, saved_at DESC, name);
 
