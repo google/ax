@@ -36,19 +36,24 @@ func clone[T proto.Message](m T) T {
 	return proto.Clone(m).(T)
 }
 
-// MemoryStore is an in-memory implementation of store.Store for testing and single-node setups.
+// MemoryStore is an in-memory implementation of store.Store and store.TaskApplier for testing and single-node setups.
 type MemoryStore struct {
 	mu         sync.RWMutex
-	tasks      map[string]*v1alpha1.Task
+	tasks      map[string]*store.TaskRow
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
 	gateways   map[string]*v1alpha1.Gateway
 }
 
+var (
+	_ store.Store       = (*MemoryStore)(nil)
+	_ store.TaskApplier = (*MemoryStore)(nil)
+)
+
 // NewStore creates a new in-memory Store.
 func NewStore() *MemoryStore {
 	return &MemoryStore{
-		tasks:      make(map[string]*v1alpha1.Task),
+		tasks:      make(map[string]*store.TaskRow),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
 		gateways:   make(map[string]*v1alpha1.Gateway),
@@ -117,7 +122,17 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	key := taskKey(task.Metadata.Atespace, task.Metadata.Name)
 
 	s.mu.Lock()
-	s.tasks[key] = clone(task)
+	if existing, ok := s.tasks[key]; ok && existing != nil {
+		cp := existing.Clone()
+		cp.Task = clone(task)
+		cp.Generation = max(cp.Generation, task.Status.GetGeneration(), 1)
+		s.tasks[key] = cp
+	} else {
+		s.tasks[key] = &store.TaskRow{
+			Task:       clone(task),
+			Generation: max(task.Status.GetGeneration(), 1),
+		}
+	}
 	s.mu.Unlock()
 
 	return nil
@@ -128,11 +143,11 @@ func (s *MemoryStore) GetTask(ctx context.Context, atespace, name string) (*v1al
 	defer s.mu.RUnlock()
 
 	key := taskKey(atespace, name)
-	t, ok := s.tasks[key]
-	if !ok {
+	row, ok := s.tasks[key]
+	if !ok || row == nil || row.Task == nil {
 		return nil, store.ErrNotFound
 	}
-	cp := clone(t)
+	cp := clone(row.Task)
 	return cp, nil
 }
 
@@ -141,7 +156,11 @@ func (s *MemoryStore) ListTasks(ctx context.Context, atespace string, limit, off
 	defer s.mu.RUnlock()
 
 	var result []*v1alpha1.Task
-	for _, t := range s.tasks {
+	for _, row := range s.tasks {
+		if row == nil || row.Task == nil {
+			continue
+		}
+		t := row.Task
 		if atespace == "" || atespace == "*" || t.Metadata.Atespace == atespace {
 			cp := clone(t)
 			result = append(result, cp)
@@ -157,11 +176,14 @@ func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name strin
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	t, ok := s.tasks[key]
-	if !ok {
+	row, ok := s.tasks[key]
+	if !ok || row == nil || row.Task == nil {
 		return store.ErrNotFound
 	}
-	t.Status = clone(status)
+	row.Task.Status = clone(status)
+	if g := status.GetGeneration(); g > row.Generation {
+		row.Generation = g
+	}
 	return nil
 }
 
@@ -171,10 +193,11 @@ func (s *MemoryStore) SetTaskDeleteTime(ctx context.Context, atespace, name stri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	t, ok := s.tasks[key]
-	if !ok {
+	row, ok := s.tasks[key]
+	if !ok || row == nil || row.Task == nil {
 		return store.ErrNotFound
 	}
+	t := row.Task
 	if t.Metadata == nil {
 		t.Metadata = &v1alpha1.ObjectMeta{}
 	}
