@@ -31,6 +31,8 @@ import (
 	"github.com/google/ax/internal/tunnel"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -45,8 +47,8 @@ func TestParsePromoteArgs(t *testing.T) {
 		{name: "kind and name", args: []string{"task", "demo", "--to", "prod"}, want: promoteFlags{taskName: "demo", to: "prod"}},
 		{
 			name: "name only, after every other flag",
-			args: []string{"--to-server=127.0.0.1:8080", "--to-namespace", "ax", "--to-atespace", "team", "--replace", "--no-resume", "--preflight-only", "demo"},
-			want: promoteFlags{taskName: "demo", toServer: "127.0.0.1:8080", toNamespace: "ax", toAtespace: "team", replace: true, noResume: true, preflightOnly: true},
+			args: []string{"--to-server=127.0.0.1:8080", "--to-namespace", "ax", "--to-atespace", "team", "--replace", "--suspend-source", "--no-resume", "--preflight-only", "demo"},
+			want: promoteFlags{taskName: "demo", toServer: "127.0.0.1:8080", toNamespace: "ax", toAtespace: "team", replace: true, suspendSource: true, noResume: true, preflightOnly: true},
 		},
 		{name: "long help", args: []string{"--help"}, want: promoteFlags{help: true}},
 		{name: "short help", args: []string{"-h"}, want: promoteFlags{help: true}},
@@ -71,14 +73,15 @@ func TestRunPromote(t *testing.T) {
 	// start serves an AX control plane as ax-server does, with its own store
 	// and Substrate, and records a tunnel for kubeContext to it in namespace.
 	type cluster struct {
+		sub   *substratetest.Server
 		store store.Store
 		srv   *server.Server
 		addr  string
 	}
 	t.Setenv("AX_HOME", t.TempDir())
 	start := func(kubeContext, namespace string) cluster {
-		c := cluster{store: memory.NewStore()}
-		c.srv = server.NewServer(c.store, newTestReconciler(substratetest.NewServer(t)))
+		c := cluster{sub: substratetest.NewServer(t), store: memory.NewStore()}
+		c.srv = server.NewServer(c.store, newTestReconciler(c.sub))
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -271,5 +274,28 @@ func TestRunPromote(t *testing.T) {
 	// the task that is being promoted.
 	if _, err := promote("--to-server", source.addr, "--replace"); err == nil || !strings.Contains(err.Error(), "source and target must differ") {
 		t.Fatalf("expected an error that the source and target must differ, got %v", err)
+	}
+
+	// 6. --suspend-source suspends the task on the source once the target has
+	// created it, and before the target resumes it.
+	full := start("full", "ax-system")
+	full.sub.SetErrors(substratetest.Errors{CreateActor: status.Error(codes.InvalidArgument, "refused")})
+	if _, err := promote("--to", "full", "--suspend-source"); err == nil {
+		t.Fatal("expected runPromote to fail when the target cannot create the task")
+	}
+	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_WORKING {
+		t.Errorf("expected the task still working on the source, got %v", got)
+	}
+	full.sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.ResourceExhausted, "no worker has room for the actor")})
+	out, err = promote("--to", "full", "--suspend-source", "--replace")
+	if err == nil {
+		t.Fatal("expected runPromote to fail when the target cannot resume the task")
+	}
+	wantOutput = "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\ntask.ax.io/demo suspended on the source\n"
+	if out != wantOutput {
+		t.Fatalf("expected output %q, got %q", wantOutput, out)
+	}
+	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
+		t.Errorf("expected the task suspended on the source, got %v", got)
 	}
 }

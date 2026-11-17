@@ -254,10 +254,10 @@ ax ctx "$GKE_CTX" && ax get tasks
 ax ctx ax-local
 ax promote task demo-task --to "$GKE_CTX" --replace --preflight-only
 
-# 2. Promote it (--replace recreates the demo-task that Step 5.2 applied on GKE)
-ax promote task demo-task --to "$GKE_CTX" --replace
+# 2. Promote it and suspend the local one (--replace recreates the demo-task that Step 5.2 applied on GKE)
+ax promote task demo-task --to "$GKE_CTX" --replace --suspend-source
 
-# 3. The task runs on GKE; the local one is untouched
+# 3. The task runs on GKE and is suspended locally
 ax --context "$GKE_CTX" get tasks
 ax get tasks
 ```
@@ -265,7 +265,7 @@ ax get tasks
 #### Expected Behavior
 - `--preflight-only` prints what would change on GKE, such as `task.ax.io/demo-task replaced (preflight only)`, and changes nothing. Without it, the same lines are printed as each change is made, ending with `task.ax.io/demo-task resumed`.
 - The promoted Task has the same `spec` as the local one, including `spec.sessionId`. GKE assigns its `metadata.uid`, timestamps, and `status`.
-- The local cluster is only read: the local `demo-task` keeps running. Suspend or delete it there if it should not run on both clusters.
+- `--suspend-source` suspends the local `demo-task` once GKE has created the Task and before GKE resumes it (`task.ax.io/demo-task suspended on the source`), so the Task never runs on both clusters. If GKE then cannot resume it, the local Task stays suspended; resume it on either cluster. Without `--suspend-source` the local cluster is only read and the local Task keeps running.
 - A Workspace or Gateway the Task binds is created on GKE when it is missing. A Gateway that GKE already has is reused as it is (`reused`), so each cluster keeps its own egress rules and credentials. A Workspace that GKE already has must have the same spec, because Workspaces are immutable.
 - The sandbox is not copied: on GKE the Task starts as a new Task does, in a workspace built from the Workspace's `spec.setup`. Kubernetes Secrets that a Gateway names in `credentialUri` are not copied either: when `ax promote` creates a Gateway that injects credentials, it prints a note that names them. Create those Secrets on GKE (see [Injecting credentials](manifests.md#injecting-credentials)); until they exist, the Task's requests through the Gateway get a `403`.
 - Without `--replace`, promoting a Task that GKE already has fails with `task default/demo-task already exists on target; pass --replace to recreate it`.

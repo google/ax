@@ -34,10 +34,11 @@ const promoteUsage = `Usage:
 
 Promote an existing Task and its bound Workspace and Gateway to a target cluster.
 
-The global flags select the source cluster, which is only read. On the target,
-a Gateway that already exists is reused as it is, a Workspace that already
-exists must have the same spec, and the Task is created and resumed. The
-sandbox's files and the Secrets a Gateway names are not copied.
+The global flags select the source cluster, which is only read unless
+--suspend-source is set. On the target, a Gateway that already exists is reused
+as it is, a Workspace that already exists must have the same spec, and the Task
+is created and resumed. The sandbox's files and the Secrets a Gateway names are
+not copied.
 
 Flags:
   --to string             Target Kubernetes context (required unless --to-server is set)
@@ -45,6 +46,7 @@ Flags:
   --to-namespace string   Kubernetes namespace where AX runs on the target (default: "ax-system")
   --to-atespace string    Target atespace (default: the atespace of the Task)
   --replace               Delete an existing Task of the same name on the target before creating
+  --suspend-source        Suspend the Task on the source before the target resumes it
   --no-resume             Create the Task on the target without resuming it
   --preflight-only        Check the source and the target without changing the target`
 
@@ -55,6 +57,7 @@ type promoteFlags struct {
 	toNamespace   string
 	toAtespace    string
 	replace       bool
+	suspendSource bool
 	noResume      bool
 	preflightOnly bool
 	help          bool
@@ -72,6 +75,7 @@ func parsePromoteArgs(args []string) (promoteFlags, error) {
 	fs.StringVar(&out.toNamespace, "to-namespace", "", "Kubernetes namespace where AX runs on the target")
 	fs.StringVar(&out.toAtespace, "to-atespace", "", "target atespace")
 	fs.BoolVar(&out.replace, "replace", false, "delete an existing task of the same name on the target")
+	fs.BoolVar(&out.suspendSource, "suspend-source", false, "suspend the task on the source")
 	fs.BoolVar(&out.noResume, "no-resume", false, "create the task on the target without resuming it")
 	fs.BoolVar(&out.preflightOnly, "preflight-only", false, "check without changing the target")
 	fs.BoolVar(&out.help, "h", false, "help")
@@ -107,9 +111,10 @@ func parsePromoteArgs(args []string) (promoteFlags, error) {
 }
 
 // runPromote copies a task, with the gateway and the workspace it binds, from
-// the source to the target and resumes it there. The source is only read. The
-// target is checked before it is changed, so a promotion that the target would
-// refuse leaves the target as it was.
+// the source to the target and resumes it there. The target is checked before
+// it is changed, so a promotion that the target would refuse leaves the target
+// as it was. The source is only read, unless --suspend-source asks for the
+// task to be suspended there.
 func runPromote(serverURL, atespace string, args []string) error {
 	flags, err := parsePromoteArgs(args)
 	if err != nil {
@@ -145,12 +150,13 @@ func runPromote(serverURL, atespace string, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*lifecycleRPCTimeout)
 	defer cancel()
 
-	// A step is one resource on the target and what promoting does to it. do is
-	// nil when the target already has what the task needs. note, if any, is
-	// printed after the outcome.
+	// A step is one resource and what promoting does to it, on the target
+	// unless source is set. do is nil when the target already has what the task
+	// needs. note, if any, is printed after the outcome.
 	type step struct {
 		resource, outcome string
 		note              string
+		source            bool
 		do                func() error
 	}
 	var steps []step
@@ -232,6 +238,14 @@ func runPromote(serverURL, atespace string, args []string) error {
 		_, err := target.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: task})
 		return err
 	}})
+	if flags.suspendSource {
+		// Once the target has the task and before it runs there, so that the
+		// task never runs on both.
+		steps = append(steps, step{resource: "task.ax.io/" + name, outcome: "suspended", source: true, do: func() error {
+			_, err := source.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Atespace: atespace, Name: name})
+			return err
+		}})
+	}
 	if !flags.noResume {
 		steps = append(steps, step{resource: "task.ax.io/" + name, outcome: "resumed", do: func() error {
 			_, err := target.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Atespace: targetAtespace, Name: name})
@@ -240,15 +254,19 @@ func runPromote(serverURL, atespace string, args []string) error {
 	}
 
 	for _, s := range steps {
+		where, outcome := "target", s.outcome
+		if s.source {
+			where, outcome = "source", s.outcome+" on the source"
+		}
 		if flags.preflightOnly {
-			fmt.Printf("%s %s (preflight only)\n", s.resource, s.outcome)
+			fmt.Printf("%s %s (preflight only)\n", s.resource, outcome)
 		} else {
 			if s.do != nil {
 				if err := s.do(); err != nil {
-					return fmt.Errorf("%s on the target: %w", s.resource, err)
+					return fmt.Errorf("%s on the %s: %w", s.resource, where, err)
 				}
 			}
-			fmt.Printf("%s %s\n", s.resource, s.outcome)
+			fmt.Printf("%s %s\n", s.resource, outcome)
 		}
 		if s.note != "" {
 			fmt.Fprintln(os.Stderr, s.note)
