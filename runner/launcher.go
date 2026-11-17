@@ -74,7 +74,9 @@ type launcherFiles struct {
 
 // writeLauncherFiles writes the task's goal, config, the Workspace's MCP
 // servers and the session ID under runDir, and makes the directory of the
-// output file under wsPath.
+// output file under wsPath. When runDir is empty, DefaultRunDir (/run/ax) is
+// used, falling back to <os.TempDir>/ax-run if DefaultRunDir is not writable
+// (for example when a container image runs as a non-root USER).
 func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1.Workspace) (launcherFiles, error) {
 	spec := task.GetSpec()
 	config := []byte("{}")
@@ -99,13 +101,14 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 		{SessionFileEnv, "session-id", []byte(spec.GetSessionId())},
 	}
 
-	if err := os.MkdirAll(runDir, 0o755); err != nil {
-		return launcherFiles{}, fmt.Errorf("creating %s: %w", runDir, err)
+	resolvedDir, err := ensureRunDir(runDir)
+	if err != nil {
+		return launcherFiles{}, err
 	}
 	var out launcherFiles
 	h := sha256.New()
 	for _, f := range files {
-		p := filepath.Join(runDir, f.name)
+		p := filepath.Join(resolvedDir, f.name)
 		if err := os.WriteFile(p, f.data, 0o644); err != nil {
 			return launcherFiles{}, fmt.Errorf("writing %s: %w", p, err)
 		}
@@ -119,6 +122,26 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 	out.env = append(out.env, OutputFileEnv+"="+output)
 	out.digest = hex.EncodeToString(h.Sum(nil))
 	return out, nil
+}
+
+// ensureRunDir creates runDir when set, or DefaultRunDir (/run/ax) when runDir
+// is empty, falling back to <os.TempDir>/ax-run if DefaultRunDir cannot be
+// created (for example when the container runs as a non-root USER).
+func ensureRunDir(runDir string) (string, error) {
+	if runDir != "" {
+		if err := os.MkdirAll(runDir, 0o755); err != nil {
+			return "", fmt.Errorf("creating %s: %w", runDir, err)
+		}
+		return runDir, nil
+	}
+	if err := os.MkdirAll(DefaultRunDir, 0o755); err == nil {
+		return DefaultRunDir, nil
+	}
+	fallback := filepath.Join(os.TempDir(), "ax-run")
+	if err := os.MkdirAll(fallback, 0o755); err != nil {
+		return "", fmt.Errorf("creating %s: %w", fallback, err)
+	}
+	return fallback, nil
 }
 
 // outputPath is where the launcher writes the agent's answer for a workspace.
