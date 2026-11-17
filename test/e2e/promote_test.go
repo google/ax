@@ -73,12 +73,13 @@ func TestE2E_Promote(t *testing.T) {
 	env.mustRunAX(t, ns, "resume", "task", task)
 	promote := func(flags ...string) string {
 		t.Helper()
-		args := []string{"promote", "task", task, "--to", remote.KubeContext}
+		args := []string{"promote", "task", task, "--to", remote.KubeContext, "--to-namespace", remote.AXSystemNamespace}
 		return env.mustRunAX(t, ns, append(args, flags...)...)
 	}
 
 	// 1. The task is suspended on the source.
-	assertContains(t, "'ax promote'", promote("--suspend-source"), "task.ax.io/"+task+" suspended on the source")
+	assertContains(t, "'ax promote'", promote("--suspend-source"),
+		"gateway.ax.io/"+gw+" created", "workspace.ax.io/"+ws+" created", "task.ax.io/"+task+" suspended on the source")
 	source := env.getTask(t, ns, task)
 	assertState(t, source, v1alpha1.TaskState_TASK_STATE_SUSPENDED)
 
@@ -93,8 +94,10 @@ func TestE2E_Promote(t *testing.T) {
 	}
 	assertContains(t, "promoted workspace", remote.ssh(t, ns, task, "cat /workspace/seed.txt"), "initial-seed")
 
-	// 3. --replace recreates the task that the target now has.
-	assertContains(t, "'ax promote --replace'", promote("--replace"), "task.ax.io/"+task+" replaced")
+	// 3. --replace recreates the task that the target now has, behind the
+	// Gateway and in the Workspace that are already there.
+	assertContains(t, "'ax promote --replace'", promote("--replace"),
+		"gateway.ax.io/"+gw+" reused", "workspace.ax.io/"+ws+" unchanged", "task.ax.io/"+task+" replaced")
 	replaced := remote.getTask(t, ns, task)
 	assertState(t, replaced, v1alpha1.TaskState_TASK_STATE_WORKING)
 	if replaced.GetMetadata().GetUid() == promoted.GetMetadata().GetUid() {

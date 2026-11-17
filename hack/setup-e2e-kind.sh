@@ -263,6 +263,10 @@ if [[ "${SKIP_REMOTE_KIND:-false}" != "true" ]]; then
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}-remote" AX_WORKER_REPLICAS=1 SKIP_REMOTE_KIND=true "${BASH_SOURCE[0]}"
   # Written again below, for this cluster.
   rm -f "${TMP_DIR}/e2e.env"
+else
+  # The test is skipped without the cluster's context, so drop one that an
+  # earlier setup left.
+  kubectl config --kubeconfig "${KUBECONFIG}" delete-context "${KUBE_CONTEXT}-remote" > /dev/null 2>&1 || true
 fi
 
 # 1. Ensure the Kind cluster and local registry exist.

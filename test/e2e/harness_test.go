@@ -156,7 +156,7 @@ func (s *suiteEnv) remote(t *testing.T) *suiteEnv {
 		t.Skipf("no kube context %s; hack/setup-e2e-kind.sh sets that cluster up unless SKIP_REMOTE_KIND=true", r.KubeContext)
 	}
 	if err := r.connectAXServer(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("second cluster (%s): %v; run hack/setup-e2e-kind.sh again, with SKIP_REMOTE_KIND=true to do without it", r.KubeContext, err)
 	}
 	t.Cleanup(r.Close)
 	return r
