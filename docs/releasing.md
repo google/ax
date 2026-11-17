@@ -4,8 +4,9 @@ Pushing a `vX.Y.Z` or `vX.Y.Z-PRERELEASE` tag publishes a release.
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs two
 jobs:
 
-1. **images** builds `ax-server` and `ax-task-runner` for `linux/amd64` and
-   `linux/arm64` and pushes them as `ghcr.io/google/ax/<image>:<tag>`.
+1. **images** builds `ax-server`, `ax-task-runner`, and `ax-runner-volume` for
+   `linux/amd64` and `linux/arm64` and pushes them as
+   `ghcr.io/google/ax/<image>:<tag>`.
 2. **release** builds the `ax` CLI, renders the install manifests with both
    images pinned by digest, and publishes the GitHub release with them
    attached.
@@ -44,7 +45,7 @@ stable tag, so a patch to an older line does not take Latest from a newer one.
 | `ax_<os>_<arch>.tar.gz` | The `ax` CLI for linux and darwin, amd64 and arm64. Static, and `ax version` prints the tag. |
 | `checksums.txt` | SHA-256 of every archive, in `sha256sum` format. |
 | `install.sh` | The CLI installer from the repository root, when the tag has one, so `releases/latest/download/install.sh` always matches the latest archives. |
-| `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` and the default task image pinned by digest. |
+| `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` and the default task image pinned by digest. `AX_RUNNER_VOLUME_IMAGE` is left empty, as in the Makefile, so tasks run the runner baked into their image. |
 | `postgres.yaml` | [`deploy/postgres.yaml`](../deploy/postgres.yaml), unchanged. |
 
 The release notes start with install commands, the Substrate version from
@@ -53,10 +54,17 @@ previous stable tag.
 
 ## Images
 
-Images go to `ghcr.io/google/ax/ax-server` and
-`ghcr.io/google/ax/ax-task-runner` (`version.ImageRepo` in
+Images go to `ghcr.io/google/ax/ax-server`, `ghcr.io/google/ax/ax-task-runner`,
+and `ghcr.io/google/ax/ax-runner-volume` (`version.ImageRepo` in
 [`internal/version`](../internal/version/version.go)), tagged with the release
-tag. The highest stable release also moves `:latest`.
+tag. The highest stable release also moves `:latest`. The list is
+`RELEASE_IMAGES` in [`hack/release/lib.sh`](../hack/release/lib.sh); a new
+image is published only once it is added there.
+
+`ax-runner-volume` (`Dockerfile.runner-volume`) is published so operators can
+opt in to mounting the runner from an image volume: set `AX_RUNNER_VOLUME_IMAGE`
+on ax-server to the digest from the release notes. The release manifest does
+not set it.
 
 Before building, the images job refuses Dockerfiles that pin
 `ARG TARGETARCH=amd64` (AX before v0.4), which would put amd64 binaries in the
@@ -70,8 +78,8 @@ returns the image of the binary's own release (`:latest` for a dev build), for
 `internal/install/axdeploy`).
 
 GitHub creates a new package as private:
-after the first release, an owner of the `google` organization must make both
-packages public and link them to this repository, otherwise clusters cannot
+after the first release, an owner of the `google` organization must make every
+package public and link them to this repository, otherwise clusters cannot
 pull them without credentials.
 
 Agent task images (Claude Code, Antigravity, ...) are not built here. Their

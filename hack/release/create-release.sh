@@ -144,6 +144,7 @@ ${cli_install}
 |---|---|
 | ax-server | \`${AX_SERVER_IMAGE}\` |
 | ax-task-runner (default task image) | \`${AX_DEFAULT_TASK_IMAGE}\` |
+| ax-runner-volume (opt-in: set \`AX_RUNNER_VOLUME_IMAGE\` on ax-server) | \`${AX_RUNNER_VOLUME_REF}\` |
 
 EOF
 
