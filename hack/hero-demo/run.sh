@@ -242,22 +242,17 @@ step5_remote_promote() {
     mark_fail "${step}" "ax CLI not found; run 'make install' or set AX_BIN"
     return
   fi
-  # Promotion applies the same manifests, unchanged, to the remote cluster.
-  if ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${GATEWAY_MANIFEST}" ||
-    ! ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${WORKSPACE_MANIFEST}"; then
-    mark_fail "${step}" "Applying the manifests to ${REMOTE_CONTEXT} failed"
-    return
-  fi
   if starter_image_is_placeholder; then
-    mark_stub "${step}" "Gateway and Workspace applied to ${REMOTE_CONTEXT}; the starter image is still a placeholder"
+    mark_stub "${step}" "No starter task to promote to ${REMOTE_CONTEXT}; the starter image is still a placeholder"
     return
   fi
-  run_ax --context "${REMOTE_CONTEXT}" delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
-  if ax_quiet --context "${REMOTE_CONTEXT}" apply -f "${STARTER_MANIFEST}"; then
-    # TODO(@siyuanfoundation): Promote in one command instead of one apply per manifest.
-    mark_pass "${step}" "Manifests applied unchanged to ${REMOTE_CONTEXT}"
+  # Copies the starter task that Step 3 runs, with the Gateway and Workspace it
+  # binds, to the remote cluster and suspends it here. --replace lets a rerun
+  # start from a fresh task there.
+  if ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
+    mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT}"
   else
-    mark_fail "${step}" "Applying the manifests to ${REMOTE_CONTEXT} failed"
+    mark_fail "${step}" "ax promote task ${STARTER_TASK} --to ${REMOTE_CONTEXT} failed"
   fi
 }
 
