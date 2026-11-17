@@ -167,6 +167,7 @@ ax get task task123                   # full spec + live status as YAML
 ax describe task task123              # human-readable detail
 ax suspend task task123               # checkpoint actor state and pause
 ax resume task task123                # resume a suspended task
+ax promote task task123 --to prod     # copy the task and what it binds to the cluster of kube context prod, and resume it there
 ax delete task task123
 
 # Shell into the running sandbox

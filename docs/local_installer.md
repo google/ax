@@ -1,6 +1,6 @@
 # AX Local Installer & Multi-Cluster User Guide
 
-This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` in one command (`install.sh`), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), and cleaning up (`ax uninstall` + `ax local delete`).
+This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` in one command (`install.sh`), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), promoting a local task to it (`ax promote`), and cleaning up (`ax uninstall` + `ax local delete`).
 
 ---
 
@@ -244,6 +244,32 @@ ax ctx "$GKE_CTX" && ax get tasks
 #### Expected Behavior
 - `/tmp/demo-task.yaml` runs unmodified on GKE; `ax suspend` -> `ax resume` round-trips `/workspace/gcs.txt` through GCS (`saved-in-gcs`).
 - `ax ctx` displays independent `(Healthy)` background tunnels for both `ax-local` and `$GKE_CTX`, allowing instant context switching without manual `kubectl port-forward` management.
+
+### 5.3 Promote a Local Task to GKE (`ax promote`)
+
+`ax promote` copies a Task that already exists on one cluster, with the Workspace and Gateway it binds, to another cluster and resumes it there, so you do not have to re-apply its manifests.
+
+```bash
+# 1. From the local cluster, check what promoting demo-task to GKE would do
+ax ctx ax-local
+ax promote task demo-task --to "$GKE_CTX" --replace --preflight-only
+
+# 2. Promote it and suspend the local one (--replace recreates the demo-task that Step 5.2 applied on GKE)
+ax promote task demo-task --to "$GKE_CTX" --replace --suspend-source
+
+# 3. The task runs on GKE and is suspended locally
+ax --context "$GKE_CTX" get tasks
+ax get tasks
+```
+
+#### Expected Behavior
+- `--preflight-only` prints what would change on GKE, such as `task.ax.io/demo-task replaced (preflight only)`, and changes nothing. Without it, the same lines are printed as each change is made, ending with `task.ax.io/demo-task resumed`.
+- The promoted Task has the same `spec` as the local one, including `spec.sessionId`. GKE assigns its `metadata.uid`, timestamps, and `status`.
+- `--suspend-source` suspends the local `demo-task` once GKE has created the Task and before GKE resumes it (`task.ax.io/demo-task suspended on the source`), so the Task never runs on both clusters. If GKE then cannot resume it, the local Task stays suspended; resume it on either cluster. Without `--suspend-source` the local cluster is only read and the local Task keeps running.
+- A Workspace or Gateway the Task binds is created on GKE when it is missing. A Gateway that GKE already has is reused as it is (`reused`), so each cluster keeps its own egress rules and credentials. A Workspace that GKE already has must have the same spec, because Workspaces are immutable.
+- The sandbox is not copied: on GKE the Task starts as a new Task does, in a workspace built from the Workspace's `spec.setup`. Kubernetes Secrets that a Gateway names in `credentialUri` are not copied either: when `ax promote` creates a Gateway that injects credentials, it prints a note that names them. Create those Secrets on GKE (see [Injecting credentials](manifests.md#injecting-credentials)); until they exist, the Task's requests through the Gateway get a `403`.
+- Without `--replace`, promoting a Task that GKE already has fails with `task default/demo-task already exists on target; pass --replace to recreate it`.
+- Other flags: `--no-resume` creates the Task on the target without resuming it, `--to-atespace` promotes into another atespace, `--to-namespace` names the namespace AX runs in on the target (default `ax-system`), and `--to-server` addresses the target by its AX server address instead of a kube context. The global flags (`--context`, `--server`, `-n`, `-a`) select the source.
 
 ---
 

@@ -108,6 +108,16 @@ func main() {
 			}
 			return
 		}
+	case "promote":
+		// As for ssh, answer help and usage errors before resolving a server.
+		if flags, err := parsePromoteArgs(cleanArgs); flags.help || err != nil {
+			fmt.Println(promoteUsage)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 
 	activeTrace = startCommandTrace(cmd, opts.trace, os.Stderr)
@@ -139,6 +149,8 @@ func main() {
 		err = runSuspend(serverURL, atespace, cleanArgs)
 	case "resume":
 		err = runResume(serverURL, atespace, cleanArgs)
+	case "promote":
+		err = runPromote(serverURL, atespace, cleanArgs)
 	case "delete":
 		err = runDelete(serverURL, atespace, cleanArgs)
 	case "ssh":
@@ -247,6 +259,7 @@ Available Commands:
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
   suspend task <name>     Suspend execution of a task and checkpoint state
   resume task <name>      Resume execution of a suspended task
+  promote task <name> --to <context> Promote a task to another cluster
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace
   delete gateway <name>   Delete a gateway

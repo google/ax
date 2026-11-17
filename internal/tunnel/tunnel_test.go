@@ -15,6 +15,10 @@
 package tunnel
 
 import (
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -52,5 +56,23 @@ func TestPortForwardRegex(t *testing.T) {
 		if len(match) < 2 || match[1] != c.port {
 			t.Errorf("expected port %q from %q, got %v", c.port, c.log, match)
 		}
+	}
+}
+
+func TestEnsureServerURLIgnoreEnv(t *testing.T) {
+	// A healthy tunnel is already recorded for the context, so no kubectl runs.
+	healthz := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer healthz.Close()
+	port := healthz.Listener.Addr().(*net.TCPAddr).Port
+	t.Setenv("AX_HOME", t.TempDir())
+	if err := SaveTunnel(&TunnelInfo{Context: "remote", Namespace: "ax-system", Port: port}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AX_SERVER", "http://explicit:8080")
+	t.Setenv("AX_SYSTEM_NAMESPACE", "other-namespace")
+
+	want := fmt.Sprintf("http://127.0.0.1:%d", port)
+	if got, err := EnsureServerURL(Options{Context: "remote", IgnoreEnv: true}); err != nil || got != want {
+		t.Errorf("EnsureServerURL() = %q, %v; want %q", got, err, want)
 	}
 }
