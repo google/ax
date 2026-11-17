@@ -19,8 +19,9 @@ package version
 import "regexp"
 
 // ImageRepo is where releases publish the AX images
-// (.github/workflows/release.yml): ImageRepo + "/ax-server" and
-// ImageRepo + "/ax-task-runner".
+// (.github/workflows/release.yml), such as ImageRepo + "/ax-server" and
+// ImageRepo + "/ax-task-runner". RELEASE_IMAGES in hack/release/lib.sh is the
+// full list.
 const ImageRepo = "ghcr.io/google/ax"
 
 // Version is the AX release this binary was built from. Release builds set it

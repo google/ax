@@ -17,8 +17,10 @@
 #   1. images:  builds ax-server, ax-task-runner, and ax-runner-volume for
 #               linux/amd64 and linux/arm64 and pushes them to
 #               ghcr.io/google/ax/<image>:<tag>.
-#   2. release: builds the ax CLI, renders deploy/ax-server.yaml with both
-#               images pinned by digest, and publishes the GitHub release with
+#   2. release: builds the ax CLI, renders deploy/ax-server.yaml with
+#               ax-server and the default task image pinned by digest (and the
+#               runner volume, if the AX_RELEASE_RUNNER_VOLUME repository
+#               variable is "true"), and publishes the GitHub release with
 #               generated notes and those files attached.
 #
 # The highest stable tag also moves :latest; a prerelease never does.
@@ -218,8 +220,9 @@ jobs:
         AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
         AX_DEFAULT_TASK_IMAGE: ${{ needs.images.outputs.task_image }}
         AX_RUNNER_VOLUME_REF: ${{ needs.images.outputs.runner_volume_image }}
-        # Repository variable; "true" makes release manifests mount the runner
-        # from ax-runner-volume (#625). Off by default.
+        # Repository variable; "true" (case-insensitive) makes release
+        # manifests mount the runner from ax-runner-volume (#625). Off by
+        # default. Fork pull requests may not see repository variables.
         AX_RENDER_RUNNER_VOLUME: ${{ vars.AX_RELEASE_RUNNER_VOLUME == 'true' }}
       run: |
         printf 'AX_SERVER_IMAGE=%s\nAX_DEFAULT_TASK_IMAGE=%s\nAX_RUNNER_VOLUME_REF=%s\n' \
@@ -231,6 +234,17 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: hack/release/create-release.sh "${TAG}" bin/release
+
+    # Tags render with the switch as set; check the "on" path here too.
+    - name: Render with the runner volume on (dry run)
+      if: env.DRY_RUN == 'true'
+      run: |
+        mkdir -p /tmp/rv-on
+        grep -v '^AX_RUNNER_VOLUME_IMAGE=' bin/release/images.env > /tmp/rv-on/images.env
+        AX_RENDER_RUNNER_VOLUME=true hack/release/render-manifests.sh /tmp/rv-on
+        source /tmp/rv-on/images.env
+        [[ -n "${AX_RUNNER_VOLUME_IMAGE}" && "${AX_RUNNER_VOLUME_IMAGE}" == "${AX_RUNNER_VOLUME_REF}" ]]
+        grep -qF "value: \"${AX_RUNNER_VOLUME_REF}\"" /tmp/rv-on/ax-server.yaml
 
     - name: List release assets (dry run)
       if: env.DRY_RUN == 'true'

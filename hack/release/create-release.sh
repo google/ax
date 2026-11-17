@@ -113,11 +113,11 @@ if [[ -z "${substrate}" ]]; then
   exit 1
 fi
 download="https://github.com/${REPO}/releases/download/${TAG}"
-if grep -q 'AX_RUNNER_VOLUME_IMAGE' "${ASSETS_DIR}/ax-server.yaml" \
-  && grep -A1 'name: AX_RUNNER_VOLUME_IMAGE' "${ASSETS_DIR}/ax-server.yaml" | grep -qF "${AX_RUNNER_VOLUME_REF}"; then
+# render-manifests.sh records the AX_RUNNER_VOLUME_IMAGE it rendered.
+if [[ -n "${AX_RUNNER_VOLUME_IMAGE:-}" ]]; then
   runner_volume_note="mounted into every task by this release's ax-server.yaml"
 else
-  runner_volume_note="opt-in: set \`AX_RUNNER_VOLUME_IMAGE\` on ax-server"
+  runner_volume_note="experimental, not enabled; see #625"
 fi
 notes="$(mktemp)"
 trap 'rm -f "${notes}"' EXIT

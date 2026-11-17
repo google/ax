@@ -7,8 +7,9 @@ jobs:
 1. **images** builds `ax-server`, `ax-task-runner`, and `ax-runner-volume` for
    `linux/amd64` and `linux/arm64` and pushes them as
    `ghcr.io/google/ax/<image>:<tag>`.
-2. **release** builds the `ax` CLI, renders the install manifests with both
-   images pinned by digest, and publishes the GitHub release with them
+2. **release** builds the `ax` CLI, renders the install manifests with
+   `ax-server` and the default task image pinned by digest (and the runner
+   volume, when it is switched on), and publishes the GitHub release with them
    attached.
 
 If the images job fails, no release is created. Every run's image digests are
@@ -65,8 +66,10 @@ image is published only once it is added there.
 `ax-task-runner` binary. When ax-server's `AX_RUNNER_VOLUME_IMAGE` is set to
 it, every task mounts the runner read-only at `/opt/ax` instead of needing it
 built into the task image (#620). Release manifests leave it empty unless the
-repository variable `AX_RELEASE_RUNNER_VOLUME` is `true` (#625); operators can
-set it themselves from the digest in the release notes.
+repository variable `AX_RELEASE_RUNNER_VOLUME` is `true` (case-insensitive;
+#625). The feature is experimental until #625 is done, and `ax install` does
+not set it yet; only the `ax-server.yaml` release manifest does. Dry runs
+render the manifest both ways.
 
 Before building, the images job refuses Dockerfiles that pin
 `ARG TARGETARCH=amd64` (AX before v0.4), which would put amd64 binaries in the
@@ -80,8 +83,8 @@ returns the image of the binary's own release (`:latest` for a dev build), for
 `internal/install/axdeploy`).
 
 GitHub creates a new package as private:
-after the first release, an owner of the `google` organization must make every
-package public and link them to this repository, otherwise clusters cannot
+after the first release, an owner of the `google` organization must make each
+new package public after the first release that publishes it and link them to this repository, otherwise clusters cannot
 pull them without credentials.
 
 Agent task images (Claude Code, Antigravity, ...) are not built here. Their

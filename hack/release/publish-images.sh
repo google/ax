@@ -27,9 +27,9 @@
 #   AX_DEFAULT_TASK_IMAGE=<repo>/ax-task-runner@sha256:...
 #   AX_RUNNER_VOLUME_REF=<repo>/ax-runner-volume@sha256:...
 #
-# AX_RUNNER_VOLUME_REF is published but not deployed by default: the release
-# manifest leaves AX_RUNNER_VOLUME_IMAGE empty (the runner baked into each task
-# image), as deploy/ax-server.yaml and the Makefile do.
+# render-manifests.sh sets the manifest's AX_RUNNER_VOLUME_IMAGE to
+# AX_RUNNER_VOLUME_REF only when AX_RENDER_RUNNER_VOLUME=true; otherwise tasks
+# run the runner baked into their image, as with the Makefile.
 #
 # An image that already exists for <version> on every platform is not rebuilt;
 # its digest is recorded as is, so a rerun never changes the digest of an image
