@@ -164,6 +164,10 @@ instead. No mocking library is in `go.mod`.
 | `make test-e2e SUBSTRATE_REF=<release tag>` | override | local, or `workflow_dispatch` input `substrate_ref` in `e2e.yml` |
 | `make e2e-setup` / `e2e-run` / `e2e-cleanup` | same as above | iterate without re-provisioning |
 
+`hack/setup-e2e-kind.sh` sets up two clusters in one kubeconfig, `ax-e2e` and
+a one-worker `ax-e2e-remote` that `TestE2E_Promote` promotes a task to
+(`SKIP_REMOTE_KIND=true` leaves it out, and the test is skipped).
+
 E2E never builds Substrate. `hack/setup-e2e-kind.sh` installs the release's
 published images from `ghcr.io/agent-substrate/substrate/<image>:<tag>`
 (`SUBSTRATE_IMAGE_REPO` to use a mirror) via `ATE_IMAGE_REPO`/`ATE_IMAGE_TAG`,

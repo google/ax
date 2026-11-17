@@ -23,6 +23,9 @@ Provision a cluster and run the suite against the Substrate version pinned in `g
 make test-e2e
 ```
 
+A second, smaller cluster (`ax-e2e-remote`) is provisioned as well, in the same
+kubeconfig: `TestE2E_Promote` promotes a task to it, and is skipped without it.
+
 Against another Substrate release:
 
 ```bash
@@ -43,7 +46,7 @@ Provisioning takes several minutes; reuse the cluster between runs:
 make e2e-setup                     # provision Kind + Substrate + AX (re-run after changing server code)
 make e2e-run                       # run all tests
 make e2e-run E2E_ARGS='-test.run TestE2E_ModelCRUD'
-make e2e-cleanup                   # delete the Kind cluster
+make e2e-cleanup                   # delete the Kind clusters
 ```
 
 `make e2e-run` rebuilds the `ax` CLI, but not the in-cluster `ax-server` or
@@ -66,6 +69,7 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `AX_SYSTEM_NAMESPACE` | `ax-system` | Namespace for `ax-postgres`, `ax-server`, and the `ax-workers` WorkerPool |
 | `AX_WORKER_REPLICAS` | `4` | gVisor worker replicas |
 | `RECREATE_KIND` | `false` | Delete and recreate the Kind cluster |
+| `SKIP_REMOTE_KIND` | `false` | Do not set up the second cluster, `${KIND_CLUSTER_NAME}-remote` |
 | `FORCE_INSTALL_SUBSTRATE` | `false` | Reinstall Substrate even if the requested commit is already installed |
 | `SUBSTRATE_IMAGE_REPO` | `ghcr.io/agent-substrate/substrate` | Registry holding Substrate's published release images (for a mirror) |
 | `CLEANUP_KIND` | `false` | `hack/run-e2e-kind.sh` only: delete the cluster on exit |

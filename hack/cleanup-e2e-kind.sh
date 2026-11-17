@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Deletes the Kind cluster created for AX E2E tests.
+# Deletes the Kind clusters created for AX E2E tests.
 
 set -euo pipefail
 
@@ -27,6 +27,8 @@ if [[ -z "${KIND_CLUSTER_NAME:-}" && -f "${TMP_DIR}/e2e.env" ]]; then
 fi
 
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-ax-e2e}"
-echo "==> Deleting Kind cluster '${KIND_CLUSTER_NAME}'..."
-kind delete cluster --name "${KIND_CLUSTER_NAME}" || true
+for name in "${KIND_CLUSTER_NAME}" "${KIND_CLUSTER_NAME}-remote"; do
+  echo "==> Deleting Kind cluster '${name}'..."
+  kind delete cluster --name "${name}" || true
+done
 rm -f "${TMP_DIR}/kubeconfig-${KIND_CLUSTER_NAME}" "${TMP_DIR}/e2e.env"

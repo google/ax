@@ -141,6 +141,27 @@ func newSuiteEnv() (_ *suiteEnv, err error) {
 	return s, nil
 }
 
+// remote connects to the second cluster that hack/setup-e2e-kind.sh sets up,
+// or skips the test if that cluster does not exist.
+func (s *suiteEnv) remote(t *testing.T) *suiteEnv {
+	t.Helper()
+	r := &suiteEnv{
+		Kubeconfig:        s.Kubeconfig,
+		KubeContext:       s.KubeContext + "-remote",
+		AXSystemNamespace: s.AXSystemNamespace,
+		AXBin:             s.AXBin,
+		axHome:            s.axHome,
+	}
+	if err := exec.Command("kubectl", "--kubeconfig", r.Kubeconfig, "config", "get-contexts", r.KubeContext).Run(); err != nil {
+		t.Skipf("no kube context %s; hack/setup-e2e-kind.sh sets that cluster up unless SKIP_REMOTE_KIND=true", r.KubeContext)
+	}
+	if err := r.connectAXServer(); err != nil {
+		t.Fatalf("second cluster (%s): %v; run hack/setup-e2e-kind.sh again, with SKIP_REMOTE_KIND=true to do without it", r.KubeContext, err)
+	}
+	t.Cleanup(r.Close)
+	return r
+}
+
 // Close releases all suite resources in reverse order of acquisition.
 func (s *suiteEnv) Close() {
 	for i := len(s.closers) - 1; i >= 0; i-- {
