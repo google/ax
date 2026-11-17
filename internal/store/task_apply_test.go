@@ -17,95 +17,103 @@ package store_test
 import (
 	"testing"
 
-	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
-func TestTaskRowLifecycleRoundTripAndStoredStatus(t *testing.T) {
+func TestTaskRowCloneIdentifiersAndStoredStatus(t *testing.T) {
 	if got := (store.TaskKey{Name: "t1"}).Normalized(); got.Atespace != v1alpha1.DefaultAtespace || got.Name != "t1" {
 		t.Fatalf("TaskKey.Normalized() = %+v", got)
 	}
 
 	// Non-AX states (WORKING, SUSPENDED, SUSPENDING) and Ready condition are
-	// stripped by StoredStatus / SetLifecycleState while WorkspaceReady and
-	// runner fields are preserved.
-	var row store.TaskRow
-	liveState := lifecycle.State{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Atespace: "payments", Name: "fix-bug"},
-			Spec:     &v1alpha1.TaskSpec{SessionId: "sess-1"},
-			Status: &v1alpha1.TaskStatus{
-				State:            v1alpha1.TaskState_TASK_STATE_WORKING,
-				Actor:            "fix-bug",
-				ActorUid:         "live-uid-must-not-persist",
-				AteActorTemplate: "ax-0123456789abcdef",
-				Attempt:          1,
-				Conditions: []*v1alpha1.Condition{
-					{Type: v1alpha1.ConditionReady, Status: "True"},
-					{Type: v1alpha1.ConditionWorkspaceReady, Status: "True"},
-				},
-			},
+	// stripped by StoredStatus while WorkspaceReady and template metadata stay.
+	liveStatus := &v1alpha1.TaskStatus{
+		State:            v1alpha1.TaskState_TASK_STATE_WORKING,
+		Actor:            "fix-bug",
+		ActorUid:         "live-uid-must-not-persist",
+		AteActorTemplate: "ax-0123456789abcdef",
+		Attempt:          1,
+		Conditions: []*v1alpha1.Condition{
+			{Type: v1alpha1.ConditionReady, Status: "True"},
+			{Type: v1alpha1.ConditionWorkspaceReady, Status: "True"},
 		},
-		ActorUID:             "actor-uid-1",
-		Runnable:             true,
-		ActiveRunID:          "r-1",
-		RunSeq:               1,
-		RunnerTokenHash:      []byte{1, 2, 3},
-		RunnerTokenConfirmed: true,
-		LastAckedRunnerSeq:   4,
 	}
-
-	row.SetLifecycleState(liveState)
-	st := row.Task.GetStatus()
-	if st.GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || st.GetActor() != "" || st.GetActorUid() != "" {
-		t.Fatalf("expected actor-derived state and actor identity stripped, got %+v", st)
+	scrubbed := store.StoredStatus(liveStatus)
+	if scrubbed.GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || scrubbed.GetActor() != "" || scrubbed.GetActorUid() != "" {
+		t.Fatalf("expected actor-derived state and actor identity stripped, got %+v", scrubbed)
 	}
-	if len(st.GetConditions()) != 1 || st.GetConditions()[0].GetType() != v1alpha1.ConditionWorkspaceReady {
-		t.Fatalf("Conditions = %+v, want only WorkspaceReady", st.GetConditions())
+	if len(scrubbed.GetConditions()) != 1 || scrubbed.GetConditions()[0].GetType() != v1alpha1.ConditionWorkspaceReady {
+		t.Fatalf("Conditions = %+v, want only WorkspaceReady", scrubbed.GetConditions())
+	}
+	if liveStatus.GetActor() != "fix-bug" || len(liveStatus.GetConditions()) != 2 {
+		t.Fatalf("StoredStatus mutated input: %+v", liveStatus)
+	}
+	if store.StoredStatus(nil) == nil {
+		t.Fatal("StoredStatus(nil) = nil, want non-nil empty TaskStatus")
 	}
 
 	// AX-owned states (QUEUED, COMPLETED, FAILED) keep their state, outcome,
 	// and conditions while still scrubbing Actor and ActorUid.
-	completedState := liveState.Clone()
-	completedState.Runnable = false
-	completedState.ActiveRunID = ""
-	completedState.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
-	completedState.Task.Status.Outcome = &v1alpha1.TaskOutcome{
-		Result:   v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-		ExitCode: 0,
-		Output:   "all tests passed",
+	terminalStatus := store.StoredStatus(&v1alpha1.TaskStatus{
+		State:    v1alpha1.TaskState_TASK_STATE_COMPLETED,
+		Actor:    "fix-bug",
+		ActorUid: "uid-1",
+		Outcome: &v1alpha1.TaskOutcome{
+			Result:   v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
+			ExitCode: 0,
+			Output:   "all tests passed",
+		},
+		Conditions: []*v1alpha1.Condition{{Type: v1alpha1.ConditionReady, Status: "False"}},
+	})
+	if terminalStatus.GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
+		terminalStatus.GetOutcome().GetOutput() != "all tests passed" ||
+		len(terminalStatus.GetConditions()) != 1 ||
+		terminalStatus.GetActor() != "" || terminalStatus.GetActorUid() != "" {
+		t.Fatalf("unexpected stored terminal status: %+v", terminalStatus)
 	}
-	row.SetLifecycleState(completedState)
-	if row.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		row.Task.GetStatus().GetOutcome().GetOutput() != "all tests passed" ||
-		row.Task.GetStatus().GetActor() != "" || row.Task.GetStatus().GetActorUid() != "" {
-		t.Fatalf("unexpected stored terminal status: %+v", row.Task.GetStatus())
+
+	row := &store.TaskRow{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Atespace: "payments", Name: "fix-bug"},
+			Spec:     &v1alpha1.TaskSpec{SessionId: "sess-1"},
+			Status:   scrubbed,
+		},
+		Generation:           2,
+		ActorUID:             "actor-uid-1",
+		Runnable:             true,
+		RunnerTokenHash:      []byte{1, 2, 3},
+		RunnerTokenConfirmed: true,
+		ClaimNonce:           "nonce-1",
+		LastAckedRunnerSeq:   4,
+	}
+	if r1, r2 := row.NextRunID(), row.NextRunID(); r1 != "r-1" || r2 != "r-2" {
+		t.Fatalf("NextRunID = (%q, %q), want (r-1, r-2)", r1, r2)
 	}
 
 	cp := row.Clone()
 	cp.RunnerTokenHash[0] = 99
 	cp.Task.Metadata.Name = "mutated"
-	if row.RunnerTokenHash[0] != 1 || row.Task.GetMetadata().GetName() != "fix-bug" {
+	cp.Runnable = false
+	if row.RunnerTokenHash[0] != 1 || row.Task.GetMetadata().GetName() != "fix-bug" || !row.Runnable {
 		t.Fatal("TaskRow.Clone shared mutable state with original")
 	}
 
-	extracted := row.LifecycleState()
-	if extracted.ActorUID != "actor-uid-1" || extracted.LastAckedRunnerSeq != 4 || extracted.Runnable {
-		t.Fatalf("LifecycleState() = %+v", extracted)
+	// Nil and empty-slice fields remain nil and isolated across Clone.
+	empty := &store.TaskRow{RunnerTokenHash: []byte{}}
+	emptyClone := empty.Clone()
+	if emptyClone.Task != nil || emptyClone.RunnerTokenHash != nil {
+		t.Fatalf("Clone of empty/nil fields produced non-nil pointers/slices: %+v", emptyClone)
+	}
+	emptyClone.Task = &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "isolated"}}
+	emptyClone.RunnerTokenHash = append(emptyClone.RunnerTokenHash, 7)
+	if empty.Task != nil || len(empty.RunnerTokenHash) != 0 {
+		t.Fatalf("mutating cloned nil/empty fields affected original: %+v", empty)
 	}
 
-	// Nil Task.Status is initialized to an empty non-nil TaskStatus.
-	var nilStatusRow store.TaskRow
-	nilStatusRow.SetLifecycleState(lifecycle.State{Task: &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "t2"}}})
-	if nilStatusRow.Task.GetStatus() == nil {
-		t.Fatal("expected SetLifecycleState to initialize nil Task.Status")
-	}
-
-	// Nil receiver helpers are safe no-ops / zero returns.
+	// Nil receiver helpers are safe.
 	var nilRow *store.TaskRow
-	nilRow.SetLifecycleState(liveState)
-	if nilRow.Clone() != nil || nilRow.LifecycleState().Task != nil {
+	if nilRow.Clone() != nil || nilRow.NextRunID() != "" {
 		t.Fatal("nil TaskRow helpers must return zero/nil values")
 	}
 

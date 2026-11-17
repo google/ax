@@ -16,9 +16,9 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/proto"
 )
@@ -37,19 +37,69 @@ func (k TaskKey) Normalized() TaskKey {
 	return k
 }
 
-// TaskRow holds the persisted Task resource and runner control state together
-// with the storage-owned row revision.
+// TaskRow holds the persisted Task resource together with the row revision and
+// pull-based runner control columns stored alongside it in the tasks table.
 //
-// Embedding [lifecycle.State] promotes Task, ActorUID, Runnable, ActiveRunID,
-// RunSeq, RunnerTokenHash, RunnerTokenConfirmed, ClaimNonce, and
-// LastAckedRunnerSeq directly onto TaskRow while keeping storage-only fields
-// out of [lifecycle.TransitionFunc].
+// Note on sequence counters:
+//   - RunSeq is a task-lifetime monotonic ID allocator ("r-1", "r-2", ...) that
+//     NEVER resets across retries or cold restores.
+//   - LastAckedRunnerSeq tracks the runner's per-execution event counter and
+//     RESETS to 0 whenever a new command run starts.
 type TaskRow struct {
-	lifecycle.State
+	// Task is the persisted AX Task resource. Stored via [StoredStatus] so
+	// status.state persists only AX-owned states (QUEUED, COMPLETED, FAILED,
+	// CANCELLED), while live actor states (WORKING, SUSPENDED, SUSPENDING) and
+	// status.actor / status.actor_uid continue to be overlaid from Agent
+	// Substrate at read time.
+	Task *v1alpha1.Task
 
 	// Generation is the monotonic row revision (+1 per committed Apply write;
 	// never resets), mirrored onto Task.Status.Generation.
 	Generation int64
+
+	// ActorUID is the Substrate Actor.metadata.uid recorded when the task's
+	// actor is created, binding runner requests (via the Actor JWT actorUID
+	// claim) to the expected actor incarnation.
+	ActorUID string
+
+	// Runnable records whether ax-server currently authorizes ax-task-runner to
+	// execute the task's command (false when newly created suspended, after
+	// SuspendTask, or once terminal; true after ResumeTask). This allows
+	// ClaimAssignment to return ASSIGNMENT_MODE_IDLE when a paused actor is
+	// woken externally (e.g. via ax ssh) while keeping Task.Status.State
+	// live-derived from Substrate.
+	Runnable bool
+
+	// ActiveRunID is the server-issued run ID ("r-1", "r-2", ...) currently
+	// executing on ax-task-runner. Empty before the first run claim and once
+	// terminal. Used to fence sequenced runner events.
+	ActiveRunID string
+
+	// RunSeq is the task-lifetime monotonic counter incremented by NextRunID to
+	// mint unique ActiveRunID values ("r-1", "r-2", ...). Never resets.
+	RunSeq int64
+
+	// RunnerTokenHash is the SHA-256 digest of the per-actor runner token
+	// minted on initial assignment claim (stored outside Task protojson so it is
+	// never exposed by GetTask or ListTasks).
+	RunnerTokenHash []byte
+
+	// RunnerTokenConfirmed becomes true once the runner proves possession of
+	// the minted token on a subsequent claim or sequenced event. While false,
+	// retrying the initial claim with the matching ClaimNonce may re-mint the
+	// token after a lost HTTP response.
+	RunnerTokenConfirmed bool
+
+	// ClaimNonce records the per-wakeup nonce from the initial token-minting
+	// claim while RunnerTokenConfirmed is false, making lost-response claim
+	// retries idempotent. Cleared once RunnerTokenConfirmed becomes true.
+	ClaimNonce string
+
+	// LastAckedRunnerSeq is the highest 1-based runner event sequence number
+	// applied in the current ActiveRunID execution. Events at or below
+	// LastAckedRunnerSeq are ignored as duplicates. Resets to 0 whenever a new
+	// run assignment is issued; preserved across resume and idle assignments.
+	LastAckedRunnerSeq int64
 }
 
 // Clone returns a deep copy of r safe to mutate inside an ApplyFunc.
@@ -58,30 +108,25 @@ func (r *TaskRow) Clone() *TaskRow {
 		return nil
 	}
 	out := *r
-	out.State = r.State.Clone()
+	if r.Task != nil {
+		out.Task = proto.Clone(r.Task).(*v1alpha1.Task)
+	}
+	if len(r.RunnerTokenHash) > 0 {
+		out.RunnerTokenHash = append([]byte(nil), r.RunnerTokenHash...)
+	} else {
+		out.RunnerTokenHash = nil
+	}
 	return &out
 }
 
-// LifecycleState returns a deep copy of the pure [lifecycle.State] view of r.
-func (r *TaskRow) LifecycleState() lifecycle.State {
+// NextRunID increments RunSeq and returns a monotonic run ID ("r-1", ...).
+// It returns "" if r is nil.
+func (r *TaskRow) NextRunID() string {
 	if r == nil {
-		return lifecycle.State{}
+		return ""
 	}
-	return r.State.Clone()
-}
-
-// SetLifecycleState writes s onto r, scrubbing Task.Status via [StoredStatus]
-// so Substrate-owned live fields and non-AX states are never persisted. It is a
-// no-op if r is nil.
-func (r *TaskRow) SetLifecycleState(s lifecycle.State) {
-	if r == nil {
-		return
-	}
-	c := s.Clone()
-	if c.Task != nil {
-		c.Task.Status = StoredStatus(c.Task.Status)
-	}
-	r.State = c
+	r.RunSeq++
+	return fmt.Sprintf("r-%d", r.RunSeq)
 }
 
 // StoredStatus returns the part of a task's status that AX owns and stores. The
@@ -174,18 +219,14 @@ type ApplyFunc func(current *TaskRow, now time.Time) (*TaskRow, error)
 // ax-server's gRPC (:8080) and pull-based runner (:8081) handlers.
 //
 // Perform any external reads or Agent Substrate RPCs outside Apply, and run
-// pure [lifecycle.TransitionFunc] mutations inside ApplyFunc:
+// only pure in-memory transitions inside ApplyFunc:
 //
 //	written, err := applier.Apply(ctx, key, func(current *store.TaskRow, now time.Time) (*store.TaskRow, error) {
 //		if current == nil {
 //			return nil, store.ErrNotFound
 //		}
-//		nextState, _, err := transition(current.LifecycleState(), in, now)
-//		if err != nil {
-//			return nil, err
-//		}
 //		next := current.Clone()
-//		next.SetLifecycleState(nextState)
+//		// mutate next in memory ...
 //		return next, nil
 //	})
 type TaskApplier interface {
