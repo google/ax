@@ -166,6 +166,27 @@ func TestTaskClaimAndCompletionParksActor(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
+	// Empty ActorUID on TaskRow must fail closed with 401.
+	applier.rows[store.TaskKey{Atespace: "default", Name: "unbound-task"}] = &store.TaskRow{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "unbound-task"},
+			Spec:     &v1alpha1.TaskSpec{Commands: []string{"echo", "ok"}},
+			Status:   &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED},
+		},
+		Runnable: true,
+	}
+	unboundReq, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+ClaimAssignmentPath, bytes.NewReader([]byte(`{"nonce":"n-unbound"}`)))
+	unboundReq.Header.Set("Content-Type", contentTypeJSON)
+	unboundReq.Header.Set("X-Test-Actor", "unbound-task")
+	unboundResp, err := http.DefaultClient.Do(unboundReq)
+	if err != nil {
+		t.Fatalf("ClaimAssignment(unbound) error = %v", err)
+	}
+	_ = unboundResp.Body.Close()
+	if unboundResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("ClaimAssignment(unbound) status = %d, want 401", unboundResp.StatusCode)
+	}
+
 	// Claim RUN assignment.
 	var claimResp runnerv1.ClaimAssignmentResponse
 	res := postRunnerProto(t, ts.URL+ClaimAssignmentPath, "", &runnerv1.ClaimAssignmentRequest{Nonce: "n-1"}, &claimResp)
@@ -321,11 +342,15 @@ func TestOIDCVerifierES256(t *testing.T) {
 	}
 
 	tok := signJWT(map[string]any{
-		"iss":       oidcSrv.URL,
-		"sub":       "actor/default/my-task",
-		"aud":       "ax-runner",
-		"exp":       now.Add(5 * time.Minute).Unix(),
-		"actor_uid": "uid-123",
+		"iss": oidcSrv.URL,
+		"sub": "actor/default/my-task",
+		"aud": "ax-runner",
+		"exp": now.Add(5 * time.Minute).Unix(),
+		"actor.ate.dev": map[string]string{
+			"atespace":  "default",
+			"actorName": "my-task",
+			"actorUID":  "uid-123",
+		},
 	})
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -338,12 +363,29 @@ func TestOIDCVerifierES256(t *testing.T) {
 		t.Fatalf("unexpected identity: %+v", id)
 	}
 
-	expiredTok := signJWT(map[string]any{
+	missingActorClaimTok := signJWT(map[string]any{
 		"iss":       oidcSrv.URL,
 		"sub":       "actor/default/my-task",
 		"aud":       "ax-runner",
-		"exp":       now.Add(-5 * time.Minute).Unix(),
+		"exp":       now.Add(5 * time.Minute).Unix(),
 		"actor_uid": "uid-123",
+	})
+	reqMissing, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
+	reqMissing.Header.Set("Authorization", "Bearer "+missingActorClaimTok)
+	if _, err := verifier.VerifyActorRequest(t.Context(), reqMissing); err == nil {
+		t.Fatalf("expected JWT without actor.ate.dev claim to fail verification")
+	}
+
+	expiredTok := signJWT(map[string]any{
+		"iss": oidcSrv.URL,
+		"sub": "actor/default/my-task",
+		"aud": "ax-runner",
+		"exp": now.Add(-5 * time.Minute).Unix(),
+		"actor.ate.dev": map[string]string{
+			"atespace":  "default",
+			"actorName": "my-task",
+			"actorUID":  "uid-123",
+		},
 	})
 	req2, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 	req2.Header.Set("Authorization", "Bearer "+expiredTok)

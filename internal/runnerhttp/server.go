@@ -268,7 +268,7 @@ func (s *Server) handleClaimAssignment(w http.ResponseWriter, r *http.Request) {
 		if current == nil {
 			return nil, store.ErrNotFound
 		}
-		if current.ActorUID != "" && current.ActorUID != id.ActorUID {
+		if current.ActorUID == "" || current.ActorUID != id.ActorUID {
 			return nil, errActorUIDMismatch
 		}
 		next, claimResp, claimErr := lifecycle.Claim(current, &req, ws, presentedToken, s.mintToken, now)
@@ -346,7 +346,7 @@ func (s *Server) handleReportEvents(w http.ResponseWriter, r *http.Request) {
 		if current == nil {
 			return nil, store.ErrNotFound
 		}
-		if current.ActorUID != "" && current.ActorUID != id.ActorUID {
+		if current.ActorUID == "" || current.ActorUID != id.ActorUID {
 			return nil, errActorUIDMismatch
 		}
 		next, eventsResp, shouldPark, applyErr := lifecycle.ApplyEvents(current, &req, presentedToken, now)

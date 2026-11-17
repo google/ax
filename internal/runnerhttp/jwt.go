@@ -202,13 +202,17 @@ func (v *OIDCVerifier) validateClaims(claims actorJWTClaims) (ActorIdentity, err
 		return ActorIdentity{}, errors.New("actor JWT is not valid yet")
 	}
 
-	atespace, actorName, err := parseActorSubject(claims.Sub)
-	if err != nil {
-		return ActorIdentity{}, err
+	atespace := strings.TrimSpace(claims.Actor.GetAtespace())
+	actorName := strings.TrimSpace(claims.Actor.GetActorName())
+	actorUID := strings.TrimSpace(claims.Actor.GetActorUID())
+	if atespace == "" || actorName == "" || actorUID == "" {
+		return ActorIdentity{}, errors.New("actor JWT missing actor.ate.dev identity fields")
 	}
-	actorUID := cmp.Or(strings.TrimSpace(claims.ActorUID), strings.TrimSpace(claims.UID))
-	if actorUID == "" {
-		return ActorIdentity{}, errors.New("actor JWT missing actor_uid claim")
+	if claims.Sub != "" {
+		subAtespace, subActorName, err := parseActorSubject(claims.Sub)
+		if err == nil && (subAtespace != atespace || subActorName != actorName) {
+			return ActorIdentity{}, errors.New("actor JWT subject does not match actor.ate.dev claim")
+		}
 	}
 	return ActorIdentity{
 		Atespace:  atespace,
@@ -358,14 +362,40 @@ type jwtHeader struct {
 	Kid string `json:"kid"`
 }
 
+type actorClaim struct {
+	Atespace  string `json:"atespace"`
+	ActorName string `json:"actorName"`
+	ActorUID  string `json:"actorUID"`
+}
+
+func (c *actorClaim) GetAtespace() string {
+	if c == nil {
+		return ""
+	}
+	return c.Atespace
+}
+
+func (c *actorClaim) GetActorName() string {
+	if c == nil {
+		return ""
+	}
+	return c.ActorName
+}
+
+func (c *actorClaim) GetActorUID() string {
+	if c == nil {
+		return ""
+	}
+	return c.ActorUID
+}
+
 type actorJWTClaims struct {
-	Iss      string      `json:"iss"`
-	Sub      string      `json:"sub"`
-	Aud      audienceSet `json:"aud"`
-	Exp      int64       `json:"exp"`
-	Nbf      int64       `json:"nbf"`
-	ActorUID string      `json:"actor_uid"`
-	UID      string      `json:"uid"`
+	Iss   string      `json:"iss"`
+	Sub   string      `json:"sub"`
+	Aud   audienceSet `json:"aud"`
+	Exp   int64       `json:"exp"`
+	Nbf   int64       `json:"nbf"`
+	Actor *actorClaim `json:"actor.ate.dev"`
 }
 
 type audienceSet []string
