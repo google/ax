@@ -252,11 +252,20 @@ func TestServerGRPC(t *testing.T) {
 	if _, err := client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: "default", Name: "grpc-ws"}); err != nil {
 		t.Fatalf("DeleteWorkspace failed: %v", err)
 	}
+	if _, err := client.DeleteWorkspace(ctx, &v1alpha1.DeleteWorkspaceRequest{Atespace: "default", Name: "no-such-workspace"}); status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound deleting a missing workspace, got %v", err)
+	}
 	if _, err := client.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Atespace: "default", Name: "grpc-gw"}); err != nil {
 		t.Fatalf("DeleteGateway failed: %v", err)
 	}
+	if _, err := client.DeleteGateway(ctx, &v1alpha1.DeleteGatewayRequest{Atespace: "default", Name: "no-such-gateway"}); status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound deleting a missing gateway, got %v", err)
+	}
 	if _, err := client.DeleteModel(ctx, &v1alpha1.DeleteModelRequest{Atespace: "default", Name: "grpc-model"}); err != nil {
 		t.Fatalf("DeleteModel failed: %v", err)
+	}
+	if _, err := client.DeleteModel(ctx, &v1alpha1.DeleteModelRequest{Atespace: "default", Name: "no-such-model"}); status.Code(err) != codes.NotFound {
+		t.Errorf("expected NotFound deleting a missing model, got %v", err)
 	}
 
 	// Check 404 after delete

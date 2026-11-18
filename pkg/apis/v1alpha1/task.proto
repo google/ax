@@ -202,8 +202,6 @@ message DeleteTaskRequest {
   string name = 2;
 }
 
-message DeleteTaskResponse {}
-
 message SuspendTaskRequest {
   string atespace = 1;
   string name = 2;

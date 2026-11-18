@@ -487,42 +487,6 @@ func (x *DeleteGatewayRequest) GetName() string {
 	return ""
 }
 
-type DeleteGatewayResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteGatewayResponse) Reset() {
-	*x = DeleteGatewayResponse{}
-	mi := &file_pkg_apis_v1alpha1_gateway_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteGatewayResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteGatewayResponse) ProtoMessage() {}
-
-func (x *DeleteGatewayResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_gateway_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteGatewayResponse.ProtoReflect.Descriptor instead.
-func (*DeleteGatewayResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_gateway_proto_rawDescGZIP(), []int{9}
-}
-
 var File_pkg_apis_v1alpha1_gateway_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_gateway_proto_rawDesc = "" +
@@ -552,8 +516,7 @@ const file_pkg_apis_v1alpha1_gateway_proto_rawDesc = "" +
 	"\agateway\x18\x01 \x01(\v2\x14.ax.v1alpha1.GatewayR\agateway\"F\n" +
 	"\x14DeleteGatewayRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x17\n" +
-	"\x15DeleteGatewayResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x04name\x18\x02 \x01(\tR\x04nameB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_gateway_proto_rawDescOnce sync.Once
@@ -567,25 +530,24 @@ func file_pkg_apis_v1alpha1_gateway_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_gateway_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_pkg_apis_v1alpha1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_pkg_apis_v1alpha1_gateway_proto_goTypes = []any{
-	(*GatewayRef)(nil),            // 0: ax.v1alpha1.GatewayRef
-	(*Gateway)(nil),               // 1: ax.v1alpha1.Gateway
-	(*GatewaySpec)(nil),           // 2: ax.v1alpha1.GatewaySpec
-	(*GetGatewayRequest)(nil),     // 3: ax.v1alpha1.GetGatewayRequest
-	(*ListGatewaysRequest)(nil),   // 4: ax.v1alpha1.ListGatewaysRequest
-	(*ListGatewaysResponse)(nil),  // 5: ax.v1alpha1.ListGatewaysResponse
-	(*CreateGatewayRequest)(nil),  // 6: ax.v1alpha1.CreateGatewayRequest
-	(*UpdateGatewayRequest)(nil),  // 7: ax.v1alpha1.UpdateGatewayRequest
-	(*DeleteGatewayRequest)(nil),  // 8: ax.v1alpha1.DeleteGatewayRequest
-	(*DeleteGatewayResponse)(nil), // 9: ax.v1alpha1.DeleteGatewayResponse
-	(*ObjectMeta)(nil),            // 10: ax.v1alpha1.ObjectMeta
-	(*v1.EgressRule)(nil),         // 11: substrate.ateapi.v1.EgressRule
+	(*GatewayRef)(nil),           // 0: ax.v1alpha1.GatewayRef
+	(*Gateway)(nil),              // 1: ax.v1alpha1.Gateway
+	(*GatewaySpec)(nil),          // 2: ax.v1alpha1.GatewaySpec
+	(*GetGatewayRequest)(nil),    // 3: ax.v1alpha1.GetGatewayRequest
+	(*ListGatewaysRequest)(nil),  // 4: ax.v1alpha1.ListGatewaysRequest
+	(*ListGatewaysResponse)(nil), // 5: ax.v1alpha1.ListGatewaysResponse
+	(*CreateGatewayRequest)(nil), // 6: ax.v1alpha1.CreateGatewayRequest
+	(*UpdateGatewayRequest)(nil), // 7: ax.v1alpha1.UpdateGatewayRequest
+	(*DeleteGatewayRequest)(nil), // 8: ax.v1alpha1.DeleteGatewayRequest
+	(*ObjectMeta)(nil),           // 9: ax.v1alpha1.ObjectMeta
+	(*v1.EgressRule)(nil),        // 10: substrate.ateapi.v1.EgressRule
 }
 var file_pkg_apis_v1alpha1_gateway_proto_depIdxs = []int32{
-	10, // 0: ax.v1alpha1.Gateway.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	9,  // 0: ax.v1alpha1.Gateway.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	2,  // 1: ax.v1alpha1.Gateway.spec:type_name -> ax.v1alpha1.GatewaySpec
-	11, // 2: ax.v1alpha1.GatewaySpec.egress:type_name -> substrate.ateapi.v1.EgressRule
+	10, // 2: ax.v1alpha1.GatewaySpec.egress:type_name -> substrate.ateapi.v1.EgressRule
 	1,  // 3: ax.v1alpha1.ListGatewaysResponse.gateways:type_name -> ax.v1alpha1.Gateway
 	1,  // 4: ax.v1alpha1.CreateGatewayRequest.gateway:type_name -> ax.v1alpha1.Gateway
 	1,  // 5: ax.v1alpha1.UpdateGatewayRequest.gateway:type_name -> ax.v1alpha1.Gateway
@@ -608,7 +570,7 @@ func file_pkg_apis_v1alpha1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_gateway_proto_rawDesc), len(file_pkg_apis_v1alpha1_gateway_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

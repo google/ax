@@ -23,6 +23,7 @@ package v1alpha1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	unsafe "unsafe"
 )
@@ -38,65 +39,63 @@ var File_pkg_apis_v1alpha1_ax_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_ax_proto_rawDesc = "" +
 	"\n" +
-	"\x1apkg/apis/v1alpha1/ax.proto\x12\vax.v1alpha1\x1a\x1fpkg/apis/v1alpha1/gateway.proto\x1a\x1dpkg/apis/v1alpha1/model.proto\x1a\x1cpkg/apis/v1alpha1/task.proto\x1a!pkg/apis/v1alpha1/workspace.proto2\x9a\v\n" +
+	"\x1apkg/apis/v1alpha1/ax.proto\x12\vax.v1alpha1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\x1a\x1dpkg/apis/v1alpha1/model.proto\x1a\x1cpkg/apis/v1alpha1/task.proto\x1a!pkg/apis/v1alpha1/workspace.proto2\xed\n" +
+	"\n" +
 	"\x02AX\x129\n" +
 	"\aGetTask\x12\x1b.ax.v1alpha1.GetTaskRequest\x1a\x11.ax.v1alpha1.Task\x12J\n" +
 	"\tListTasks\x12\x1d.ax.v1alpha1.ListTasksRequest\x1a\x1e.ax.v1alpha1.ListTasksResponse\x12?\n" +
 	"\n" +
-	"CreateTask\x12\x1e.ax.v1alpha1.CreateTaskRequest\x1a\x11.ax.v1alpha1.Task\x12M\n" +
+	"CreateTask\x12\x1e.ax.v1alpha1.CreateTaskRequest\x1a\x11.ax.v1alpha1.Task\x12D\n" +
 	"\n" +
-	"DeleteTask\x12\x1e.ax.v1alpha1.DeleteTaskRequest\x1a\x1f.ax.v1alpha1.DeleteTaskResponse\x12A\n" +
+	"DeleteTask\x12\x1e.ax.v1alpha1.DeleteTaskRequest\x1a\x16.google.protobuf.Empty\x12A\n" +
 	"\vSuspendTask\x12\x1f.ax.v1alpha1.SuspendTaskRequest\x1a\x11.ax.v1alpha1.Task\x12?\n" +
 	"\n" +
 	"ResumeTask\x12\x1e.ax.v1alpha1.ResumeTaskRequest\x1a\x11.ax.v1alpha1.Task\x12H\n" +
 	"\fGetWorkspace\x12 .ax.v1alpha1.GetWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12Y\n" +
 	"\x0eListWorkspaces\x12\".ax.v1alpha1.ListWorkspacesRequest\x1a#.ax.v1alpha1.ListWorkspacesResponse\x12N\n" +
-	"\x0fCreateWorkspace\x12#.ax.v1alpha1.CreateWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12\\\n" +
-	"\x0fDeleteWorkspace\x12#.ax.v1alpha1.DeleteWorkspaceRequest\x1a$.ax.v1alpha1.DeleteWorkspaceResponse\x12B\n" +
+	"\x0fCreateWorkspace\x12#.ax.v1alpha1.CreateWorkspaceRequest\x1a\x16.ax.v1alpha1.Workspace\x12N\n" +
+	"\x0fDeleteWorkspace\x12#.ax.v1alpha1.DeleteWorkspaceRequest\x1a\x16.google.protobuf.Empty\x12B\n" +
 	"\n" +
 	"GetGateway\x12\x1e.ax.v1alpha1.GetGatewayRequest\x1a\x14.ax.v1alpha1.Gateway\x12S\n" +
 	"\fListGateways\x12 .ax.v1alpha1.ListGatewaysRequest\x1a!.ax.v1alpha1.ListGatewaysResponse\x12H\n" +
 	"\rCreateGateway\x12!.ax.v1alpha1.CreateGatewayRequest\x1a\x14.ax.v1alpha1.Gateway\x12H\n" +
-	"\rUpdateGateway\x12!.ax.v1alpha1.UpdateGatewayRequest\x1a\x14.ax.v1alpha1.Gateway\x12V\n" +
-	"\rDeleteGateway\x12!.ax.v1alpha1.DeleteGatewayRequest\x1a\".ax.v1alpha1.DeleteGatewayResponse\x12<\n" +
+	"\rUpdateGateway\x12!.ax.v1alpha1.UpdateGatewayRequest\x1a\x14.ax.v1alpha1.Gateway\x12J\n" +
+	"\rDeleteGateway\x12!.ax.v1alpha1.DeleteGatewayRequest\x1a\x16.google.protobuf.Empty\x12<\n" +
 	"\bGetModel\x12\x1c.ax.v1alpha1.GetModelRequest\x1a\x12.ax.v1alpha1.Model\x12M\n" +
 	"\n" +
 	"ListModels\x12\x1e.ax.v1alpha1.ListModelsRequest\x1a\x1f.ax.v1alpha1.ListModelsResponse\x12B\n" +
-	"\vUpdateModel\x12\x1f.ax.v1alpha1.UpdateModelRequest\x1a\x12.ax.v1alpha1.Model\x12P\n" +
-	"\vDeleteModel\x12\x1f.ax.v1alpha1.DeleteModelRequest\x1a .ax.v1alpha1.DeleteModelResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\vUpdateModel\x12\x1f.ax.v1alpha1.UpdateModelRequest\x1a\x12.ax.v1alpha1.Model\x12F\n" +
+	"\vDeleteModel\x12\x1f.ax.v1alpha1.DeleteModelRequest\x1a\x16.google.protobuf.EmptyB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var file_pkg_apis_v1alpha1_ax_proto_goTypes = []any{
-	(*GetTaskRequest)(nil),          // 0: ax.v1alpha1.GetTaskRequest
-	(*ListTasksRequest)(nil),        // 1: ax.v1alpha1.ListTasksRequest
-	(*CreateTaskRequest)(nil),       // 2: ax.v1alpha1.CreateTaskRequest
-	(*DeleteTaskRequest)(nil),       // 3: ax.v1alpha1.DeleteTaskRequest
-	(*SuspendTaskRequest)(nil),      // 4: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),       // 5: ax.v1alpha1.ResumeTaskRequest
-	(*GetWorkspaceRequest)(nil),     // 6: ax.v1alpha1.GetWorkspaceRequest
-	(*ListWorkspacesRequest)(nil),   // 7: ax.v1alpha1.ListWorkspacesRequest
-	(*CreateWorkspaceRequest)(nil),  // 8: ax.v1alpha1.CreateWorkspaceRequest
-	(*DeleteWorkspaceRequest)(nil),  // 9: ax.v1alpha1.DeleteWorkspaceRequest
-	(*GetGatewayRequest)(nil),       // 10: ax.v1alpha1.GetGatewayRequest
-	(*ListGatewaysRequest)(nil),     // 11: ax.v1alpha1.ListGatewaysRequest
-	(*CreateGatewayRequest)(nil),    // 12: ax.v1alpha1.CreateGatewayRequest
-	(*UpdateGatewayRequest)(nil),    // 13: ax.v1alpha1.UpdateGatewayRequest
-	(*DeleteGatewayRequest)(nil),    // 14: ax.v1alpha1.DeleteGatewayRequest
-	(*GetModelRequest)(nil),         // 15: ax.v1alpha1.GetModelRequest
-	(*ListModelsRequest)(nil),       // 16: ax.v1alpha1.ListModelsRequest
-	(*UpdateModelRequest)(nil),      // 17: ax.v1alpha1.UpdateModelRequest
-	(*DeleteModelRequest)(nil),      // 18: ax.v1alpha1.DeleteModelRequest
-	(*Task)(nil),                    // 19: ax.v1alpha1.Task
-	(*ListTasksResponse)(nil),       // 20: ax.v1alpha1.ListTasksResponse
-	(*DeleteTaskResponse)(nil),      // 21: ax.v1alpha1.DeleteTaskResponse
-	(*Workspace)(nil),               // 22: ax.v1alpha1.Workspace
-	(*ListWorkspacesResponse)(nil),  // 23: ax.v1alpha1.ListWorkspacesResponse
-	(*DeleteWorkspaceResponse)(nil), // 24: ax.v1alpha1.DeleteWorkspaceResponse
-	(*Gateway)(nil),                 // 25: ax.v1alpha1.Gateway
-	(*ListGatewaysResponse)(nil),    // 26: ax.v1alpha1.ListGatewaysResponse
-	(*DeleteGatewayResponse)(nil),   // 27: ax.v1alpha1.DeleteGatewayResponse
-	(*Model)(nil),                   // 28: ax.v1alpha1.Model
-	(*ListModelsResponse)(nil),      // 29: ax.v1alpha1.ListModelsResponse
-	(*DeleteModelResponse)(nil),     // 30: ax.v1alpha1.DeleteModelResponse
+	(*GetTaskRequest)(nil),         // 0: ax.v1alpha1.GetTaskRequest
+	(*ListTasksRequest)(nil),       // 1: ax.v1alpha1.ListTasksRequest
+	(*CreateTaskRequest)(nil),      // 2: ax.v1alpha1.CreateTaskRequest
+	(*DeleteTaskRequest)(nil),      // 3: ax.v1alpha1.DeleteTaskRequest
+	(*SuspendTaskRequest)(nil),     // 4: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),      // 5: ax.v1alpha1.ResumeTaskRequest
+	(*GetWorkspaceRequest)(nil),    // 6: ax.v1alpha1.GetWorkspaceRequest
+	(*ListWorkspacesRequest)(nil),  // 7: ax.v1alpha1.ListWorkspacesRequest
+	(*CreateWorkspaceRequest)(nil), // 8: ax.v1alpha1.CreateWorkspaceRequest
+	(*DeleteWorkspaceRequest)(nil), // 9: ax.v1alpha1.DeleteWorkspaceRequest
+	(*GetGatewayRequest)(nil),      // 10: ax.v1alpha1.GetGatewayRequest
+	(*ListGatewaysRequest)(nil),    // 11: ax.v1alpha1.ListGatewaysRequest
+	(*CreateGatewayRequest)(nil),   // 12: ax.v1alpha1.CreateGatewayRequest
+	(*UpdateGatewayRequest)(nil),   // 13: ax.v1alpha1.UpdateGatewayRequest
+	(*DeleteGatewayRequest)(nil),   // 14: ax.v1alpha1.DeleteGatewayRequest
+	(*GetModelRequest)(nil),        // 15: ax.v1alpha1.GetModelRequest
+	(*ListModelsRequest)(nil),      // 16: ax.v1alpha1.ListModelsRequest
+	(*UpdateModelRequest)(nil),     // 17: ax.v1alpha1.UpdateModelRequest
+	(*DeleteModelRequest)(nil),     // 18: ax.v1alpha1.DeleteModelRequest
+	(*Task)(nil),                   // 19: ax.v1alpha1.Task
+	(*ListTasksResponse)(nil),      // 20: ax.v1alpha1.ListTasksResponse
+	(*emptypb.Empty)(nil),          // 21: google.protobuf.Empty
+	(*Workspace)(nil),              // 22: ax.v1alpha1.Workspace
+	(*ListWorkspacesResponse)(nil), // 23: ax.v1alpha1.ListWorkspacesResponse
+	(*Gateway)(nil),                // 24: ax.v1alpha1.Gateway
+	(*ListGatewaysResponse)(nil),   // 25: ax.v1alpha1.ListGatewaysResponse
+	(*Model)(nil),                  // 26: ax.v1alpha1.Model
+	(*ListModelsResponse)(nil),     // 27: ax.v1alpha1.ListModelsResponse
 }
 var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	0,  // 0: ax.v1alpha1.AX.GetTask:input_type -> ax.v1alpha1.GetTaskRequest
@@ -121,22 +120,22 @@ var file_pkg_apis_v1alpha1_ax_proto_depIdxs = []int32{
 	19, // 19: ax.v1alpha1.AX.GetTask:output_type -> ax.v1alpha1.Task
 	20, // 20: ax.v1alpha1.AX.ListTasks:output_type -> ax.v1alpha1.ListTasksResponse
 	19, // 21: ax.v1alpha1.AX.CreateTask:output_type -> ax.v1alpha1.Task
-	21, // 22: ax.v1alpha1.AX.DeleteTask:output_type -> ax.v1alpha1.DeleteTaskResponse
+	21, // 22: ax.v1alpha1.AX.DeleteTask:output_type -> google.protobuf.Empty
 	19, // 23: ax.v1alpha1.AX.SuspendTask:output_type -> ax.v1alpha1.Task
 	19, // 24: ax.v1alpha1.AX.ResumeTask:output_type -> ax.v1alpha1.Task
 	22, // 25: ax.v1alpha1.AX.GetWorkspace:output_type -> ax.v1alpha1.Workspace
 	23, // 26: ax.v1alpha1.AX.ListWorkspaces:output_type -> ax.v1alpha1.ListWorkspacesResponse
 	22, // 27: ax.v1alpha1.AX.CreateWorkspace:output_type -> ax.v1alpha1.Workspace
-	24, // 28: ax.v1alpha1.AX.DeleteWorkspace:output_type -> ax.v1alpha1.DeleteWorkspaceResponse
-	25, // 29: ax.v1alpha1.AX.GetGateway:output_type -> ax.v1alpha1.Gateway
-	26, // 30: ax.v1alpha1.AX.ListGateways:output_type -> ax.v1alpha1.ListGatewaysResponse
-	25, // 31: ax.v1alpha1.AX.CreateGateway:output_type -> ax.v1alpha1.Gateway
-	25, // 32: ax.v1alpha1.AX.UpdateGateway:output_type -> ax.v1alpha1.Gateway
-	27, // 33: ax.v1alpha1.AX.DeleteGateway:output_type -> ax.v1alpha1.DeleteGatewayResponse
-	28, // 34: ax.v1alpha1.AX.GetModel:output_type -> ax.v1alpha1.Model
-	29, // 35: ax.v1alpha1.AX.ListModels:output_type -> ax.v1alpha1.ListModelsResponse
-	28, // 36: ax.v1alpha1.AX.UpdateModel:output_type -> ax.v1alpha1.Model
-	30, // 37: ax.v1alpha1.AX.DeleteModel:output_type -> ax.v1alpha1.DeleteModelResponse
+	21, // 28: ax.v1alpha1.AX.DeleteWorkspace:output_type -> google.protobuf.Empty
+	24, // 29: ax.v1alpha1.AX.GetGateway:output_type -> ax.v1alpha1.Gateway
+	25, // 30: ax.v1alpha1.AX.ListGateways:output_type -> ax.v1alpha1.ListGatewaysResponse
+	24, // 31: ax.v1alpha1.AX.CreateGateway:output_type -> ax.v1alpha1.Gateway
+	24, // 32: ax.v1alpha1.AX.UpdateGateway:output_type -> ax.v1alpha1.Gateway
+	21, // 33: ax.v1alpha1.AX.DeleteGateway:output_type -> google.protobuf.Empty
+	26, // 34: ax.v1alpha1.AX.GetModel:output_type -> ax.v1alpha1.Model
+	27, // 35: ax.v1alpha1.AX.ListModels:output_type -> ax.v1alpha1.ListModelsResponse
+	26, // 36: ax.v1alpha1.AX.UpdateModel:output_type -> ax.v1alpha1.Model
+	21, // 37: ax.v1alpha1.AX.DeleteModel:output_type -> google.protobuf.Empty
 	19, // [19:38] is the sub-list for method output_type
 	0,  // [0:19] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name

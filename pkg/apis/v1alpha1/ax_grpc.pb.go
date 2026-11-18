@@ -25,6 +25,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -64,25 +65,25 @@ type AXClient interface {
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error)
+	DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SuspendTask(ctx context.Context, in *SuspendTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	ResumeTask(ctx context.Context, in *ResumeTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	// Workspaces
 	GetWorkspace(ctx context.Context, in *GetWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
 	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
 	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*Workspace, error)
-	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error)
+	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Gateways
 	GetGateway(ctx context.Context, in *GetGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
 	ListGateways(ctx context.Context, in *ListGatewaysRequest, opts ...grpc.CallOption) (*ListGatewaysResponse, error)
 	CreateGateway(ctx context.Context, in *CreateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
 	UpdateGateway(ctx context.Context, in *UpdateGatewayRequest, opts ...grpc.CallOption) (*Gateway, error)
-	DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*DeleteGatewayResponse, error)
+	DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Models
 	GetModel(ctx context.Context, in *GetModelRequest, opts ...grpc.CallOption) (*Model, error)
 	ListModels(ctx context.Context, in *ListModelsRequest, opts ...grpc.CallOption) (*ListModelsResponse, error)
 	UpdateModel(ctx context.Context, in *UpdateModelRequest, opts ...grpc.CallOption) (*Model, error)
-	DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*DeleteModelResponse, error)
+	DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type aXClient struct {
@@ -123,9 +124,9 @@ func (c *aXClient) CreateTask(ctx context.Context, in *CreateTaskRequest, opts .
 	return out, nil
 }
 
-func (c *aXClient) DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*DeleteTaskResponse, error) {
+func (c *aXClient) DeleteTask(ctx context.Context, in *DeleteTaskRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteTaskResponse)
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, AX_DeleteTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -183,9 +184,9 @@ func (c *aXClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceReque
 	return out, nil
 }
 
-func (c *aXClient) DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error) {
+func (c *aXClient) DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteWorkspaceResponse)
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, AX_DeleteWorkspace_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -233,9 +234,9 @@ func (c *aXClient) UpdateGateway(ctx context.Context, in *UpdateGatewayRequest, 
 	return out, nil
 }
 
-func (c *aXClient) DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*DeleteGatewayResponse, error) {
+func (c *aXClient) DeleteGateway(ctx context.Context, in *DeleteGatewayRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteGatewayResponse)
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, AX_DeleteGateway_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -273,9 +274,9 @@ func (c *aXClient) UpdateModel(ctx context.Context, in *UpdateModelRequest, opts
 	return out, nil
 }
 
-func (c *aXClient) DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*DeleteModelResponse, error) {
+func (c *aXClient) DeleteModel(ctx context.Context, in *DeleteModelRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteModelResponse)
+	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, AX_DeleteModel_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -293,25 +294,25 @@ type AXServer interface {
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	CreateTask(context.Context, *CreateTaskRequest) (*Task, error)
-	DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error)
+	DeleteTask(context.Context, *DeleteTaskRequest) (*emptypb.Empty, error)
 	SuspendTask(context.Context, *SuspendTaskRequest) (*Task, error)
 	ResumeTask(context.Context, *ResumeTaskRequest) (*Task, error)
 	// Workspaces
 	GetWorkspace(context.Context, *GetWorkspaceRequest) (*Workspace, error)
 	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
 	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*Workspace, error)
-	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error)
+	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*emptypb.Empty, error)
 	// Gateways
 	GetGateway(context.Context, *GetGatewayRequest) (*Gateway, error)
 	ListGateways(context.Context, *ListGatewaysRequest) (*ListGatewaysResponse, error)
 	CreateGateway(context.Context, *CreateGatewayRequest) (*Gateway, error)
 	UpdateGateway(context.Context, *UpdateGatewayRequest) (*Gateway, error)
-	DeleteGateway(context.Context, *DeleteGatewayRequest) (*DeleteGatewayResponse, error)
+	DeleteGateway(context.Context, *DeleteGatewayRequest) (*emptypb.Empty, error)
 	// Models
 	GetModel(context.Context, *GetModelRequest) (*Model, error)
 	ListModels(context.Context, *ListModelsRequest) (*ListModelsResponse, error)
 	UpdateModel(context.Context, *UpdateModelRequest) (*Model, error)
-	DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error)
+	DeleteModel(context.Context, *DeleteModelRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedAXServer()
 }
 
@@ -331,7 +332,7 @@ func (UnimplementedAXServer) ListTasks(context.Context, *ListTasksRequest) (*Lis
 func (UnimplementedAXServer) CreateTask(context.Context, *CreateTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateTask not implemented")
 }
-func (UnimplementedAXServer) DeleteTask(context.Context, *DeleteTaskRequest) (*DeleteTaskResponse, error) {
+func (UnimplementedAXServer) DeleteTask(context.Context, *DeleteTaskRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTask not implemented")
 }
 func (UnimplementedAXServer) SuspendTask(context.Context, *SuspendTaskRequest) (*Task, error) {
@@ -349,7 +350,7 @@ func (UnimplementedAXServer) ListWorkspaces(context.Context, *ListWorkspacesRequ
 func (UnimplementedAXServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*Workspace, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
 }
-func (UnimplementedAXServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error) {
+func (UnimplementedAXServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteWorkspace not implemented")
 }
 func (UnimplementedAXServer) GetGateway(context.Context, *GetGatewayRequest) (*Gateway, error) {
@@ -364,7 +365,7 @@ func (UnimplementedAXServer) CreateGateway(context.Context, *CreateGatewayReques
 func (UnimplementedAXServer) UpdateGateway(context.Context, *UpdateGatewayRequest) (*Gateway, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateGateway not implemented")
 }
-func (UnimplementedAXServer) DeleteGateway(context.Context, *DeleteGatewayRequest) (*DeleteGatewayResponse, error) {
+func (UnimplementedAXServer) DeleteGateway(context.Context, *DeleteGatewayRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteGateway not implemented")
 }
 func (UnimplementedAXServer) GetModel(context.Context, *GetModelRequest) (*Model, error) {
@@ -376,7 +377,7 @@ func (UnimplementedAXServer) ListModels(context.Context, *ListModelsRequest) (*L
 func (UnimplementedAXServer) UpdateModel(context.Context, *UpdateModelRequest) (*Model, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateModel not implemented")
 }
-func (UnimplementedAXServer) DeleteModel(context.Context, *DeleteModelRequest) (*DeleteModelResponse, error) {
+func (UnimplementedAXServer) DeleteModel(context.Context, *DeleteModelRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteModel not implemented")
 }
 func (UnimplementedAXServer) mustEmbedUnimplementedAXServer() {}

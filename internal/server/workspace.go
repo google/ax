@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const workspaceStatusUpdateTimeout = 10 * time.Second
@@ -187,7 +188,7 @@ func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, s
 	}
 }
 
-func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorkspaceRequest) (*v1alpha1.DeleteWorkspaceResponse, error) {
+func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorkspaceRequest) (*emptypb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
@@ -206,7 +207,7 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 
 	ws, err := s.store.GetWorkspace(ctx, atespace, wsName)
 	if errors.Is(err, store.ErrNotFound) {
-		return &v1alpha1.DeleteWorkspaceResponse{}, nil
+		return nil, status.Errorf(codes.NotFound, "workspace %q not found in atespace %q", wsName, atespace)
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "getting workspace: %v", err)
@@ -222,7 +223,7 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	if err := s.store.DeleteWorkspace(ctx, atespace, wsName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting workspace: %v", err)
 	}
-	return &v1alpha1.DeleteWorkspaceResponse{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func workspaceSpecEqual(a, b *v1alpha1.WorkspaceSpec) bool {
