@@ -16,6 +16,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/google/ax/internal/install/axdeploy"
 	"github.com/google/ax/internal/install/cluster"
+	"github.com/google/ax/internal/install/executil"
 )
 
 func TestParseLocalArgs(t *testing.T) {
@@ -194,5 +197,122 @@ func TestFormatLocalStatus(t *testing.T) {
 	if !strings.Contains(runningBuf.String(), "Cluster:       ax-local (kind)\n") ||
 		!strings.Contains(runningBuf.String(), "Kube Context:  ax-local\n") {
 		t.Fatalf("unexpected running status output:\n%s", runningBuf.String())
+	}
+}
+
+func TestParseLocalArgsOutput(t *testing.T) {
+	for _, flagName := range []string{"-o", "--output"} {
+		got, err := parseLocalArgs([]string{"status", flagName, "json"})
+		if err != nil || got.output != "json" {
+			t.Errorf("status %s json: output = %q, error %v", flagName, got.output, err)
+		}
+	}
+	if _, err := parseLocalArgs([]string{"status", "-o", "yaml"}); err == nil {
+		t.Error("expected an error for an unsupported output format")
+	}
+	if _, err := parseLocalArgs([]string{"start", "-o", "json"}); err == nil {
+		t.Error("expected an error for -o on a subcommand other than status")
+	}
+}
+
+// hostRunner fakes the container engine CLI. With no docker binary set, no
+// engine is found.
+type hostRunner struct {
+	docker string // path LookPath returns for "docker"
+	info   string // output of `docker info --format ...`
+}
+
+func (r hostRunner) LookPath(name string) (string, error) {
+	if name == "docker" && r.docker != "" {
+		return r.docker, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (r hostRunner) Run(_ context.Context, spec executil.Spec) (executil.Result, error) {
+	if len(spec.Args) > 1 && spec.Args[1] == "--format" {
+		return executil.Result{Stdout: r.info}, nil
+	}
+	return executil.Result{}, nil
+}
+
+// statusProvider returns a fixed status and records whether it was asked.
+type statusProvider struct {
+	cluster.Provider
+	status cluster.Status
+	called bool
+}
+
+func (p *statusProvider) Status(context.Context, string) (cluster.Status, error) {
+	p.called = true
+	return p.status, nil
+}
+
+func TestWriteLocalStatusJSON(t *testing.T) {
+	t.Setenv("CONTAINER_CLI", "")
+
+	// A running cluster on a host that passes the checks, with 5 GiB of RAM,
+	// which is under the recommended 6 GiB.
+	provider := &statusProvider{status: cluster.Status{
+		Name:            "ax-local",
+		Backend:         "kind",
+		State:           cluster.StateRunning,
+		KubeContext:     "ax-local",
+		Nodes:           []string{"ax-local-control-plane"},
+		SubstrateStatus: "ate-api-server (1/1 available)",
+		AXStatus:        "ax-server (1/1 available in ax-system)",
+	}}
+	var out bytes.Buffer
+	runner := hostRunner{docker: "/usr/bin/docker", info: "6.8.0-45-generic|5368709120|[name=seccomp]\n"}
+	if err := writeLocalStatusJSON(context.Background(), &out, runner, provider, "ax-local"); err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "name": "ax-local",
+  "backend": "kind",
+  "state": "Running",
+  "kubeContext": "ax-local",
+  "nodes": [
+    "ax-local-control-plane"
+  ],
+  "substrateStatus": "ate-api-server (1/1 available)",
+  "axStatus": "ax-server (1/1 available in ax-system)",
+  "host": {
+    "runtime": "docker",
+    "kernelVersion": "6.8.0-45-generic",
+    "memTotalBytes": 5368709120,
+    "rootless": false,
+    "error": "",
+    "warning": "container host has 5.0 GiB RAM (\u003c 6.0 GiB recommended); pods may stay Pending under load."
+  }
+}
+`
+	if out.String() != want {
+		t.Errorf("running cluster:\ngot:\n%s\nwant:\n%s", out.String(), want)
+	}
+
+	// A kernel older than 6.8 is reported in host.error; the command succeeds.
+	out.Reset()
+	runner.info = "5.15.0|8589934592|[]\n"
+	if err := writeLocalStatusJSON(context.Background(), &out, runner, provider, "ax-local"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"error": "container host Linux kernel \"5.15.0\" is older than 6.8`) {
+		t.Errorf("old kernel: host.error not reported:\n%s", out.String())
+	}
+
+	// Without a container engine the cluster is not inspected.
+	out.Reset()
+	provider.called = false
+	if err := writeLocalStatusJSON(context.Background(), &out, hostRunner{}, provider, "ax-local"); err != nil {
+		t.Fatal(err)
+	}
+	if provider.called {
+		t.Error("no container engine: the cluster was inspected")
+	}
+	for _, field := range []string{`"state": "NotFound"`, `"nodes": []`, `"runtime": ""`, `"error": "no running container engine found`} {
+		if !strings.Contains(out.String(), field) {
+			t.Errorf("no container engine: missing %s in:\n%s", field, out.String())
+		}
 	}
 }
