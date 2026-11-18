@@ -195,11 +195,15 @@ cat "$AX_GOAL_FILE" > "$AX_OUTPUT_FILE"
 }
 
 // When Config.RunDir is empty and DefaultRunDir (/run/ax) cannot be created by
-// a non-root user, the runner falls back to <TempDir>/ax-run.
+// a non-root user, the runner falls back to a unique temporary directory under
+// os.TempDir() instead of a predictable shared path.
 func TestRun_FallsBackWhenDefaultRunDirUnwritable(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to /run/ax")
 	}
+	tmpBase := t.TempDir()
+	t.Setenv("TMPDIR", tmpBase)
+
 	h := newHarness(t)
 	withLauncher(t, h, "non-root goal")
 	h.cfg.RunDir = ""
@@ -210,6 +214,19 @@ func TestRun_FallsBackWhenDefaultRunDirUnwritable(t *testing.T) {
 	out, err := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output"))
 	if err != nil || !strings.HasPrefix(string(out), "non-root goal") {
 		t.Errorf("output = %q (%v), want non-root goal", out, err)
+	}
+	entries, err := os.ReadDir(tmpBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "ax-run-") && e.Name() != "ax-run" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a unique ax-run-* directory under %s, got %v", tmpBase, entries)
 	}
 }
 
