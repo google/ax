@@ -149,12 +149,10 @@ func Run(ctx context.Context, cfg Config) error {
 	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath); err != nil {
 		return fmt.Errorf("setting up workspace %q: %w", ref.GetName(), err)
 	}
-	metaServer.SetWorkspaceReady(true)
-	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 
 	cmdArgs := cfg.Task.GetSpec().GetCommands()
 	launched := len(cmdArgs) == 0
-	files, err := writeLauncherFiles(cmp.Or(cfg.RunDir, DefaultRunDir), wsPath, cfg.Task, cfg.Workspace)
+	files, err := writeLauncherFiles(cfg.RunDir, wsPath, cfg.Task, cfg.Workspace)
 	switch {
 	case err != nil && launched && cfg.Task.GetSpec().GetGoal().GetText() != "":
 		// The launcher would have nothing to read.
@@ -165,6 +163,8 @@ func Run(ctx context.Context, cfg Config) error {
 		cmdArgs = launcherCommand(cmp.Or(cfg.LauncherPath, DefaultLauncherPath), wsPath, cfg.Task, files)
 	}
 	if len(cmdArgs) == 0 {
+		metaServer.SetWorkspaceReady(true)
+		slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 		<-ctx.Done()
 		return nil
 	}
@@ -183,13 +183,15 @@ func Run(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("starting task command %v: %w", cmdArgs, err)
 	}
 	slog.Info("started task command", "pid", cmd.Process.Pid, "command", cmdArgs)
+	metaServer.SetWorkspaceReady(true)
+	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
 	select {
 	case err := <-exited:
-		if launched {
+		if launched && err == nil {
 			markLauncherDone(wsPath, files)
 		}
 		reportExit(cfg, cmd, err)

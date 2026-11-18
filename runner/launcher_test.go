@@ -160,6 +160,59 @@ func TestRun_DoesNotRestartFinishedLauncher(t *testing.T) {
 	}
 }
 
+// A launcher that exits non-zero does not record launcher-done, so resuming
+// the sandbox retries it.
+func TestRun_RetriesFailedLauncherOnResume(t *testing.T) {
+	h := newHarness(t)
+	dir := withLauncher(t, h, "retry goal")
+	failOnce := `#!/bin/sh
+runs_file="$(dirname "$0")/runs"
+echo run >> "$runs_file"
+if [ "$(grep -c run "$runs_file")" -eq 1 ]; then
+  exit 1
+fi
+cat "$AX_GOAL_FILE" > "$AX_OUTPUT_FILE"
+`
+	if err := os.WriteFile(h.cfg.LauncherPath, []byte(failOnce), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if exit := h.runUntilCommandExits(t); exit.Err == nil {
+		t.Fatalf("expected first run to fail, got %+v", exit)
+	}
+	h.cancel()
+	h.waitFinished(t, 5*time.Second)
+
+	retry := newHarness(t)
+	retry.wsPath, retry.task.Spec.Workspace.Path = h.wsPath, h.wsPath
+	retry.cfg.LauncherPath, retry.cfg.RunDir = h.cfg.LauncherPath, h.cfg.RunDir
+	retry.task.Spec.Goal = &v1alpha1.Goal{Text: "retry goal"}
+	if exit := retry.runUntilCommandExits(t); exit.Err != nil {
+		t.Fatalf("expected retry on resume to succeed, got %+v", exit)
+	}
+	if n := runs(t, dir); n != 2 {
+		t.Errorf("launcher ran %d times across failed run and resume, want 2", n)
+	}
+}
+
+// When Config.RunDir is empty and DefaultRunDir (/run/ax) cannot be created by
+// a non-root user, the runner falls back to <TempDir>/ax-run.
+func TestRun_FallsBackWhenDefaultRunDirUnwritable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write to /run/ax")
+	}
+	h := newHarness(t)
+	withLauncher(t, h, "non-root goal")
+	h.cfg.RunDir = ""
+
+	if exit := h.runUntilCommandExits(t); exit.Err != nil {
+		t.Fatalf("unexpected exit with empty RunDir: %+v", exit)
+	}
+	out, err := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output"))
+	if err != nil || !strings.HasPrefix(string(out), "non-root goal") {
+		t.Errorf("output = %q (%v), want non-root goal", out, err)
+	}
+}
+
 // Explicit commands also get the contract's variables, so any command can
 // write $AX_OUTPUT_FILE; the launcher is not started for them.
 func TestRun_CommandsGetContractEnv(t *testing.T) {
