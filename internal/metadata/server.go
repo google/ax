@@ -42,6 +42,7 @@ type Server struct {
 	metadataAddr   string // bound address of the metadata listener, set by Start
 	grpcServer     *grpc.Server
 	grpcCleanup    func()
+	guestCfg       guest.Config
 	mu             sync.RWMutex
 	task           *v1alpha1.Task
 	workspace      *v1alpha1.Workspace
@@ -70,7 +71,16 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
+	guestCfg := guest.DefaultConfig()
+	if opt.WorkspacePath != "" {
+		guestCfg.Workspace = opt.WorkspacePath
+	}
+	if opt.LogDir != "" {
+		guestCfg.LogDir = opt.LogDir
+	}
+
 	s := &Server{
+		guestCfg:  guestCfg,
 		task:      task,
 		workspace: ws,
 		goalText:  task.GetSpec().GetGoal().GetText(),
@@ -80,22 +90,7 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	// Guest services expose process execution and file access inside the container,
 	// so they are only served when the task opts in via spec.debug.
 	if task.GetSpec().GetDebug() {
-		guestCfg := guest.DefaultConfig()
-		if opt.WorkspacePath != "" {
-			guestCfg.Workspace = opt.WorkspacePath
-		}
-		if opt.LogDir != "" {
-			guestCfg.LogDir = opt.LogDir
-		}
-
-		grpcServer, grpcCleanup, err := guest.NewServer(guestCfg)
-		if err != nil {
-			slog.Error("failed to initialize guest gRPC server", "error", err)
-		} else {
-			s.grpcServer = grpcServer
-			s.grpcCleanup = grpcCleanup
-			slog.Info("guest services enabled (spec.debug is true)")
-		}
+		s.ensureGuestServerLocked()
 	} else {
 		slog.Info("guest services disabled; set spec.debug: true on the Task to enable ax ssh")
 	}
@@ -106,8 +101,11 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.grpcServer != nil && r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			s.grpcServer.ServeHTTP(w, r)
+		s.mu.RLock()
+		grpcSrv := s.grpcServer
+		s.mu.RUnlock()
+		if grpcSrv != nil && r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcSrv.ServeHTTP(w, r)
 			return
 		}
 		probeMux.ServeHTTP(w, r)
@@ -186,8 +184,12 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the probe, guest, and metadata servers.
 func (s *Server) Stop(ctx context.Context) error {
-	if s.grpcCleanup != nil {
-		s.grpcCleanup()
+	s.mu.Lock()
+	cleanup := s.grpcCleanup
+	s.grpcCleanup = nil
+	s.mu.Unlock()
+	if cleanup != nil {
+		cleanup()
 	}
 	// Shut both servers down concurrently so one draining its connections does
 	// not hold the other open or use up ctx's deadline.
@@ -212,6 +214,23 @@ func (s *Server) UpdateAssignment(task *v1alpha1.Task, ws *v1alpha1.Workspace, g
 	s.task = task
 	s.workspace = ws
 	s.goalText = goalText
+	if task.GetSpec().GetDebug() {
+		s.ensureGuestServerLocked()
+	}
+}
+
+func (s *Server) ensureGuestServerLocked() {
+	if s.grpcServer != nil {
+		return
+	}
+	grpcServer, grpcCleanup, err := guest.NewServer(s.guestCfg)
+	if err != nil {
+		slog.Error("failed to initialize guest gRPC server", "error", err)
+		return
+	}
+	s.grpcServer = grpcServer
+	s.grpcCleanup = grpcCleanup
+	slog.Info("guest services enabled (spec.debug is true)")
 }
 
 // SetWorkspaceReady updates whether the maiden run workspace setup has completed.

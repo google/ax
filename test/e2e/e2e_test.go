@@ -281,8 +281,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", name),
 		"Actor UID:    "+actorUID+"\n")
 	tmplName := actor.GetActorTemplate().GetName()
-	if !strings.HasPrefix(tmplName, name+"-tmpl-") {
-		t.Fatalf("actor template = %q, want prefix %q", tmplName, name+"-tmpl-")
+	if !strings.HasPrefix(tmplName, "ax-") {
+		t.Fatalf("actor template = %q, want prefix %q", tmplName, "ax-")
 	}
 	tmpl, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName)
 	if err != nil {
@@ -310,7 +310,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 		t.Fatalf("Substrate WorkerPodIps = %v, want non-empty", ips)
 	}
 
-	// 5. Deleting the task removes the AX task, the Actor, and its ActorTemplate.
+	// 5. Deleting the task removes the AX task and the Actor while preserving the shared ax-* ActorTemplate.
 	assertContains(t, "'ax delete task'", env.mustRunAX(t, ns, "delete", "task", name), "deleted")
 	if _, err := env.AXClient.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: name, Atespace: ns}); status.Code(err) != codes.NotFound {
 		t.Fatalf("AX GetTask after delete: got %v, want NotFound", err)
@@ -318,8 +318,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if _, err := env.SubstrateClient.GetActor(ctx, ns, name); status.Code(err) != codes.NotFound {
 		t.Fatalf("Substrate GetActor after delete: got %v, want NotFound", err)
 	}
-	if _, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName); status.Code(err) != codes.NotFound {
-		t.Fatalf("Substrate GetActorTemplate(%s) after delete: got %v, want NotFound", tmplName, err)
+	if _, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName); err != nil {
+		t.Fatalf("Substrate GetActorTemplate(%s) after delete: got %v, want shared template preserved", tmplName, err)
 	}
 }
 

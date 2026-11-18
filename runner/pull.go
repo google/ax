@@ -272,6 +272,9 @@ func (a *pullAgent) dispatchAssignment(ctx context.Context, resp *runnerv1.Claim
 		// Keep supervising the live child process.
 	case runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE:
 		a.stopChild()
+		if resp.GetTask() != nil {
+			a.metaServer.UpdateAssignment(resp.GetTask(), resp.GetWorkspace(), resp.GetGoal().GetText())
+		}
 	}
 }
 
