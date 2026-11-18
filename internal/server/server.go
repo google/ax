@@ -197,6 +197,10 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
+	// metadata.uid, the timestamps, and status are server-assigned; always
+	// ignore any client-supplied value.
+	task.Metadata.Uid, task.Metadata.CreateTime, task.Metadata.DeleteTime = "", nil, nil
+	task.Status = nil
 	atespace := task.Metadata.Atespace
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
@@ -1024,20 +1028,21 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	if existing != nil {
 		prev = existing(meta.Atespace, meta.Name)
 	}
-	// metadata.uid is server-assigned; always ignore any client-supplied value,
-	// preserving prev.Uid on updates and generating a fresh UUID on creates.
+	// metadata.uid and the timestamps are server-assigned; always ignore any
+	// client-supplied value, preserving prev's uid and createTime on updates
+	// and assigning fresh ones on creates.
 	if prev.GetUid() != "" {
 		meta.Uid = prev.GetUid()
 	} else {
 		meta.Uid = uuid.NewString()
 	}
-	if meta.CreateTime == nil {
-		if prev.GetCreateTime() != nil {
-			meta.CreateTime = prev.GetCreateTime()
-		} else {
-			meta.CreateTime = timestamppb.Now()
-		}
+	now := timestamppb.Now()
+	if prev.GetCreateTime() != nil {
+		meta.CreateTime = prev.GetCreateTime()
+	} else {
+		meta.CreateTime = now
 	}
+	meta.UpdateTime, meta.DeleteTime = now, nil
 	return meta
 }
 

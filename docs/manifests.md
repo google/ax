@@ -6,6 +6,8 @@ All four kinds can live in one multi-document YAML file. The examples below show
 
 When `metadata.atespace` is omitted, `ax apply -a team-a -f manifest.yaml` uses `team-a`. Without `-a` or `--atespace`, the manifest's atespace is preserved, or defaults to `default` if omitted. If an explicit flag disagrees with `metadata.atespace`, that resource is rejected before it is submitted.
 
+`metadata.uid`, `metadata.createTime`, `metadata.updateTime`, `metadata.deleteTime`, and `status` are assigned by the server and ignored in a manifest, so the output of `ax get` can be applied as it is.
+
 ## Task
 
 ```yaml

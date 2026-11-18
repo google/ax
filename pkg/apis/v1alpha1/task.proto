@@ -30,6 +30,7 @@ message Task {
   string kind = 2;
   ObjectMeta metadata = 3;
   TaskSpec spec = 4;
+  // Set by the server; ignored on input.
   TaskStatus status = 5;
 }
 

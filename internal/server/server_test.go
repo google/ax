@@ -872,9 +872,12 @@ func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
 func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
+	// Every request carries timestamps, as a manifest copied from
+	// `ax get gateway` does. The server keeps its own.
+	copied := timestamppb.New(time.Unix(1, 0))
 	gateway := func(hostname string) *v1alpha1.Gateway {
 		return &v1alpha1.Gateway{
-			Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "gw", CreateTime: copied, UpdateTime: copied, DeleteTime: copied},
 			Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
 				Https: &ateapipb.HttpsRule{Hostnames: []string{hostname}},
 			}}},
@@ -902,8 +905,14 @@ func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	if hostname := got.GetSpec().GetEgress()[0].GetHttps().GetHostnames()[0]; hostname != "b.example.com" {
 		t.Errorf("hostname after update = %q, want b.example.com", hostname)
 	}
+	if meta := created.GetMetadata(); meta.GetCreateTime().AsTime().Equal(copied.AsTime()) || !meta.GetUpdateTime().AsTime().Equal(meta.GetCreateTime().AsTime()) {
+		t.Errorf("expected CreateGateway to assign CreateTime and UpdateTime, got %v and %v", meta.GetCreateTime(), meta.GetUpdateTime())
+	}
 	if !got.GetMetadata().GetCreateTime().AsTime().Equal(created.GetMetadata().GetCreateTime().AsTime()) {
 		t.Errorf("expected CreateTime to be preserved across update")
+	}
+	if meta := got.GetMetadata(); meta.GetUpdateTime().AsTime().Before(meta.GetCreateTime().AsTime()) || meta.GetDeleteTime() != nil {
+		t.Errorf("expected UpdateGateway to assign UpdateTime and ignore DeleteTime, got %v and %v", meta.GetUpdateTime(), meta.GetDeleteTime())
 	}
 }
 
@@ -1326,6 +1335,45 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("expected FailedPrecondition on duplicate create, got %v", err)
+	}
+}
+
+// TestCreateTask_IgnoresServerAssignedFields creates a task from a manifest
+// copied from `ax get task`, which carries metadata.uid, the timestamps, and
+// status. The server must assign its own.
+func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	// Provisioning fails so that the task reads back as CreateTask stored it; a
+	// successful CreateTask clears deleteTime on its own.
+	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	ctx := context.Background()
+
+	copied := timestamppb.New(time.Unix(1, 0))
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "task-copy", Uid: "copied-uid", CreateTime: copied, DeleteTime: copied},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+			Status:   &v1alpha1.TaskStatus{Attempt: 7},
+		},
+	})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("expected Internal error when Substrate fails to suspend the new actor, got %v", err)
+	}
+
+	task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-copy"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	meta := task.GetMetadata()
+	if meta.GetUid() == "" || meta.GetUid() == "copied-uid" {
+		t.Errorf("uid = %q, want a server-assigned uid", meta.GetUid())
+	}
+	if meta.GetCreateTime().AsTime().Equal(copied.AsTime()) || meta.GetDeleteTime() != nil {
+		t.Errorf("createTime = %v, deleteTime = %v, want the client-supplied timestamps ignored", meta.GetCreateTime(), meta.GetDeleteTime())
+	}
+	if attempt := task.GetStatus().GetAttempt(); attempt != 1 {
+		t.Errorf("status.attempt = %d, want 1", attempt)
 	}
 }
 

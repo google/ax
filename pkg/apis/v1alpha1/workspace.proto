@@ -38,6 +38,7 @@ message Workspace {
   string kind = 2;
   ObjectMeta metadata = 3;
   WorkspaceSpec spec = 4;
+  // Set by the server; ignored on input.
   WorkspaceStatus status = 5;
 }
 
