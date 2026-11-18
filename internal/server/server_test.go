@@ -1469,9 +1469,9 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		wantField string
 	}{
 		{
-			name:      "ateActorTemplate",
-			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "user-tpl"}},
-			wantField: "spec.profile.ateActorTemplate is not supported yet",
+			name:      "ateTemplate.name",
+			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "user-tpl"}}},
+			wantField: "spec.profile.ateTemplate.name is not supported yet",
 		},
 		{
 			name:      "retry",
@@ -1504,13 +1504,13 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		t.Fatalf("CreateTask(negative maxRetries) = %v, want InvalidArgument", err)
 	}
 
-	// When a Workspace in the store defines a profile with ateActorTemplate:
+	// When a Workspace in the store defines a profile with ateTemplate.name:
 	// - A task omitting spec.profile inherits the Workspace's profile and is rejected with Unimplemented.
 	// - A task setting its own spec.profile (e.g. resources only) ignores Workspace.spec.profile
 	//   completely and succeeds.
 	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "ws-tpl", Atespace: "default"},
-		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "ws-user-tpl"}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ws-user-tpl"}}},
 	}); err != nil {
 		t.Fatalf("SaveWorkspace: %v", err)
 	}
@@ -1519,7 +1519,7 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"}},
 	}})
 	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("CreateTask inheriting workspace ateActorTemplate: got %v, want Unimplemented", err)
+		t.Fatalf("CreateTask inheriting workspace ateTemplate.name: got %v, want Unimplemented", err)
 	}
 
 	overrideTask, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -1534,10 +1534,10 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		},
 	}})
 	if err != nil {
-		t.Fatalf("CreateTask with explicit profile over workspace ateActorTemplate failed: %v", err)
+		t.Fatalf("CreateTask with explicit profile over workspace ateTemplate.name failed: %v", err)
 	}
-	if got := overrideTask.GetStatus().GetAteActorTemplate(); !strings.HasPrefix(got, "overrides-ws-profile-tmpl-") {
-		t.Errorf("AteActorTemplate = %q, want per-task template prefix overrides-ws-profile-tmpl-", got)
+	if got := overrideTask.GetStatus().GetAteTemplate().GetName(); !strings.HasPrefix(got, "overrides-ws-profile-tmpl-") {
+		t.Errorf("AteTemplate.Name = %q, want per-task template prefix overrides-ws-profile-tmpl-", got)
 	}
 }
 

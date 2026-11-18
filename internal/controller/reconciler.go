@@ -62,7 +62,7 @@ type TaskReconciler struct {
 	httpClient              *http.Client
 	defaultTemplate         string
 	defaultTemplateAtespace string
-	// defaultTaskImage is used when the effective profile omits image and ate_actor_template.
+	// defaultTaskImage is used when the effective profile omits image and ateTemplate.name.
 	defaultTaskImage string
 
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
@@ -164,7 +164,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 
 	// Resource limits are enforced by the template, so they are checked here as
 	// well as at apply time: a task must never run without limits it asked for.
-	if effective.GetAteActorTemplate() == "" {
+	if effective.GetAteTemplate().GetName() == "" {
 		if err := apivalidation.ValidateResources(effective.GetResources()); err != nil {
 			r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 			return fmt.Errorf("validating resources: %w", err)
@@ -190,9 +190,10 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		templateAtespace, templateName string
 		err                            error
 	)
-	if tpl := effective.GetAteActorTemplate(); tpl != "" {
-		slog.Info("reconciling task with existing ActorTemplate", "name", task.Metadata.Name, "atespace", atespace, "ateActorTemplate", tpl)
-		if _, err := r.client.GetActorTemplate(ctx, atespace, tpl); err != nil {
+	if tpl := effective.GetAteTemplate().GetName(); tpl != "" {
+		tplAtespace := ProfileTemplateAtespace(atespace, effective)
+		slog.Info("reconciling task with existing ActorTemplate", "name", task.Metadata.Name, "atespace", atespace, "templateAtespace", tplAtespace, "template", tpl)
+		if _, err := r.client.GetActorTemplate(ctx, tplAtespace, tpl); err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 				return fmt.Errorf("getting actor template: %w", err)
@@ -200,7 +201,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 			return fmt.Errorf("getting actor template: %w", err)
 		}
-		templateAtespace = atespace
+		templateAtespace = tplAtespace
 		templateName = tpl
 	} else {
 		image := effective.GetImage()
@@ -224,7 +225,10 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 		return fmt.Errorf("ensuring actor: %w", err)
 	}
 
-	task.Status.AteActorTemplate = templateName
+	task.Status.AteTemplate = &v1alpha1.ObjectRef{
+		Name:     templateName,
+		Atespace: templateAtespace,
+	}
 	if len(task.Spec.Commands) > 0 && len(task.Status.ResolvedArgv) == 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
@@ -352,7 +356,7 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 		return fmt.Errorf("suspending actor: %w", err)
 	}
 	if err := r.bindGateway(ctx, task, gw); err != nil {
-		task.Status.AteActorTemplate = prevStatus.GetAteActorTemplate()
+		task.Status.AteTemplate = prevStatus.GetAteTemplate()
 		return err
 	}
 	slog.Info("task successfully suspended", "name", task.Metadata.Name, "actor", actorName)
@@ -574,8 +578,8 @@ func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) er
 		atespace = v1alpha1.DefaultAtespace
 	}
 	taskName := task.GetMetadata().GetName()
-	tpl := task.GetStatus().GetAteActorTemplate()
-	skipTemplates := task.GetSpec().GetProfile().GetAteActorTemplate() != "" ||
+	tpl := task.GetStatus().GetAteTemplate().GetName()
+	skipTemplates := task.GetSpec().GetProfile().GetAteTemplate().GetName() != "" ||
 		(tpl != "" && !taskTemplatePattern(taskName).MatchString(tpl))
 	return r.delete(ctx, atespace, taskName, skipTemplates)
 }

@@ -287,7 +287,7 @@ func (x *Task) GetStatus() *TaskStatus {
 
 type TaskSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional compute profile (image, resources, ate_actor_template) for this
+	// Optional compute profile (image, resources, ate_template) for this
 	// task's sandbox.
 	//
 	// Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:
@@ -733,12 +733,12 @@ type TaskStatus struct {
 	Actor string                 `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
 	// actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
 	// Read from Substrate, never stored; empty when the actor cannot be read.
-	ActorUid         string            `protobuf:"bytes,2,opt,name=actor_uid,json=actorUid,proto3" json:"actor_uid,omitempty"`
-	AteActorTemplate string            `protobuf:"bytes,3,opt,name=ate_actor_template,json=ateActorTemplate,proto3" json:"ate_actor_template,omitempty"`
-	Conditions       []*Condition      `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	State            TaskState         `protobuf:"varint,5,opt,name=state,proto3,enum=ax.v1alpha1.TaskState" json:"state,omitempty"`
-	StatusDetail     *TaskStatusDetail `protobuf:"bytes,6,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"`
-	Outcome          *TaskOutcome      `protobuf:"bytes,7,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	ActorUid     string            `protobuf:"bytes,2,opt,name=actor_uid,json=actorUid,proto3" json:"actor_uid,omitempty"`
+	AteTemplate  *ObjectRef        `protobuf:"bytes,3,opt,name=ate_template,json=ateTemplate,proto3" json:"ate_template,omitempty"`
+	Conditions   []*Condition      `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	State        TaskState         `protobuf:"varint,5,opt,name=state,proto3,enum=ax.v1alpha1.TaskState" json:"state,omitempty"`
+	StatusDetail *TaskStatusDetail `protobuf:"bytes,6,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"`
+	Outcome      *TaskOutcome      `protobuf:"bytes,7,opt,name=outcome,proto3" json:"outcome,omitempty"`
 	// 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
 	// Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
 	// retry (non-zero command exit, sandbox crash, or lost runner).
@@ -798,11 +798,11 @@ func (x *TaskStatus) GetActorUid() string {
 	return ""
 }
 
-func (x *TaskStatus) GetAteActorTemplate() string {
+func (x *TaskStatus) GetAteTemplate() *ObjectRef {
 	if x != nil {
-		return x.AteActorTemplate
+		return x.AteTemplate
 	}
-	return ""
+	return nil
 }
 
 func (x *TaskStatus) GetConditions() []*Condition {
@@ -1298,12 +1298,12 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x06output\x18\x04 \x01(\tR\x06output\"a\n" +
 	"\x10TaskStatusDetail\x125\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.ax.v1alpha1.TaskStatusReasonR\x06reason\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xd5\x03\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xe2\x03\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
-	"\tactor_uid\x18\x02 \x01(\tR\bactorUid\x12,\n" +
-	"\x12ate_actor_template\x18\x03 \x01(\tR\x10ateActorTemplate\x126\n" +
+	"\tactor_uid\x18\x02 \x01(\tR\bactorUid\x129\n" +
+	"\fate_template\x18\x03 \x01(\v2\x16.ax.v1alpha1.ObjectRefR\vateTemplate\x126\n" +
 	"\n" +
 	"conditions\x18\x04 \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
 	"conditions\x12,\n" +
@@ -1401,7 +1401,8 @@ var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(*GatewayRef)(nil),          // 23: ax.v1alpha1.GatewayRef
 	(*durationpb.Duration)(nil), // 24: google.protobuf.Duration
 	(*status.Status)(nil),       // 25: google.rpc.Status
-	(*Condition)(nil),           // 26: ax.v1alpha1.Condition
+	(*ObjectRef)(nil),           // 26: ax.v1alpha1.ObjectRef
+	(*Condition)(nil),           // 27: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
 	19, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
@@ -1419,17 +1420,18 @@ var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
 	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
 	25, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
 	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	26, // 15: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	0,  // 16: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
-	9,  // 17: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
-	8,  // 18: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
-	3,  // 19: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	3,  // 20: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	26, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
+	27, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	0,  // 17: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
+	9,  // 18: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
+	8,  // 19: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
+	3,  // 20: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	3,  // 21: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }

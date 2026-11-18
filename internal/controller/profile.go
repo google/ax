@@ -34,7 +34,7 @@ import (
 // Workspace.spec.profile exists to pre-warm a default workspace snapshot for
 // fast warm task startup; it does not constrain or bleed fields into an
 // explicit Task.spec.profile:
-//   - When taskProfile is non-empty (sets image, ate_actor_template, or any
+//   - When taskProfile is non-empty (sets image, ateTemplate.name, or any
 //     CPU/memory limit), EffectiveProfile returns a copy of taskProfile as-is
 //     and ignores workspaceProfile completely. Omitted fields within
 //     taskProfile fall back to server/Substrate defaults, never to
@@ -55,7 +55,7 @@ func EffectiveProfile(workspaceProfile, taskProfile *v1alpha1.Profile) *v1alpha1
 }
 
 func isProfileEmpty(p *v1alpha1.Profile) bool {
-	return p.GetAteActorTemplate() == "" &&
+	return p.GetAteTemplate().GetName() == "" &&
 		p.GetImage() == "" &&
 		p.GetResources().GetLimits().GetCpu() == "" &&
 		p.GetResources().GetLimits().GetMemory() == ""
@@ -91,7 +91,10 @@ func (p profile) templateName(runnerImage string) string {
 // ActorTemplate name and specification. When p omits image, defaultTaskImage is
 // used (falling back to v1alpha1.DefaultTaskImage if defaultTaskImage is empty).
 //
-// When p sets ate_actor_template, ResolveProfileTemplate returns that template
+// The returned atespace is where the template lives: ateTemplate.atespace when set,
+// otherwise atespace (the task's own, defaulting to DefaultAtespace).
+//
+// When p sets ateTemplate.name, ResolveProfileTemplate returns that template
 // name with a nil *ateapipb.ActorTemplate so the caller looks up the existing
 // user-managed template on Substrate (surfacing NotFound if it is missing)
 // rather than creating an AX-managed template.
@@ -102,12 +105,12 @@ func (p profile) templateName(runnerImage string) string {
 // profile and runner volume image) is returned ready for EnsureActorTemplate.
 // A non-empty runnerImage is mounted read-only into the template's container,
 // which then runs the runner from it (see substrate.MountRunnerVolume).
-func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, *ateapipb.ActorTemplate, error) {
+func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, string, *ateapipb.ActorTemplate, error) {
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
-	if tpl := p.GetAteActorTemplate(); tpl != "" {
-		return tpl, nil, nil
+	if tpl := p.GetAteTemplate().GetName(); tpl != "" {
+		return ProfileTemplateAtespace(atespace, p), tpl, nil, nil
 	}
 
 	if defaultTaskImage == "" {
@@ -122,7 +125,7 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 	if cpu := p.GetResources().GetLimits().GetCpu(); cpu != "" {
 		parsed, err := resources.ParseCPUMillicores(cpu)
 		if err != nil {
-			return "", nil, fmt.Errorf("profile cpu limit: %w", err)
+			return "", "", nil, fmt.Errorf("profile cpu limit: %w", err)
 		}
 		cpuMillicores = parsed
 	}
@@ -131,7 +134,7 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 	if mem := p.GetResources().GetLimits().GetMemory(); mem != "" {
 		parsed, err := resources.ParseMemoryBytes(mem)
 		if err != nil {
-			return "", nil, fmt.Errorf("profile memory limit: %w", err)
+			return "", "", nil, fmt.Errorf("profile memory limit: %w", err)
 		}
 		memoryBytes = parsed
 	}
@@ -152,26 +155,39 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 	})
 	tmpl.SnapshotConfig.PreferredFidelity = resolved.snapshotFidelity
 	substrate.MountRunnerVolume(tmpl, runnerImage)
-	return name, tmpl, nil
+	return atespace, name, tmpl, nil
 }
 
-// ensureProfileTemplate resolves p into a Substrate ActorTemplate name and
-// ensures it exists on Substrate: verifying user-supplied ate_actor_template
+// ProfileTemplateAtespace returns the atespace of the ActorTemplate referenced
+// by p.ate: ateTemplate.atespace when set, otherwise taskAtespace (the resource's own
+// atespace, defaulting to DefaultAtespace).
+func ProfileTemplateAtespace(taskAtespace string, p *v1alpha1.Profile) string {
+	if atespace := p.GetAteTemplate().GetAtespace(); atespace != "" {
+		return atespace
+	}
+	if taskAtespace == "" {
+		return v1alpha1.DefaultAtespace
+	}
+	return taskAtespace
+}
+
+// ensureProfileTemplate resolves p into a Substrate ActorTemplate atespace and
+// name and ensures it exists on Substrate: verifying user-supplied ateTemplate
 // references via GetActorTemplate without mutating them, or provisioning
 // AX-managed templates via EnsureActorTemplate.
-func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, error) {
-	tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, defaultTaskImage, runnerImage)
+func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, string, error) {
+	tplAtespace, tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, defaultTaskImage, runnerImage)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if tplSpec == nil {
-		if _, err := client.GetActorTemplate(ctx, atespace, tplName); err != nil {
-			return "", fmt.Errorf("getting actor template %s/%s: %w", atespace, tplName, err)
+		if _, err := client.GetActorTemplate(ctx, tplAtespace, tplName); err != nil {
+			return "", "", fmt.Errorf("getting actor template %s/%s: %w", tplAtespace, tplName, err)
 		}
-		return tplName, nil
+		return tplAtespace, tplName, nil
 	}
 	if _, err := client.EnsureActorTemplate(ctx, tplSpec); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return tplName, nil
+	return tplAtespace, tplName, nil
 }

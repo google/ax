@@ -66,9 +66,8 @@ func fullTask() *v1alpha1.Task {
 			SessionId: "sess-123",
 		},
 		Status: &v1alpha1.TaskStatus{
-			Actor:            "actor-1",
-			ActorUid:         "actor-uid-1",
-			AteActorTemplate: "ax-3f9c1a2b5d7e9f01",
+			Actor:    "actor-1",
+			ActorUid: "actor-uid-1",
 			Conditions: []*v1alpha1.Condition{{
 				Type:       "Ready",
 				Status:     "True",
@@ -87,7 +86,11 @@ func fullTask() *v1alpha1.Task {
 				ExitCode: 0,
 				Output:   "all checks passed",
 			},
-			Attempt:         1,
+			Attempt: 1,
+			AteTemplate: &v1alpha1.ObjectRef{
+				Name:     "ax-3f9c1a2b5d7e9f01",
+				Atespace: "shared",
+			},
 			Generation:      3,
 			ResolvedArgv:    []string{"sh", "-c", "true"},
 			PreviousFailure: "exit status 1",
@@ -127,7 +130,7 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"reason: TASK_STATUS_REASON_SANDBOX_CRASHED",
 		"result: TASK_RESULT_SUCCEEDED",
 		"actorUid: actor-uid-1",
-		"ateActorTemplate: ax-3f9c1a2b5d7e9f01",
+		"ateTemplate:",
 		"resolvedArgv:",
 		"previousFailure: exit status 1",
 	} {
@@ -280,7 +283,9 @@ spec:
       limits:
         cpu: "4"
         memory: "8Gi"
-    ateActorTemplate: base-tmpl
+    ateTemplate:
+      name: base-tmpl
+      atespace: shared
   setup:
     git:
       - name: origin

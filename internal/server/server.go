@@ -171,7 +171,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Tasks are immutable, so reject fields whose runtime enforcement has not
-	// landed yet (ateActorTemplate requires pull-based runner assignment; retry
+	// landed yet (ateTemplate.name requires pull-based runner assignment; retry
 	// requires runner exit events and the retry loop) rather than silently
 	// storing settings that nothing honors.
 	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
@@ -202,7 +202,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	existing, err := s.getStoredTask(ctx, atespace, taskName)
 	if err == nil {
 		if existing.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED ||
-			existing.GetStatus().GetAteActorTemplate() != "" ||
+			existing.GetStatus().GetAteTemplate().GetName() != "" ||
 			existing.GetMetadata().GetDeleteTime() != nil ||
 			!taskSpecMatchesExisting(existing, task.GetSpec()) {
 			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
@@ -245,8 +245,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	effectiveProfile := controller.EffectiveProfile(workspace.GetSpec().GetProfile(), task.GetSpec().GetProfile())
-	if effectiveProfile.GetAteActorTemplate() != "" {
-		return nil, status.Error(codes.Unimplemented, "spec.profile.ateActorTemplate is not supported yet")
+	if effectiveProfile.GetAteTemplate().GetName() != "" {
+		return nil, status.Error(codes.Unimplemented, "spec.profile.ateTemplate.name is not supported yet")
 	}
 
 	now := timestamppb.Now()
@@ -297,8 +297,8 @@ func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 	if spec == nil {
 		return ""
 	}
-	if spec.GetProfile().GetAteActorTemplate() != "" {
-		return "spec.profile.ateActorTemplate"
+	if spec.GetProfile().GetAteTemplate().GetName() != "" {
+		return "spec.profile.ateTemplate.name"
 	}
 	if spec.GetRetry() != nil {
 		return "spec.retry"

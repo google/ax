@@ -63,13 +63,22 @@ message Profile {
   string image = 1;
   // Sandbox compute resource limits (CPU and memory).
   ResourcesSpec resources = 2;
-  // Optional name of an existing Substrate ActorTemplate in the same atespace
-  // to use directly instead of generating an AX-managed template. Mutually
-  // exclusive with image and resources. Because AX does not synthesize or
-  // mutate a user-supplied template, it must already satisfy the AX sandbox
-  // contract (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup
-  // probe on port 80, durable /workspace volume, and the egress-trust-bundle
-  // SystemInfo mount at /run/ate/egress-trust-bundle/trust-bundle.pem when
-  // outbound HTTPS traverses a Gateway).
-  string ate_actor_template = 3;
+  // Optional reference to an existing Substrate ActorTemplate to use directly
+  // instead of generating an AX-managed template. Mutually exclusive with
+  // image and resources. Because AX does not synthesize or mutate a
+  // user-supplied template, it must already satisfy the AX sandbox contract
+  // (/usr/local/bin/ax-task-runner entrypoint, HTTP /readyz wakeup probe on
+  // port 80, durable /workspace volume, and the egress-trust-bundle SystemInfo
+  // mount at /run/ate/egress-trust-bundle/trust-bundle.pem when outbound HTTPS
+  // traverses a Gateway).
+  ObjectRef ate_template = 3;
+}
+
+// ObjectRef names another resource, optionally in a different atespace.
+message ObjectRef {
+  // Name of the referenced resource.
+  string name = 1;
+  // Atespace of the referenced resource. Defaults to the referrer's own
+  // atespace (metadata.atespace) when empty.
+  string atespace = 2;
 }

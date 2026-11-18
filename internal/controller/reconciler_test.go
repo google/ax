@@ -36,14 +36,18 @@ import (
 
 type mockControlServer struct {
 	ateapipb.UnimplementedControlServer
-	workerIP          string
-	createdAtespaces  []string
-	createdActors     []string
-	resumedActors     []string
-	suspendedActors   []string
-	suspendErr        error
-	deletedActors     []string
-	actorTemplates    map[string]bool
+	workerIP         string
+	createdAtespaces []string
+	createdActors    []string
+	resumedActors    []string
+	suspendedActors  []string
+	suspendErr       error
+	deletedActors    []string
+	actorTemplates   map[string]bool
+	// templateRefs records every ActorTemplate ref looked up via GetActorTemplate.
+	templateRefs []*ateapipb.ObjectRef
+	// actorTemplateRefs records the ActorTemplate ref of every created actor.
+	actorTemplateRefs []*ateapipb.ObjectRef
 	createdTemplates  []*ateapipb.ActorTemplate
 	templateImages    []string
 	deletedTemplates  []string
@@ -79,6 +83,7 @@ func (m *mockControlServer) CreateActorEgressPolicy(_ context.Context, req *atea
 
 func (m *mockControlServer) GetActorTemplate(_ context.Context, req *ateapipb.GetActorTemplateRequest) (*ateapipb.ActorTemplate, error) {
 	ref := req.GetActorTemplate()
+	m.templateRefs = append(m.templateRefs, ref)
 	if !m.actorTemplates[ref.GetName()] {
 		return nil, status.Error(codes.NotFound, "template not found")
 	}
@@ -125,6 +130,7 @@ func (m *mockControlServer) CreateActor(ctx context.Context, req *ateapipb.Creat
 		return nil, status.Error(codes.AlreadyExists, "actor exists")
 	}
 	m.createdActors = append(m.createdActors, name)
+	m.actorTemplateRefs = append(m.actorTemplateRefs, req.GetActor().GetActorTemplate())
 	return &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Name: name},
 		Status: &ateapipb.ActorStatus{
@@ -287,8 +293,8 @@ func TestTaskReconciler(t *testing.T) {
 	if got := task.GetStatus().GetResolvedArgv(); len(got) != 1 || got[0] != "/bin/task-runner" {
 		t.Errorf("ResolvedArgv = %v, want [/bin/task-runner]", got)
 	}
-	if !strings.HasPrefix(task.GetStatus().GetAteActorTemplate(), "test-task-tmpl-") {
-		t.Errorf("AteActorTemplate = %q, want prefix test-task-tmpl-", task.GetStatus().GetAteActorTemplate())
+	if got := task.GetStatus().GetAteTemplate(); !strings.HasPrefix(got.GetName(), "test-task-tmpl-") || got.GetAtespace() != "default" {
+		t.Errorf("AteTemplate = %v, want {Name: test-task-tmpl-*, Atespace: default}", got)
 	}
 	// The mock's worker does not answer the readiness check.
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
@@ -1278,7 +1284,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	mockSrv.createActorErr = nil
 }
 
-func TestTaskReconciler_AteActorTemplate(t *testing.T) {
+func TestTaskReconciler_ATETemplate(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1304,13 +1310,13 @@ func TestTaskReconciler_AteActorTemplate(t *testing.T) {
 
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-task", Atespace: "default"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "custom-base"}},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "custom-base"}}},
 	}
 	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
-	if got := task.GetStatus().GetAteActorTemplate(); got != "custom-base" {
-		t.Errorf("AteActorTemplate = %q, want custom-base", got)
+	if got := task.GetStatus().GetAteTemplate(); got.GetName() != "custom-base" || got.GetAtespace() != "default" {
+		t.Errorf("AteTemplate = %v, want {Name: custom-base, Atespace: default}", got)
 	}
 	if len(mockSrv.createdTemplates) != 0 {
 		t.Errorf("expected no per-task template created, got %d", len(mockSrv.createdTemplates))
@@ -1320,6 +1326,27 @@ func TestTaskReconciler_AteActorTemplate(t *testing.T) {
 	}
 	if !mockSrv.actorTemplates["custom-base"] {
 		t.Errorf("user-supplied template custom-base should not be deleted by DeleteTask")
+	}
+
+	// ateTemplate.atespace looks the template up, and binds the actor to it, in that
+	// atespace rather than the task's own.
+	mockSrv.templateRefs, mockSrv.actorTemplateRefs = nil, nil
+	crossTask := &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "cross-tpl-task", Atespace: "default"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "custom-base", Atespace: "shared"}}},
+	}
+	if err := reconciler.Suspend(ctx, crossTask, nil, nil); err != nil {
+		t.Fatalf("Suspend with ateTemplate.atespace failed: %v", err)
+	}
+	wantRef := &ateapipb.ObjectRef{Atespace: "shared", Name: "custom-base"}
+	if len(mockSrv.templateRefs) != 1 || !proto.Equal(mockSrv.templateRefs[0], wantRef) {
+		t.Errorf("GetActorTemplate refs = %v, want [%v]", mockSrv.templateRefs, wantRef)
+	}
+	if len(mockSrv.actorTemplateRefs) != 1 || !proto.Equal(mockSrv.actorTemplateRefs[0], wantRef) {
+		t.Errorf("CreateActor template refs = %v, want [%v]", mockSrv.actorTemplateRefs, wantRef)
+	}
+	if got := crossTask.GetStatus().GetAteTemplate(); got.GetName() != "custom-base" || got.GetAtespace() != "shared" {
+		t.Errorf("crossTask AteTemplate = %v, want {Name: custom-base, Atespace: shared}", got)
 	}
 }
 
@@ -1414,11 +1441,11 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		t.Errorf("resources-only task resources = %v, want %v", gotResOnly.GetResources(), wantTaskRes)
 	}
 
-	// 3. Even when Workspace uses ateActorTemplate, a task setting resources-only
+	// 3. Even when Workspace uses ateTemplate.name, a task setting resources-only
 	// uses its own profile cleanly without conflicting with Workspace.spec.profile.
 	wsWithTpl := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-ws", Atespace: "default"},
-		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteActorTemplate: "ws-base-tpl"}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ws-base-tpl"}}},
 	}
 	taskOverTplWs := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task-over-tpl-ws", Atespace: "default"},
