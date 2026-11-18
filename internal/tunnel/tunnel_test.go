@@ -81,15 +81,21 @@ func TestEnsureServerURL(t *testing.T) {
 		}
 		urls[namespace] = fmt.Sprintf("http://127.0.0.1:%d", port)
 	}
-	// With IgnoreEnv, neither variable decides which installation is reached.
+	// Without FromEnv, neither variable decides which installation is reached.
 	t.Setenv("AX_SERVER", "http://explicit:8080")
 	t.Setenv("AX_SYSTEM_NAMESPACE", "ax-remote")
 
 	// Each namespace has its own tunnel.
 	for _, namespace := range []string{"", "ax-remote"} {
-		if got, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", Namespace: namespace, IgnoreEnv: true}); err != nil || got != urls[namespace] {
+		if got, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", Namespace: namespace}); err != nil || got != urls[namespace] {
 			t.Errorf("EnsureServerURL(namespace %q) = %q, %v; want %q", namespace, got, err, urls[namespace])
 		}
+	}
+
+	// Even with FromEnv, an explicit Context beats AX_SERVER, while an empty
+	// Namespace falls back to AX_SYSTEM_NAMESPACE.
+	if got, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", FromEnv: true}); err != nil || got != urls["ax-remote"] {
+		t.Errorf("EnsureServerURL(explicit context, FromEnv) = %q, %v; want %q", got, err, urls["ax-remote"])
 	}
 
 	// Stopping the context's tunnels stops both.
@@ -98,6 +104,21 @@ func TestEnsureServerURL(t *testing.T) {
 	}
 	if tunnels, err := ListTunnels(); err != nil || len(tunnels) != 0 {
 		t.Errorf("expected no tunnels after stopping the context's, got %v, error %v", tunnels, err)
+	}
+}
+
+func TestEnsureServerURLNoContextAndFallback(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("AX_SERVER", "")
+	t.Setenv("KUBECONTEXT", "")
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("PATH", t.TempDir())
+
+	if got, err := EnsureServerURL(context.Background(), Options{}); !errors.Is(err, ErrNoContext) {
+		t.Fatalf("EnsureServerURL() without FallbackURL = %q, %v; want ErrNoContext", got, err)
+	}
+	if got, err := EnsureServerURL(context.Background(), Options{FallbackURL: "http://localhost:8080"}); err != nil || got != "http://localhost:8080" {
+		t.Fatalf("EnsureServerURL() with FallbackURL = %q, %v; want http://localhost:8080", got, err)
 	}
 }
 
@@ -141,7 +162,7 @@ func TestEnsureServerURLWithoutKubectl(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("AX_HOME", home)
 	t.Setenv("PATH", t.TempDir())
-	_, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", IgnoreEnv: true})
+	_, err := EnsureServerURL(context.Background(), Options{Context: "kind-local"})
 	if !errors.Is(err, ErrKubectlNotFound) {
 		t.Fatalf("EnsureServerURL() error = %v, want ErrKubectlNotFound", err)
 	}
@@ -162,7 +183,7 @@ func TestEnsureServerURLCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err := EnsureServerURL(ctx, Options{Context: "kind-local", IgnoreEnv: true})
+	_, err := EnsureServerURL(ctx, Options{Context: "kind-local"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("EnsureServerURL() error = %v, want context.DeadlineExceeded", err)
 	}
@@ -181,8 +202,7 @@ func TestEnsureServerURLUsesKubectlResolver(t *testing.T) {
 	want := errors.New("download failed")
 	called := false
 	_, err := EnsureServerURL(context.Background(), Options{
-		Context:   "kind-local",
-		IgnoreEnv: true,
+		Context: "kind-local",
 		Kubectl: func(context.Context) (string, error) {
 			called = true
 			return "", want

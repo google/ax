@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package axclient reaches an ax-server the way the ax CLI does: it resolves
+// Package client reaches an ax-server the way the ax CLI does: it resolves
 // the server's address from a kubeconfig context, starting or reusing the
 // port-forward recorded in ~/.ax/tunnels, and dials the AX gRPC API.
 //
@@ -23,7 +23,7 @@
 // has to be started and kubectl is not installed, ServerURL and Dial return
 // ErrKubectlNotFound; `ax local start` and `ax install` install kubectl into
 // ~/.ax/bin.
-package axclient
+package client
 
 import (
 	"context"
@@ -41,6 +41,10 @@ import (
 // errors.Is.
 var ErrKubectlNotFound = tunnel.ErrKubectlNotFound
 
+// ErrNoContext reports that no ServerURL was given and no kubeconfig context
+// is selected or configured. Test for it with errors.Is.
+var ErrNoContext = tunnel.ErrNoContext
+
 // Options selects the ax-server to reach. The zero value is the AX
 // installation in namespace ax-system of the current kubeconfig context.
 type Options struct {
@@ -51,18 +55,19 @@ type Options struct {
 	// $KUBECONTEXT, then the current context.
 	Context string
 	// Namespace is the Kubernetes namespace AX is installed in. Empty means
-	// $AX_SYSTEM_NAMESPACE, then "ax-system".
+	// "ax-system" (or $AX_SYSTEM_NAMESPACE first when FromEnv is set).
 	Namespace string
-	// IgnoreEnv skips $AX_SERVER and $AX_SYSTEM_NAMESPACE. Set it when
-	// Context names a cluster other than the one the environment describes.
-	IgnoreEnv bool
+	// FromEnv reads $AX_SERVER (when Context is empty) and
+	// $AX_SYSTEM_NAMESPACE (when Namespace is empty).
+	FromEnv bool
 }
 
 // ServerURL returns the address of the ax-server that opts selects, in the
-// form "http://host:port". It returns, in order: opts.ServerURL; $AX_SERVER;
-// the address of a port-forward to svc/ax-server, which it starts unless a
-// healthy one is recorded in ~/.ax/tunnels. With no kubeconfig context it
-// returns "http://localhost:8080".
+// form "http://host:port". It returns, in order: opts.ServerURL; $AX_SERVER
+// (when opts.FromEnv is set and opts.Context is empty); the address of a
+// port-forward to svc/ax-server, which it starts unless a healthy one is
+// recorded in ~/.ax/tunnels. With no kubeconfig context it returns
+// ErrNoContext.
 //
 // A port-forward that ServerURL starts is shared with the ax CLI and keeps
 // running after ServerURL returns and after ctx is cancelled; `ax tunnel stop`
@@ -72,7 +77,7 @@ func ServerURL(ctx context.Context, opts Options) (string, error) {
 		ServerURL: opts.ServerURL,
 		Context:   opts.Context,
 		Namespace: opts.Namespace,
-		IgnoreEnv: opts.IgnoreEnv,
+		FromEnv:   opts.FromEnv,
 	})
 }
 

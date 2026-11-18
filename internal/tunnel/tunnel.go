@@ -38,6 +38,9 @@ var portForwardRegex = regexp.MustCompile(`Forwarding from .*:(\d+)\s+->`)
 // on PATH nor in ~/.ax/bin.
 var ErrKubectlNotFound = errors.New("kubectl not found on PATH or in ~/.ax/bin")
 
+// ErrNoContext reports that no kubeconfig context is selected or configured.
+var ErrNoContext = errors.New("no active kubeconfig context")
+
 type TunnelInfo struct {
 	Context   string    `json:"context"`
 	Namespace string    `json:"namespace"`
@@ -54,9 +57,12 @@ type Options struct {
 	Service   string // default: ax-server
 	Target    string // e.g. "pod/name" or "svc/name" (overrides Service if set)
 	Port      int    // remote port, default: 8080
-	// IgnoreEnv skips AX_SERVER and AX_SYSTEM_NAMESPACE, which describe the
-	// cluster a command runs against, when resolving another cluster.
-	IgnoreEnv bool
+	// FromEnv reads AX_SERVER (when Context is empty) and AX_SYSTEM_NAMESPACE
+	// (when Namespace is empty).
+	FromEnv bool
+	// FallbackURL is returned when no kubeconfig context is configured; when
+	// empty, EnsureServerURL returns ErrNoContext instead.
+	FallbackURL string
 	// Kubectl finds the kubectl binary when a tunnel has to be started. Nil
 	// means InstalledKubectl.
 	Kubectl KubectlResolver
@@ -207,9 +213,9 @@ func IsTunnelHealthy(port int) bool {
 }
 
 // EnsureServerURL resolves the AX server URL.
-// If ServerURL or AX_SERVER is explicitly set, it returns that.
-// Otherwise, it checks the active Kubernetes context (or opts.Context)
-// and establishes/reuses a background port-forward tunnel to svc/ax-server.
+// If ServerURL is set (or FromEnv is set, Context is empty, and AX_SERVER is
+// set), it returns that. Otherwise, it resolves the Kubernetes context and
+// establishes or reuses a background port-forward tunnel to svc/ax-server.
 //
 // Cancelling ctx stops the wait for a new tunnel and kills the port-forward
 // that was being started. A tunnel that EnsureServerURL returned keeps running
@@ -218,20 +224,25 @@ func EnsureServerURL(ctx context.Context, opts Options) (string, error) {
 	if opts.ServerURL != "" {
 		return opts.ServerURL, nil
 	}
-	if env := os.Getenv("AX_SERVER"); env != "" && !opts.IgnoreEnv {
-		return env, nil
+	if opts.FromEnv && opts.Context == "" {
+		if env := os.Getenv("AX_SERVER"); env != "" {
+			return env, nil
+		}
 	}
 
 	ctxName, err := CurrentContext(opts.Context)
 	if err != nil || ctxName == "" {
-		// No Kubernetes context found; fallback to local default
-		return "http://localhost:8080", nil
+		if opts.FallbackURL != "" {
+			return opts.FallbackURL, nil
+		}
+		return "", ErrNoContext
 	}
 
 	if opts.Namespace == "" {
-		if envNs := os.Getenv("AX_SYSTEM_NAMESPACE"); envNs != "" && !opts.IgnoreEnv {
-			opts.Namespace = envNs
-		} else {
+		if opts.FromEnv {
+			opts.Namespace = os.Getenv("AX_SYSTEM_NAMESPACE")
+		}
+		if opts.Namespace == "" {
 			opts.Namespace = v1alpha1.DefaultSystemNamespace
 		}
 	}

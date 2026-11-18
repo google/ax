@@ -18,6 +18,7 @@ reconciler or server.
 ## Layout
 
 ```
+client                 Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/studio/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
@@ -36,7 +37,6 @@ internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTE
 internal/version       Release version stamped by hack/release, and the matching ghcr.io/google/ax image refs
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
-pkg/axclient           Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)

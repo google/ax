@@ -28,12 +28,12 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/google/ax/client"
 	"github.com/google/ax/internal/guest"
 	"github.com/google/ax/internal/install/executil"
 	"github.com/google/ax/internal/tunnel"
 	"github.com/google/ax/internal/version"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"github.com/google/ax/pkg/axclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -138,10 +138,12 @@ func main() {
 	// Resolve the AX server URL (auto-tunneling to active kube context if not explicitly set)
 	endResolve := activeTrace.startStep("resolve ax-server address")
 	serverURL, err := tunnel.EnsureServerURL(context.Background(), tunnel.Options{
-		ServerURL: explicitServer,
-		Context:   kubeContext,
-		Namespace: axNamespace,
-		Kubectl:   ensureKubectl,
+		ServerURL:   explicitServer,
+		Context:     kubeContext,
+		Namespace:   axNamespace,
+		FromEnv:     true,
+		FallbackURL: "http://localhost:8080",
+		Kubectl:     ensureKubectl,
 	})
 	endResolve(err)
 	if err != nil {
@@ -301,7 +303,7 @@ func ensureKubectl(ctx context.Context) (string, error) {
 }
 
 func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {
-	return axclient.Dial(context.Background(), axclient.Options{ServerURL: serverURL}, activeTrace.dialOptions()...)
+	return client.Dial(context.Background(), client.Options{ServerURL: serverURL}, activeTrace.dialOptions()...)
 }
 
 // A nil atespace leaves manifest atespaces unchanged and lets the server default missing ones.

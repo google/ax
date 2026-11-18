@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package axclient
+package client
 
 import (
 	"context"
@@ -61,14 +61,20 @@ func TestServerURL(t *testing.T) {
 		opts Options
 		want string
 	}{
-		{"explicit URL", Options{ServerURL: "http://explicit:8080", Context: "kind-local"}, "http://explicit:8080"},
-		{"AX_SERVER", Options{Context: "kind-local"}, "http://from-env:8080"},
-		{"recorded tunnel", Options{Context: "kind-local", IgnoreEnv: true}, tunnelURL},
+		{"explicit URL", Options{ServerURL: "http://explicit:8080", Context: "kind-local", FromEnv: true}, "http://explicit:8080"},
+		{"recorded tunnel ignores env by default", Options{Context: "kind-local"}, tunnelURL},
+		{"FromEnv uses AX_SERVER when Context is empty", Options{FromEnv: true}, "http://from-env:8080"},
+		{"explicit Context wins over AX_SERVER", Options{Context: "kind-local", FromEnv: true}, tunnelURL},
 	} {
 		got, err := ServerURL(context.Background(), tc.opts)
 		if err != nil || got != tc.want {
 			t.Errorf("%s: ServerURL() = %q, %v; want %q", tc.name, got, err, tc.want)
 		}
+	}
+
+	t.Setenv("PATH", t.TempDir())
+	if got, err := ServerURL(context.Background(), Options{}); !errors.Is(err, ErrNoContext) {
+		t.Errorf("no kubeconfig: ServerURL() = %q, %v; want ErrNoContext", got, err)
 	}
 }
 
