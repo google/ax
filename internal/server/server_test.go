@@ -1661,11 +1661,11 @@ func TestServer_LifecycleSuspendResume(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetTaskRow after failed suspend: %v", err)
 		}
-		if !row.Runnable || row.ActiveRunID != "r-1" {
-			t.Errorf("after failed suspend: Runnable=%v ActiveRunID=%q, want true / r-1", row.Runnable, row.ActiveRunID)
+		if !row.Runnable || row.ActiveRunID != "r-1" || !row.RunnerTokenConfirmed {
+			t.Errorf("after failed suspend: Runnable=%v ActiveRunID=%q Confirmed=%v, want true / r-1 / true", row.Runnable, row.ActiveRunID, row.RunnerTokenConfirmed)
 		}
 
-		// Successful SuspendTask clears Runnable and ActiveRunID on ROOTFS (ax-*) templates.
+		// Successful SuspendTask clears Runnable, ActiveRunID, and token state on ROOTFS (ax-*) templates.
 		sub.SetErrors(substratetest.Errors{})
 		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); err != nil {
 			t.Fatalf("SuspendTask: %v", err)
@@ -1674,8 +1674,8 @@ func TestServer_LifecycleSuspendResume(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetTaskRow after suspend: %v", err)
 		}
-		if row.Runnable || row.ActiveRunID != "" {
-			t.Errorf("after suspend: Runnable=%v ActiveRunID=%q, want false / empty", row.Runnable, row.ActiveRunID)
+		if row.Runnable || row.ActiveRunID != "" || row.RunnerTokenHash != nil || row.RunnerTokenConfirmed || row.ClaimNonce != "" {
+			t.Errorf("after suspend: got %+v, want Runnable=false, ActiveRunID='', and cleared token state", row)
 		}
 
 		// Simulate a prior actor UID with confirmed runner token state; ResumeTask
