@@ -463,42 +463,6 @@ func (x *DeleteModelRequest) GetName() string {
 	return ""
 }
 
-type DeleteModelResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteModelResponse) Reset() {
-	*x = DeleteModelResponse{}
-	mi := &file_pkg_apis_v1alpha1_model_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteModelResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteModelResponse) ProtoMessage() {}
-
-func (x *DeleteModelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_model_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteModelResponse.ProtoReflect.Descriptor instead.
-func (*DeleteModelResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_model_proto_rawDescGZIP(), []int{8}
-}
-
 var File_pkg_apis_v1alpha1_model_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_model_proto_rawDesc = "" +
@@ -532,8 +496,7 @@ const file_pkg_apis_v1alpha1_model_proto_rawDesc = "" +
 	"\x05model\x18\x01 \x01(\v2\x12.ax.v1alpha1.ModelR\x05model\"D\n" +
 	"\x12DeleteModelRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x15\n" +
-	"\x13DeleteModelResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x04name\x18\x02 \x01(\tR\x04nameB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_model_proto_rawDescOnce sync.Once
@@ -547,32 +510,31 @@ func file_pkg_apis_v1alpha1_model_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_model_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_model_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_pkg_apis_v1alpha1_model_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_pkg_apis_v1alpha1_model_proto_goTypes = []any{
-	(*Model)(nil),               // 0: ax.v1alpha1.Model
-	(*ModelSpec)(nil),           // 1: ax.v1alpha1.ModelSpec
-	(*SecretKeyRef)(nil),        // 2: ax.v1alpha1.SecretKeyRef
-	(*GetModelRequest)(nil),     // 3: ax.v1alpha1.GetModelRequest
-	(*ListModelsRequest)(nil),   // 4: ax.v1alpha1.ListModelsRequest
-	(*ListModelsResponse)(nil),  // 5: ax.v1alpha1.ListModelsResponse
-	(*UpdateModelRequest)(nil),  // 6: ax.v1alpha1.UpdateModelRequest
-	(*DeleteModelRequest)(nil),  // 7: ax.v1alpha1.DeleteModelRequest
-	(*DeleteModelResponse)(nil), // 8: ax.v1alpha1.DeleteModelResponse
-	(*ObjectMeta)(nil),          // 9: ax.v1alpha1.ObjectMeta
-	(*structpb.Struct)(nil),     // 10: google.protobuf.Struct
+	(*Model)(nil),              // 0: ax.v1alpha1.Model
+	(*ModelSpec)(nil),          // 1: ax.v1alpha1.ModelSpec
+	(*SecretKeyRef)(nil),       // 2: ax.v1alpha1.SecretKeyRef
+	(*GetModelRequest)(nil),    // 3: ax.v1alpha1.GetModelRequest
+	(*ListModelsRequest)(nil),  // 4: ax.v1alpha1.ListModelsRequest
+	(*ListModelsResponse)(nil), // 5: ax.v1alpha1.ListModelsResponse
+	(*UpdateModelRequest)(nil), // 6: ax.v1alpha1.UpdateModelRequest
+	(*DeleteModelRequest)(nil), // 7: ax.v1alpha1.DeleteModelRequest
+	(*ObjectMeta)(nil),         // 8: ax.v1alpha1.ObjectMeta
+	(*structpb.Struct)(nil),    // 9: google.protobuf.Struct
 }
 var file_pkg_apis_v1alpha1_model_proto_depIdxs = []int32{
-	9,  // 0: ax.v1alpha1.Model.metadata:type_name -> ax.v1alpha1.ObjectMeta
-	1,  // 1: ax.v1alpha1.Model.spec:type_name -> ax.v1alpha1.ModelSpec
-	2,  // 2: ax.v1alpha1.ModelSpec.secret_key:type_name -> ax.v1alpha1.SecretKeyRef
-	10, // 3: ax.v1alpha1.ModelSpec.parameters:type_name -> google.protobuf.Struct
-	0,  // 4: ax.v1alpha1.ListModelsResponse.models:type_name -> ax.v1alpha1.Model
-	0,  // 5: ax.v1alpha1.UpdateModelRequest.model:type_name -> ax.v1alpha1.Model
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	8, // 0: ax.v1alpha1.Model.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	1, // 1: ax.v1alpha1.Model.spec:type_name -> ax.v1alpha1.ModelSpec
+	2, // 2: ax.v1alpha1.ModelSpec.secret_key:type_name -> ax.v1alpha1.SecretKeyRef
+	9, // 3: ax.v1alpha1.ModelSpec.parameters:type_name -> google.protobuf.Struct
+	0, // 4: ax.v1alpha1.ListModelsResponse.models:type_name -> ax.v1alpha1.Model
+	0, // 5: ax.v1alpha1.UpdateModelRequest.model:type_name -> ax.v1alpha1.Model
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_model_proto_init() }
@@ -587,7 +549,7 @@ func file_pkg_apis_v1alpha1_model_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_model_proto_rawDesc), len(file_pkg_apis_v1alpha1_model_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

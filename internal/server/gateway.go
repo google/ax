@@ -23,6 +23,7 @@ import (
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func (s *Server) GetGateway(ctx context.Context, req *v1alpha1.GetGatewayRequest) (*v1alpha1.Gateway, error) {
@@ -109,7 +110,7 @@ func (s *Server) saveGateway(ctx context.Context, gw *v1alpha1.Gateway, create b
 	return gw, nil
 }
 
-func (s *Server) DeleteGateway(ctx context.Context, req *v1alpha1.DeleteGatewayRequest) (*v1alpha1.DeleteGatewayResponse, error) {
+func (s *Server) DeleteGateway(ctx context.Context, req *v1alpha1.DeleteGatewayRequest) (*emptypb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
@@ -126,8 +127,14 @@ func (s *Server) DeleteGateway(ctx context.Context, req *v1alpha1.DeleteGatewayR
 	}
 	defer unlock()
 
+	if _, err := s.store.GetGateway(ctx, atespace, gwName); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "gateway %q not found in atespace %q", gwName, atespace)
+		}
+		return nil, status.Errorf(codes.Internal, "getting gateway: %v", err)
+	}
 	if err := s.store.DeleteGateway(ctx, atespace, gwName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting gateway: %v", err)
 	}
-	return &v1alpha1.DeleteGatewayResponse{}, nil
+	return &emptypb.Empty{}, nil
 }

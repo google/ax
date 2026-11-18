@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -326,7 +327,7 @@ func taskSpecMatchesExisting(existing *v1alpha1.Task, incoming *v1alpha1.TaskSpe
 	return proto.Equal(have, want)
 }
 
-func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest) (*v1alpha1.DeleteTaskResponse, error) {
+func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest) (*emptypb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
@@ -364,7 +365,7 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	if err := s.deleteTask(ctx, task); err != nil {
 		return nil, err
 	}
-	return &v1alpha1.DeleteTaskResponse{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskRequest) (*v1alpha1.Task, error) {
@@ -835,7 +836,7 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 	return req.Model, nil
 }
 
-func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelRequest) (*v1alpha1.DeleteModelResponse, error) {
+func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelRequest) (*emptypb.Empty, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
@@ -852,10 +853,16 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	}
 	defer unlock()
 
+	if _, err := s.store.GetModel(ctx, atespace, modelName); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "model %q not found in atespace %q", modelName, atespace)
+		}
+		return nil, status.Errorf(codes.Internal, "getting model: %v", err)
+	}
 	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting model: %v", err)
 	}
-	return &v1alpha1.DeleteModelResponse{}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name string) *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {

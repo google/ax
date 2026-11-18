@@ -66,5 +66,3 @@ message DeleteModelRequest {
   string atespace = 1;
   string name = 2;
 }
-
-message DeleteModelResponse {}

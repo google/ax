@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package ax.v1alpha1;
 
+import "google/protobuf/empty.proto";
 import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/model.proto";
 import "pkg/apis/v1alpha1/task.proto";
@@ -32,7 +33,7 @@ service AX {
   rpc GetTask(GetTaskRequest) returns (Task);
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
   rpc CreateTask(CreateTaskRequest) returns (Task);
-  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+  rpc DeleteTask(DeleteTaskRequest) returns (google.protobuf.Empty);
   rpc SuspendTask(SuspendTaskRequest) returns (Task);
   rpc ResumeTask(ResumeTaskRequest) returns (Task);
 
@@ -40,18 +41,18 @@ service AX {
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc CreateWorkspace(CreateWorkspaceRequest) returns (Workspace);
-  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty);
 
   // Gateways
   rpc GetGateway(GetGatewayRequest) returns (Gateway);
   rpc ListGateways(ListGatewaysRequest) returns (ListGatewaysResponse);
   rpc CreateGateway(CreateGatewayRequest) returns (Gateway);
   rpc UpdateGateway(UpdateGatewayRequest) returns (Gateway);
-  rpc DeleteGateway(DeleteGatewayRequest) returns (DeleteGatewayResponse);
+  rpc DeleteGateway(DeleteGatewayRequest) returns (google.protobuf.Empty);
 
   // Models
   rpc GetModel(GetModelRequest) returns (Model);
   rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
   rpc UpdateModel(UpdateModelRequest) returns (Model);
-  rpc DeleteModel(DeleteModelRequest) returns (DeleteModelResponse);
+  rpc DeleteModel(DeleteModelRequest) returns (google.protobuf.Empty);
 }
