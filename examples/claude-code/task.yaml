@@ -14,6 +14,8 @@
 
 # A Task that runs Claude Code headlessly against a cloned repository.
 #
+# The Gateway lists the hosts the task may reach and adds the Anthropic API key
+# to its requests outside the sandbox, so the task only holds a placeholder.
 # The Workspace clones the repo and drops a CLAUDE.md into it so the agent
 # starts with project guidance. The Task uses the Claude Code image
 # (Dockerfile.claude-code), whose runner turns spec.config into one
@@ -28,16 +30,37 @@
 #
 #      make push-claude-code-image CLAUDE_CODE_REPO=<your-registry>/<image>
 #
-# 2. Credentials. The control plane only injects GEMINI_API_KEY from a Model
-#    resource; an Anthropic Model is not injected into the task container yet.
-#    So ANTHROPIC_API_KEY has to be set through spec.env. Substitute it at
-#    apply time instead of committing it:
+# 2. Store the Anthropic API key in a Secret that the Gateway may use:
 #
-#      ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code/task.yaml | ax apply -f -
+#      kubectl -n ax-system create secret generic anthropic-creds --from-literal=api-key="sk-ant-..."
+#      kubectl -n ax-system label secret anthropic-creds ax.io/credential=true
 #
+#    The cluster must also grant atespace default the ax-system namespace, as
+#    `ax local start` and `ax install` do. See "Injecting credentials" in
+#    docs/manifests.md.
+#
+#   ax apply -f examples/claude-code/task.yaml
 #   ax describe task claude-code
 #   ax ssh claude-code -- cat /workspace/claude-output.md
 #   ax ssh claude-code -- git -C /workspace diff
+apiVersion: ax.io/v1alpha1
+kind: Gateway
+metadata:
+  name: claude-code-gw
+  atespace: default
+spec:
+  egress:
+    # The Anthropic API. The gateway replaces the task's placeholder key.
+    - https:
+        hostnames: ["api.anthropic.com"]
+        effects:
+          replaceHeaders:
+            - header: x-api-key
+              credentialUri: "ate-secret://k8s.io/default/ax-system/anthropic-creds/api-key"
+    # The Workspace's repository, and PyPI for the test dependencies.
+    - https:
+        hostnames: ["github.com", "pypi.org", "files.pythonhosted.org"]
+---
 apiVersion: ax.io/v1alpha1
 kind: Workspace
 metadata:
@@ -96,9 +119,10 @@ spec:
     settings:
       includeCoAuthoredBy: false
   env:
-    # TODO: Inject the ANTHROPIC_API_KEY to the outbound calls automatically.
     - name: ANTHROPIC_API_KEY
-      value: "${ANTHROPIC_API_KEY}"
+      value: placeholder # replaced with the real key outside the sandbox by claude-code-gw
   workspace:
     name: itsdangerous
+  gateway:
+    name: claude-code-gw
   debug: true # serve guest services so `ax ssh` works; off by default
