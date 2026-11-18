@@ -28,13 +28,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/google/ax/client"
 	"github.com/google/ax/internal/guest"
+	"github.com/google/ax/internal/install/executil"
 	"github.com/google/ax/internal/tunnel"
 	"github.com/google/ax/internal/version"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
@@ -136,10 +137,13 @@ func main() {
 
 	// Resolve the AX server URL (auto-tunneling to active kube context if not explicitly set)
 	endResolve := activeTrace.startStep("resolve ax-server address")
-	serverURL, err := tunnel.EnsureServerURL(tunnel.Options{
-		ServerURL: explicitServer,
-		Context:   kubeContext,
-		Namespace: axNamespace,
+	serverURL, err := tunnel.EnsureServerURL(context.Background(), tunnel.Options{
+		ServerURL:   explicitServer,
+		Context:     kubeContext,
+		Namespace:   axNamespace,
+		FromEnv:     true,
+		FallbackURL: "http://localhost:8080",
+		Kubectl:     ensureKubectl,
 	})
 	endResolve(err)
 	if err != nil {
@@ -292,15 +296,14 @@ Flags:
   --trace                     Trace this command and print its trace ID to stderr`)
 }
 
+// ensureKubectl finds kubectl for the CLI's port-forwards, downloading the
+// pinned release into ~/.ax/bin when none is installed.
+func ensureKubectl(ctx context.Context) (string, error) {
+	return executil.EnsureKubectl(ctx, executil.OSRunner{}, executil.DefaultToolURLs(), os.Stderr)
+}
+
 func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {
-	target := strings.TrimPrefix(serverURL, "http://")
-	target = strings.TrimPrefix(target, "https://")
-	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}, activeTrace.dialOptions()...)
-	conn, err := grpc.NewClient(target, opts...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to %s: %w", target, err)
-	}
-	return v1alpha1.NewAXClient(conn), conn, nil
+	return client.Dial(context.Background(), client.Options{ServerURL: serverURL}, activeTrace.dialOptions()...)
 }
 
 // A nil atespace leaves manifest atespaces unchanged and lets the server default missing ones.
@@ -1161,7 +1164,7 @@ func dialGuest(targetActor, kubeContext, axNamespace string) (*guest.Client, fun
 		return client, cleanup, nil
 	}
 
-	localPort, cleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
+	localPort, cleanup, err := tunnel.PortForward(context.Background(), ensureKubectl, kubeContext, "ate-system", "svc/atenet-router", 80)
 	if err != nil {
 		return nil, nil, fmt.Errorf("establishing port-forward to atenet-router: %w (%v)", err, setupErr)
 	}
@@ -1175,11 +1178,11 @@ func dialGuest(targetActor, kubeContext, axNamespace string) (*guest.Client, fun
 }
 
 func dialRouterTLS(targetActor, kubeContext, axNamespace string) (client *guest.Client, cleanup func(), setupErr, dialErr error) {
-	tlsCfg, err := tunnel.RouterTLSConfig(context.Background(), kubeContext, axNamespace, "ax-server")
+	tlsCfg, err := tunnel.RouterTLSConfig(context.Background(), ensureKubectl, kubeContext, axNamespace, "ax-server")
 	if err != nil {
 		return nil, nil, fmt.Errorf("mTLS setup error: %w", err), nil
 	}
-	localPort, cleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 443)
+	localPort, cleanup, err := tunnel.PortForward(context.Background(), ensureKubectl, kubeContext, "ate-system", "svc/atenet-router", 443)
 	if err != nil {
 		return nil, nil, fmt.Errorf("port 443 forward error: %w", err), nil
 	}
