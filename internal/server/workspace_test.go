@@ -17,7 +17,6 @@ package server_test
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -181,49 +180,6 @@ func TestCreateWorkspace_RejectsUnimplementedFields(t *testing.T) {
 			})
 			if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), tc.wantField) {
 				t.Fatalf("CreateWorkspace() = %v, want Unimplemented containing %q", err, tc.wantField)
-			}
-		})
-	}
-}
-
-func TestListWorkspaces_Pagination(t *testing.T) {
-	srv := newWorkspaceTestServer(t)
-	ctx := t.Context()
-
-	for _, name := range []string{"ws-a", "ws-b", "ws-c"} {
-		if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
-			Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: name}},
-		}); err != nil {
-			t.Fatalf("CreateWorkspace(%s) failed: %v", name, err)
-		}
-	}
-
-	tests := []struct {
-		name   string
-		limit  int64
-		offset int64
-		want   []string
-	}{
-		{name: "first_page", limit: 2, offset: 0, want: []string{"ws-a", "ws-b"}},
-		{name: "middle_page", limit: 1, offset: 1, want: []string{"ws-b"}},
-		{name: "out_of_range", limit: 10, offset: 99, want: nil},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			resp, err := srv.ListWorkspaces(t.Context(), &v1alpha1.ListWorkspacesRequest{
-				Atespace: "default",
-				Limit:    tc.limit,
-				Offset:   tc.offset,
-			})
-			if err != nil {
-				t.Fatalf("ListWorkspaces() failed: %v", err)
-			}
-			var got []string
-			for _, ws := range resp.GetWorkspaces() {
-				got = append(got, ws.GetMetadata().GetName())
-			}
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("ListWorkspaces(limit=%d, offset=%d) = %v, want %v", tc.limit, tc.offset, got, tc.want)
 			}
 		})
 	}

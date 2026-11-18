@@ -185,12 +185,18 @@ message GetTaskRequest {
 
 message ListTasksRequest {
   string atespace = 1;
-  int64 limit = 2;
-  int64 offset = 3;
+  // Maximum number of tasks to return; the server may return fewer. If unset,
+  // at most 50 are returned. Values above 1000 are coerced to 1000.
+  int32 page_size = 2;
+  // Page token from a previous ListTasks response. Leave empty for the first
+  // page.
+  string page_token = 3;
 }
 
 message ListTasksResponse {
   repeated Task tasks = 1;
+  // Token for the next page. Empty if this is the last page.
+  string next_page_token = 2;
 }
 
 message CreateTaskRequest {
