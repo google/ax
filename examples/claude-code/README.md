@@ -37,9 +37,11 @@ spec:
       includeCoAuthoredBy: false
   env:
     - name: ANTHROPIC_API_KEY
-      value: "${ANTHROPIC_API_KEY}"
+      value: placeholder   # replaced with the real key outside the sandbox
   workspace:
     name: my-repo
+  gateway:
+    name: my-gateway
 ```
 
 This config runs:
@@ -102,11 +104,20 @@ A server with an `endpoint` is reached over streamable HTTP. A server with a `co
 
 ## Credentials
 
-`spec.config` is stored in plain text and shown by `ax get task`, so keep credentials out of it, including in `settings.env`. Pass `ANTHROPIC_API_KEY` through `spec.env`, substituting it at apply time instead of committing it:
+`spec.config` is stored in plain text and shown by `ax get task`, so keep credentials out of it, including in `settings.env`. The task does not need the API key at all. Set `ANTHROPIC_API_KEY` to a placeholder in `spec.env`, and bind a `Gateway` whose rule for `api.anthropic.com` [injects the key](../../docs/manifests.md#injecting-credentials) from a Secret:
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... envsubst < examples/claude-code/task.yaml | ax apply -f -
+```yaml
+- https:
+    hostnames: ["api.anthropic.com"]
+    effects:
+      replaceHeaders:
+        - header: x-api-key
+          credentialUri: "ate-secret://k8s.io/default/ax-system/anthropic-creds/api-key"
 ```
+
+The cluster must grant the task's atespace the Secret's namespace in Substrate's credential provider policy; without the grant the request gets a 403. `ax local start` and `ax install` grant atespace `default` the `ax-system` namespace, for Secrets labeled `ax.io/credential=true`.
+
+A task reaches only the hosts its gateway allows, so list the others the session needs too, such as the repository's Git host and a package index.
 
 ## Debugging
 
