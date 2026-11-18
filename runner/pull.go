@@ -320,26 +320,6 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 
 	outFilePath := outputPath(wsPath)
 	_ = os.Remove(outFilePath)
-	_ = os.Remove(filepath.Join(axMetaDir, "goal.md"))
-	_ = os.Remove(filepath.Join(axMetaDir, "config.json"))
-
-	if goalText != "" {
-		if err := os.WriteFile(filepath.Join(axMetaDir, "goal.md"), []byte(goalText), 0o644); err != nil {
-			a.reportStartupFailure(ctx, runID, fmt.Errorf("writing goal.md: %w", err))
-			return
-		}
-	}
-	if cfgStruct := task.GetSpec().GetConfig(); cfgStruct != nil {
-		cfgJSON, err := protojson.Marshal(cfgStruct)
-		if err != nil {
-			a.reportStartupFailure(ctx, runID, fmt.Errorf("encoding spec.config: %w", err))
-			return
-		}
-		if err := os.WriteFile(filepath.Join(axMetaDir, "config.json"), cfgJSON, 0o644); err != nil {
-			a.reportStartupFailure(ctx, runID, fmt.Errorf("writing config.json: %w", err))
-			return
-		}
-	}
 
 	taskForFiles := cloneTaskWithGoal(task, goalText)
 	launcherEnvFiles, launcherErr := writeLauncherFiles(cmp.Or(a.cfg.RunDir, DefaultRunDir), wsPath, taskForFiles, ws)

@@ -15,9 +15,12 @@
 package runner
 
 import (
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // MaxOutputBytes caps both the captured stdout/stderr tail and the
@@ -79,19 +82,54 @@ func (t *tailBuffer) String() string {
 }
 
 func readCapturedTaskOutput(outputFile string, tail *tailBuffer) string {
-	if outputFile != "" {
-		if raw, err := os.ReadFile(outputFile); err == nil {
-			text := strings.TrimRight(string(raw), "\r\n")
-			if text != "" {
-				if len(text) > MaxOutputBytes {
-					return text[:MaxOutputBytes]
-				}
-				return text
+	if raw, ok := readOutputFileSafe(outputFile); ok {
+		text := strings.TrimRight(string(raw), "\r\n")
+		if text != "" {
+			if len(text) > MaxOutputBytes {
+				return text[:MaxOutputBytes]
 			}
+			return text
 		}
 	}
 	if tail == nil {
 		return ""
 	}
 	return strings.TrimRight(tail.String(), "\r\n")
+}
+
+// readOutputFileSafe opens outputFile without following symlinks and verifies
+// it is a regular file owned by the unprivileged agent user (when running as
+// root) or the current user, preventing an agent from symlinking .ax/output to
+// root-owned files such as /var/lib/ax/runner_token.
+func readOutputFileSafe(outputFile string) ([]byte, bool) {
+	if outputFile == "" {
+		return nil, false
+	}
+	if dirInfo, err := os.Lstat(filepath.Dir(outputFile)); err != nil || dirInfo.Mode()&os.ModeSymlink != 0 || !dirInfo.IsDir() {
+		return nil, false
+	}
+	f, err := os.OpenFile(outputFile, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, false
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		wantUID := uint32(os.Geteuid())
+		if wantUID == 0 {
+			wantUID = unprivilegedUID
+		}
+		if stat.Uid != wantUID {
+			return nil, false
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, MaxOutputBytes+1))
+	if err != nil {
+		return nil, false
+	}
+	return raw, true
 }
