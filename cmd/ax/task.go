@@ -63,8 +63,12 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 		actorUID = "<none>"
 	}
 	fmt.Fprintf(out, "Actor UID:    %s\n", actorUID)
-	if tpl := st.GetAteActorTemplate(); tpl != "" {
-		fmt.Fprintf(out, "Template:     %s\n", tpl)
+	if tpl := st.GetAteTemplate(); tpl.GetName() != "" {
+		if tpl.GetAtespace() != "" {
+			fmt.Fprintf(out, "Template:     %s/%s\n", tpl.GetAtespace(), tpl.GetName())
+		} else {
+			fmt.Fprintf(out, "Template:     %s\n", tpl.GetName())
+		}
 	}
 	if attempt := st.GetAttempt(); attempt > 0 {
 		fmt.Fprintf(out, "Attempt:      %d\n", attempt)

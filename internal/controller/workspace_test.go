@@ -333,7 +333,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	}
 
 	// Verify DefaultTaskImage was used for the template created when profile.image is omitted.
-	expectedTplName, _, err := controller.ResolveProfileTemplate("default", nil, "ghcr.io/org/default-task@sha256:111", "ghcr.io/org/runner@sha256:222")
+	_, expectedTplName, _, err := controller.ResolveProfileTemplate("default", nil, "ghcr.io/org/default-task@sha256:111", "ghcr.io/org/runner@sha256:222")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate: %v", err)
 	}
@@ -475,7 +475,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "missing-tpl-ws", Atespace: "default", Uid: "uid-missing-tpl"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Profile: &v1alpha1.Profile{AteActorTemplate: "does-not-exist"},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "does-not-exist"}},
 			},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)

@@ -34,7 +34,7 @@ message Task {
 }
 
 message TaskSpec {
-  // Optional compute profile (image, resources, ate_actor_template) for this
+  // Optional compute profile (image, resources, ate_template) for this
   // task's sandbox.
   //
   // Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:
@@ -157,7 +157,7 @@ message TaskStatus {
   // actor_uid is the current actor's Substrate UID (ate.actor.uid in telemetry).
   // Read from Substrate, never stored; empty when the actor cannot be read.
   string actor_uid = 2;
-  string ate_actor_template = 3;
+  ObjectRef ate_template = 3;
   repeated Condition conditions = 4;
   TaskState state = 5;
   TaskStatusDetail status_detail = 6;

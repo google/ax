@@ -56,34 +56,48 @@ func TestValidateTask(t *testing.T) {
 			},
 		},
 		{
-			name: "profile ate_actor_template",
+			name: "profile ateTemplate.name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{AteActorTemplate: "base-template"},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"}},
 			},
 		},
 		{
-			name: "profile ate_actor_template invalid name",
+			name: "ateTemplate.atespace invalid name",
 			spec: &v1alpha1.TaskSpec{
-				Profile: &v1alpha1.Profile{AteActorTemplate: "Bad_Name"},
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "base-template", Atespace: "Bad_Space"}},
 			},
-			wantErr: "spec.profile.ateActorTemplate",
+			wantErr: "spec.profile.ateTemplate.atespace",
 		},
 		{
-			name: "profile ate_actor_template combined with image",
+			name: "ateTemplate.name empty",
+			spec: &v1alpha1.TaskSpec{
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Atespace: "shared"}},
+			},
+			wantErr: "spec.profile.ateTemplate.name: must be set",
+		},
+		{
+			name: "profile ateTemplate.name invalid name",
+			spec: &v1alpha1.TaskSpec{
+				Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "Bad_Name"}},
+			},
+			wantErr: "spec.profile.ateTemplate.name",
+		},
+		{
+			name: "profile ateTemplate.name combined with image",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					AteActorTemplate: "base-template",
-					Image:            "us-docker.pkg.dev/p/img@sha256:abc",
+					AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"},
+					Image:       "us-docker.pkg.dev/p/img@sha256:abc",
 				},
 			},
 			wantErr: "cannot be combined with image or resources",
 		},
 		{
-			name: "profile ate_actor_template combined with resources",
+			name: "profile ateTemplate.name combined with resources",
 			spec: &v1alpha1.TaskSpec{
 				Profile: &v1alpha1.Profile{
-					AteActorTemplate: "base-template",
-					Resources:        &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
+					AteTemplate: &v1alpha1.ObjectRef{Name: "base-template"},
+					Resources:   &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1"}},
 				},
 			},
 			wantErr: "cannot be combined with image or resources",

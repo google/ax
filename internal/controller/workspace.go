@@ -134,7 +134,7 @@ type WorkspaceManagerOptions struct {
 	Locker           lock.Locker
 	Store            WorkspaceStore
 	SetupCoordinator SetupCoordinator
-	// DefaultTaskImage is used when a Profile omits image and ate_actor_template
+	// DefaultTaskImage is used when a Profile omits image and ate_template
 	// (defaults to v1alpha1.DefaultTaskImage).
 	DefaultTaskImage string
 	// RunnerImage is a static server-startup setting (changed only when
@@ -324,7 +324,7 @@ func (m *WorkspaceManager) ensureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 	if err := m.client.EnsureAtespace(ctx, atespace); err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonAtespaceCreationFailed, underlyingErr: fmt.Errorf("ensuring atespace %q: %w", atespace, err)}
 	}
-	templateName, err := ensureProfileTemplate(ctx, m.client, atespace, prof, m.defaultTaskImage, m.runnerImage)
+	_, templateName, err := ensureProfileTemplate(ctx, m.client, atespace, prof, m.defaultTaskImage, m.runnerImage)
 	if err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonTemplateCreationFailed, underlyingErr: err}
 	}

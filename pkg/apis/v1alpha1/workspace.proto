@@ -47,7 +47,7 @@ message WorkspaceSpec {
   // delivered to the runner rather than baked into an immutable snapshot.
   MCPConfig mcp = 1;
 
-  // Default compute profile (image, resources, ate_actor_template) used to
+  // Default compute profile (image, resources, ate_template) used to
   // pre-warm the workspace snapshot upon Workspace creation for fast warm task
   // startup, and used as the fallback profile for Tasks binding this Workspace
   // that omit TaskSpec.profile.

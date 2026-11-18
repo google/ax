@@ -29,11 +29,11 @@ func TestTaskRowCloneIdentifiersAndStoredStatus(t *testing.T) {
 	// Non-AX states (WORKING, SUSPENDED, SUSPENDING) and Ready condition are
 	// stripped by StoredStatus while WorkspaceReady and template metadata stay.
 	liveStatus := &v1alpha1.TaskStatus{
-		State:            v1alpha1.TaskState_TASK_STATE_WORKING,
-		Actor:            "fix-bug",
-		ActorUid:         "live-uid-must-not-persist",
-		AteActorTemplate: "ax-0123456789abcdef",
-		Attempt:          1,
+		State:       v1alpha1.TaskState_TASK_STATE_WORKING,
+		Actor:       "fix-bug",
+		ActorUid:    "live-uid-must-not-persist",
+		AteTemplate: &v1alpha1.ObjectRef{Name: "ax-0123456789abcdef", Atespace: "default"},
+		Attempt:     1,
 		Conditions: []*v1alpha1.Condition{
 			{Type: v1alpha1.ConditionReady, Status: "True"},
 			{Type: v1alpha1.ConditionWorkspaceReady, Status: "True"},
