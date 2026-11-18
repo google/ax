@@ -68,8 +68,9 @@ it, every task mounts the runner read-only at `/opt/ax` instead of needing it
 built into the task image (#620). Release manifests leave it empty unless the
 repository variable `AX_RELEASE_RUNNER_VOLUME` is `true` (case-insensitive;
 #625). The feature is experimental until #625 is done, and `ax install` does
-not set it yet; only the `ax-server.yaml` release manifest does. Dry runs
-render the manifest both ways.
+not enable it by default yet (opt in with `--runner-volume-image` or
+`$AX_RUNNER_VOLUME_IMAGE`); only the `ax-server.yaml` release manifest does.
+Dry runs render the manifest both ways and check each result.
 
 Before building, the images job refuses Dockerfiles that pin
 `ARG TARGETARCH=amd64` (AX before v0.4), which would put amd64 binaries in the
@@ -82,10 +83,10 @@ returns the image of the binary's own release (`:latest` for a dev build), for
 `ax install` defaults once a release is published (see the `TODO(release)` in
 `internal/install/axdeploy`).
 
-GitHub creates a new package as private:
-after the first release, an owner of the `google` organization must make each
-new package public after the first release that publishes it and link them to this repository, otherwise clusters cannot
-pull them without credentials.
+GitHub creates a new package as private: after the first release that
+publishes a new package, an owner of the `google` organization must make it
+public and link it to this repository, otherwise clusters cannot pull it
+without credentials.
 
 Agent task images (Claude Code, Antigravity, ...) are not built here. Their
 builds and releases live in

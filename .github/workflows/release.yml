@@ -235,16 +235,33 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: hack/release/create-release.sh "${TAG}" bin/release
 
-    # Tags render with the switch as set; check the "on" path here too.
-    - name: Render with the runner volume on (dry run)
+    # Tags render with the switch as set; check both settings here, so each
+    # path stays covered whichever way the repository variable is set.
+    - name: Render with the runner volume off and on (dry run)
       if: env.DRY_RUN == 'true'
       run: |
-        mkdir -p /tmp/rv-on
-        grep -v '^AX_RUNNER_VOLUME_IMAGE=' bin/release/images.env > /tmp/rv-on/images.env
-        AX_RENDER_RUNNER_VOLUME=true hack/release/render-manifests.sh /tmp/rv-on
-        source /tmp/rv-on/images.env
-        [[ -n "${AX_RUNNER_VOLUME_IMAGE}" && "${AX_RUNNER_VOLUME_IMAGE}" == "${AX_RUNNER_VOLUME_REF}" ]]
-        grep -qF "value: \"${AX_RUNNER_VOLUME_REF}\"" /tmp/rv-on/ax-server.yaml
+        set -o errexit -o nounset -o pipefail
+        for switch in false true; do
+          out="/tmp/rv-${switch}"
+          mkdir -p "${out}"
+          grep -v '^AX_RUNNER_VOLUME_IMAGE=' bin/release/images.env > "${out}/images.env"
+          AX_RENDER_RUNNER_VOLUME="${switch}" hack/release/render-manifests.sh "${out}"
+          unset AX_RUNNER_VOLUME_IMAGE
+          source "${out}/images.env"
+          want=""
+          if [[ "${switch}" == true ]]; then
+            want="${AX_RUNNER_VOLUME_REF}"
+            [[ -n "${want}" ]]
+          fi
+          if [[ "${AX_RUNNER_VOLUME_IMAGE}" != "${want}" ]]; then
+            echo "::error::AX_RENDER_RUNNER_VOLUME=${switch} recorded AX_RUNNER_VOLUME_IMAGE='${AX_RUNNER_VOLUME_IMAGE}', want '${want}'"
+            exit 1
+          fi
+          if ! grep -A1 'name: AX_RUNNER_VOLUME_IMAGE' "${out}/ax-server.yaml" | grep -qF "value: \"${want}\""; then
+            echo "::error::AX_RENDER_RUNNER_VOLUME=${switch} did not render value: \"${want}\" in ax-server.yaml"
+            exit 1
+          fi
+        done
 
     - name: List release assets (dry run)
       if: env.DRY_RUN == 'true'

@@ -65,7 +65,11 @@ for f in ax-server.yaml postgres.yaml; do
   fi
 done
 # Record what was rendered, so the release notes describe the manifest from
-# this decision rather than by parsing the YAML.
-sed -i '/^AX_RUNNER_VOLUME_IMAGE=/d' "${OUT}/images.env"
-echo "AX_RUNNER_VOLUME_IMAGE=${runner_volume}" >> "${OUT}/images.env"
+# this decision rather than by parsing the YAML. Written through a temp file
+# because `sed -i` differs between GNU and BSD (macOS) sed.
+tmp="$(mktemp "${OUT}/images.env.XXXXXX")"
+trap 'rm -f "${tmp}"' EXIT
+sed '/^AX_RUNNER_VOLUME_IMAGE=/d' "${OUT}/images.env" > "${tmp}"
+echo "AX_RUNNER_VOLUME_IMAGE=${runner_volume}" >> "${tmp}"
+mv "${tmp}" "${OUT}/images.env"
 echo "==> Rendered ${OUT}/ax-server.yaml (runner volume: ${runner_volume:-off}) and ${OUT}/postgres.yaml"
