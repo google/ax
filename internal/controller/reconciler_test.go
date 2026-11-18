@@ -293,8 +293,8 @@ func TestTaskReconciler(t *testing.T) {
 	if got := task.GetStatus().GetResolvedArgv(); len(got) != 1 || got[0] != "/bin/task-runner" {
 		t.Errorf("ResolvedArgv = %v, want [/bin/task-runner]", got)
 	}
-	if got := task.GetStatus().GetAteTemplate(); !strings.HasPrefix(got.GetName(), "test-task-tmpl-") || got.GetAtespace() != "default" {
-		t.Errorf("AteTemplate = %v, want {Name: test-task-tmpl-*, Atespace: default}", got)
+	if got := task.GetStatus().GetAteTemplate(); !strings.HasPrefix(got.GetName(), "ax-") || got.GetAtespace() != "default" {
+		t.Errorf("AteTemplate = %v, want {Name: ax-*, Atespace: default}", got)
 	}
 	// The mock's worker does not answer the readiness check.
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
@@ -528,8 +528,8 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
-	if n := mockSrv.egressPolicyCalls; n != 0 {
-		t.Fatalf("made %d egress policy calls for a task that binds no gateway, want none", n)
+	if n := mockSrv.egressPolicyCalls; n == 0 {
+		t.Fatalf("made 0 egress policy calls for a task that binds no gateway, want runner egress rule applied")
 	}
 
 	gw := &v1alpha1.Gateway{
@@ -543,13 +543,13 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
-	if n := len(mockSrv.createdEgressPolicies); n != 1 {
-		t.Fatalf("created %d egress policies for a task that binds a gateway, want 1", n)
+	if n := len(mockSrv.createdEgressPolicies); n != 2 {
+		t.Fatalf("created %d egress policies for unbound+bound tasks, want 2", n)
 	}
-	req := mockSrv.createdEgressPolicies[0]
+	req := mockSrv.createdEgressPolicies[1]
 	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
-		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 1 || policy.GetRules()[0].GetHttps().GetHostnames()[0] != "a.example.com" {
-		t.Errorf("egress policy request = %v, want the gateway's rules as policy \"default\" of actor default/bound-task", req)
+		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 2 || policy.GetRules()[1].GetHttps().GetHostnames()[0] != "a.example.com" {
+		t.Errorf("egress policy request = %v, want runner egress + gateway rule for actor default/bound-task", req)
 	}
 }
 
@@ -815,13 +815,21 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
 
-	// A launch configuration change must still get a distinct template.
+	// A command-only change reuses the same profile template (commands are pulled
+	// per-run from ax-server), while an environment change creates a new one.
 	task.Spec.Commands = []string{"python3", "agent.py"}
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
 	}
+	if got := len(mockSrv.actorTemplates); got != 1 {
+		t.Errorf("command change left %d templates, want 1", got)
+	}
+	task.Spec.Profile = &v1alpha1.Profile{Image: "example.com/other:v2"}
+	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+		t.Fatalf("Resume with changed image failed: %v", err)
+	}
 	if got := len(mockSrv.actorTemplates); got != 2 {
-		t.Errorf("command change left %d templates, want 2", got)
+		t.Errorf("image change left %d templates, want 2", got)
 	}
 }
 
