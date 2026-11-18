@@ -25,7 +25,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/google/ax/internal/install/executil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -74,19 +73,43 @@ func kubeconfigPaths() []string {
 	return nil
 }
 
-func resolveKubectl(ctx context.Context) (string, error) {
-	return executil.EnsureKubectl(ctx, executil.OSRunner{}, executil.DefaultToolURLs(), os.Stderr)
+// KubectlResolver returns the path of the kubectl binary to run. The ax CLI
+// passes one that downloads kubectl when it is missing; this package never
+// downloads anything itself.
+type KubectlResolver func(ctx context.Context) (string, error)
+
+// InstalledKubectl is the KubectlResolver used when none is given. It finds
+// kubectl on PATH, then in ~/.ax/bin (or $AX_HOME/bin), where `ax local start`
+// and `ax install` put it, and returns ErrKubectlNotFound otherwise.
+func InstalledKubectl(context.Context) (string, error) {
+	if p := kubectlIfInstalled(); p != "" {
+		return p, nil
+	}
+	return "", ErrKubectlNotFound
+}
+
+func resolveKubectl(ctx context.Context, resolve KubectlResolver) (string, error) {
+	if resolve == nil {
+		resolve = InstalledKubectl
+	}
+	return resolve(ctx)
 }
 
 func kubectlIfInstalled() string {
 	if p, err := exec.LookPath("kubectl"); err == nil {
 		return p
 	}
-	if dir, err := executil.BinDir(); err == nil {
-		candidate := filepath.Join(dir, "kubectl")
-		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
-			return candidate
+	home := os.Getenv("AX_HOME")
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			return ""
 		}
+		home = filepath.Join(userHome, ".ax")
+	}
+	candidate := filepath.Join(home, "bin", "kubectl")
+	if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+		return candidate
 	}
 	return ""
 }

@@ -36,6 +36,7 @@ internal/telemetry/otelenv  OpenTelemetry rules ax-server and the CLI share: OTE
 internal/version       Release version stamped by hack/release, and the matching ghcr.io/google/ax image refs
 internal/axattr        OpenTelemetry attribute names (ax.task.*, and Substrate's ate.* for actor identity)
 pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.go (constants + YAML codec)
+pkg/axclient           Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
@@ -51,7 +52,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~25 s, 28 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 31 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:

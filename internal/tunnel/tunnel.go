@@ -17,6 +17,7 @@ package tunnel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -32,6 +33,10 @@ import (
 )
 
 var portForwardRegex = regexp.MustCompile(`Forwarding from .*:(\d+)\s+->`)
+
+// ErrKubectlNotFound is returned by InstalledKubectl when kubectl is neither
+// on PATH nor in ~/.ax/bin.
+var ErrKubectlNotFound = errors.New("kubectl not found on PATH or in ~/.ax/bin")
 
 type TunnelInfo struct {
 	Context   string    `json:"context"`
@@ -52,6 +57,9 @@ type Options struct {
 	// IgnoreEnv skips AX_SERVER and AX_SYSTEM_NAMESPACE, which describe the
 	// cluster a command runs against, when resolving another cluster.
 	IgnoreEnv bool
+	// Kubectl finds the kubectl binary when a tunnel has to be started. Nil
+	// means InstalledKubectl.
+	Kubectl KubectlResolver
 }
 
 func SanitizeContext(name string) string {
@@ -202,7 +210,11 @@ func IsTunnelHealthy(port int) bool {
 // If ServerURL or AX_SERVER is explicitly set, it returns that.
 // Otherwise, it checks the active Kubernetes context (or opts.Context)
 // and establishes/reuses a background port-forward tunnel to svc/ax-server.
-func EnsureServerURL(opts Options) (string, error) {
+//
+// Cancelling ctx stops the wait for a new tunnel and kills the port-forward
+// that was being started. A tunnel that EnsureServerURL returned keeps running
+// after ctx is cancelled, so that later calls can reuse it.
+func EnsureServerURL(ctx context.Context, opts Options) (string, error) {
 	if opts.ServerURL != "" {
 		return opts.ServerURL, nil
 	}
@@ -260,7 +272,7 @@ func EnsureServerURL(opts Options) (string, error) {
 	}
 	kArgs = append(kArgs, "port-forward", "-n", opts.Namespace, targetRes, fmt.Sprintf(":%d", opts.Port))
 
-	kubectlBin, err := resolveKubectl(context.Background())
+	kubectlBin, err := resolveKubectl(ctx, opts.Kubectl)
 	if err != nil {
 		return "", err
 	}
@@ -272,7 +284,11 @@ func EnsureServerURL(opts Options) (string, error) {
 	)
 	for attempt := 0; attempt < 6; attempt++ {
 		if attempt > 0 {
-			time.Sleep(time.Duration(attempt) * time.Second)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
 		}
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
@@ -299,7 +315,7 @@ func EnsureServerURL(opts Options) (string, error) {
 		localPort = 0
 		earlyExit := false
 		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
+		for time.Now().Before(deadline) && ctx.Err() == nil {
 			time.Sleep(50 * time.Millisecond)
 
 			logData, _ := os.ReadFile(logPath)
@@ -322,6 +338,12 @@ func EnsureServerURL(opts Options) (string, error) {
 			}
 		}
 
+		if err := ctx.Err(); err != nil {
+			_ = cmd.Process.Kill()
+			<-exited
+			return "", err
+		}
+
 		if localPort == 0 && !earlyExit {
 			_ = cmd.Process.Kill()
 			<-exited
@@ -332,7 +354,7 @@ func EnsureServerURL(opts Options) (string, error) {
 		if localPort > 0 {
 			healthy := false
 			healthDeadline := time.Now().Add(3 * time.Second)
-			for time.Now().Before(healthDeadline) {
+			for time.Now().Before(healthDeadline) && ctx.Err() == nil {
 				if IsTunnelHealthy(localPort) {
 					healthy = true
 					break
@@ -388,8 +410,9 @@ func isTransientPortForwardErr(msg string) bool {
 }
 
 // PortForward starts an ephemeral port-forward to a Kubernetes resource (e.g. pod/name or svc/name)
-// and returns the local assigned port and a cleanup function.
-func PortForward(ctx context.Context, kubeContext, namespace, targetResource string, remotePort int) (int, func(), error) {
+// and returns the local assigned port and a cleanup function. A nil kubectl
+// means InstalledKubectl.
+func PortForward(ctx context.Context, kubectl KubectlResolver, kubeContext, namespace, targetResource string, remotePort int) (int, func(), error) {
 	ctxName, err := CurrentContext(kubeContext)
 	if err != nil {
 		ctxName = ""
@@ -404,7 +427,7 @@ func PortForward(ctx context.Context, kubeContext, namespace, targetResource str
 	}
 	kArgs = append(kArgs, "port-forward", targetResource, fmt.Sprintf(":%d", remotePort))
 
-	kubectlBin, err := resolveKubectl(ctx)
+	kubectlBin, err := resolveKubectl(ctx, kubectl)
 	if err != nil {
 		return 0, nil, err
 	}

@@ -129,7 +129,7 @@ func runPromote(serverURL, atespace string, args []string) error {
 	// The environment describes the source, so it plays no part in reaching
 	// the target.
 	endResolve := activeTrace.startStep("resolve target ax-server address")
-	targetURL, err := tunnel.EnsureServerURL(tunnel.Options{ServerURL: flags.toServer, Context: flags.to, Namespace: flags.toNamespace, IgnoreEnv: true})
+	targetURL, err := tunnel.EnsureServerURL(context.Background(), tunnel.Options{ServerURL: flags.toServer, Context: flags.to, Namespace: flags.toNamespace, IgnoreEnv: true, Kubectl: ensureKubectl})
 	endResolve(err)
 	if err != nil {
 		return err
