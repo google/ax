@@ -45,7 +45,9 @@ type Server struct {
 	mu             sync.RWMutex
 	task           *v1alpha1.Task
 	workspace      *v1alpha1.Workspace
+	goalText       string
 	workspaceReady bool
+	onReadyz       func()
 }
 
 // ServerOptions configures optional settings for the metadata and guest server.
@@ -55,6 +57,8 @@ type ServerOptions struct {
 	// MetadataPort is the loopback port for the /metadata endpoints. Zero picks
 	// a free port; read the result from MetadataURL after Start.
 	MetadataPort int
+	// OnReadyz, when non-nil, is invoked whenever /readyz returns 200 OK.
+	OnReadyz func()
 }
 
 // NewServer creates a new metadata and guest server serving the task and its
@@ -69,6 +73,8 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	s := &Server{
 		task:      task,
 		workspace: ws,
+		goalText:  task.GetSpec().GetGoal().GetText(),
+		onReadyz:  opt.OnReadyz,
 	}
 
 	// Guest services expose process execution and file access inside the container,
@@ -118,9 +124,11 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	// Metadata endpoints, for the task command only:
 	// /metadata/v1alpha1/ax/task        the Task
 	// /metadata/v1alpha1/ax/workspace   the bound Workspace, as YAML
+	// /metadata/v1alpha1/ax/goal        the natural-language goal text
 	metadataMux := http.NewServeMux()
 	metadataMux.HandleFunc("/metadata/v1alpha1/ax/task", s.handleTask)
 	metadataMux.HandleFunc("/metadata/v1alpha1/ax/workspace", s.handleWorkspace)
+	metadataMux.HandleFunc("/metadata/v1alpha1/ax/goal", s.handleGoal)
 
 	s.metadataServer = &http.Server{
 		Addr:    net.JoinHostPort("127.0.0.1", fmt.Sprint(opt.MetadataPort)),
@@ -193,10 +201,17 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // UpdateState allows dynamic updates to the current Task and Workspace.
 func (s *Server) UpdateState(task *v1alpha1.Task, ws *v1alpha1.Workspace) {
+	s.UpdateAssignment(task, ws, task.GetSpec().GetGoal().GetText())
+}
+
+// UpdateAssignment updates the served Task, Workspace, and goal text together
+// when pull mode dispatches a new run assignment.
+func (s *Server) UpdateAssignment(task *v1alpha1.Task, ws *v1alpha1.Workspace, goalText string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.task = task
 	s.workspace = ws
+	s.goalText = goalText
 }
 
 // SetWorkspaceReady updates whether the maiden run workspace setup has completed.
@@ -216,6 +231,9 @@ func (s *Server) IsWorkspaceReady() bool {
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
+	if s.onReadyz != nil {
+		s.onReadyz()
+	}
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
@@ -230,6 +248,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
+	if s.onReadyz != nil {
+		s.onReadyz()
+	}
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -264,4 +285,20 @@ func (s *Server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	if err := yaml.NewEncoder(w).Encode(ws); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// handleGoal serves the task's natural-language goal text as plain text, or
+// 404 when no goal is set.
+func (s *Server) handleGoal(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	goal := s.goalText
+	s.mu.RUnlock()
+
+	if goal == "" {
+		http.Error(w, "goal metadata not available", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(goal))
 }
