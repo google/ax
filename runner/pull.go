@@ -322,7 +322,7 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 	_ = os.Remove(outFilePath)
 
 	taskForFiles := cloneTaskWithGoal(task, goalText)
-	launcherEnvFiles, launcherErr := writeLauncherFiles(cmp.Or(a.cfg.RunDir, DefaultRunDir), wsPath, taskForFiles, ws)
+	launcherEnvFiles, launcherErr := writeLauncherFiles(a.cfg.RunDir, wsPath, taskForFiles, ws)
 	if launcherErr != nil {
 		slog.Warn("failed to write launcher contract files in RunDir", "error", launcherErr)
 		launcherEnvFiles.env = []string{OutputFileEnv + "=" + outFilePath}

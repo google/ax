@@ -75,8 +75,9 @@ type launcherFiles struct {
 // writeLauncherFiles writes the task's goal, config, the Workspace's MCP
 // servers and the session ID under runDir, and makes the directory of the
 // output file under wsPath. When runDir is empty, DefaultRunDir (/run/ax) is
-// used, falling back to <os.TempDir>/ax-run if DefaultRunDir is not writable
-// (for example when a container image runs as a non-root USER).
+// used, falling back to a unique temporary directory under os.TempDir() if
+// DefaultRunDir is not writable (for example when a container image runs as a
+// non-root USER).
 func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1.Workspace) (launcherFiles, error) {
 	spec := task.GetSpec()
 	config := []byte("{}")
@@ -125,8 +126,9 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 }
 
 // ensureRunDir creates runDir when set, or DefaultRunDir (/run/ax) when runDir
-// is empty, falling back to <os.TempDir>/ax-run if DefaultRunDir cannot be
-// created (for example when the container runs as a non-root USER).
+// is empty, falling back to a unique temporary directory under os.TempDir() if
+// DefaultRunDir cannot be created (for example when the container runs as a
+// non-root USER).
 func ensureRunDir(runDir string) (string, error) {
 	if runDir != "" {
 		if err := os.MkdirAll(runDir, 0o755); err != nil {
@@ -137,9 +139,9 @@ func ensureRunDir(runDir string) (string, error) {
 	if err := os.MkdirAll(DefaultRunDir, 0o755); err == nil {
 		return DefaultRunDir, nil
 	}
-	fallback := filepath.Join(os.TempDir(), "ax-run")
-	if err := os.MkdirAll(fallback, 0o755); err != nil {
-		return "", fmt.Errorf("creating %s: %w", fallback, err)
+	fallback, err := os.MkdirTemp("", "ax-run-*")
+	if err != nil {
+		return "", fmt.Errorf("creating temp run dir: %w", err)
 	}
 	return fallback, nil
 }
