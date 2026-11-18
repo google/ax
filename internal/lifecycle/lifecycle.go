@@ -190,6 +190,14 @@ func Claim(row *store.TaskRow, req *runnerv1.ClaimAssignmentRequest, ws *v1alpha
 		}, nil
 	}
 
+	execSpec := buildExecSpec(next.Task)
+	if len(execSpec.GetArgv()) == 0 && next.Task.GetSpec().GetGoal().GetText() == "" {
+		return resultRow, &runnerv1.ClaimAssignmentResponse{
+			Mode:        runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE,
+			RunnerToken: mintedToken,
+		}, nil
+	}
+
 	if next.ActiveRunID != "" && req.GetInMemoryRunId() == next.ActiveRunID && req.GetChildAlive() {
 		return resultRow, &runnerv1.ClaimAssignmentResponse{
 			Mode:        runnerv1.AssignmentMode_ASSIGNMENT_MODE_RESUME,
@@ -199,7 +207,10 @@ func Claim(row *store.TaskRow, req *runnerv1.ClaimAssignmentRequest, ws *v1alpha
 		}, nil
 	}
 
-	restartedSameRun := req.GetLastStartedRunId() == next.ActiveRunID || req.GetInMemoryRunId() == next.ActiveRunID
+	// Only treat a missing child as an unexpected container restart when
+	// in_memory_run_id is empty; a non-empty in_memory_run_id means the runner
+	// process itself survived (e.g. across a MEMORY snapshot restore).
+	restartedSameRun := req.GetInMemoryRunId() == "" && req.GetLastStartedRunId() == next.ActiveRunID
 	if next.ActiveRunID != "" && restartedSameRun && !req.GetChildAlive() {
 		if next.Task.Status == nil {
 			next.Task.Status = &v1alpha1.TaskStatus{}
@@ -240,7 +251,7 @@ func Claim(row *store.TaskRow, req *runnerv1.ClaimAssignmentRequest, ws *v1alpha
 		RunnerToken: mintedToken,
 		Task:        clonedTask,
 		Workspace:   clonedWS,
-		Exec:        buildExecSpec(next.Task),
+		Exec:        execSpec,
 		Goal: &runnerv1.GoalPayload{
 			Text: next.Task.GetSpec().GetGoal().GetText(),
 		},
@@ -282,9 +293,10 @@ func ApplyEvents(row *store.TaskRow, req *runnerv1.ReportEventsRequest, presente
 		return row, &runnerv1.ReportEventsResponse{AckSeq: row.LastAckedRunnerSeq}, false, nil
 	}
 
-	// Ignore events belonging to an old or already-finished run_id so retries
-	// after completion or suspend acknowledge cleanly without mutating state.
-	if next.ActiveRunID == "" || req.GetRunId() != next.ActiveRunID {
+	// Ignore events for already-terminal tasks or stale run_ids so retries
+	// after completion, cancellation, or suspend acknowledge cleanly without
+	// overwriting terminal state.
+	if IsTerminal(next.Task.GetStatus().GetState()) || next.ActiveRunID == "" || req.GetRunId() != next.ActiveRunID {
 		var maxSeq int64
 		for _, ev := range req.GetEvents() {
 			if ev.GetSeq() > maxSeq {
