@@ -105,6 +105,9 @@ fi
 prev="$(git tag --list 'v*' --sort=-v:refname --merged "${TAG}^{commit}" \
   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "${TAG}" | head -n1 || true)"
 
+# Only images.env may set this: unset it so an exported value cannot stand in
+# for an images.env that render-manifests.sh has not updated.
+unset AX_RUNNER_VOLUME_IMAGE
 # shellcheck disable=SC1091
 source "${ASSETS_DIR}/images.env"
 substrate="$(awk '$1 == "go.ate.dev/substrate" { print $2 }' "${ROOT}/go.mod")"
@@ -113,6 +116,13 @@ if [[ -z "${substrate}" ]]; then
   exit 1
 fi
 download="https://github.com/${REPO}/releases/download/${TAG}"
+# render-manifests.sh records the AX_RUNNER_VOLUME_IMAGE it rendered; nounset
+# fails here if images.env lacks it.
+if [[ -n "${AX_RUNNER_VOLUME_IMAGE}" ]]; then
+  runner_volume_note="mounted into every task by this release's ax-server.yaml"
+else
+  runner_volume_note="experimental, not enabled; see #625"
+fi
 notes="$(mktemp)"
 trap 'rm -f "${notes}"' EXIT
 if [[ -f "${ASSETS_DIR}/install.sh" ]]; then
@@ -144,6 +154,7 @@ ${cli_install}
 |---|---|
 | ax-server | \`${AX_SERVER_IMAGE}\` |
 | ax-task-runner (default task image) | \`${AX_DEFAULT_TASK_IMAGE}\` |
+| ax-runner-volume (${runner_volume_note}) | \`${AX_RUNNER_VOLUME_REF}\` |
 
 EOF
 
