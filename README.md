@@ -75,7 +75,18 @@ curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
-### 2. Install AX
+### 2. Build the images
+
+Until release images are published, build and push your own from an ax checkout and pin them by digest:
+
+```bash
+export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
+make images                            # prints the digest of each pushed image
+export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
+export AX_DEFAULT_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@<digest>"
+```
+
+### 3. Install AX
 
 **Locally**, on a new Kind cluster with Substrate and a WorkerPool:
 
@@ -92,7 +103,7 @@ ax install --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_T
 
 Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
 
-Until release images are published, build your own images with `AX_IMAGE_REPO=<your-registry> make images`. See the [Local Installer guide](docs/local_installer.md) for prerequisites, `ax uninstall`, and more.
+See the [Local Installer guide](docs/local_installer.md) for prerequisites, `ax uninstall`, and more.
 
 ### Run your first task
 
