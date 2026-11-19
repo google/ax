@@ -148,8 +148,6 @@ spec:
     - path: seed.txt
       content: "from-shared-workspace"
     commands:
-    - sh
-    - -c
     - "echo setup-cmd > /workspace/setup-marker.txt"
 `
 
