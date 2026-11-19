@@ -270,3 +270,74 @@ func TestKindProviderStatusNotFound(t *testing.T) {
 		t.Fatalf("expected State=NotFound, Name=N/A, KubeContext=N/A when absent, got %+v", st)
 	}
 }
+
+// A host whose containers have no outbound network (the friction log's
+// workstation): Up still returns the cluster, and says why pulls will fail.
+func TestKindProviderUpWarnsWithoutEgress(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	for _, tc := range []struct {
+		name         string
+		curl         executil.Result
+		curlFails    bool
+		forwarding   string
+		wantWarnings []string
+	}{
+		{
+			name:       "forwarding off",
+			curl:       executil.Result{ExitCode: 28, Stderr: "curl: (28) Connection timed out after 5001 milliseconds\n"},
+			curlFails:  true,
+			forwarding: "false\n",
+			wantWarnings: []string{
+				"Warning: Kind node ax-local-control-plane cannot reach https://ghcr.io/v2/",
+				"curl: (28) Connection timed out",
+				"IPv4 forwarding off",
+			},
+		},
+		{
+			name:         "other cause",
+			curl:         executil.Result{ExitCode: 6, Stderr: "curl: (6) Could not resolve host: ghcr.io\n"},
+			curlFails:    true,
+			forwarding:   "true\n",
+			wantWarnings: []string{"Could not resolve host", "proxy that containers do not use"},
+		},
+		{name: "reachable", forwarding: "true\n"},
+		{name: "no curl in the node image", curl: executil.Result{ExitCode: 127}, curlFails: true, forwarding: "false\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := &recordedRunner{
+				runFn: func(spec executil.Spec) (executil.Result, error) {
+					cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+					switch {
+					case strings.HasSuffix(cmd, "kind version"):
+						return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+					case strings.Contains(cmd, "kind get nodes"):
+						return executil.Result{Stdout: "ax-local-control-plane\n"}, nil
+					case strings.Contains(cmd, "exec ax-local-control-plane curl"):
+						if tc.curlFails {
+							return tc.curl, fmt.Errorf("exit status %d", tc.curl.ExitCode)
+						}
+						return executil.Result{}, nil
+					case strings.Contains(cmd, "{{.IPv4Forwarding}}"):
+						return executil.Result{Stdout: tc.forwarding}, nil
+					}
+					return executil.Result{}, nil
+				},
+			}
+			var out bytes.Buffer
+			p := NewKindProvider(rr, &out)
+			if _, err := p.Up(context.Background(), UpOptions{}); err != nil {
+				t.Fatalf("Up: %v", err)
+			}
+			if len(tc.wantWarnings) == 0 && strings.Contains(out.String(), "Warning") {
+				t.Fatalf("unexpected warning:\n%s", out.String())
+			}
+			for _, want := range tc.wantWarnings {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output does not contain %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}

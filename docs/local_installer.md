@@ -97,6 +97,8 @@ ax local start \
 
 *(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
+*(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--default-task-image`, `--runner-volume-image`, and each task's `spec.profile.image`.)*
+
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
 ### Expected Behavior (~2–3 minutes on cold start)
@@ -106,6 +108,7 @@ The installer prints progress (`==>`) across three stages:
    - Verifies that the container host / macOS Linux VM runs in rootful mode with Linux kernel `>= 6.8` and `>= 4 GiB` RAM, and checks that any pre-existing `ax-local` kubeconfig context belongs to `kind-ax-local`.
    - Uses `kind >= v0.32.0` and `kubectl` from `PATH` when available, or downloads and SHA-256-verifies `kind v0.32.0` and `kubectl v1.36.0` into `~/.ax/bin/`.
    - Creates the Kubernetes `v1.36.1` Kind cluster (`ax-local`) with `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and `PodCertificateRequest` (`certificates.k8s.io/v1beta1=true`) enabled, configures `net.ipv4.conf.all.proxy_arp=1`, and switches your active kubeconfig context to **`ax-local`**.
+   - Checks from inside the Kind node that `https://ghcr.io` is reachable, and prints a warning when it is not (for example on a Docker host with IPv4 forwarding off, where containers have no outbound network and every image pull would fail).
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
@@ -115,6 +118,12 @@ The installer prints progress (`==>`) across three stages:
      ```text
      Local environment "ax-local" is ready (active context: ax-local).
      ```
+
+When a rollout does not finish, the error names the pod and what it is waiting for, with the kubelet's message. A container that cannot pull its image ends the wait after about 45 seconds instead of the full rollout timeout:
+
+```text
+Error: waiting for ax-system/deployment/ax-server rollout: pod ax-server-..., container ax-server: ImagePullBackOff: ... 403 Forbidden [the cluster's nodes have no credentials for this registry; an 'ax local' cluster pulls every image anonymously, so the image must be public]
+```
 
 ---
 

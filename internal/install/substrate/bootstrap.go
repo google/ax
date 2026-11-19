@@ -624,12 +624,16 @@ func (k *kubeHelper) discoverOIDCIssuer(ctx context.Context) string {
 	return inClusterIssuer
 }
 
+// rolloutStatus waits for target to roll out. When it does not, the error
+// says what the pods of target are waiting for (executil.WaitRollout).
 func (k *kubeHelper) rolloutStatus(ctx context.Context, namespace, target string, timeout time.Duration) error {
-	_, err := k.run(ctx, nil, "-n", namespace, "rollout", "status", target, fmt.Sprintf("--timeout=%ds", int(timeout.Seconds())))
-	if err != nil {
-		return fmt.Errorf("waiting for %s/%s rollout: %w", namespace, target, err)
-	}
-	return nil
+	return executil.WaitRollout(ctx, k.runner, executil.RolloutOptions{
+		Kubectl:     k.kubectl,
+		KubeContext: k.context,
+		Namespace:   namespace,
+		Target:      target,
+		Timeout:     timeout,
+	})
 }
 
 func (k *kubeHelper) waitCRDsEstablished(ctx context.Context) error {
