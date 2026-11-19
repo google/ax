@@ -21,9 +21,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
@@ -49,12 +51,16 @@ type Options struct {
 	// client and Locker (with pre-warming gated off until a SetupCoordinator is
 	// provided).
 	WorkspaceManager *controller.WorkspaceManager
+	// TaskApplier executes atomic task-row transitions shared with the runner
+	// HTTP handler. When omitted, NewServer adapts s via TaskApplierForStore.
+	TaskApplier store.TaskApplier
 }
 
 // Server provides the gRPC API for AX.
 type Server struct {
 	v1alpha1.UnimplementedAXServer
 	store      store.Store
+	applier    store.TaskApplier
 	locker     lock.Locker
 	reconciler *controller.TaskReconciler
 	workspaces *controller.WorkspaceManager
@@ -86,8 +92,14 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 		})
 	}
 
+	applier := opt.TaskApplier
+	if applier == nil {
+		applier = TaskApplierForStore(s)
+	}
+
 	srv := &Server{
 		store:      s,
+		applier:    applier,
 		locker:     locker,
 		reconciler: reconciler,
 		workspaces: workspaces,
@@ -245,11 +257,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		}
 	}
 
-	effectiveProfile := controller.EffectiveProfile(workspace.GetSpec().GetProfile(), task.GetSpec().GetProfile())
-	if effectiveProfile.GetAteTemplate().GetName() != "" {
-		return nil, status.Error(codes.Unimplemented, "spec.profile.ateTemplate.name is not supported yet")
-	}
-
 	now := timestamppb.Now()
 	if task.Metadata.CreateTime == nil {
 		task.Metadata.CreateTime = now
@@ -270,21 +277,35 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Status.Attempt == 0 {
 		task.Status.Attempt = 1
 	}
-	task.Status.Generation++
 	if len(task.Spec.Commands) > 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
 	// The task is Queued until its actor exists.
 	task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
-	if err := s.saveTask(ctx, task); err != nil {
+	task.Status.StatusDetail = nil
+
+	key := store.TaskKey{Atespace: atespace, Name: task.Metadata.Name}
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		runSeq := int64(0)
+		if current != nil {
+			runSeq = current.RunSeq
+		}
+		return &store.TaskRow{
+			Task:     proto.Clone(task).(*v1alpha1.Task),
+			Runnable: false,
+			RunSeq:   runSeq,
+		}, nil
+	})
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
+	task = proto.Clone(written.Task).(*v1alpha1.Task)
 
 	// New tasks start suspended.
 	if err := s.reconciler.Suspend(ctx, task, workspace, gateway); err != nil {
 		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
-	if err := s.clearStoredTaskState(ctx, task); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, task.Metadata.Name), false); err != nil {
 		return nil, err
 	}
 
@@ -293,13 +314,10 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	return task, nil
 }
 
-// TODO: Drop these checks once pull-based runner assignment and task retries are wired.
+// TODO: Drop this check once task retries are wired.
 func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 	if spec == nil {
 		return ""
-	}
-	if spec.GetProfile().GetAteTemplate().GetName() != "" {
-		return "spec.profile.ateTemplate.name"
 	}
 	if spec.GetRetry() != nil {
 		return "spec.retry"
@@ -344,25 +362,28 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	}
 	defer unlock()
 
-	task, err := s.getTask(ctx, atespace, taskName)
+	key := store.TaskKey{Atespace: atespace, Name: taskName}
+	deleteTime := timestamppb.Now()
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			return nil, store.ErrNotFound
+		}
+		next := current.Clone()
+		next.Runnable = false
+		if next.Task.Metadata == nil {
+			next.Task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: taskName}
+		}
+		next.Task.Metadata.DeleteTime = deleteTime
+		return next, nil
+	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
-
-	// Mark the task with delete_time while actor cleanup is in progress.
-	deleteTime := timestamppb.Now()
-	if err := s.setTaskDeleteTime(ctx, atespace, taskName, deleteTime); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task delete_time: %v", err)
 	}
-	if task.Metadata == nil {
-		task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: taskName}
-	}
-	task.Metadata.DeleteTime = deleteTime
 
-	if err := s.deleteTask(ctx, task); err != nil {
+	if err := s.deleteTask(ctx, proto.Clone(written.Task).(*v1alpha1.Task)); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -385,26 +406,73 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	}
 	defer unlock()
 
-	task, err := s.getTask(ctx, atespace, taskName)
+	key := store.TaskKey{Atespace: atespace, Name: taskName}
+	row, err := s.applier.GetTaskRow(ctx, key)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
+	if lifecycle.IsExecutionTerminal(row.Task) {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, row.Task.GetStatus().GetState())
+	}
+
+	task := proto.Clone(row.Task).(*v1alpha1.Task)
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
+	memoryFidelity, err := s.reconciler.IsMemoryFidelityTemplate(ctx, atespace, task.GetStatus().GetAteTemplate())
+	if err != nil {
+		if substrate.IsTransientError(err) {
+			return nil, status.Errorf(codes.Unavailable, "checking actor template snapshot fidelity: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "checking actor template snapshot fidelity: %v", err)
+	}
+
+	var prevRunnable bool
+	if _, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			return nil, store.ErrNotFound
+		}
+		if lifecycle.IsExecutionTerminal(current.Task) {
+			return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, current.Task.GetStatus().GetState())
+		}
+		prevRunnable = current.Runnable
+		next := current.Clone()
+		next.Runnable = false
+		return next, nil
+	}); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
+		}
+		if _, ok := status.FromError(err); ok {
+			return nil, err
+		}
+		return nil, status.Errorf(codes.Internal, "updating task before suspend: %v", err)
+	}
 
 	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
-		// Store nothing: the actor keeps its state on Substrate, and a stored
-		// Queued or Failed would hide it.
+		// Roll back Runnable if the actor is still running so a failed suspend
+		// does not strand a live runner; ActiveRunID and runner token state
+		// remain untouched until Suspend succeeds.
+		if actor, getErr := s.substrate.GetActor(ctx, atespace, taskName); getErr == nil &&
+			actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING {
+			_, _ = s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+				if current == nil || lifecycle.IsExecutionTerminal(current.Task) {
+					return current, nil
+				}
+				next := current.Clone()
+				next.Runnable = prevRunnable
+				return next, nil
+			})
+		}
 		if substrate.IsTransientError(err) {
 			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 	}
-	if err := s.clearStoredTaskState(ctx, task); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, taskName), !memoryFidelity); err != nil {
 		return nil, err
 	}
 
@@ -430,13 +498,29 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	}
 	defer unlock()
 
-	task, err := s.getTask(ctx, atespace, taskName)
+	key := store.TaskKey{Atespace: atespace, Name: taskName}
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			return nil, store.ErrNotFound
+		}
+		if lifecycle.IsExecutionTerminal(current.Task) {
+			return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, current.Task.GetStatus().GetState())
+		}
+		next := current.Clone()
+		next.Runnable = true
+		return next, nil
+	})
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
+		if _, ok := status.FromError(err); ok {
+			return nil, err
+		}
+		return nil, status.Errorf(codes.Internal, "marking task runnable: %v", err)
 	}
+
+	task := proto.Clone(written.Task).(*v1alpha1.Task)
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
@@ -444,7 +528,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
-	if err := s.clearStoredTaskState(ctx, task); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, taskName), false); err != nil {
 		return nil, err
 	}
 
@@ -453,38 +537,88 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	return task, nil
 }
 
-// clearStoredTaskState transitions task back to actor-derived status after a
-// Substrate reconcile (CreateTask, SuspendTask, or ResumeTask) succeeds:
-//   - Clears metadata.delete_time in the store and in memory if set by an
-//     earlier failed DeleteTask, canceling that pending deletion.
-//   - Resets status.state to UNSPECIFIED and clears status.status_detail so
-//     subsequent reads derive the task's state from its live Substrate actor
-//     rather than keeping a stored Queued or Failed state.
-//   - Increments status.generation and persists the updated status via
-//     updateTask, returning a gRPC Internal status error if any store write
-//     fails.
-func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
+// finalizeReconciledRow commits post-reconcile row state after CreateTask,
+// SuspendTask, or ResumeTask succeeds:
+//   - Clears metadata.delete_time if an earlier DeleteTask failed.
+//   - Records actorUID and resets the runner token/claim nonce if the actor
+//     was recreated with a new UID.
+//   - Preserves any terminal execution state written concurrently by the :8081
+//     runner handler, or otherwise resets status.state to UNSPECIFIED.
+func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task, actorUID string, clearRunState bool) error {
 	atespace := task.GetMetadata().GetAtespace()
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
 	taskName := task.GetMetadata().GetName()
-	if task.GetMetadata().GetDeleteTime() != nil {
-		if err := s.setTaskDeleteTime(ctx, atespace, taskName, nil); err != nil {
-			return status.Errorf(codes.Internal, "clearing task delete_time: %v", err)
+	key := store.TaskKey{Atespace: atespace, Name: taskName}
+
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil {
+			return nil, store.ErrNotFound
 		}
-		task.Metadata.DeleteTime = nil
-	}
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-	task.Status.StatusDetail = nil
-	task.Status.Generation++
-	if err := s.updateTask(ctx, atespace, taskName, task.Status); err != nil {
+		next := current.Clone()
+		if next.Task.Metadata != nil {
+			next.Task.Metadata.DeleteTime = nil
+		}
+		if (actorUID != "" && next.ActorUID != actorUID) || clearRunState {
+			if actorUID != "" {
+				next.ActorUID = actorUID
+			}
+			if clearRunState {
+				// Volume-only snapshots discard /var/lib/ax on resume, so clear the
+				// run/token state after suspend succeeds to allow re-minting on resume.
+				next.ActiveRunID = ""
+			}
+			next.RunnerTokenHash = nil
+			next.RunnerTokenConfirmed = false
+			next.ClaimNonce = ""
+		}
+		if next.Task.Status == nil {
+			next.Task.Status = &v1alpha1.TaskStatus{}
+		}
+		if src := task.GetStatus(); src != nil {
+			if tpl := src.GetAteTemplate(); tpl != nil {
+				next.Task.Status.AteTemplate = proto.Clone(tpl).(*v1alpha1.ObjectRef)
+			} else {
+				next.Task.Status.AteTemplate = nil
+			}
+			if len(src.GetResolvedArgv()) > 0 {
+				next.Task.Status.ResolvedArgv = slices.Clone(src.GetResolvedArgv())
+			}
+			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
+		}
+		if !lifecycle.IsExecutionTerminal(current.Task) {
+			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+			next.Task.Status.StatusDetail = nil
+		}
+		return next, nil
+	})
+	if err != nil {
 		return status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
+	task.Metadata = proto.Clone(written.Task.Metadata).(*v1alpha1.ObjectMeta)
+	task.Status = proto.Clone(written.Task.Status).(*v1alpha1.TaskStatus)
 	return nil
+}
+
+// fetchActorUID returns the live Substrate actor's UID, or "" if unavailable.
+func (s *Server) fetchActorUID(ctx context.Context, atespace, name string) string {
+	actor, err := s.substrate.GetActor(ctx, atespace, name)
+	if err != nil || actor == nil {
+		return ""
+	}
+	return actor.GetMetadata().GetUid()
+}
+
+func cloneConditions(in []*v1alpha1.Condition) []*v1alpha1.Condition {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*v1alpha1.Condition, len(in))
+	for i, c := range in {
+		out[i] = proto.Clone(c).(*v1alpha1.Condition)
+	}
+	return out
 }
 
 // recordFailure stores the status of a task that could not be provisioned or
@@ -503,10 +637,25 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 			Detail: err.Error(),
 		}
 	}
-	task.Status.State = state
-	task.Status.StatusDetail = detail
-	task.Status.Generation++
-	_ = s.updateTask(ctx, atespace, name, task.Status)
+	key := store.TaskKey{Atespace: atespace, Name: name}
+	_, _ = s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+		if current == nil || lifecycle.IsExecutionTerminal(current.Task) {
+			return current, nil
+		}
+		next := current.Clone()
+		if next.Task.Status == nil {
+			next.Task.Status = &v1alpha1.TaskStatus{}
+		}
+		if state == v1alpha1.TaskState_TASK_STATE_FAILED {
+			next.Runnable = false
+		}
+		if src := task.GetStatus(); src != nil {
+			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
+		}
+		next.Task.Status.State = state
+		next.Task.Status.StatusDetail = detail
+		return next, nil
+	})
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
 }
 
@@ -560,24 +709,6 @@ func (s *Server) listTasks(ctx context.Context, atespace string, limit, offset i
 	return tasks, nil
 }
 
-// saveTask stores task without its Substrate-owned status. task is not modified.
-func (s *Server) saveTask(ctx context.Context, task *v1alpha1.Task) error {
-	stored := proto.Clone(task).(*v1alpha1.Task)
-	stored.Status = storedStatus(task.Status)
-	return s.store.SaveTask(ctx, stored)
-}
-
-// updateTask stores a task's status without its Substrate-owned parts. st is
-// not modified.
-func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1alpha1.TaskStatus) error {
-	return s.store.UpdateTaskStatus(ctx, atespace, name, storedStatus(st))
-}
-
-// setTaskDeleteTime sets or clears metadata.delete_time on a task record.
-func (s *Server) setTaskDeleteTime(ctx context.Context, atespace, name string, deleteTime *timestamppb.Timestamp) error {
-	return s.store.SetTaskDeleteTime(ctx, atespace, name, deleteTime)
-}
-
 // deleteTask removes a task's actor and templates from Substrate, then its
 // record from the store. It returns a gRPC status error.
 func (s *Server) deleteTask(ctx context.Context, task *v1alpha1.Task) error {
@@ -595,7 +726,10 @@ func (s *Server) deleteTask(ctx context.Context, task *v1alpha1.Task) error {
 		}
 		return status.Errorf(codes.Internal, "cleaning up substrate resources for task %s/%s: %v", atespace, name, err)
 	}
-	if err := s.store.DeleteTask(ctx, atespace, name); err != nil {
+	key := store.TaskKey{Atespace: atespace, Name: name}
+	if _, err := s.applier.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
+		return store.DeleteTaskRow, nil
+	}); err != nil {
 		return status.Errorf(codes.Internal, "deleting task record: %v", err)
 	}
 	return nil

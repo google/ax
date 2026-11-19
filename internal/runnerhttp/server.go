@@ -37,6 +37,7 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/lifecycle"
+	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	runnerv1 "github.com/google/ax/pkg/apis/runner/v1"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -95,6 +96,10 @@ type Options struct {
 	// ActorParker suspends finished task actors asynchronously after flushing
 	// the HTTP 200 response for CommandExited. Optional in unit tests.
 	ActorParker ActorParker
+	// Locker serializes asynchronous actor parking against ResumeTask,
+	// SuspendTask, and DeleteTask so a fast one-shot command does not park its
+	// actor while ResumeTask is still polling /readyz?check=workspace.
+	Locker lock.Locker
 	// MintToken overrides token generation in tests; defaults to
 	// lifecycle.DefaultMintToken.
 	MintToken lifecycle.TokenMinter
@@ -118,6 +123,7 @@ type Server struct {
 	store       WorkspaceReader
 	verifier    ActorVerifier
 	actorParker ActorParker
+	locker      lock.Locker
 	mintToken   lifecycle.TokenMinter
 	parkTimeout time.Duration
 	mux         *http.ServeMux
@@ -149,6 +155,7 @@ func NewServer(opts Options) *Server {
 		store:       opts.Store,
 		verifier:    opts.Verifier,
 		actorParker: opts.ActorParker,
+		locker:      opts.Locker,
 		mintToken:   mint,
 		parkTimeout: parkTimeout,
 		setups:      make(map[string]*setupEntry),
@@ -413,6 +420,21 @@ func (s *Server) parkActorAsync(ctx context.Context, atespace, actorName string)
 		defer s.bgWG.Done()
 		parkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.parkTimeout)
 		defer cancel()
+		if s.locker != nil {
+			// Wait for any active ResumeTask/SuspendTask/DeleteTask lock on
+			// this task to finish so SuspendActor does not race with
+			// ResumeTask's /readyz?check=workspace probe via atenet-router.
+			unlock, err := s.locker.Lock(parkCtx, "task", atespace, actorName)
+			if err != nil {
+				slog.Warn("failed locking task before parking finished actor", "atespace", atespace, "actor", actorName, "error", err)
+				return
+			}
+			defer unlock()
+			row, err := s.applier.GetTaskRow(parkCtx, store.TaskKey{Atespace: atespace, Name: actorName})
+			if err != nil || row == nil || row.Runnable || !lifecycle.IsExecutionTerminal(row.Task) {
+				return
+			}
+		}
 		if err := s.actorParker.SuspendActor(parkCtx, atespace, actorName); err != nil {
 			slog.Warn("failed to park finished task actor", "atespace", atespace, "actor", actorName, "error", err)
 		}

@@ -188,6 +188,7 @@ func main() {
 			Store:       backend,
 			Verifier:    oidcVerifier,
 			ActorParker: subClient,
+			Locker:      backend,
 		})
 		if enablePrewarm {
 			setupCoordinator = runnerSrv
@@ -196,6 +197,9 @@ func main() {
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
 	reconciler.RunnerVolumeImage = runnerVolumeImage
+	reconciler.RunnerEndpoint = runnerEndpoint
+	reconciler.RunnerAudience = actorJWTAudience
+	reconciler.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:           backend,
 		Store:            backend,
@@ -205,9 +209,11 @@ func main() {
 		RunnerEndpoint:   runnerEndpoint,
 		RunnerAudience:   actorJWTAudience,
 	})
+	reconciler.WorkspaceManager = workspaces
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
+		TaskApplier:      server.TaskApplierForStore(backend),
 	})
 
 	httpServer := &http.Server{

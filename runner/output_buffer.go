@@ -81,8 +81,8 @@ func (t *tailBuffer) String() string {
 	return string(out)
 }
 
-func readCapturedTaskOutput(outputFile string, tail *tailBuffer) string {
-	if raw, ok := readOutputFileSafe(outputFile); ok {
+func readCapturedTaskOutput(outputFile string, tail *tailBuffer, dropPrivs bool) string {
+	if raw, ok := readOutputFileSafe(outputFile, dropPrivs); ok {
 		text := strings.TrimRight(string(raw), "\r\n")
 		if text != "" {
 			if len(text) > MaxOutputBytes {
@@ -98,10 +98,10 @@ func readCapturedTaskOutput(outputFile string, tail *tailBuffer) string {
 }
 
 // readOutputFileSafe opens outputFile without following symlinks and verifies
-// it is a regular file owned by the unprivileged agent user (when running as
-// root) or the current user, preventing an agent from symlinking .ax/output to
-// root-owned files such as /var/lib/ax/runner_token.
-func readOutputFileSafe(outputFile string) ([]byte, bool) {
+// it is a regular file owned by the child's expected UID (unprivilegedUID when
+// privileges were dropped, otherwise the current user), preventing an agent
+// from symlinking .ax/output to root-owned files such as /var/lib/ax/runner_token.
+func readOutputFileSafe(outputFile string, dropPrivs bool) ([]byte, bool) {
 	if outputFile == "" {
 		return nil, false
 	}
@@ -120,7 +120,7 @@ func readOutputFileSafe(outputFile string) ([]byte, bool) {
 	}
 	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
 		wantUID := uint32(os.Geteuid())
-		if wantUID == 0 {
+		if dropPrivs && wantUID == 0 {
 			wantUID = unprivilegedUID
 		}
 		if stat.Uid != wantUID {

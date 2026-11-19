@@ -192,8 +192,14 @@ func Claim(row *store.TaskRow, req *runnerv1.ClaimAssignmentRequest, ws *v1alpha
 
 	execSpec := buildExecSpec(next.Task)
 	if len(execSpec.GetArgv()) == 0 && next.Task.GetSpec().GetGoal().GetText() == "" {
+		var clonedWS *v1alpha1.Workspace
+		if ws != nil {
+			clonedWS = proto.Clone(ws).(*v1alpha1.Workspace)
+		}
 		return resultRow, &runnerv1.ClaimAssignmentResponse{
 			Mode:        runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE,
+			Task:        proto.Clone(next.Task).(*v1alpha1.Task),
+			Workspace:   clonedWS,
 			RunnerToken: mintedToken,
 		}, nil
 	}

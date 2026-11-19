@@ -36,18 +36,20 @@ import (
 // metadata listener serves the /metadata endpoints on loopback only, so they are
 // reachable from inside the container and nowhere else.
 type Server struct {
-	server         *http.Server
-	metadataServer *http.Server
-	probeAddr      string // bound address of the probe listener, set by Start
-	metadataAddr   string // bound address of the metadata listener, set by Start
-	grpcServer     *grpc.Server
-	grpcCleanup    func()
-	mu             sync.RWMutex
-	task           *v1alpha1.Task
-	workspace      *v1alpha1.Workspace
-	goalText       string
-	workspaceReady bool
-	onReadyz       func()
+	server              *http.Server
+	metadataServer      *http.Server
+	probeAddr           string // bound address of the probe listener, set by Start
+	metadataAddr        string // bound address of the metadata listener, set by Start
+	grpcServer          *grpc.Server
+	grpcCleanup         func()
+	guestCfg            guest.Config
+	mu                  sync.RWMutex
+	task                *v1alpha1.Task
+	workspace           *v1alpha1.Workspace
+	goalText            string
+	workspaceReady      bool
+	workspaceCheckReady bool
+	onReadyz            func()
 }
 
 // ServerOptions configures optional settings for the metadata and guest server.
@@ -70,32 +72,27 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	if len(opts) > 0 {
 		opt = opts[0]
 	}
+	guestCfg := guest.DefaultConfig()
+	if opt.WorkspacePath != "" {
+		guestCfg.Workspace = opt.WorkspacePath
+	}
+	if opt.LogDir != "" {
+		guestCfg.LogDir = opt.LogDir
+	}
+
 	s := &Server{
-		task:      task,
-		workspace: ws,
-		goalText:  task.GetSpec().GetGoal().GetText(),
-		onReadyz:  opt.OnReadyz,
+		guestCfg:            guestCfg,
+		task:                task,
+		workspace:           ws,
+		goalText:            task.GetSpec().GetGoal().GetText(),
+		workspaceCheckReady: true,
+		onReadyz:            opt.OnReadyz,
 	}
 
 	// Guest services expose process execution and file access inside the container,
 	// so they are only served when the task opts in via spec.debug.
 	if task.GetSpec().GetDebug() {
-		guestCfg := guest.DefaultConfig()
-		if opt.WorkspacePath != "" {
-			guestCfg.Workspace = opt.WorkspacePath
-		}
-		if opt.LogDir != "" {
-			guestCfg.LogDir = opt.LogDir
-		}
-
-		grpcServer, grpcCleanup, err := guest.NewServer(guestCfg)
-		if err != nil {
-			slog.Error("failed to initialize guest gRPC server", "error", err)
-		} else {
-			s.grpcServer = grpcServer
-			s.grpcCleanup = grpcCleanup
-			slog.Info("guest services enabled (spec.debug is true)")
-		}
+		s.ensureGuestServerLocked()
 	} else {
 		slog.Info("guest services disabled; set spec.debug: true on the Task to enable ax ssh")
 	}
@@ -106,8 +103,11 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.grpcServer != nil && r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
-			s.grpcServer.ServeHTTP(w, r)
+		s.mu.RLock()
+		grpcSrv := s.grpcServer
+		s.mu.RUnlock()
+		if grpcSrv != nil && r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcSrv.ServeHTTP(w, r)
 			return
 		}
 		probeMux.ServeHTTP(w, r)
@@ -186,8 +186,12 @@ func (s *Server) Start() error {
 
 // Stop gracefully stops the probe, guest, and metadata servers.
 func (s *Server) Stop(ctx context.Context) error {
-	if s.grpcCleanup != nil {
-		s.grpcCleanup()
+	s.mu.Lock()
+	cleanup := s.grpcCleanup
+	s.grpcCleanup = nil
+	s.mu.Unlock()
+	if cleanup != nil {
+		cleanup()
 	}
 	// Shut both servers down concurrently so one draining its connections does
 	// not hold the other open or use up ctx's deadline.
@@ -212,6 +216,26 @@ func (s *Server) UpdateAssignment(task *v1alpha1.Task, ws *v1alpha1.Workspace, g
 	s.task = task
 	s.workspace = ws
 	s.goalText = goalText
+	if p := task.GetSpec().GetWorkspace().GetPath(); p != "" && s.grpcServer == nil {
+		s.guestCfg.Workspace = p
+	}
+	if task.GetSpec().GetDebug() {
+		s.ensureGuestServerLocked()
+	}
+}
+
+func (s *Server) ensureGuestServerLocked() {
+	if s.grpcServer != nil {
+		return
+	}
+	grpcServer, grpcCleanup, err := guest.NewServer(s.guestCfg)
+	if err != nil {
+		slog.Error("failed to initialize guest gRPC server", "error", err)
+		return
+	}
+	s.grpcServer = grpcServer
+	s.grpcCleanup = grpcCleanup
+	slog.Info("guest services enabled (spec.debug is true)")
 }
 
 // SetWorkspaceReady updates whether the maiden run workspace setup has completed.
@@ -219,6 +243,16 @@ func (s *Server) SetWorkspaceReady(ready bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.workspaceReady = ready
+}
+
+// SetWorkspaceCheckReady updates whether /readyz?check=workspace reports ready.
+// Pull mode enables /readyz immediately for Substrate's WakeupProbe and holds
+// /readyz?check=workspace at 503 until initial assignment claim and workspace
+// setup finish.
+func (s *Server) SetWorkspaceCheckReady(ready bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.workspaceCheckReady = ready
 }
 
 // IsWorkspaceReady returns whether the workspace setup has completed.
@@ -239,9 +273,10 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	ready := s.workspaceReady
+	checkReady := s.workspaceCheckReady
 	s.mu.RUnlock()
 
-	if !ready {
+	if !ready || (r.URL.Query().Get("check") == "workspace" && !checkReady) {
 		http.Error(w, "workspace initializing", http.StatusServiceUnavailable)
 		return
 	}

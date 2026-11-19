@@ -95,11 +95,12 @@ type childExit struct {
 }
 
 type supervisedChild struct {
-	runID      string
-	cmd        *exec.Cmd
-	exited     chan childExit
-	tail       *tailBuffer
-	outputFile string
+	runID          string
+	cmd            *exec.Cmd
+	exited         chan childExit
+	tail           *tailBuffer
+	outputFile     string
+	dropPrivileges bool
 }
 
 type pullAgent struct {
@@ -120,6 +121,7 @@ type pullAgent struct {
 	lastStartedRunID string
 	claimNonce       string
 	eventSeq         int64
+	preparedWorkdir  string
 	child            *supervisedChild
 }
 
@@ -163,6 +165,9 @@ func runPull(ctx context.Context, cfg Config) error {
 	})
 	// Mark /readyz 200 OK immediately so Substrate's WakeupProbe succeeds
 	// without deadlocking ResumeActor while the runner claims its assignment.
+	// Hold /readyz?check=workspace at 503 until the initial assignment and
+	// workspace setup complete.
+	metaServer.SetWorkspaceCheckReady(false)
 	metaServer.SetWorkspaceReady(true)
 	if err := metaServer.Start(); err != nil {
 		return fmt.Errorf("starting metadata server: %w", err)
@@ -263,15 +268,29 @@ func (a *pullAgent) dispatchAssignment(ctx context.Context, resp *runnerv1.Claim
 	switch resp.GetMode() {
 	case runnerv1.AssignmentMode_ASSIGNMENT_MODE_SETUP:
 		a.runWorkspaceSetup(ctx, resp.GetWorkspace())
+		a.metaServer.SetWorkspaceCheckReady(true)
 	case runnerv1.AssignmentMode_ASSIGNMENT_MODE_RUN:
 		if a.child != nil && a.inMemoryRunID == resp.GetRunId() {
+			a.metaServer.SetWorkspaceCheckReady(true)
 			return
 		}
 		a.startTaskRun(ctx, resp)
 	case runnerv1.AssignmentMode_ASSIGNMENT_MODE_RESUME:
 		// Keep supervising the live child process.
+		a.metaServer.SetWorkspaceCheckReady(true)
 	case runnerv1.AssignmentMode_ASSIGNMENT_MODE_IDLE:
 		a.stopChild()
+		if task := resp.GetTask(); task != nil {
+			setTaskEnv(task)
+			setDefaultEnv(task, a.caBundlePath, a.askpassPath)
+			wsPath := a.resolveWorkdir("", task)
+			if err := a.ensureWorkspaceReady(ctx, resp.GetWorkspace(), wsPath); err != nil {
+				slog.Error("workspace setup failed for idle task", "path", wsPath, "error", err)
+				return
+			}
+			a.metaServer.UpdateAssignment(task, resp.GetWorkspace(), resp.GetGoal().GetText())
+		}
+		a.metaServer.SetWorkspaceCheckReady(true)
 	}
 }
 
@@ -311,7 +330,15 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 	ws := resp.GetWorkspace()
 	goalText := resp.GetGoal().GetText()
 
+	taskForFiles := cloneTaskWithGoal(task, goalText)
+	setTaskEnv(taskForFiles)
+	setDefaultEnv(taskForFiles, a.caBundlePath, a.askpassPath)
+
 	wsPath := a.resolveWorkdir(resp.GetExec().GetWorkdir(), task)
+	if err := a.ensureWorkspaceReady(ctx, ws, wsPath); err != nil {
+		a.reportStartupFailure(ctx, runID, fmt.Errorf("setting up workspace: %w", err))
+		return
+	}
 	axMetaDir := filepath.Join(wsPath, ".ax")
 	if err := os.MkdirAll(axMetaDir, 0o755); err != nil {
 		a.reportStartupFailure(ctx, runID, fmt.Errorf("creating %s: %w", axMetaDir, err))
@@ -321,8 +348,7 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 	outFilePath := outputPath(wsPath)
 	_ = os.Remove(outFilePath)
 
-	taskForFiles := cloneTaskWithGoal(task, goalText)
-	launcherEnvFiles, launcherErr := writeLauncherFiles(a.cfg.RunDir, wsPath, taskForFiles, ws)
+	launcherEnvFiles, launcherErr := writeLauncherFiles(cmp.Or(a.cfg.RunDir, DefaultRunDir), wsPath, taskForFiles, ws)
 	if launcherErr != nil {
 		slog.Warn("failed to write launcher contract files in RunDir", "error", launcherErr)
 		launcherEnvFiles.env = []string{OutputFileEnv + "=" + outFilePath}
@@ -334,7 +360,7 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 	a.persistState()
 
 	a.metaServer.UpdateAssignment(taskForFiles, ws, goalText)
-	setDefaultEnv(taskForFiles, a.caBundlePath, a.askpassPath)
+	a.metaServer.SetWorkspaceCheckReady(true)
 
 	argv := resp.GetExec().GetArgv()
 	if len(argv) == 0 {
@@ -399,11 +425,12 @@ func (a *pullAgent) startTaskRun(ctx context.Context, resp *runnerv1.ClaimAssign
 	}()
 
 	a.child = &supervisedChild{
-		runID:      runID,
-		cmd:        cmd,
-		exited:     exited,
-		tail:       ring,
-		outputFile: outFilePath,
+		runID:          runID,
+		cmd:            cmd,
+		exited:         exited,
+		tail:           ring,
+		outputFile:     outFilePath,
+		dropPrivileges: dropPrivs,
 	}
 	a.inMemoryRunID = runID
 	a.eventSeq = 1
@@ -456,7 +483,7 @@ func (a *pullAgent) handleChildExited(ctx context.Context, exit childExit) {
 		a.cfg.OnCommandExit(CommandExit{Pid: exit.pid, ExitCode: exit.code, Err: exit.err})
 	}
 
-	output := readCapturedTaskOutput(child.outputFile, child.tail)
+	output := readCapturedTaskOutput(child.outputFile, child.tail, child.dropPrivileges)
 	a.eventSeq++
 	ev := &runnerv1.RunnerEvent{
 		Seq:  a.eventSeq,
@@ -512,6 +539,30 @@ func (a *pullAgent) shouldDropPrivileges() bool {
 	return os.Geteuid() == 0
 }
 
+func (a *pullAgent) ensureWorkspaceReady(ctx context.Context, ws *v1alpha1.Workspace, wsPath string) error {
+	if a.preparedWorkdir == wsPath {
+		return nil
+	}
+	if _, err := workspace.SetupWorkspace(ctx, ws, wsPath); err != nil {
+		return err
+	}
+	if a.shouldDropPrivileges() {
+		if err := chownTree(wsPath, unprivilegedUID, unprivilegedGID); err != nil {
+			slog.Warn("failed to chown workspace directory", "path", wsPath, "error", err)
+		}
+	}
+	a.preparedWorkdir = wsPath
+	return nil
+}
+
+func setTaskEnv(task *v1alpha1.Task) {
+	for _, e := range task.GetSpec().GetEnv() {
+		if e.GetName() != "" {
+			_ = os.Setenv(e.GetName(), e.GetValue())
+		}
+	}
+}
+
 func (a *pullAgent) buildChildEnv(task *v1alpha1.Task, execEnv map[string]string, launcherEnv []string, wsPath string, droppedToUID1000 bool) []string {
 	env := commandEnv(task, a.metaServer.MetadataURL())
 	for k, v := range execEnv {
@@ -554,6 +605,7 @@ func (a *pullAgent) syncActorIdentity() {
 		a.stopChild()
 		a.wipeDurableState()
 		a.actorUID = diskUID
+		a.preparedWorkdir = ""
 		a.claimNonce = uuid.NewString()
 	}
 }
@@ -717,10 +769,14 @@ func (a *pullAgent) postProto(ctx context.Context, path string, req, resp proto.
 }
 
 func ensureWritableForUser(wsPath, axMetaDir string, uid, gid int) {
-	_ = chownTree(axMetaDir, uid, gid)
+	if err := chownTree(axMetaDir, uid, gid); err != nil {
+		slog.Warn("failed to chown .ax dir for unprivileged user", "path", axMetaDir, "uid", uid, "error", err)
+	}
 	info, err := os.Stat(wsPath)
 	if err == nil && info.IsDir() {
-		_ = os.Chown(wsPath, uid, gid)
+		if err := os.Chown(wsPath, uid, gid); err != nil {
+			slog.Warn("failed to chown workspace dir for unprivileged user", "path", wsPath, "uid", uid, "error", err)
+		}
 	}
 }
 

@@ -400,6 +400,11 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 					Port: 80,
 				},
 			},
+			SecurityContext: &ateapipb.SecurityContext{
+				Capabilities: &ateapipb.Capabilities{
+					Add: []string{"SETUID", "SETGID", "CHOWN"},
+				},
+			},
 			VolumeMounts: []*ateapipb.VolumeMount{{
 				Name:      "workspace",
 				MountPath: "/workspace",
