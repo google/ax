@@ -36,6 +36,8 @@ spec:
   gateway:
     name: hero-demo-gw
   env:
+    - name: AGY_RUNTIME_INSTALL
+      value: "true" # published starter image installs pinned agy at startup
     - name: GEMINI_API_KEY
       value: placeholder # replaced outside the sandbox by hero-demo-gw
   sessionId: hero-demo-session
