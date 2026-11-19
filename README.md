@@ -68,52 +68,31 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 
 ## Quick start
 
-### Prerequisites
-
-If you are deploying to a Kubernetes cluster (or see [docs/installation.md](docs/installation.md) for the full version-pinned audit recipe), you need:
-
-- A Kubernetes 1.36+ cluster with **Agent Substrate** installed (see the [Substrate README](https://github.com/agent-substrate/substrate#readme))
-- [Go](https://go.dev/doc/install) and `kubectl`
-- [Podman](https://podman.io/) or [Docker](https://docs.docker.com/get-docker/), authenticated to a container registry your cluster can pull from
-
-Substrate lands in the `ate-system` namespace and exposes its Control API at `api.ate-system.svc.cluster.local:443`. Verify it is up before moving on:
+### 1. Install the CLI
 
 ```bash
-kubectl get svc api -n ate-system
+curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
+export PATH="$HOME/.ax/bin:$PATH"
 ```
 
-### 1. Build the CLI
+### 2. Install AX
+
+**Locally**, on a new Kind cluster with Substrate and a WorkerPool:
 
 ```bash
-make install   # installs `ax` from this checkout into $(go env GOPATH)/bin
+ax local start --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_TASK_IMAGE"
 ```
 
-### 2. Build and push the images
-
-Point `AX_IMAGE_REPO` at your registry, then build the `ax-server` and `ax-task-runner` images and push them to it:
+**On an existing cluster** with Kubernetes 1.36+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
-export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
-make images
+ax ctx "$KUBE_CONTEXT"
+ax install --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_TASK_IMAGE"
 ```
 
-### 3. Deploy the control plane
+Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
 
-Use `ax install` so `ax-system` is labeled (`ate.dev/api-access=true`) and `ax-server` is registered in Substrate's caller allowlists before deploying PostgreSQL and `ax-server`:
-
-```bash
-ax install \
-  --server-image "$AX_IMAGE_REPO/ax-server:latest" \
-  --default-task-image "$AX_IMAGE_REPO/ax-task-runner:latest"
-```
-
-This deploys PostgreSQL and the `ax-server` image you just pushed, configured to use your `ax-task-runner` image for tasks that do not set `spec.profile.image`. Everything lands in the `ax-system` namespace.
-
-### 4. Create a WorkerPool
-
-Every task runs as a Substrate actor, and an actor needs a free worker from a `WorkerPool`. (`ax local start` creates one automatically; on an existing cluster neither `ax install` nor the Substrate installer creates one for you, so without a pool the first `ax resume` fails with `ResourceExhausted: no free workers available`.)
-
-Create a small gVisor pool from [`examples/workerpool.yaml`](examples/workerpool.yaml) (its header explains how to apply it), or follow the WorkerPool step in the [installation guide](docs/installation.md#substrate-setup). Then wait until `kubectl get workerpools -A` shows the workers ready.
+Until release images are published, build your own images with `AX_IMAGE_REPO=<your-registry> make images`. See the [Local Installer guide](docs/local_installer.md) for prerequisites, `ax uninstall`, and more.
 
 ### Run your first task
 
