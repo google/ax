@@ -31,7 +31,7 @@ ax local status
 Paste this prompt into Claude Code, Gemini CLI, Antigravity, or Cursor to let your local coding agent check prerequisites and set up AX automatically:
 
 ```text
-Help me install AX on this computer and get a local isolated agent sandbox ready. Read docs/local_installer.md first. Check my operating system, CPU architecture, free disk space, and container runtime (on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a Linux >= 6.8 kernel is running; if not, install/start Colima with `brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`). Install or build `ax`, verify `ax version`, run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`), and verify `ax local status`. Let me handle any password or cloud sign-in prompts.
+Help me install AX on this computer and get a local isolated agent sandbox ready. Read https://github.com/google/ax/blob/main/docs/local_installer.md first. Check my operating system, CPU architecture, free disk space, and container runtime (on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a Linux >= 6.8 kernel is running; if not, install/start Colima with `brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`). Install `ax` with the installer from that guide, then run `~/.ax/bin/ax version`. If that fails, the install did not work: stop and tell me, or build `ax` from source as the guide describes. Run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`), and verify `ax local status`. If a step fails, show me its error message and stop instead of retrying. Let me handle any password or cloud sign-in prompts.
 ```
 
 ---
@@ -97,6 +97,8 @@ ax local start \
 
 *(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
+*(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--default-task-image`, `--runner-volume-image`, and each task's `spec.profile.image`.)*
+
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
 ### Expected Behavior (~2–3 minutes on cold start)
@@ -106,6 +108,7 @@ The installer prints progress (`==>`) across three stages:
    - Verifies that the container host / macOS Linux VM runs in rootful mode with Linux kernel `>= 6.8` and `>= 4 GiB` RAM, and checks that any pre-existing `ax-local` kubeconfig context belongs to `kind-ax-local`.
    - Uses `kind >= v0.32.0` and `kubectl` from `PATH` when available, or downloads and SHA-256-verifies `kind v0.32.0` and `kubectl v1.36.0` into `~/.ax/bin/`.
    - Creates the Kubernetes `v1.36.1` Kind cluster (`ax-local`) with `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and `PodCertificateRequest` (`certificates.k8s.io/v1beta1=true`) enabled, configures `net.ipv4.conf.all.proxy_arp=1`, and switches your active kubeconfig context to **`ax-local`**.
+   - Checks from inside the Kind node that `https://ghcr.io` is reachable, and prints a warning when it is not (for example on a Docker host with IPv4 forwarding off, where containers have no outbound network and every image pull would fail).
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
@@ -115,6 +118,14 @@ The installer prints progress (`==>`) across three stages:
      ```text
      Local environment "ax-local" is ready (active context: ax-local).
      ```
+
+While it waits for a rollout, `ax` reads the status of the rollout's pods every 15 seconds and prints it when it changes. If the rollout times out, the error ends with the last status, in Kubernetes' own words:
+
+```text
+==> Deploying ax-server (...)...
+    ax-system/deployment/ax-server is not ready: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
+Error: waiting for ax-system/deployment/ax-server rollout: timed out after 3m0s: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
+```
 
 ---
 

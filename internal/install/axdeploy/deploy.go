@@ -132,7 +132,7 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if err != nil {
 		return err
 	}
-	k := &kubectlClient{runner: r, kubectl: kubectlBin, context: opts.KubeContext}
+	k := &kubectlClient{runner: r, kubectl: kubectlBin, context: opts.KubeContext, out: out}
 
 	fmt.Fprintf(out, "==> Configuring Agent Substrate permissions for %s/ax-server...\n", ns)
 	if err := GrantSubstrateAccess(ctx, k, ns, timeout, out); err != nil {
@@ -230,7 +230,7 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 	if err != nil {
 		return err
 	}
-	k := &kubectlClient{runner: r, kubectl: kubectlBin, context: opts.KubeContext}
+	k := &kubectlClient{runner: r, kubectl: kubectlBin, context: opts.KubeContext, out: out}
 
 	fmt.Fprintf(out, "==> Removing AX workloads from namespace %q (preserving PostgreSQL PVC data)...\n", ns)
 	roleName := deploy.ClusterRoleName(ns)
@@ -316,6 +316,8 @@ type kubectlClient struct {
 	runner  executil.Runner
 	kubectl string
 	context string
+	// out receives the pod status while rolloutStatus waits; nil prints nothing.
+	out io.Writer
 }
 
 func (k *kubectlClient) run(ctx context.Context, stdin io.Reader, args ...string) (executil.Result, error) {
@@ -341,12 +343,18 @@ func (k *kubectlClient) exists(ctx context.Context, namespace, kind, name string
 	return err == nil
 }
 
+// rolloutStatus waits for target to roll out. While it waits it prints what
+// the pods of target are waiting for, and a timeout error quotes it
+// (executil.WaitRollout).
 func (k *kubectlClient) rolloutStatus(ctx context.Context, namespace, target string, timeout time.Duration) error {
-	_, err := k.run(ctx, nil, "-n", namespace, "rollout", "status", target, fmt.Sprintf("--timeout=%ds", int(timeout.Seconds())))
-	if err != nil {
-		return fmt.Errorf("waiting for %s/%s rollout: %w", namespace, target, err)
-	}
-	return nil
+	return executil.WaitRollout(ctx, k.runner, executil.RolloutOptions{
+		Kubectl:     k.kubectl,
+		KubeContext: k.context,
+		Namespace:   namespace,
+		Target:      target,
+		Timeout:     timeout,
+		Out:         k.out,
+	})
 }
 
 func ensurePostgresSecret(ctx context.Context, k *kubectlClient, namespace string) error {
