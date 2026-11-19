@@ -174,5 +174,3 @@ message DeleteWorkspaceRequest {
   string atespace = 1;
   string name = 2;
 }
-
-message DeleteWorkspaceResponse {}

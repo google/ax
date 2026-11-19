@@ -15,11 +15,18 @@
 package tunnel
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sort"
 	"testing"
+	"time"
 )
 
 func TestSanitizeContext(t *testing.T) {
@@ -74,15 +81,21 @@ func TestEnsureServerURL(t *testing.T) {
 		}
 		urls[namespace] = fmt.Sprintf("http://127.0.0.1:%d", port)
 	}
-	// With IgnoreEnv, neither variable decides which installation is reached.
+	// Without FromEnv, neither variable decides which installation is reached.
 	t.Setenv("AX_SERVER", "http://explicit:8080")
 	t.Setenv("AX_SYSTEM_NAMESPACE", "ax-remote")
 
 	// Each namespace has its own tunnel.
 	for _, namespace := range []string{"", "ax-remote"} {
-		if got, err := EnsureServerURL(Options{Context: "kind-local", Namespace: namespace, IgnoreEnv: true}); err != nil || got != urls[namespace] {
+		if got, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", Namespace: namespace}); err != nil || got != urls[namespace] {
 			t.Errorf("EnsureServerURL(namespace %q) = %q, %v; want %q", namespace, got, err, urls[namespace])
 		}
+	}
+
+	// Even with FromEnv, an explicit Context beats AX_SERVER, while an empty
+	// Namespace falls back to AX_SYSTEM_NAMESPACE.
+	if got, err := EnsureServerURL(context.Background(), Options{Context: "kind-local", FromEnv: true}); err != nil || got != urls["ax-remote"] {
+		t.Errorf("EnsureServerURL(explicit context, FromEnv) = %q, %v; want %q", got, err, urls["ax-remote"])
 	}
 
 	// Stopping the context's tunnels stops both.
@@ -91,5 +104,111 @@ func TestEnsureServerURL(t *testing.T) {
 	}
 	if tunnels, err := ListTunnels(); err != nil || len(tunnels) != 0 {
 		t.Errorf("expected no tunnels after stopping the context's, got %v, error %v", tunnels, err)
+	}
+}
+
+func TestEnsureServerURLNoContextAndFallback(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("AX_SERVER", "")
+	t.Setenv("KUBECONTEXT", "")
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
+	t.Setenv("PATH", t.TempDir())
+
+	if got, err := EnsureServerURL(context.Background(), Options{}); !errors.Is(err, ErrNoContext) {
+		t.Fatalf("EnsureServerURL() without FallbackURL = %q, %v; want ErrNoContext", got, err)
+	}
+	if got, err := EnsureServerURL(context.Background(), Options{FallbackURL: "http://localhost:8080"}); err != nil || got != "http://localhost:8080" {
+		t.Fatalf("EnsureServerURL() with FallbackURL = %q, %v; want http://localhost:8080", got, err)
+	}
+}
+
+// The files in ~/.ax/tunnels are read and written by every binary built from
+// this package, at whatever version each was built, so their names and JSON
+// keys cannot change without breaking the others.
+func TestTunnelStateFileFormat(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("AX_HOME", home)
+	for _, tc := range []struct{ namespace, file string }{
+		{"", "kind-local.json"},
+		{"ax-system", "kind-local.json"},
+		{"ax-remote", "kind-local.ax-remote.json"},
+	} {
+		if err := SaveTunnel(&TunnelInfo{Context: "kind-local", Namespace: tc.namespace, Service: "ax-server", Port: 1, PID: 2}); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(home, "tunnels", tc.file))
+		if err != nil {
+			t.Errorf("namespace %q: %v", tc.namespace, err)
+			continue
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		var keys []string
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if got, want := fmt.Sprint(keys), "[context created_at namespace pid port service]"; got != want {
+			t.Errorf("namespace %q: keys of %s = %s, want %s", tc.namespace, tc.file, got, want)
+		}
+	}
+}
+
+func TestEnsureServerURLWithoutKubectl(t *testing.T) {
+	// No tunnel is recorded, so one has to be started, and no kubectl is
+	// installed. With no resolver given, nothing is downloaded.
+	home := t.TempDir()
+	t.Setenv("AX_HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	_, err := EnsureServerURL(context.Background(), Options{Context: "kind-local"})
+	if !errors.Is(err, ErrKubectlNotFound) {
+		t.Fatalf("EnsureServerURL() error = %v, want ErrKubectlNotFound", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "bin", "kubectl")); !os.IsNotExist(err) {
+		t.Errorf("kubectl was installed into AX_HOME: stat error %v", err)
+	}
+}
+
+func TestEnsureServerURLCancel(t *testing.T) {
+	// kubectl never reports a forwarded port. Cancelling the context returns
+	// before the 5 s wait for the port ends, and records no tunnel.
+	t.Setenv("AX_HOME", t.TempDir())
+	bin := t.TempDir()
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := EnsureServerURL(ctx, Options{Context: "kind-local"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("EnsureServerURL() error = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("EnsureServerURL() returned after %v, want soon after the 200ms deadline", elapsed)
+	}
+	if tunnels, err := ListTunnels(); err != nil || len(tunnels) != 0 {
+		t.Errorf("ListTunnels() = %v, %v; want no tunnel recorded", tunnels, err)
+	}
+}
+
+func TestEnsureServerURLUsesKubectlResolver(t *testing.T) {
+	// The caller's resolver decides which kubectl runs, and its error is
+	// returned as is.
+	t.Setenv("AX_HOME", t.TempDir())
+	want := errors.New("download failed")
+	called := false
+	_, err := EnsureServerURL(context.Background(), Options{
+		Context: "kind-local",
+		Kubectl: func(context.Context) (string, error) {
+			called = true
+			return "", want
+		},
+	})
+	if !called || !errors.Is(err, want) {
+		t.Fatalf("EnsureServerURL() called resolver = %v, error = %v; want the resolver's error", called, err)
 	}
 }

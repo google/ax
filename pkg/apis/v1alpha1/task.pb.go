@@ -1114,42 +1114,6 @@ func (x *DeleteTaskRequest) GetName() string {
 	return ""
 }
 
-type DeleteTaskResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteTaskResponse) Reset() {
-	*x = DeleteTaskResponse{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[13]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteTaskResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteTaskResponse) ProtoMessage() {}
-
-func (x *DeleteTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[13]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteTaskResponse.ProtoReflect.Descriptor instead.
-func (*DeleteTaskResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{13}
-}
-
 type SuspendTaskRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
@@ -1160,7 +1124,7 @@ type SuspendTaskRequest struct {
 
 func (x *SuspendTaskRequest) Reset() {
 	*x = SuspendTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1172,7 +1136,7 @@ func (x *SuspendTaskRequest) String() string {
 func (*SuspendTaskRequest) ProtoMessage() {}
 
 func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[14]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1185,7 +1149,7 @@ func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuspendTaskRequest.ProtoReflect.Descriptor instead.
 func (*SuspendTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{14}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SuspendTaskRequest) GetAtespace() string {
@@ -1212,7 +1176,7 @@ type ResumeTaskRequest struct {
 
 func (x *ResumeTaskRequest) Reset() {
 	*x = ResumeTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1188,7 @@ func (x *ResumeTaskRequest) String() string {
 func (*ResumeTaskRequest) ProtoMessage() {}
 
 func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[15]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1201,7 @@ func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskRequest.ProtoReflect.Descriptor instead.
 func (*ResumeTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{15}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResumeTaskRequest) GetAtespace() string {
@@ -1330,8 +1294,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04task\x18\x01 \x01(\v2\x11.ax.v1alpha1.TaskR\x04task\"C\n" +
 	"\x11DeleteTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x14\n" +
-	"\x12DeleteTaskResponse\"D\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"D\n" +
 	"\x12SuspendTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
@@ -1373,7 +1336,7 @@ func file_pkg_apis_v1alpha1_task_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(TaskState)(0),              // 0: ax.v1alpha1.TaskState
 	(TaskResult)(0),             // 1: ax.v1alpha1.TaskResult
@@ -1391,37 +1354,36 @@ var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(*ListTasksResponse)(nil),   // 13: ax.v1alpha1.ListTasksResponse
 	(*CreateTaskRequest)(nil),   // 14: ax.v1alpha1.CreateTaskRequest
 	(*DeleteTaskRequest)(nil),   // 15: ax.v1alpha1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil),  // 16: ax.v1alpha1.DeleteTaskResponse
-	(*SuspendTaskRequest)(nil),  // 17: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),   // 18: ax.v1alpha1.ResumeTaskRequest
-	(*ObjectMeta)(nil),          // 19: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),             // 20: ax.v1alpha1.Profile
-	(*WorkspaceRef)(nil),        // 21: ax.v1alpha1.WorkspaceRef
-	(*structpb.Struct)(nil),     // 22: google.protobuf.Struct
-	(*GatewayRef)(nil),          // 23: ax.v1alpha1.GatewayRef
-	(*durationpb.Duration)(nil), // 24: google.protobuf.Duration
-	(*status.Status)(nil),       // 25: google.rpc.Status
-	(*ObjectRef)(nil),           // 26: ax.v1alpha1.ObjectRef
-	(*Condition)(nil),           // 27: ax.v1alpha1.Condition
+	(*SuspendTaskRequest)(nil),  // 16: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),   // 17: ax.v1alpha1.ResumeTaskRequest
+	(*ObjectMeta)(nil),          // 18: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),             // 19: ax.v1alpha1.Profile
+	(*WorkspaceRef)(nil),        // 20: ax.v1alpha1.WorkspaceRef
+	(*structpb.Struct)(nil),     // 21: google.protobuf.Struct
+	(*GatewayRef)(nil),          // 22: ax.v1alpha1.GatewayRef
+	(*durationpb.Duration)(nil), // 23: google.protobuf.Duration
+	(*status.Status)(nil),       // 24: google.rpc.Status
+	(*ObjectRef)(nil),           // 25: ax.v1alpha1.ObjectRef
+	(*Condition)(nil),           // 26: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
-	19, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	18, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	4,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
 	10, // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	20, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
+	19, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
 	5,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	21, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
-	22, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
+	20, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
+	21, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
 	7,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
 	6,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
-	23, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
-	24, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
-	24, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
+	22, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	23, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
+	23, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
 	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
-	25, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
+	24, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
 	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	26, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
-	27, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	25, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
+	26, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
 	0,  // 17: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
 	9,  // 18: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
 	8,  // 19: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
@@ -1448,7 +1410,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_task_proto_rawDesc), len(file_pkg_apis_v1alpha1_task_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   16,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

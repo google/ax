@@ -14,10 +14,13 @@
 
 # Pushing a vX.Y.Z[-PRERELEASE] tag publishes a release:
 #
-#   1. images:  builds ax-server and ax-task-runner for linux/amd64 and
-#               linux/arm64 and pushes them to ghcr.io/google/ax/<image>:<tag>.
-#   2. release: builds the ax CLI, renders deploy/ax-server.yaml with both
-#               images pinned by digest, and publishes the GitHub release with
+#   1. images:  builds ax-server, ax-task-runner, and ax-runner-volume for
+#               linux/amd64 and linux/arm64 and pushes them to
+#               ghcr.io/google/ax/<image>:<tag>.
+#   2. release: builds the ax CLI, renders deploy/ax-server.yaml with
+#               ax-server and the default task image pinned by digest (and the
+#               runner volume, if the AX_RELEASE_RUNNER_VOLUME repository
+#               variable is "true"), and publishes the GitHub release with
 #               generated notes and those files attached.
 #
 # The highest stable tag also moves :latest; a prerelease never does.
@@ -104,6 +107,7 @@ jobs:
     outputs:
       server_image: ${{ steps.publish.outputs.AX_SERVER_IMAGE }}
       task_image: ${{ steps.publish.outputs.AX_DEFAULT_TASK_IMAGE }}
+      runner_volume_image: ${{ steps.publish.outputs.AX_RUNNER_VOLUME_REF }}
     steps:
     - name: Checkout
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -215,9 +219,14 @@ jobs:
       env:
         AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
         AX_DEFAULT_TASK_IMAGE: ${{ needs.images.outputs.task_image }}
+        AX_RUNNER_VOLUME_REF: ${{ needs.images.outputs.runner_volume_image }}
+        # Repository variable; "true" (case-insensitive) makes release
+        # manifests mount the runner from ax-runner-volume (#625). Off by
+        # default. Fork pull requests may not see repository variables.
+        AX_RENDER_RUNNER_VOLUME: ${{ vars.AX_RELEASE_RUNNER_VOLUME == 'true' }}
       run: |
-        printf 'AX_SERVER_IMAGE=%s\nAX_DEFAULT_TASK_IMAGE=%s\n' \
-          "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}" > bin/release/images.env
+        printf 'AX_SERVER_IMAGE=%s\nAX_DEFAULT_TASK_IMAGE=%s\nAX_RUNNER_VOLUME_REF=%s\n' \
+          "${AX_SERVER_IMAGE}" "${AX_DEFAULT_TASK_IMAGE}" "${AX_RUNNER_VOLUME_REF}" > bin/release/images.env
         hack/release/render-manifests.sh bin/release
 
     - name: Publish release
@@ -225,6 +234,34 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
       run: hack/release/create-release.sh "${TAG}" bin/release
+
+    # Tags render with the switch as set; check both settings here, so each
+    # path stays covered whichever way the repository variable is set.
+    - name: Render with the runner volume off and on (dry run)
+      if: env.DRY_RUN == 'true'
+      run: |
+        set -o errexit -o nounset -o pipefail
+        for switch in false true; do
+          out="/tmp/rv-${switch}"
+          mkdir -p "${out}"
+          grep -v '^AX_RUNNER_VOLUME_IMAGE=' bin/release/images.env > "${out}/images.env"
+          AX_RENDER_RUNNER_VOLUME="${switch}" hack/release/render-manifests.sh "${out}"
+          unset AX_RUNNER_VOLUME_IMAGE
+          source "${out}/images.env"
+          want=""
+          if [[ "${switch}" == true ]]; then
+            want="${AX_RUNNER_VOLUME_REF}"
+            [[ -n "${want}" ]]
+          fi
+          if [[ "${AX_RUNNER_VOLUME_IMAGE}" != "${want}" ]]; then
+            echo "::error::AX_RENDER_RUNNER_VOLUME=${switch} recorded AX_RUNNER_VOLUME_IMAGE='${AX_RUNNER_VOLUME_IMAGE}', want '${want}'"
+            exit 1
+          fi
+          if ! grep -A1 'name: AX_RUNNER_VOLUME_IMAGE' "${out}/ax-server.yaml" | grep -qF "value: \"${want}\""; then
+            echo "::error::AX_RENDER_RUNNER_VOLUME=${switch} did not render value: \"${want}\" in ax-server.yaml"
+            exit 1
+          fi
+        done
 
     - name: List release assets (dry run)
       if: env.DRY_RUN == 'true'

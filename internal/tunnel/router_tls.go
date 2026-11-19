@@ -57,8 +57,9 @@ type cachedRouterTLS struct {
 // RouterTLSConfig builds a TLS configuration for connecting to Substrate's
 // atenet-router over mTLS. It fetches the router's serving CA from the live
 // servicedns ClusterTrustBundle and requests a short-lived client certificate
-// from the podidentity signer for the given namespace and ServiceAccount.
-func RouterTLSConfig(ctx context.Context, kubeContext, namespace, serviceAccount string) (*tls.Config, error) {
+// from the podidentity signer for the given namespace and ServiceAccount. A nil
+// kubectl means InstalledKubectl.
+func RouterTLSConfig(ctx context.Context, kubectl KubectlResolver, kubeContext, namespace, serviceAccount string) (*tls.Config, error) {
 	ctxName, err := CurrentContext(kubeContext)
 	if err != nil {
 		ctxName = kubeContext
@@ -68,12 +69,12 @@ func RouterTLSConfig(ctx context.Context, kubeContext, namespace, serviceAccount
 		return cfg, nil
 	}
 
-	trustPEM, roots, err := serviceDNSTrustPool(ctx, ctxName)
+	trustPEM, roots, err := serviceDNSTrustPool(ctx, kubectl, ctxName)
 	if err != nil {
 		return nil, fmt.Errorf("loading servicedns trust bundle: %w", err)
 	}
 
-	cert, chainPEM, keyPEM, err := requestPodIdentityCert(ctx, ctxName, namespace, serviceAccount)
+	cert, chainPEM, keyPEM, err := requestPodIdentityCert(ctx, kubectl, ctxName, namespace, serviceAccount)
 	if err != nil {
 		return nil, fmt.Errorf("requesting podidentity client certificate: %w", err)
 	}
@@ -196,8 +197,8 @@ func kubectlArgs(ctxName string, args ...string) []string {
 	return args
 }
 
-func serviceDNSTrustPool(ctx context.Context, ctxName string) (string, *x509.CertPool, error) {
-	kubectlBin, err := resolveKubectl(ctx)
+func serviceDNSTrustPool(ctx context.Context, kubectl KubectlResolver, ctxName string) (string, *x509.CertPool, error) {
+	kubectlBin, err := resolveKubectl(ctx, kubectl)
 	if err != nil {
 		return "", nil, err
 	}
@@ -244,8 +245,8 @@ func serviceDNSTrustPool(ctx context.Context, ctxName string) (string, *x509.Cer
 	return pemBuf.String(), pool, nil
 }
 
-func requestPodIdentityCert(ctx context.Context, ctxName, namespace, serviceAccount string) (tls.Certificate, string, string, error) {
-	kubectlBin, err := resolveKubectl(ctx)
+func requestPodIdentityCert(ctx context.Context, kubectl KubectlResolver, ctxName, namespace, serviceAccount string) (tls.Certificate, string, string, error) {
+	kubectlBin, err := resolveKubectl(ctx, kubectl)
 	if err != nil {
 		return tls.Certificate{}, "", "", err
 	}

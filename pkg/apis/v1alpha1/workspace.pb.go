@@ -1081,42 +1081,6 @@ func (x *DeleteWorkspaceRequest) GetName() string {
 	return ""
 }
 
-type DeleteWorkspaceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DeleteWorkspaceResponse) Reset() {
-	*x = DeleteWorkspaceResponse{}
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[17]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DeleteWorkspaceResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DeleteWorkspaceResponse) ProtoMessage() {}
-
-func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_workspace_proto_msgTypes[17]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DeleteWorkspaceResponse.ProtoReflect.Descriptor instead.
-func (*DeleteWorkspaceResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP(), []int{17}
-}
-
 var File_pkg_apis_v1alpha1_workspace_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
@@ -1196,8 +1160,7 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\tworkspace\x18\x01 \x01(\v2\x16.ax.v1alpha1.WorkspaceR\tworkspace\"H\n" +
 	"\x16DeleteWorkspaceRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x19\n" +
-	"\x17DeleteWorkspaceResponseB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x04name\x18\x02 \x01(\tR\x04nameB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_workspace_proto_rawDescOnce sync.Once
@@ -1211,47 +1174,46 @@ func file_pkg_apis_v1alpha1_workspace_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_workspace_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_pkg_apis_v1alpha1_workspace_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_pkg_apis_v1alpha1_workspace_proto_goTypes = []any{
-	(*WorkspaceRef)(nil),            // 0: ax.v1alpha1.WorkspaceRef
-	(*Workspace)(nil),               // 1: ax.v1alpha1.Workspace
-	(*WorkspaceSpec)(nil),           // 2: ax.v1alpha1.WorkspaceSpec
-	(*WorkspaceSetup)(nil),          // 3: ax.v1alpha1.WorkspaceSetup
-	(*GitRepo)(nil),                 // 4: ax.v1alpha1.GitRepo
-	(*File)(nil),                    // 5: ax.v1alpha1.File
-	(*MCPConfig)(nil),               // 6: ax.v1alpha1.MCPConfig
-	(*MCPRegistry)(nil),             // 7: ax.v1alpha1.MCPRegistry
-	(*MCPServer)(nil),               // 8: ax.v1alpha1.MCPServer
-	(*SkillsConfig)(nil),            // 9: ax.v1alpha1.SkillsConfig
-	(*SkillRegistry)(nil),           // 10: ax.v1alpha1.SkillRegistry
-	(*WorkspaceStatus)(nil),         // 11: ax.v1alpha1.WorkspaceStatus
-	(*GetWorkspaceRequest)(nil),     // 12: ax.v1alpha1.GetWorkspaceRequest
-	(*ListWorkspacesRequest)(nil),   // 13: ax.v1alpha1.ListWorkspacesRequest
-	(*ListWorkspacesResponse)(nil),  // 14: ax.v1alpha1.ListWorkspacesResponse
-	(*CreateWorkspaceRequest)(nil),  // 15: ax.v1alpha1.CreateWorkspaceRequest
-	(*DeleteWorkspaceRequest)(nil),  // 16: ax.v1alpha1.DeleteWorkspaceRequest
-	(*DeleteWorkspaceResponse)(nil), // 17: ax.v1alpha1.DeleteWorkspaceResponse
-	(*ObjectMeta)(nil),              // 18: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),                 // 19: ax.v1alpha1.Profile
-	(*GatewayRef)(nil),              // 20: ax.v1alpha1.GatewayRef
-	(*Condition)(nil),               // 21: ax.v1alpha1.Condition
+	(*WorkspaceRef)(nil),           // 0: ax.v1alpha1.WorkspaceRef
+	(*Workspace)(nil),              // 1: ax.v1alpha1.Workspace
+	(*WorkspaceSpec)(nil),          // 2: ax.v1alpha1.WorkspaceSpec
+	(*WorkspaceSetup)(nil),         // 3: ax.v1alpha1.WorkspaceSetup
+	(*GitRepo)(nil),                // 4: ax.v1alpha1.GitRepo
+	(*File)(nil),                   // 5: ax.v1alpha1.File
+	(*MCPConfig)(nil),              // 6: ax.v1alpha1.MCPConfig
+	(*MCPRegistry)(nil),            // 7: ax.v1alpha1.MCPRegistry
+	(*MCPServer)(nil),              // 8: ax.v1alpha1.MCPServer
+	(*SkillsConfig)(nil),           // 9: ax.v1alpha1.SkillsConfig
+	(*SkillRegistry)(nil),          // 10: ax.v1alpha1.SkillRegistry
+	(*WorkspaceStatus)(nil),        // 11: ax.v1alpha1.WorkspaceStatus
+	(*GetWorkspaceRequest)(nil),    // 12: ax.v1alpha1.GetWorkspaceRequest
+	(*ListWorkspacesRequest)(nil),  // 13: ax.v1alpha1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil), // 14: ax.v1alpha1.ListWorkspacesResponse
+	(*CreateWorkspaceRequest)(nil), // 15: ax.v1alpha1.CreateWorkspaceRequest
+	(*DeleteWorkspaceRequest)(nil), // 16: ax.v1alpha1.DeleteWorkspaceRequest
+	(*ObjectMeta)(nil),             // 17: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),                // 18: ax.v1alpha1.Profile
+	(*GatewayRef)(nil),             // 19: ax.v1alpha1.GatewayRef
+	(*Condition)(nil),              // 20: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_workspace_proto_depIdxs = []int32{
-	18, // 0: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	17, // 0: ax.v1alpha1.Workspace.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	2,  // 1: ax.v1alpha1.Workspace.spec:type_name -> ax.v1alpha1.WorkspaceSpec
 	11, // 2: ax.v1alpha1.Workspace.status:type_name -> ax.v1alpha1.WorkspaceStatus
 	6,  // 3: ax.v1alpha1.WorkspaceSpec.mcp:type_name -> ax.v1alpha1.MCPConfig
-	19, // 4: ax.v1alpha1.WorkspaceSpec.profile:type_name -> ax.v1alpha1.Profile
+	18, // 4: ax.v1alpha1.WorkspaceSpec.profile:type_name -> ax.v1alpha1.Profile
 	3,  // 5: ax.v1alpha1.WorkspaceSpec.setup:type_name -> ax.v1alpha1.WorkspaceSetup
 	4,  // 6: ax.v1alpha1.WorkspaceSetup.git:type_name -> ax.v1alpha1.GitRepo
 	5,  // 7: ax.v1alpha1.WorkspaceSetup.files:type_name -> ax.v1alpha1.File
 	9,  // 8: ax.v1alpha1.WorkspaceSetup.skills:type_name -> ax.v1alpha1.SkillsConfig
-	20, // 9: ax.v1alpha1.WorkspaceSetup.gateway:type_name -> ax.v1alpha1.GatewayRef
+	19, // 9: ax.v1alpha1.WorkspaceSetup.gateway:type_name -> ax.v1alpha1.GatewayRef
 	7,  // 10: ax.v1alpha1.MCPConfig.registries:type_name -> ax.v1alpha1.MCPRegistry
 	8,  // 11: ax.v1alpha1.MCPConfig.servers:type_name -> ax.v1alpha1.MCPServer
 	8,  // 12: ax.v1alpha1.MCPRegistry.servers:type_name -> ax.v1alpha1.MCPServer
 	10, // 13: ax.v1alpha1.SkillsConfig.registries:type_name -> ax.v1alpha1.SkillRegistry
-	21, // 14: ax.v1alpha1.WorkspaceStatus.conditions:type_name -> ax.v1alpha1.Condition
+	20, // 14: ax.v1alpha1.WorkspaceStatus.conditions:type_name -> ax.v1alpha1.Condition
 	1,  // 15: ax.v1alpha1.ListWorkspacesResponse.workspaces:type_name -> ax.v1alpha1.Workspace
 	1,  // 16: ax.v1alpha1.CreateWorkspaceRequest.workspace:type_name -> ax.v1alpha1.Workspace
 	17, // [17:17] is the sub-list for method output_type
@@ -1274,7 +1236,7 @@ func file_pkg_apis_v1alpha1_workspace_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_workspace_proto_rawDesc), len(file_pkg_apis_v1alpha1_workspace_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
