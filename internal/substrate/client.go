@@ -402,7 +402,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 			},
 			SecurityContext: &ateapipb.SecurityContext{
 				Capabilities: &ateapipb.Capabilities{
-					Add: []string{"SETUID", "SETGID"},
+					Add: []string{"SETUID", "SETGID", "CHOWN"},
 				},
 			},
 			VolumeMounts: []*ateapipb.VolumeMount{{

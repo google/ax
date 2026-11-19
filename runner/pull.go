@@ -769,10 +769,14 @@ func (a *pullAgent) postProto(ctx context.Context, path string, req, resp proto.
 }
 
 func ensureWritableForUser(wsPath, axMetaDir string, uid, gid int) {
-	_ = chownTree(axMetaDir, uid, gid)
+	if err := chownTree(axMetaDir, uid, gid); err != nil {
+		slog.Warn("failed to chown .ax dir for unprivileged user", "path", axMetaDir, "uid", uid, "error", err)
+	}
 	info, err := os.Stat(wsPath)
 	if err == nil && info.IsDir() {
-		_ = os.Chown(wsPath, uid, gid)
+		if err := os.Chown(wsPath, uid, gid); err != nil {
+			slog.Warn("failed to chown workspace dir for unprivileged user", "path", wsPath, "uid", uid, "error", err)
+		}
 	}
 }
 
