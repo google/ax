@@ -221,7 +221,7 @@ func TestE2E_PrewarmAndCustomImageSharedWorkspace(t *testing.T) {
 		"Image":     image,
 		"Script":    `"if [ ! -f /workspace/resumed.flag ]; then touch /workspace/resumed.flag && sleep 300; fi; { cat /workspace/seed.txt; echo; cat /workspace/setup-marker.txt; } > \"$AX_OUTPUT_FILE\""`,
 	}))
-	assertState(t, env.getTask(t, ns, task2), v1alpha1.TaskState_TASK_STATE_QUEUED)
+	assertState(t, env.getTask(t, ns, task2), v1alpha1.TaskState_TASK_STATE_SUSPENDED)
 
 	env.mustRunAX(t, ns, "resume", "task", task2)
 	if err := poll(30*time.Second, 250*time.Millisecond, func() error {
