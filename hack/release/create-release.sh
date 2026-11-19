@@ -153,7 +153,7 @@ ${cli_install}
 | Image | Reference |
 |---|---|
 | ax-server | \`${AX_SERVER_IMAGE}\` |
-| ax-task-runner (default task image) | \`${AX_DEFAULT_TASK_IMAGE}\` |
+| ax-task-runner (for \`spec.profile.image\`) | \`${AX_TASK_RUNNER_IMAGE}\` |
 | ax-runner-volume (${runner_volume_note}) | \`${AX_RUNNER_VOLUME_REF}\` |
 
 EOF

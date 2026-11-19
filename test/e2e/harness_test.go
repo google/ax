@@ -429,11 +429,19 @@ func (s *suiteEnv) deleteOnCleanup(t *testing.T, atespace, kind, name string) {
 // Assertions and fixtures
 // ---------------------------------------------------------------------------
 
-// renderYAML executes tmpl (a text/template) with data.
+// renderYAML executes tmpl (a text/template) with data. {{taskImage}} expands
+// to $AX_E2E_TASK_IMAGE, the digest-pinned task-runner image that every Task
+// must name in spec.profile.image.
 func renderYAML(t *testing.T, tmpl string, data any) string {
 	t.Helper()
+	funcs := template.FuncMap{"taskImage": func() (string, error) {
+		if img := os.Getenv("AX_E2E_TASK_IMAGE"); img != "" {
+			return img, nil
+		}
+		return "", errors.New("AX_E2E_TASK_IMAGE is not set (hack/setup-e2e-kind.sh writes it to .tmp/e2e.env)")
+	}}
 	var b strings.Builder
-	if err := template.Must(template.New("manifest").Option("missingkey=error").Parse(tmpl)).Execute(&b, data); err != nil {
+	if err := template.Must(template.New("manifest").Option("missingkey=error").Funcs(funcs).Parse(tmpl)).Execute(&b, data); err != nil {
 		t.Fatalf("rendering manifest: %v", err)
 	}
 	return b.String()

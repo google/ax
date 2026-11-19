@@ -24,7 +24,7 @@
 #   AX_BIN               path to the ax CLI                        (default: ./bin/ax)
 #   ATESPACE             atespace to run the demo in               (default: default)
 #   SUBSTRATE_NAMESPACE  namespace Agent Substrate is installed in (default: ate-system)
-#   AX_TASK_IMAGE        task image to run, pinned by digest       (default: the server's default task image)
+#   AX_TASK_IMAGE        task image to run, pinned by digest       (required; `make images` prints it)
 #   NO_COLOR             set to disable colored output
 
 set -euo pipefail
@@ -38,6 +38,10 @@ ATESPACE="${ATESPACE:-default}"
 TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
 TASK_IMAGE="${AX_TASK_IMAGE:-}"
+if [[ -z "${TASK_IMAGE}" ]]; then
+  echo "error: set AX_TASK_IMAGE to a digest-pinned task image, e.g. the ax-task-runner image \`make images\` printed" >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
@@ -132,15 +136,12 @@ spec:
   debug: true
   workspace:
     name: ${WORKSPACE_NAME}
+  profile:
+    image: "${TASK_IMAGE}"
   env:
     - name: DEMO_ENV
       value: "active"
 YAML
-# Without AX_TASK_IMAGE, spec.profile.image stays unset and the server runs the
-# task with its default task image: the ax-task-runner that `make deploy` configured.
-if [[ -n "${TASK_IMAGE}" ]]; then
-  printf '  profile:\n    image: "%s"\n' "${TASK_IMAGE}" >> "${DEMO_YAML}"
-fi
 printf '%s' "${DIM}"; sed 's/^/    /' "${DEMO_YAML}"; printf '%s\n\n' "${RESET}"
 run ax apply -f "${DEMO_YAML}"
 

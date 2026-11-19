@@ -8,9 +8,9 @@ jobs:
    `linux/amd64` and `linux/arm64` and pushes them as
    `ghcr.io/google/ax/<image>:<tag>`.
 2. **release** builds the `ax` CLI, renders the install manifests with
-   `ax-server` and the default task image pinned by digest (and the runner
-   volume, when it is switched on), and publishes the GitHub release with them
-   attached.
+   `ax-server` pinned by digest (and the runner volume, when it is switched
+   on), and publishes the GitHub release with them attached. The release notes
+   list the digest-pinned `ax-task-runner` image for `spec.profile.image`.
 
 If the images job fails, no release is created. Every run's image digests are
 in its job summary.
@@ -49,7 +49,7 @@ stable tag, so a patch to an older line does not take Latest from a newer one.
 | `ax_<os>_<arch>.tar.gz` | The `ax` CLI for linux and darwin, amd64 and arm64. Static, and `ax version` prints the tag. |
 | `checksums.txt` | SHA-256 of every archive, in `sha256sum` format. |
 | `install.sh` | The CLI installer from the repository root, when the tag has one, so `releases/latest/download/install.sh` always matches the latest archives. |
-| `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` and the default task image pinned by digest. `AX_RUNNER_VOLUME_IMAGE` is empty (tasks run the runner baked into their image) unless `AX_RELEASE_RUNNER_VOLUME` is `true`. |
+| `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` pinned by digest. `AX_RUNNER_VOLUME_IMAGE` is empty (tasks run the runner baked into their image) unless `AX_RELEASE_RUNNER_VOLUME` is `true`. |
 | `postgres.yaml` | [`deploy/postgres.yaml`](../deploy/postgres.yaml), unchanged. |
 
 The release notes start with install commands, the Substrate version from

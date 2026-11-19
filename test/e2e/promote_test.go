@@ -37,6 +37,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   gateway:
     name: {{.Gateway}}

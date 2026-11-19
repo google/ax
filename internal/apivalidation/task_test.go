@@ -35,15 +35,24 @@ func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
 }
 
 func TestValidateTask(t *testing.T) {
+	img := &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"}
 	tests := []struct {
 		name    string
 		spec    *v1alpha1.TaskSpec
 		wantErr string
 	}{
-		{name: "nil spec"},
-		{name: "no workspace", spec: &v1alpha1.TaskSpec{}},
-		{name: "default path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}},
-		{name: "explicit path", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "/x"}}},
+		{name: "nil spec", wantErr: "spec.profile: image or ateTemplate.name is required"},
+		{name: "no profile", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}, wantErr: "spec.profile: image or ateTemplate.name is required"},
+		{
+			name: "profile resources without image",
+			spec: &v1alpha1.TaskSpec{
+				Profile: &v1alpha1.Profile{Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}}},
+			},
+			wantErr: "spec.profile: image or ateTemplate.name is required",
+		},
+		{name: "no workspace", spec: &v1alpha1.TaskSpec{Profile: img}},
+		{name: "default path", spec: &v1alpha1.TaskSpec{Profile: img, Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}},
+		{name: "explicit path", spec: &v1alpha1.TaskSpec{Profile: img, Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "/x"}}},
 		{
 			name: "profile image and resources",
 			spec: &v1alpha1.TaskSpec{
@@ -104,23 +113,24 @@ func TestValidateTask(t *testing.T) {
 		},
 		{
 			name:    "nameless binding",
-			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Path: "/w"}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Workspace: &v1alpha1.WorkspaceRef{Path: "/w"}},
 			wantErr: "spec.workspace: name is required",
 		},
 		{
 			name:    "relative path",
-			spec:    &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "rel"}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Workspace: &v1alpha1.WorkspaceRef{Name: "a", Path: "rel"}},
 			wantErr: "spec.workspace: path \"rel\" must be absolute",
 		},
-		{name: "gateway", spec: &v1alpha1.TaskSpec{Gateway: &v1alpha1.GatewayRef{Name: "gw"}}},
+		{name: "gateway", spec: &v1alpha1.TaskSpec{Profile: img, Gateway: &v1alpha1.GatewayRef{Name: "gw"}}},
 		{
 			name:    "nameless gateway",
-			spec:    &v1alpha1.TaskSpec{Gateway: &v1alpha1.GatewayRef{}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Gateway: &v1alpha1.GatewayRef{}},
 			wantErr: "spec.gateway.name",
 		},
 		{
 			name: "goal retry and session_id",
 			spec: &v1alpha1.TaskSpec{
+				Profile:   img,
 				Goal:      &v1alpha1.Goal{Text: "Fix failing unit tests"},
 				SessionId: "session-42",
 				Retry: &v1alpha1.RetryConfig{
@@ -133,22 +143,22 @@ func TestValidateTask(t *testing.T) {
 		},
 		{
 			name:    "negative max_retries",
-			spec:    &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxRetries: -1}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{MaxRetries: -1}},
 			wantErr: "spec.retry.maxRetries",
 		},
 		{
 			name:    "negative initial_backoff",
-			spec:    &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{InitialBackoff: durationpb.New(-time.Second)}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{InitialBackoff: durationpb.New(-time.Second)}},
 			wantErr: "spec.retry.initialBackoff",
 		},
 		{
 			name:    "negative max_backoff",
-			spec:    &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxBackoff: durationpb.New(-time.Second)}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{MaxBackoff: durationpb.New(-time.Second)}},
 			wantErr: "spec.retry.maxBackoff",
 		},
 		{
 			name: "initial_backoff exceeds max_backoff",
-			spec: &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{
+			spec: &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{
 				InitialBackoff: durationpb.New(2 * time.Minute),
 				MaxBackoff:     durationpb.New(time.Minute),
 			}},
@@ -156,35 +166,36 @@ func TestValidateTask(t *testing.T) {
 		},
 		{
 			name:    "backoff_multiplier below 1",
-			spec:    &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{BackoffMultiplier: 0.5}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{BackoffMultiplier: 0.5}},
 			wantErr: "spec.retry.backoffMultiplier",
 		},
 		{
 			name: "config",
-			spec: &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"suite": "swe", "shard": map[string]any{"index": 7}})},
+			spec: &v1alpha1.TaskSpec{Profile: img, Config: mustStruct(t, map[string]any{"suite": "swe", "shard": map[string]any{"index": 7}})},
 		},
 		{
 			name:    "oversized config",
-			spec:    &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize)})},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize)})},
 			wantErr: "spec.config:",
 		},
 		{
 			name: "config near the limit",
-			spec: &v1alpha1.TaskSpec{Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize-100)})},
+			spec: &v1alpha1.TaskSpec{Profile: img, Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize-100)})},
 		},
 		{
 			// Each value fits on its own, but together they do not fit in one
 			// Substrate environment variable.
 			name: "oversized task",
 			spec: &v1alpha1.TaskSpec{
-				Config: mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize-100)}),
-				Env:    []*v1alpha1.EnvVar{{Name: "BIG", Value: strings.Repeat("y", 16<<10)}},
+				Profile: img,
+				Config:  mustStruct(t, map[string]any{"blob": strings.Repeat("x", apivalidation.MaxTaskConfigSize-100)}),
+				Env:     []*v1alpha1.EnvVar{{Name: "BIG", Value: strings.Repeat("y", 16<<10)}},
 			},
 			wantErr: "task: encoded launch configuration",
 		},
 		{
 			name:    "oversized commands",
-			spec:    &v1alpha1.TaskSpec{Commands: []string{"sh", "-c", strings.Repeat("z", apivalidation.MaxEnvValueSize)}},
+			spec:    &v1alpha1.TaskSpec{Profile: img, Commands: []string{"sh", "-c", strings.Repeat("z", apivalidation.MaxEnvValueSize)}},
 			wantErr: "task: encoded launch configuration",
 		},
 	}
@@ -212,6 +223,7 @@ func TestValidateTask_ReservedSetupActorPrefix(t *testing.T) {
 	}
 	if err := apivalidation.ValidateTask(&v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "my-" + apivalidation.SetupActorPrefix + "task"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"}},
 	}); err != nil {
 		t.Fatalf("ValidateTask(non-prefix occurrence) = %v, want nil", err)
 	}

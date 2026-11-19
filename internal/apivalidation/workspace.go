@@ -38,6 +38,20 @@ func ValidateWorkspace(w *v1alpha1.Workspace) error {
 	return validateSetup(spec.GetSetup())
 }
 
+// ValidateWorkspacePrewarm reports an error unless a workspace that will be
+// pre-warmed names the image to pre-warm it in. Setup steps run in a sandbox
+// started from spec.profile, so a Workspace with setup steps or a profile must
+// set spec.profile.image or spec.profile.ateTemplate.name. The API server calls
+// it only when pre-warming is enabled; otherwise setup runs in each task's
+// sandbox.
+func ValidateWorkspacePrewarm(w *v1alpha1.Workspace) error {
+	spec := w.GetSpec()
+	if s := spec.GetSetup(); spec.GetProfile() != nil || len(s.GetGit()) > 0 || len(s.GetFiles()) > 0 || s.GetSkills() != nil || len(s.GetCommands()) > 0 {
+		return requireImage("spec.profile", spec.GetProfile())
+	}
+	return nil
+}
+
 func validateSetup(setup *v1alpha1.WorkspaceSetup) error {
 	if setup == nil {
 		return nil

@@ -74,7 +74,11 @@ func TestApplyAtespace(t *testing.T) {
 				if tc.manifestAtespace != "" {
 					manifest += fmt.Sprintf("  atespace: %q\n", tc.manifestAtespace)
 				}
-				manifest += "spec: {}\n"
+				if kind == "Task" {
+					manifest += "spec:\n  profile:\n    image: alpine\n"
+				} else {
+					manifest += "spec: {}\n"
+				}
 				if err := os.WriteFile(path, []byte(manifest), 0600); err != nil {
 					t.Fatal(err)
 				}
@@ -320,7 +324,7 @@ func TestRunGetResourceAliases(t *testing.T) {
 
 // newTestReconciler returns a TaskReconciler that runs tasks on sub.
 func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
-	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
+	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
 }
 
 func TestRunDeleteTask(t *testing.T) {

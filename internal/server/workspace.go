@@ -90,6 +90,11 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); !prewarmEnabled && field != "" {
 		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
 	}
+	if prewarmEnabled {
+		if err := apivalidation.ValidateWorkspacePrewarm(req.Workspace); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
 
 	ws := req.Workspace
 	ws.Status = nil

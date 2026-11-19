@@ -39,37 +39,26 @@ func TestRenderPostgres(t *testing.T) {
 }
 
 func TestRenderServer(t *testing.T) {
-	const (
-		srvImg  = "localhost:5001/ax-server:local@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-		taskImg = "localhost:5001/ax-task-runner:local@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-	)
+	const srvImg = "localhost:5001/ax-server:local@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 
-	t.Run("allows empty default task image", func(t *testing.T) {
+	t.Run("renders the server image", func(t *testing.T) {
 		out, err := RenderServer(ServerConfig{
 			Namespace:   "ax-system",
 			ServerImage: srvImg,
 		})
 		if err != nil {
-			t.Fatalf("expected empty DefaultTaskImage to succeed, got %v", err)
+			t.Fatalf("RenderServer: %v", err)
+		}
+		if strings.Contains(string(out), "AX_DEFAULT_TASK_IMAGE") {
+			t.Fatalf("rendered server manifest still sets AX_DEFAULT_TASK_IMAGE:\n%s", out)
 		}
 		assertValidMultiDocYAML(t, out)
 	})
 
-	t.Run("rejects unpinned task image", func(t *testing.T) {
-		_, err := RenderServer(ServerConfig{
-			Namespace:        "ax-system",
-			ServerImage:      srvImg,
-			DefaultTaskImage: "localhost:5001/ax-task-runner:latest",
-		})
-		if err == nil || !strings.Contains(err.Error(), "digest-pinned") {
-			t.Fatalf("expected digest-pinned error, got %v", err)
-		}
-	})
-
 	t.Run("rejects malformed image references", func(t *testing.T) {
 		for _, tc := range []ServerConfig{
-			{Namespace: "ax-system", ServerImage: "repo/img:tag\n          evil: true", DefaultTaskImage: taskImg},
-			{Namespace: "ax-system", ServerImage: srvImg, DefaultTaskImage: "localhost:5001/ax-task-runner@sha256:short"},
+			{Namespace: "ax-system", ServerImage: "repo/img:tag\n          evil: true"},
+			{Namespace: "ax-system", ServerImage: srvImg, RunnerVolumeImage: "localhost:5001/ax-runner-volume@sha256:short"},
 			{Namespace: "ax-system", ServerImage: srvImg, RunnerVolumeImage: "localhost:5001/ax-runner-volume:latest"},
 		} {
 			if _, err := RenderServer(tc); err == nil {
@@ -95,15 +84,14 @@ func TestRenderServer(t *testing.T) {
 
 	t.Run("renders custom namespace cleanly", func(t *testing.T) {
 		out, err := RenderServer(ServerConfig{
-			Namespace:        "team-a",
-			ServerImage:      srvImg,
-			DefaultTaskImage: taskImg,
+			Namespace:   "team-a",
+			ServerImage: srvImg,
 		})
 		if err != nil {
 			t.Fatalf("RenderServer: %v", err)
 		}
 		s := string(out)
-		for _, bad := range []string{"${AX_SERVER_IMAGE}", "${AX_DEFAULT_TASK_IMAGE}", "ax-system"} {
+		for _, bad := range []string{"${AX_SERVER_IMAGE}", "ax-system"} {
 			if strings.Contains(s, bad) {
 				t.Fatalf("unexpected %q in rendered server manifest:\n%s", bad, s)
 			}
@@ -116,7 +104,6 @@ func TestRenderServer(t *testing.T) {
 			"ax-postgres.team-a.svc.cluster.local:5432",
 			"--template-atespace=team-a",
 			srvImg,
-			taskImg,
 		} {
 			if !strings.Contains(s, want) {
 				t.Fatalf("missing %q in rendered server manifest:\n%s", want, s)

@@ -163,7 +163,7 @@ func TestValidateResources(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "spec.profile.resources.limits.cpu") {
 		t.Fatalf("ValidateTask error = %v, want cpu limit error", err)
 	}
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Resources: limits("2", "4Gi")}}}); err != nil {
+	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "img@sha256:abc", Resources: limits("2", "4Gi")}}}); err != nil {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
 	}
 }

@@ -39,6 +39,11 @@ type fakeSetupCoordinator struct {
 	fn           func(ctx context.Context, atespace, setupActor string) error
 }
 
+// testImage is the image test Workspaces with setup steps run in.
+const testImage = "ghcr.io/org/workspace@sha256:111"
+
+func testProfile() *v1alpha1.Profile { return &v1alpha1.Profile{Image: testImage} }
+
 func (f *fakeSetupCoordinator) RegisterSetup(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error {
 	f.active.Add(1)
 	if f.registerHook != nil {
@@ -113,28 +118,32 @@ func TestNeedsPrewarmSnapshot(t *testing.T) {
 		{
 			name: "setup_git",
 			spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Git: []*v1alpha1.GitRepo{{Repo: "https://github.com/org/repo.git"}}},
+				Profile: testProfile(),
+				Setup:   &v1alpha1.WorkspaceSetup{Git: []*v1alpha1.GitRepo{{Repo: "https://github.com/org/repo.git"}}},
 			},
 			want: true,
 		},
 		{
 			name: "setup_files",
 			spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Files: []*v1alpha1.File{{Path: "AGENTS.md", Content: "hi"}}},
+				Profile: testProfile(),
+				Setup:   &v1alpha1.WorkspaceSetup{Files: []*v1alpha1.File{{Path: "AGENTS.md", Content: "hi"}}},
 			},
 			want: true,
 		},
 		{
 			name: "setup_skills",
 			spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Skills: &v1alpha1.SkillsConfig{Path: ".ax/skills"}},
+				Profile: testProfile(),
+				Setup:   &v1alpha1.WorkspaceSetup{Skills: &v1alpha1.SkillsConfig{Path: ".ax/skills"}},
 			},
 			want: true,
 		},
 		{
 			name: "setup_commands",
 			spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}},
+				Profile: testProfile(),
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}},
 			},
 			want: true,
 		},
@@ -198,7 +207,6 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	}
 	mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
 		SetupCoordinator: coord,
-		DefaultTaskImage: "ghcr.io/org/default-task@sha256:111",
 		RunnerImage:      "ghcr.io/org/runner@sha256:222",
 	})
 
@@ -221,6 +229,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	ws := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "payments", Atespace: "default", Uid: "uid-payments"},
 		Spec: &v1alpha1.WorkspaceSpec{
+			Profile: testProfile(),
 			Setup: &v1alpha1.WorkspaceSetup{
 				Commands: []string{"npm ci"},
 				Gateway:  &v1alpha1.GatewayRef{Name: "build-gw"},
@@ -263,7 +272,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	}
 
 	// Warm hit on default profile does not run another setup actor.
-	defaultTag, err := mgr.EnsureSnapshotTag(ctx, ws, nil, gw)
+	defaultTag, err := mgr.EnsureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), gw)
 	if err != nil || defaultTag == "" {
 		t.Fatalf("EnsureSnapshotTag(warm hit) = (%q, %v)", defaultTag, err)
 	}
@@ -278,7 +287,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: defaultTag},
 		Status:   &ateapipb.TagStatus{},
 	})
-	if _, err := mgr.EnsureSnapshotTag(ctx, ws, nil, gw); err != nil {
+	if _, err := mgr.EnsureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), gw); err != nil {
 		t.Fatalf("EnsureSnapshotTag(rebuild unset snapshot tag): %v", err)
 	}
 	if coord.calls.Load() != 2 {
@@ -293,7 +302,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 			},
 		},
 	})
-	if _, err := mgr.EnsureSnapshotTag(ctx, ws, nil, gw); err != nil {
+	if _, err := mgr.EnsureSnapshotTag(ctx, ws, ws.GetSpec().GetProfile(), gw); err != nil {
 		t.Fatalf("EnsureSnapshotTag(rebuild pending tag): %v", err)
 	}
 	if coord.calls.Load() != 3 {
@@ -326,14 +335,17 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	// Prepare an unrelated workspace to ensure Delete("uid-payments") leaves its tag intact.
 	otherWS := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "payments-other", Atespace: "default", Uid: "uid-payments-other"},
-		Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Profile: testProfile(),
+			Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+		},
 	}
 	if _, err := mgr.Prepare(ctx, otherWS, nil); err != nil {
 		t.Fatalf("Prepare(payments-other): %v", err)
 	}
 
-	// Verify DefaultTaskImage was used for the template created when profile.image is omitted.
-	_, expectedTplName, _, err := controller.ResolveProfileTemplate("default", nil, "ghcr.io/org/default-task@sha256:111", "ghcr.io/org/runner@sha256:222")
+	// Verify the template was created from Workspace.spec.profile.image.
+	_, expectedTplName, _, err := controller.ResolveProfileTemplate("default", otherWS.GetSpec().GetProfile(), "ghcr.io/org/runner@sha256:222")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate: %v", err)
 	}
@@ -341,8 +353,8 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetActorTemplate(%s): %v", expectedTplName, err)
 	}
-	if got := tpl.GetContainers()[0].GetImage(); got != "ghcr.io/org/default-task@sha256:111" {
-		t.Errorf("template image = %q, want DefaultTaskImage", got)
+	if got := tpl.GetContainers()[0].GetImage(); got != testImage {
+		t.Errorf("template image = %q, want %q", got, testImage)
 	}
 
 	// 4. Delete("uid-payments") removes both the eager default tag and the lazy override tag,
@@ -385,7 +397,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		})
 		st, err := mgr.Prepare(ctx, &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "flaky-ws", Atespace: "default", Uid: "uid-flaky"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"git fetch"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"git fetch"}}},
 		}, nil)
 		if err != nil || st.GetPhase() != v1alpha1.WorkspacePhaseReady || coord.calls.Load() != 2 {
 			t.Fatalf("Prepare(flaky) = (%+v, %v), calls=%d, want Ready after 2 attempts", st, err, coord.calls.Load())
@@ -415,7 +427,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "broken-ws", Atespace: "default", Uid: "uid-broken"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
 		if err == nil {
@@ -446,6 +458,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "bad-gw-ws", Atespace: "default", Uid: "uid-bad-gw"},
 			Spec: &v1alpha1.WorkspaceSpec{
+				Profile: testProfile(),
 				Setup: &v1alpha1.WorkspaceSetup{
 					Commands: []string{"true"},
 					Gateway:  &v1alpha1.GatewayRef{Name: "bad-gw"},
@@ -500,7 +513,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "tag-fail-ws", Atespace: "default", Uid: "uid-tag-fail"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
 		if err == nil || st.GetPhase() != v1alpha1.WorkspacePhaseFailed {
@@ -526,7 +539,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "transient-ws", Atespace: "default", Uid: "uid-transient"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
 		if err == nil || st.GetPhase() != v1alpha1.WorkspacePhasePreparing {
@@ -547,7 +560,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws", Atespace: "default", Uid: "uid-grpc-canceled"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		}
 		st, err := mgr.Prepare(ctx, ws, nil)
 		if err == nil || status.Code(err) != codes.Canceled {
@@ -590,7 +603,7 @@ func TestWorkspaceManager_ParallelProfilesUnderSharedLock(t *testing.T) {
 	})
 	ws := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "parallel-ws", Atespace: "default", Uid: "uid-parallel"},
-		Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: testProfile(), Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		Status:   &v1alpha1.WorkspaceStatus{Phase: v1alpha1.WorkspacePhaseReady},
 	}
 

@@ -45,6 +45,9 @@ func ValidateTask(t *v1alpha1.Task) error {
 	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {
 		return err
 	}
+	if err := requireImage("spec.profile", spec.GetProfile()); err != nil {
+		return err
+	}
 	if ref := spec.GetWorkspace(); ref != nil {
 		if ref.GetName() == "" {
 			return errors.New("spec.workspace: name is required")

@@ -62,8 +62,6 @@ type TaskReconciler struct {
 	httpClient              *http.Client
 	defaultTemplate         string
 	defaultTemplateAtespace string
-	// defaultTaskImage is used when the effective profile omits image and ateTemplate.name.
-	defaultTaskImage string
 
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
 	// to report ready before recording it as still initializing.
@@ -78,24 +76,19 @@ type TaskReconciler struct {
 }
 
 // NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
-// "default-template", v1alpha1.DefaultSystemNamespace and
-// v1alpha1.DefaultTaskImage respectively.
-func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace, defaultTaskImage string) *TaskReconciler {
+// "default-template" and v1alpha1.DefaultSystemNamespace respectively.
+func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskReconciler {
 	if defaultTemplate == "" {
 		defaultTemplate = "default-template"
 	}
 	if defaultTemplateAtespace == "" {
 		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
 	}
-	if defaultTaskImage == "" {
-		defaultTaskImage = v1alpha1.DefaultTaskImage
-	}
 	return &TaskReconciler{
 		client:                  client,
 		httpClient:              newProbeHTTPClient(),
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
-		defaultTaskImage:        defaultTaskImage,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
 	}
 }
@@ -103,11 +96,6 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 // Client returns the Substrate client used by the reconciler.
 func (r *TaskReconciler) Client() *substrate.Client {
 	return r.client
-}
-
-// DefaultTaskImage returns the fallback container image configured on the reconciler.
-func (r *TaskReconciler) DefaultTaskImage() string {
-	return r.defaultTaskImage
 }
 
 func newProbeHTTPClient() *http.Client {
@@ -206,7 +194,9 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	} else {
 		image := effective.GetImage()
 		if image == "" {
-			image = r.defaultTaskImage
+			err := errors.New("spec.profile must set image or ateTemplate.name")
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, err.Error(), now)
+			return err
 		}
 		slog.Info("reconciling task", "name", task.Metadata.Name, "atespace", atespace, "image", image)
 		templateAtespace, templateName, err = r.ensureTaskTemplate(ctx, task, ws, atespace, image, effective.GetResources(), now)

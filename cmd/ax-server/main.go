@@ -54,7 +54,6 @@ func main() {
 		substratePlaintext      bool
 		defaultTemplate         string
 		defaultTemplateAtespace string
-		defaultTaskImage        string
 		runnerVolumeImage       string
 		runnerEndpoint          string
 		actorJWTIssuer          string
@@ -74,7 +73,6 @@ func main() {
 	flag.BoolVar(&substratePlaintext, "substrate-plaintext", false, "Use insecure plaintext gRPC connection to Substrate")
 	flag.StringVar(&defaultTemplate, "template", "default-template", "Default Substrate ActorTemplate name")
 	flag.StringVar(&defaultTemplateAtespace, "template-atespace", v1alpha1.DefaultSystemNamespace, "Default Substrate ActorTemplate atespace")
-	flag.StringVar(&defaultTaskImage, "default-task-image", v1alpha1.DefaultTaskImage, "Container image for tasks that do not set spec.profile.image (env: AX_DEFAULT_TASK_IMAGE)")
 	flag.StringVar(&runnerVolumeImage, "runner-volume-image", "", "Digest-pinned runner volume image (Dockerfile.runner-volume) to mount read-only into task containers and run the runner from; empty runs the runner baked into the task image (env: AX_RUNNER_VOLUME_IMAGE)")
 	flag.StringVar(&runnerEndpoint, "runner-endpoint", substrate.DefaultRunnerEndpoint, "In-cluster host:port of the :8081 runner service allowed in actor EgressPolicies (env: AX_RUNNER_ENDPOINT)")
 	flag.StringVar(&actorJWTIssuer, "actor-jwt-issuer", "https://idp.ate-system.svc", "Substrate OIDC issuer URL for verifying Actor JWTs on :8081 (env: AX_ACTOR_JWT_ISSUER)")
@@ -93,9 +91,6 @@ func main() {
 	// a password file, or a Secret instead.
 	if envStore := os.Getenv("AX_STORE"); envStore != "" {
 		storeURL = envStore
-	}
-	if envImage := os.Getenv("AX_DEFAULT_TASK_IMAGE"); envImage != "" {
-		defaultTaskImage = envImage
 	}
 	if envImage := os.Getenv("AX_RUNNER_VOLUME_IMAGE"); envImage != "" {
 		runnerVolumeImage = envImage
@@ -140,7 +135,6 @@ func main() {
 		"store", describeStore(storeURL),
 		"substrateEndpoint", substrateEndpoint,
 		"template", defaultTemplate,
-		"defaultTaskImage", defaultTaskImage,
 		"runnerVolumeImage", runnerVolumeImage,
 	)
 
@@ -194,13 +188,12 @@ func main() {
 		}
 	}
 
-	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace, defaultTaskImage)
+	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
 	reconciler.RunnerVolumeImage = runnerVolumeImage
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:           backend,
 		Store:            backend,
 		SetupCoordinator: setupCoordinator,
-		DefaultTaskImage: defaultTaskImage,
 		RunnerImage:      runnerVolumeImage,
 		RunnerEndpoint:   runnerEndpoint,
 		RunnerAudience:   actorJWTAudience,

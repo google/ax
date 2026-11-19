@@ -134,9 +134,6 @@ type WorkspaceManagerOptions struct {
 	Locker           lock.Locker
 	Store            WorkspaceStore
 	SetupCoordinator SetupCoordinator
-	// DefaultTaskImage is used when a Profile omits image and ate_template
-	// (defaults to v1alpha1.DefaultTaskImage).
-	DefaultTaskImage string
 	// RunnerImage is a static server-startup setting (changed only when
 	// ax-server is redeployed with a new flag/env digest, never mutated
 	// dynamically at runtime).
@@ -161,7 +158,6 @@ type WorkspaceManager struct {
 	locker           lock.Locker
 	store            WorkspaceStore
 	coordinator      SetupCoordinator
-	defaultTaskImage string
 	runnerImage      string
 	runnerEndpoint   string
 	runnerAudience   string
@@ -177,10 +173,6 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	locker := opt.Locker
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
-	}
-	defaultTaskImage := opt.DefaultTaskImage
-	if defaultTaskImage == "" {
-		defaultTaskImage = v1alpha1.DefaultTaskImage
 	}
 	runnerEndpoint := opt.RunnerEndpoint
 	if runnerEndpoint == "" {
@@ -199,7 +191,6 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 		locker:           locker,
 		store:            opt.Store,
 		coordinator:      opt.SetupCoordinator,
-		defaultTaskImage: defaultTaskImage,
 		runnerImage:      opt.RunnerImage,
 		runnerEndpoint:   runnerEndpoint,
 		runnerAudience:   runnerAudience,
@@ -324,7 +315,7 @@ func (m *WorkspaceManager) ensureSnapshotTag(ctx context.Context, ws *v1alpha1.W
 	if err := m.client.EnsureAtespace(ctx, atespace); err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonAtespaceCreationFailed, underlyingErr: fmt.Errorf("ensuring atespace %q: %w", atespace, err)}
 	}
-	_, templateName, err := ensureProfileTemplate(ctx, m.client, atespace, prof, m.defaultTaskImage, m.runnerImage)
+	_, templateName, err := ensureProfileTemplate(ctx, m.client, atespace, prof, m.runnerImage)
 	if err != nil {
 		return "", &stageError{reason: v1alpha1.ReasonTemplateCreationFailed, underlyingErr: err}
 	}

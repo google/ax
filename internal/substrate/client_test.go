@@ -321,7 +321,7 @@ func TestClient_DeleteActor_PropagatesRPCError(t *testing.T) {
 }
 
 func TestBuildActorTemplate(t *testing.T) {
-	tmpl := BuildActorTemplate("", "test-tmpl", "", map[string]string{"FOO": "BAR"}, nil, "", nil)
+	tmpl := BuildActorTemplate("", "test-tmpl", "ghcr.io/agent@sha256:abc", map[string]string{"FOO": "BAR"}, nil, "", nil)
 	if tmpl.GetMetadata().GetAtespace() != "default" {
 		t.Errorf("expected default atespace, got %q", tmpl.GetMetadata().GetAtespace())
 	}
@@ -329,7 +329,7 @@ func TestBuildActorTemplate(t *testing.T) {
 		t.Fatalf("expected 1 container, got %d", len(tmpl.GetContainers()))
 	}
 	container := tmpl.GetContainers()[0]
-	if container.GetImage() != v1alpha1.DefaultTaskImage {
+	if container.GetImage() != "ghcr.io/agent@sha256:abc" {
 		t.Errorf("unexpected image: %q", container.GetImage())
 	}
 	probe := container.GetWakeupProbe().GetHttpGet()

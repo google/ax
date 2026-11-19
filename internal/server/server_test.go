@@ -309,7 +309,7 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 
 	// Valid names still go through, with and without an explicit atespace.
 	good := &v1alpha1.ObjectMeta{Name: "task-with-caps", Atespace: "team-a"}
-	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Metadata: good}}); err != nil {
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Metadata: good, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}}}}); err != nil {
 		t.Errorf("CreateTask(%v): %v", good, err)
 	}
 	if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws-1"}}}); err != nil {
@@ -345,6 +345,7 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "good"},
 		Spec: &v1alpha1.TaskSpec{
+			Profile:   &v1alpha1.Profile{Image: "alpine"},
 			Workspace: &v1alpha1.WorkspaceRef{Name: "a"},
 		},
 	}})
@@ -1088,7 +1089,7 @@ func assertNoActorState(t *testing.T, stored *v1alpha1.Task) {
 
 // newTestReconciler returns a TaskReconciler that runs tasks on sub.
 func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
-	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
+	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
 }
 
 // readyCondition returns the task's Ready condition, or nil.
@@ -1484,7 +1485,7 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		},
 		{
 			name:      "retry",
-			spec:      &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxRetries: 2}},
+			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Retry: &v1alpha1.RetryConfig{MaxRetries: 2}},
 			wantField: "spec.retry is not supported yet",
 		},
 	}
@@ -1513,29 +1514,20 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		t.Fatalf("CreateTask(negative maxRetries) = %v, want InvalidArgument", err)
 	}
 
-	// When a Workspace in the store defines a profile with ateTemplate.name:
-	// - A task omitting spec.profile inherits the Workspace's profile and is rejected with Unimplemented.
-	// - A task setting its own spec.profile (e.g. resources only) ignores Workspace.spec.profile
-	//   completely and succeeds.
+	// A task's own spec.profile ignores a Workspace's profile with
+	// ateTemplate.name completely and succeeds.
 	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "ws-tpl", Atespace: "default"},
 		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ws-user-tpl"}}},
 	}); err != nil {
 		t.Fatalf("SaveWorkspace: %v", err)
 	}
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "inherits-ws-tpl"},
-		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"}},
-	}})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("CreateTask inheriting workspace ateTemplate.name: got %v, want Unimplemented", err)
-	}
-
 	overrideTask, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "overrides-ws-profile"},
 		Spec: &v1alpha1.TaskSpec{
 			Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"},
 			Profile: &v1alpha1.Profile{
+				Image: "alpine",
 				Resources: &v1alpha1.ResourcesSpec{
 					Limits: &v1alpha1.ResourceList{Memory: "1Gi"},
 				},

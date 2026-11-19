@@ -114,6 +114,15 @@ func validateProfile(field string, p *v1alpha1.Profile) error {
 	return validateResources(field+".resources", p.GetResources())
 }
 
+// requireImage reports an error unless p names the container image to run,
+// either directly or through an existing ActorTemplate.
+func requireImage(field string, p *v1alpha1.Profile) error {
+	if p.GetImage() == "" && p.GetAteTemplate().GetName() == "" {
+		return fmt.Errorf("%s: image or ateTemplate.name is required", field)
+	}
+	return nil
+}
+
 func validateGatewayRef(field string, ref *v1alpha1.GatewayRef) error {
 	if ref == nil {
 		return nil

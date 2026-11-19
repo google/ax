@@ -36,9 +36,8 @@ var dns1123LabelRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
 // ServerConfig configures rendering of deploy/ax-server.yaml.
 type ServerConfig struct {
-	Namespace        string
-	ServerImage      string
-	DefaultTaskImage string
+	Namespace   string
+	ServerImage string
 	// RunnerVolumeImage is the digest-pinned runner volume image ax-server
 	// mounts into task containers. Empty runs the runner baked into each
 	// task image.
@@ -97,12 +96,6 @@ func RenderServer(cfg ServerConfig) ([]byte, error) {
 	if _, err := name.ParseReference(srvImg); err != nil {
 		return nil, fmt.Errorf("invalid server image %q: %w", cfg.ServerImage, err)
 	}
-	taskImg := strings.TrimSpace(cfg.DefaultTaskImage)
-	if taskImg != "" {
-		if _, err := name.NewDigest(taskImg); err != nil {
-			return nil, fmt.Errorf("default task image %q must be digest-pinned (@sha256:...): %w", cfg.DefaultTaskImage, err)
-		}
-	}
 	runnerImg := strings.TrimSpace(cfg.RunnerVolumeImage)
 	if runnerImg != "" {
 		if _, err := name.NewDigest(runnerImg); err != nil {
@@ -112,7 +105,6 @@ func RenderServer(cfg ServerConfig) ([]byte, error) {
 
 	rendered := rawServerYAML
 	rendered = strings.ReplaceAll(rendered, "${AX_SERVER_IMAGE}", srvImg)
-	rendered = strings.ReplaceAll(rendered, "${AX_DEFAULT_TASK_IMAGE}", taskImg)
 	rendered = strings.ReplaceAll(rendered, "${AX_RUNNER_VOLUME_IMAGE}", runnerImg)
 	rendered = rewriteNamespace(rendered, ns)
 

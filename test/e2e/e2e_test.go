@@ -17,6 +17,7 @@ package e2e_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,8 @@ metadata:
   name: {{.Name}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: {{.Debug}}
 `
 
@@ -259,9 +262,10 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 
 	// 2. Tasks are immutable: both CreateTask and `ax apply` reject a duplicate.
+	// The spec must pass validation so the server reaches the existence check.
 	_, err := env.AXClient.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: ns},
-		Spec:     &v1alpha1.TaskSpec{},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: os.Getenv("AX_E2E_TASK_IMAGE")}},
 	}})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("duplicate CreateTask: got %v, want FailedPrecondition", err)
@@ -340,6 +344,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   workspace:
     name: {{.Workspace}}
@@ -447,6 +453,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   workspace:
     name: {{.GitWorkspace}}
@@ -508,6 +516,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   workspace:
     name: {{.Workspace}}
@@ -609,6 +619,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   gateway:
     name: {{.Gateway}}

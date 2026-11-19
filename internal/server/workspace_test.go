@@ -68,6 +68,9 @@ func (s *ctxCheckingWorkspaceStore) UpdateWorkspaceStatus(ctx context.Context, a
 	return s.Store.UpdateWorkspaceStatus(ctx, atespace, name, st)
 }
 
+// prewarmProfile names the image a pre-warmed Workspace runs its setup in.
+var prewarmProfile = &v1alpha1.Profile{Image: "ghcr.io/org/agent@sha256:abc"}
+
 func newWorkspaceTestServer(t *testing.T) *server.Server {
 	t.Helper()
 	sub := substratetest.NewServer(t)
@@ -309,7 +312,7 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 	if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "prewarm-ws"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"changed"}, Gateway: &v1alpha1.GatewayRef{Name: "setup-gw"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: prewarmProfile, Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"changed"}, Gateway: &v1alpha1.GatewayRef{Name: "setup-gw"}}},
 		},
 	}); status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "immutable") {
 		t.Fatalf("mutated re-apply after deleting setup-gw = %v, want immutable error", err)
@@ -327,6 +330,24 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 	}
 }
 
+func TestWorkspacePrewarm_RequiresImage(t *testing.T) {
+	coord := &testSetupCoordinator{}
+	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
+
+	_, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
+		Workspace: &v1alpha1.Workspace{
+			Metadata: &v1alpha1.ObjectMeta{Name: "no-image-ws"},
+			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+		},
+	})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "spec.profile: image or ateTemplate.name is required") {
+		t.Fatalf("CreateWorkspace(setup without image) = %v, want InvalidArgument", err)
+	}
+	if coord.calls.Load() != 0 {
+		t.Errorf("setup coordinator calls = %d, want 0", coord.calls.Load())
+	}
+}
+
 func TestWorkspacePrewarm_FailureBlocksCreateTask(t *testing.T) {
 	coord := &testSetupCoordinator{err: errors.New("git clone exit status 128")}
 	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
@@ -336,7 +357,8 @@ func TestWorkspacePrewarm_FailureBlocksCreateTask(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "broken-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"false"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"false"}},
 			},
 		},
 	})
@@ -379,7 +401,8 @@ func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "retry-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
 			},
 		},
 	}
@@ -412,7 +435,8 @@ func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "retry-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
 			},
 		},
 	})
@@ -436,7 +460,8 @@ func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "canceled-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"sleep 60"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"sleep 60"}},
 			},
 		},
 	})
@@ -467,7 +492,8 @@ func TestWorkspacePrewarm_DeleteAndRecreateUsesFreshUIDTag(t *testing.T) {
 			Workspace: &v1alpha1.Workspace{
 				Metadata: &v1alpha1.ObjectMeta{Name: "reused-ws"},
 				Spec: &v1alpha1.WorkspaceSpec{
-					Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+					Profile: prewarmProfile,
+					Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
 				},
 			},
 		}
@@ -514,7 +540,8 @@ func TestWorkspacePrewarm_IgnoresClientSuppliedUID(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "ws-a"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"echo a"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"echo a"}},
 			},
 		},
 	})
@@ -535,7 +562,8 @@ func TestWorkspacePrewarm_IgnoresClientSuppliedUID(t *testing.T) {
 				Uid:  wsA.GetMetadata().GetUid(),
 			},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"echo b"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"echo b"}},
 			},
 		},
 	})
@@ -577,7 +605,8 @@ func TestWorkspacePrewarm_SubstrateGRPCCanceledStaysPreparing(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
 			},
 		},
 	})
@@ -599,7 +628,8 @@ func TestWorkspacePrewarm_SubstrateGRPCCanceledStaysPreparing(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "grpc-canceled-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"true"}},
 			},
 		},
 	})
@@ -632,7 +662,7 @@ func TestDeleteWorkspace_CoordinatesWithLazyEnsureSnapshotTag(t *testing.T) {
 	ws, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "race-ws"},
-			Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
+			Spec:     &v1alpha1.WorkspaceSpec{Profile: prewarmProfile, Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"true"}}},
 		},
 	})
 	if err != nil {
