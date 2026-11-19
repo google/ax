@@ -93,12 +93,13 @@ func (x *WorkspaceRef) GetPath() string {
 // Workspace defines a pre-warmed, shareable environment recipe and its cached
 // snapshots across one or more compute Profiles.
 type Workspace struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec          *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
-	Status        *WorkspaceStatus       `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Metadata   *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec       *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	// Set by the server; ignored on input.
+	Status        *WorkspaceStatus `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

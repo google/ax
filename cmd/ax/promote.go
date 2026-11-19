@@ -227,7 +227,7 @@ func runPromote(serverURL, atespace string, args []string) error {
 	default:
 		outcome = "replaced"
 	}
-	// CreateTask would keep the status, such as the source's WorkspaceReady.
+	// The target assigns its own status.
 	task.Metadata, task.Status = manifestMetadata(task.Metadata, targetAtespace), nil
 	steps = append(steps, step{resource: "task.ax.io/" + name, outcome: outcome, do: func() error {
 		if outcome == "replaced" {
