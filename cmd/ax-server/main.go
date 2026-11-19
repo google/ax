@@ -188,6 +188,7 @@ func main() {
 			Store:       backend,
 			Verifier:    oidcVerifier,
 			ActorParker: subClient,
+			Locker:      backend,
 		})
 		if enablePrewarm {
 			setupCoordinator = runnerSrv

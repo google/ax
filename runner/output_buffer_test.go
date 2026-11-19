@@ -39,7 +39,7 @@ func TestReadCapturedTaskOutput_RejectsSymlink(t *testing.T) {
 	tail := newTailBuffer(MaxOutputBytes)
 	_, _ = tail.Write([]byte("fallback-tail\n"))
 
-	if got := readCapturedTaskOutput(outLink, tail); got != "fallback-tail" {
+	if got := readCapturedTaskOutput(outLink, tail, false); got != "fallback-tail" {
 		t.Fatalf("readCapturedTaskOutput(symlink) = %q, want %q", got, "fallback-tail")
 	}
 
@@ -50,7 +50,7 @@ func TestReadCapturedTaskOutput_RejectsSymlink(t *testing.T) {
 	if err := os.WriteFile(outLink, []byte("agent-output\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(output): %v", err)
 	}
-	if got := readCapturedTaskOutput(outLink, tail); got != "agent-output" {
+	if got := readCapturedTaskOutput(outLink, tail, false); got != "agent-output" {
 		t.Fatalf("readCapturedTaskOutput(regular) = %q, want %q", got, "agent-output")
 	}
 }

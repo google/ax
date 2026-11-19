@@ -237,11 +237,11 @@ func TestE2E_GatewayCRUD(t *testing.T) {
 // TestE2E_TaskLifecycleAndSubstrateSync verifies that a Task and its Substrate
 // resources stay in sync across its lifecycle:
 //   - A new Task starts Suspended and is immutable.
-//   - Substrate has a suspended Actor backed by a per-task ActorTemplate
-//     (<task>-tmpl-<hash>) with the /readyz:80 wakeup probe and a snapshot config.
-//   - Resuming moves the Task to Running with WorkspaceReady and Ready
+//   - Substrate has a suspended Actor backed by a shared Profile ActorTemplate
+//     (ax-<hash>) with the /readyz:80 wakeup probe and a snapshot config.
+//   - Resuming moves the Task to Working with WorkspaceReady and Ready
 //     conditions, on the worker Substrate reports.
-//   - Deleting the Task removes the Actor and ActorTemplate.
+//   - Deleting the Task removes the Actor while preserving the shared template.
 func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	ctx := t.Context()
 	ns := defaultAtespace
@@ -272,7 +272,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 	assertContains(t, "duplicate 'ax apply'", out, "already exists and is immutable")
 
-	// 3. Substrate has a suspended Actor using a per-task ActorTemplate.
+	// 3. Substrate has a suspended Actor using a shared Profile ActorTemplate.
 	actor := env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 	actorUID := actor.GetMetadata().GetUid()
 	if got := task.GetStatus().GetActorUid(); actorUID == "" || got != actorUID {
@@ -294,8 +294,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if probe := tmpl.GetContainers()[0].GetWakeupProbe().GetHttpGet(); probe.GetPath() != "/readyz" || probe.GetPort() != 80 {
 		t.Fatalf("unexpected WakeupProbe: %+v", tmpl.GetContainers()[0].GetWakeupProbe())
 	}
-	// Verify that the ActorTemplate has a SnapshotConfig set with VOLUMES fidelity.
-	if sc := tmpl.GetSnapshotConfig(); sc == nil || sc.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
+	// Verify that the ActorTemplate has a SnapshotConfig set with ROOTFS fidelity.
+	if sc := tmpl.GetSnapshotConfig(); sc == nil || sc.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
@@ -350,7 +350,7 @@ spec:
   commands:
   - sh
   - -c
-  - "echo cmd-ran-ok > /workspace/cmd-ran.txt"
+  - "echo cmd-ran-ok > /workspace/cmd-ran.txt && exec sleep 300"
 `
 
 // TestE2E_MetadataServerAndGuestExec verifies the guest environment of a
