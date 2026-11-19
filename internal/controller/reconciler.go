@@ -222,8 +222,12 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 
 	// 4. Resolve the warm Workspace snapshot Tag when the bound Workspace has
 	// setup steps or a compute profile and snapshot pre-warming is enabled.
+	// Tasks mounting a Workspace at a non-default path skip the pre-warmed
+	// snapshot so setup runs directly at their target path.
+	wsPath := task.GetSpec().WorkspacePath()
+	usesDefaultWorkspacePath := wsPath == "" || wsPath == v1alpha1.DefaultWorkspacePath
 	var sourceTag string
-	if ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
+	if usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
 		var setupGW *v1alpha1.Gateway
 		if gwName := ws.GetSpec().GetSetup().GetGateway().GetName(); gwName != "" && r.GatewayStore != nil {
 			setupGW, _ = r.GatewayStore.GetGateway(ctx, atespace, gwName)
@@ -256,7 +260,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if len(task.Spec.Commands) > 0 && len(task.Status.ResolvedArgv) == 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
-	if r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
+	if usesDefaultWorkspacePath && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
 		msg := "Workspace requires no setup"
 		if sourceTag != "" {
 			msg = fmt.Sprintf("Workspace seeded from snapshot tag %s", sourceTag)

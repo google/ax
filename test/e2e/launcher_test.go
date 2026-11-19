@@ -206,6 +206,7 @@ func TestE2E_PrewarmAndCustomImageSharedWorkspace(t *testing.T) {
 		"Task":      task1,
 		"Workspace": ws,
 		"Atespace":  ns,
+		"Image":     "",
 		"Script":    `"{ cat /workspace/seed.txt; echo; cat /workspace/setup-marker.txt; } > \"$AX_OUTPUT_FILE\""`,
 	}))
 	env.mustRunAX(t, ns, "resume", "task", task1)
