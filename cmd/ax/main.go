@@ -65,7 +65,7 @@ func main() {
 	// Commands that don't require an AX server connection
 	switch cmd {
 	case "version":
-		fmt.Printf("ax version %s (API v1alpha1)\n", version.Version)
+		fmt.Printf("ax version %s (API v1alpha1)\n", version.String())
 		return
 	case "help", "-h", "--help":
 		printUsage()

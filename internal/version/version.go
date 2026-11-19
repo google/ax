@@ -16,7 +16,10 @@
 // published release images that match it.
 package version
 
-import "regexp"
+import (
+	"regexp"
+	"runtime/debug"
+)
 
 // ImageRepo is where releases publish the AX images
 // (.github/workflows/release.yml), such as ImageRepo + "/ax-server" and
@@ -51,4 +54,42 @@ func ImageTag() string {
 // "ax-server") that matches this binary.
 func Image(name string) string {
 	return ImageRepo + "/" + name + ":" + ImageTag()
+}
+
+// String is the version `ax version` prints. A release build prints Version.
+// Any other build prints "dev" and, when the Go toolchain recorded it, the
+// commit it was built from ("dev+8e2a187a622c", with "-dirty" for a modified
+// checkout), so a report from a source build names its commit.
+func String() string {
+	if Version != "dev" {
+		return Version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return Version
+	}
+	return devVersion(info.Settings)
+}
+
+func devVersion(settings []debug.BuildSetting) string {
+	var revision string
+	var modified bool
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			modified = s.Value == "true"
+		}
+	}
+	if revision == "" {
+		return "dev"
+	}
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+	if modified {
+		revision += "-dirty"
+	}
+	return "dev+" + revision
 }
