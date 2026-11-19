@@ -280,8 +280,14 @@ func (x *GetModelRequest) GetName() string {
 }
 
 type ListModelsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Atespace string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	// Maximum number of models to return; the server may return fewer. If unset,
+	// at most 50 are returned. Values above 1000 are coerced to 1000.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Page token from a previous ListModels response. Leave empty for the first
+	// page.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,9 +329,25 @@ func (x *ListModelsRequest) GetAtespace() string {
 	return ""
 }
 
+func (x *ListModelsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListModelsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListModelsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Models        []*Model               `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Models []*Model               `protobuf:"bytes,1,rep,name=models,proto3" json:"models,omitempty"`
+	// Token for the next page. Empty if this is the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -365,6 +387,13 @@ func (x *ListModelsResponse) GetModels() []*Model {
 		return x.Models
 	}
 	return nil
+}
+
+func (x *ListModelsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type UpdateModelRequest struct {
@@ -487,11 +516,15 @@ const file_pkg_apis_v1alpha1_model_proto_rawDesc = "" +
 	"\x03key\x18\x02 \x01(\tR\x03key\"A\n" +
 	"\x0fGetModelRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"/\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"k\n" +
 	"\x11ListModelsRequest\x12\x1a\n" +
-	"\batespace\x18\x01 \x01(\tR\batespace\"@\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"h\n" +
 	"\x12ListModelsResponse\x12*\n" +
-	"\x06models\x18\x01 \x03(\v2\x12.ax.v1alpha1.ModelR\x06models\">\n" +
+	"\x06models\x18\x01 \x03(\v2\x12.ax.v1alpha1.ModelR\x06models\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\">\n" +
 	"\x12UpdateModelRequest\x12(\n" +
 	"\x05model\x18\x01 \x01(\v2\x12.ax.v1alpha1.ModelR\x05model\"D\n" +
 	"\x12DeleteModelRequest\x12\x1a\n" +

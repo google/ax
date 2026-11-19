@@ -46,14 +46,24 @@ func (s *Server) GetGateway(ctx context.Context, req *v1alpha1.GetGatewayRequest
 
 func (s *Server) ListGateways(ctx context.Context, req *v1alpha1.ListGatewaysRequest) (*v1alpha1.ListGatewaysResponse, error) {
 	atespace := ""
+	pageSize := int32(0)
+	token := ""
 	if req != nil {
 		atespace = req.Atespace
+		pageSize = req.PageSize
+		token = req.PageToken
+	}
+	offset, size, err := pageStart(atespace, pageSize, token)
+	if err != nil {
+		return nil, err
 	}
 	gateways, err := s.store.ListGateways(ctx, atespace)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing gateways: %v", err)
 	}
-	return &v1alpha1.ListGatewaysResponse{Gateways: gateways}, nil
+	// The store returns every gateway; the page starts at offset.
+	gateways, next := pageOf(gateways[min(offset, int64(len(gateways))):], atespace, offset, size)
+	return &v1alpha1.ListGatewaysResponse{Gateways: gateways, NextPageToken: next}, nil
 }
 
 func (s *Server) CreateGateway(ctx context.Context, req *v1alpha1.CreateGatewayRequest) (*v1alpha1.Gateway, error) {

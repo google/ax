@@ -16,6 +16,8 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -157,22 +159,24 @@ func (s *Server) GetTask(ctx context.Context, req *v1alpha1.GetTaskRequest) (*v1
 
 func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) (*v1alpha1.ListTasksResponse, error) {
 	atespace := ""
-	limit := int64(50)
-	offset := int64(0)
+	pageSize := int32(0)
+	token := ""
 	if req != nil {
 		atespace = req.Atespace
-		if req.Limit > 0 {
-			limit = req.Limit
-		}
-		if req.Offset >= 0 {
-			offset = req.Offset
-		}
+		pageSize = req.PageSize
+		token = req.PageToken
 	}
-	tasks, err := s.listTasks(ctx, atespace, limit, offset)
+	offset, size, err := pageStart(atespace, pageSize, token)
+	if err != nil {
+		return nil, err
+	}
+	// One task more than the page shows whether another page follows.
+	tasks, err := s.listTasks(ctx, atespace, size+1, offset)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing tasks: %v", err)
 	}
-	return &v1alpha1.ListTasksResponse{Tasks: tasks}, nil
+	tasks, next := pageOf(tasks, atespace, offset, size)
+	return &v1alpha1.ListTasksResponse{Tasks: tasks, NextPageToken: next}, nil
 }
 
 func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest) (*v1alpha1.Task, error) {
@@ -929,14 +933,24 @@ func (s *Server) GetModel(ctx context.Context, req *v1alpha1.GetModelRequest) (*
 
 func (s *Server) ListModels(ctx context.Context, req *v1alpha1.ListModelsRequest) (*v1alpha1.ListModelsResponse, error) {
 	atespace := ""
+	pageSize := int32(0)
+	token := ""
 	if req != nil {
 		atespace = req.Atespace
+		pageSize = req.PageSize
+		token = req.PageToken
+	}
+	offset, size, err := pageStart(atespace, pageSize, token)
+	if err != nil {
+		return nil, err
 	}
 	models, err := s.store.ListModels(ctx, atespace)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing models: %v", err)
 	}
-	return &v1alpha1.ListModelsResponse{Models: models}, nil
+	// The store returns every model; the page starts at offset.
+	models, next := pageOf(models[min(offset, int64(len(models))):], atespace, offset, size)
+	return &v1alpha1.ListModelsResponse{Models: models, NextPageToken: next}, nil
 }
 
 func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelRequest) (*v1alpha1.Model, error) {
@@ -1025,4 +1039,51 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 		}
 	}
 	return meta
+}
+
+// List pagination.
+//
+// The stores page by offset, so a page token carries the offset its page
+// starts at and the atespace it was issued for.
+
+const (
+	defaultPageSize = 50
+	maxPageSize     = 1000
+)
+
+type pageToken struct {
+	Atespace string `json:"atespace"`
+	Offset   int64  `json:"offset"`
+}
+
+// pageStart returns the offset and size of the page a List request asks for.
+// An unset page size is defaultPageSize, and one above maxPageSize is coerced
+// down to it.
+func pageStart(atespace string, pageSize int32, token string) (offset, size int64, err error) {
+	if pageSize < 0 {
+		return 0, 0, status.Error(codes.InvalidArgument, "page_size must not be negative")
+	}
+	size = min(int64(pageSize), maxPageSize)
+	if size == 0 {
+		size = defaultPageSize
+	}
+	if token == "" {
+		return 0, size, nil
+	}
+	var t pageToken
+	err = json.NewDecoder(base64.NewDecoder(base64.RawURLEncoding, strings.NewReader(token))).Decode(&t)
+	if err != nil || t.Atespace != atespace || t.Offset < 0 {
+		return 0, 0, status.Error(codes.InvalidArgument, "invalid page_token")
+	}
+	return t.Offset, size, nil
+}
+
+// pageOf returns the first size of items, which start at offset, and the token
+// of the page after them if there is one.
+func pageOf[T any](items []T, atespace string, offset, size int64) ([]T, string) {
+	if int64(len(items)) <= size {
+		return items, ""
+	}
+	data, _ := json.Marshal(pageToken{Atespace: atespace, Offset: offset + size})
+	return items[:size], base64.RawURLEncoding.EncodeToString(data)
 }

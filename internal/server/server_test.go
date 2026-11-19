@@ -17,11 +17,13 @@ package server_test
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +275,107 @@ func TestServerGRPC(t *testing.T) {
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("expected NotFound code, got %v", err)
 	}
+}
+
+// TestServer_ListPagination pages through every kind with page tokens, then
+// checks the page size and page token rules, which the kinds share, on models.
+func TestServer_ListPagination(t *testing.T) {
+	st := memory.NewStore()
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	ctx := context.Background()
+
+	for _, name := range []string{"a", "b", "c", "d"} {
+		meta := &v1alpha1.ObjectMeta{Name: name, Atespace: "default"}
+		if err := st.SaveTask(ctx, &v1alpha1.Task{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveGateway(ctx, &v1alpha1.Gateway{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveModel(ctx, &v1alpha1.Model{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Each list returns the names on one page of two, and the next page token.
+	lists := []struct {
+		kind string
+		list func(pageToken string) ([]string, string, error)
+	}{
+		{kind: "tasks", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetTasks()), resp.GetNextPageToken(), err
+		}},
+		{kind: "workspaces", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetWorkspaces()), resp.GetNextPageToken(), err
+		}},
+		{kind: "gateways", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetGateways()), resp.GetNextPageToken(), err
+		}},
+		{kind: "models", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetModels()), resp.GetNextPageToken(), err
+		}},
+	}
+	for _, tc := range lists {
+		t.Run(tc.kind, func(t *testing.T) {
+			first, pageToken, err := tc.list("")
+			if err != nil || !slices.Equal(first, []string{"a", "b"}) || pageToken == "" {
+				t.Fatalf("first page = (%v, %q, %v), want [a b] and a next page token", first, pageToken, err)
+			}
+			last, pageToken, err := tc.list(pageToken)
+			if err != nil || !slices.Equal(last, []string{"c", "d"}) || pageToken != "" {
+				t.Fatalf("last page = (%v, %q, %v), want [c d] and no next page token", last, pageToken, err)
+			}
+		})
+	}
+
+	// One model more than the largest page.
+	for i := range 1001 {
+		if err := st.SaveModel(ctx, &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: fmt.Sprintf("m%04d", i), Atespace: "big"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: "big"})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	tests := []struct {
+		name      string
+		atespace  string
+		pageSize  int32
+		pageToken string
+		want      int
+		wantCode  codes.Code
+	}{
+		{name: "default page size", atespace: "big", want: 50},
+		{name: "page size above the maximum", atespace: "big", pageSize: 5000, want: 1000},
+		{name: "negative page size", atespace: "big", pageSize: -1, wantCode: codes.InvalidArgument},
+		{name: "malformed page token", pageToken: "not a token", wantCode: codes.InvalidArgument},
+		{name: "page token of another atespace", atespace: "default", pageToken: first.GetNextPageToken(), wantCode: codes.InvalidArgument},
+		{name: "page token with a negative offset", atespace: "big", pageToken: base64.RawURLEncoding.EncodeToString([]byte(`{"atespace":"big","offset":-1}`)), wantCode: codes.InvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: tc.atespace, PageSize: tc.pageSize, PageToken: tc.pageToken})
+			if status.Code(err) != tc.wantCode || len(resp.GetModels()) != tc.want {
+				t.Fatalf("ListModels = (%d models, %v), want (%d models, %v)", len(resp.GetModels()), err, tc.want, tc.wantCode)
+			}
+		})
+	}
+}
+
+// resourceNames returns the names of resources, in order.
+func resourceNames[T interface{ GetMetadata() *v1alpha1.ObjectMeta }](resources []T) []string {
+	var names []string
+	for _, r := range resources {
+		names = append(names, r.GetMetadata().GetName())
+	}
+	return names
 }
 
 // Names and atespaces become Substrate resource names, which must be RFC 1123

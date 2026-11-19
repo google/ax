@@ -49,29 +49,26 @@ func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceReq
 	return ws, nil
 }
 
-const (
-	defaultListLimit  int64 = 50
-	defaultListOffset int64 = 0
-)
-
 func (s *Server) ListWorkspaces(ctx context.Context, req *v1alpha1.ListWorkspacesRequest) (*v1alpha1.ListWorkspacesResponse, error) {
 	atespace := ""
-	limit := defaultListLimit
-	offset := defaultListOffset
+	pageSize := int32(0)
+	token := ""
 	if req != nil {
 		atespace = req.Atespace
-		if req.Limit > 0 {
-			limit = req.Limit
-		}
-		if req.Offset >= 0 {
-			offset = req.Offset
-		}
+		pageSize = req.PageSize
+		token = req.PageToken
 	}
-	workspaces, err := s.store.ListWorkspaces(ctx, atespace, limit, offset)
+	offset, size, err := pageStart(atespace, pageSize, token)
+	if err != nil {
+		return nil, err
+	}
+	// One workspace more than the page shows whether another page follows.
+	workspaces, err := s.store.ListWorkspaces(ctx, atespace, size+1, offset)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing workspaces: %v", err)
 	}
-	return &v1alpha1.ListWorkspacesResponse{Workspaces: workspaces}, nil
+	workspaces, next := pageOf(workspaces, atespace, offset, size)
+	return &v1alpha1.ListWorkspacesResponse{Workspaces: workspaces, NextPageToken: next}, nil
 }
 
 func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorkspaceRequest) (*v1alpha1.Workspace, error) {

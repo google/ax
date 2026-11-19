@@ -318,6 +318,64 @@ func TestRunGetResourceAliases(t *testing.T) {
 	}
 }
 
+// TestRunGetListsEveryPage checks that `ax get <kind>` follows the next page
+// token instead of stopping after the first page.
+func TestRunGetListsEveryPage(t *testing.T) {
+	// One resource more than a page of the default size.
+	const atespace, count = "test-space", 51
+	s := memory.NewStore()
+	for i := range count {
+		meta := &v1alpha1.ObjectMeta{Name: fmt.Sprintf("r%02d", i), Atespace: atespace}
+		if err := s.SaveTask(context.Background(), &v1alpha1.Task{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveWorkspace(context.Background(), &v1alpha1.Workspace{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveGateway(context.Background(), &v1alpha1.Gateway{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveModel(context.Background(), &v1alpha1.Model{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+	t.Cleanup(srv.Stop)
+	go func() { _ = srv.Serve(listener) }()
+
+	for _, resource := range []string{"tasks", "workspaces", "gateways", "models"} {
+		t.Run(resource, func(t *testing.T) {
+			// runGet writes to os.Stdout, so these subtests must remain sequential.
+			output, err := os.CreateTemp(t.TempDir(), "stdout")
+			if err != nil {
+				t.Fatal(err)
+			}
+			stdout := os.Stdout
+			os.Stdout = output
+			t.Cleanup(func() {
+				os.Stdout = stdout
+				_ = output.Close()
+			})
+
+			if err := runGet(listener.Addr().String(), atespace, []string{resource}); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(output.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rows := strings.Split(strings.TrimSpace(string(data)), "\n"); len(rows) != count+1 {
+				t.Fatalf("expected header and %d resources, got %d rows", count, len(rows))
+			}
+		})
+	}
+}
+
 // newTestReconciler returns a TaskReconciler that runs tasks on sub.
 func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
 	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace, "")
