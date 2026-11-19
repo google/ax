@@ -27,6 +27,7 @@
 # Environment:
 #   AX_BIN          ax CLI to use (default: ax on PATH, else ./bin/ax)
 #   RUN_LIVE_STEPS  1 to call the AX server (default: 0)
+#   STARTER_IMAGE   Starter image digest override for Step 3 / Step 5
 #   STUDIO_URL      AX Studio base URL (default: http://127.0.0.1:8080)
 #   REMOTE_CONTEXT  kube context of a remote cluster for Step 5 (same as --remote-context)
 #   AX_TIMEOUT      seconds allowed per ax call in live mode (default: 120)
@@ -44,6 +45,7 @@ if [[ -z "${AX_BIN:-}" ]]; then
   fi
 fi
 RUN_LIVE_STEPS="${RUN_LIVE_STEPS:-0}"
+STARTER_IMAGE="${STARTER_IMAGE:-}"
 STUDIO_URL="${STUDIO_URL:-http://127.0.0.1:8080}"
 REMOTE_CONTEXT="${REMOTE_CONTEXT:-}"
 AX_TIMEOUT="${AX_TIMEOUT:-120}"
@@ -122,7 +124,40 @@ ax_quiet() {
 }
 
 # TODO(@Lukeluds): Drop this once task-starter.yaml has the published image.
-starter_image_is_placeholder() { grep -q '<starter-image>' "${STARTER_MANIFEST}"; }
+starter_image_is_placeholder() {
+  [[ -z "${STARTER_IMAGE}" ]] && grep -q '<starter-image>' "${STARTER_MANIFEST}"
+}
+
+# render_starter_manifest writes task-starter.yaml to a temp file, substituting
+# STARTER_IMAGE when set.
+render_starter_manifest() {
+  local out_file="$1"
+  python3 - "${STARTER_MANIFEST}" "${out_file}" "${STARTER_IMAGE}" <<'PY'
+import sys
+
+src, dst, image = sys.argv[1:4]
+with open(src, "r", encoding="utf-8") as f:
+    text = f.read()
+if image:
+    text = text.replace("<starter-image>@sha256:<digest>", image)
+with open(dst, "w", encoding="utf-8") as f:
+    f.write(text)
+PY
+}
+
+# wait_for_task_output polls $AX_OUTPUT_FILE (/workspace/.ax/output) and the
+# runner's launcher-done marker via ax ssh so suspend never races exit.
+wait_for_task_output() {
+  local task_name="$1"
+  local deadline=$((SECONDS + AX_TIMEOUT))
+  while ((SECONDS < deadline)); do
+    if run_ax ssh "${task_name}" -- sh -c 'test -s /workspace/.ax/output && test -s /workspace/.ax/launcher-done' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
 
 # ------------------------------------------------------------------------------
 # Step 1: Local Up & AX Studio
@@ -195,20 +230,41 @@ step3_starter_task_session() {
   fi
   # Tasks are immutable, so start from a fresh one on every run.
   run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
-  if ! ax_quiet apply -f "${STARTER_MANIFEST}"; then
+
+  local tmp_manifest
+  tmp_manifest="$(mktemp)"
+  render_starter_manifest "${tmp_manifest}"
+  if ! ax_quiet apply -f "${tmp_manifest}"; then
+    rm -f "${tmp_manifest}"
     mark_fail "${step}" "ax apply -f task-starter.yaml failed"
     return
   fi
+  rm -f "${tmp_manifest}"
+
+  if ! ax_quiet resume task "${STARTER_TASK}"; then
+    mark_fail "${step}" "ax resume task ${STARTER_TASK} failed"
+    return
+  fi
+  if ! wait_for_task_output "${STARTER_TASK}"; then
+    mark_fail "${step}" "${STARTER_TASK} did not write /workspace/.ax/output within ${AX_TIMEOUT}s"
+    return
+  fi
+
   local verb
-  for verb in resume suspend resume; do
+  for verb in suspend resume; do
     if ! ax_quiet "${verb}" task "${STARTER_TASK}"; then
       mark_fail "${step}" "ax ${verb} task ${STARTER_TASK} failed"
       return
     fi
   done
-  # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn and check the
-  # task keeps its state across suspend/resume, once sessions land on main.
-  mark_stub "${step}" "Apply + resume/suspend/resume OK; wire the second Session turn"
+  if ! run_ax ssh "${STARTER_TASK}" -- test -s /workspace/.ax/output >/dev/null 2>&1; then
+    mark_fail "${step}" "/workspace/.ax/output was not preserved across suspend/resume"
+    return
+  fi
+
+  # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn on the
+  # same task's workspace once multi-turn input on a single task lands.
+  mark_stub "${step}" "Turn 1 + suspend/resume OK (/workspace/.ax/output preserved); wire the second Session turn"
 }
 
 # ------------------------------------------------------------------------------
