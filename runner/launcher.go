@@ -106,6 +106,7 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 	if err != nil {
 		return launcherFiles{}, err
 	}
+	_ = os.Chmod(resolvedDir, 0o755)
 	var out launcherFiles
 	h := sha256.New()
 	for _, f := range files {
@@ -113,6 +114,7 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 		if err := os.WriteFile(p, f.data, 0o644); err != nil {
 			return launcherFiles{}, fmt.Errorf("writing %s: %w", p, err)
 		}
+		_ = os.Chmod(p, 0o644)
 		out.env = append(out.env, f.env+"="+p)
 		_, _ = fmt.Fprintf(h, "%s=%d:%s;", f.name, len(f.data), f.data)
 	}

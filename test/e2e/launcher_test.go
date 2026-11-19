@@ -95,6 +95,9 @@ touch %s/x 2>/dev/null || echo RUNNER_READ_ONLY`, v1alpha1.RunnerMountPath, v1al
 		if err != nil {
 			return err
 		}
+		if got.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_FAILED {
+			t.Fatalf("launcher task failed: detail=%+v outcome=%+v", got.GetStatus().GetStatusDetail(), got.GetStatus().GetOutcome())
+		}
 		if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED {
 			return fmt.Errorf("state = %v, want COMPLETED", got.GetStatus().GetState())
 		}
