@@ -97,7 +97,6 @@ ax local start --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAU
 **On an existing cluster** with Kubernetes 1.36+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
-ax ctx "$KUBE_CONTEXT"
 ax install --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_TASK_IMAGE"
 ```
 
