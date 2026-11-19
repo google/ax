@@ -28,7 +28,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -537,7 +536,7 @@ func (a *pullAgent) shouldDropPrivileges() bool {
 	if a.cfg.DropPrivileges != nil {
 		return *a.cfg.DropPrivileges && os.Geteuid() == 0
 	}
-	return os.Geteuid() == 0 && hasSetUIDCaps()
+	return os.Geteuid() == 0
 }
 
 func (a *pullAgent) ensureWorkspaceReady(ctx context.Context, ws *v1alpha1.Workspace, wsPath string) error {
@@ -562,34 +561,6 @@ func setTaskEnv(task *v1alpha1.Task) {
 			_ = os.Setenv(e.GetName(), e.GetValue())
 		}
 	}
-}
-
-func hasSetUIDCaps() bool {
-	raw, err := os.ReadFile("/proc/self/status")
-	if err != nil {
-		return false
-	}
-	return parseCapEffHasSetUID(string(raw))
-}
-
-func parseCapEffHasSetUID(procStatus string) bool {
-	const (
-		capSetGIDBit = uint64(1) << 6
-		capSetUIDBit = uint64(1) << 7
-		wantMask     = capSetGIDBit | capSetUIDBit
-	)
-	for _, line := range strings.Split(procStatus, "\n") {
-		if !strings.HasPrefix(line, "CapEff:") {
-			continue
-		}
-		hexStr := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
-		caps, err := strconv.ParseUint(hexStr, 16, 64)
-		if err != nil {
-			return false
-		}
-		return caps&wantMask == wantMask
-	}
-	return false
 }
 
 func (a *pullAgent) buildChildEnv(task *v1alpha1.Task, execEnv map[string]string, launcherEnv []string, wsPath string, droppedToUID1000 bool) []string {

@@ -422,7 +422,13 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	memoryFidelity := s.reconciler.IsMemoryFidelityTemplate(ctx, atespace, task.GetStatus().GetAteTemplate())
+	memoryFidelity, err := s.reconciler.IsMemoryFidelityTemplate(ctx, atespace, task.GetStatus().GetAteTemplate())
+	if err != nil {
+		if substrate.IsTransientError(err) {
+			return nil, status.Errorf(codes.Unavailable, "checking actor template snapshot fidelity: %v", err)
+		}
+		return nil, status.Errorf(codes.Internal, "checking actor template snapshot fidelity: %v", err)
+	}
 
 	var prevRunnable bool
 	if _, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {

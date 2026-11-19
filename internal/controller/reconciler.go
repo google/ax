@@ -268,9 +268,9 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 
 // IsMemoryFidelityTemplate reports whether the referenced ActorTemplate uses
 // SNAPSHOT_FIDELITY_MEMORY.
-func (r *TaskReconciler) IsMemoryFidelityTemplate(ctx context.Context, defaultAtespace string, ref *v1alpha1.ObjectRef) bool {
+func (r *TaskReconciler) IsMemoryFidelityTemplate(ctx context.Context, defaultAtespace string, ref *v1alpha1.ObjectRef) (bool, error) {
 	if ref.GetName() == "" {
-		return DefaultProfileSnapshotFidelity == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY
+		return DefaultProfileSnapshotFidelity == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
 	}
 	atespace := ref.GetAtespace()
 	if atespace == "" {
@@ -281,9 +281,12 @@ func (r *TaskReconciler) IsMemoryFidelityTemplate(ctx context.Context, defaultAt
 	}
 	tmpl, err := r.client.GetActorTemplate(ctx, atespace, ref.GetName())
 	if err != nil {
-		return false
+		if status.Code(err) == codes.NotFound {
+			return false, nil
+		}
+		return false, err
 	}
-	return tmpl.GetSnapshotConfig().GetPreferredFidelity() == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY
+	return tmpl.GetSnapshotConfig().GetPreferredFidelity() == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
 }
 
 // bindGateway ensures the task's actor has an EgressPolicy containing the
