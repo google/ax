@@ -119,10 +119,12 @@ The installer prints progress (`==>`) across three stages:
      Local environment "ax-local" is ready (active context: ax-local).
      ```
 
-When a rollout does not finish, the error names the pod and what it is waiting for, with the kubelet's message. A container that cannot pull its image ends the wait after about 45 seconds instead of the full rollout timeout:
+While it waits for a rollout, `ax` reads the status of the rollout's pods every 15 seconds and prints it when it changes. If the rollout times out, the error ends with the last status, in Kubernetes' own words:
 
 ```text
-Error: waiting for ax-system/deployment/ax-server rollout: pod ax-server-..., container ax-server: ImagePullBackOff: ... 403 Forbidden [the cluster's nodes have no credentials for this registry; an 'ax local' cluster pulls every image anonymously, so the image must be public]
+==> Deploying ax-server (...)...
+    ax-system/deployment/ax-server is not ready: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
+Error: waiting for ax-system/deployment/ax-server rollout: timed out after 3m0s: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
 ```
 
 ---

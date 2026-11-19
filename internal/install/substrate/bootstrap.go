@@ -102,7 +102,7 @@ func Bootstrap(ctx context.Context, opts BootstrapOptions) error {
 	if err != nil {
 		return err
 	}
-	k := &kubeHelper{runner: r, kubectl: kubectlBin, context: opts.KubeContext}
+	k := &kubeHelper{runner: r, kubectl: kubectlBin, context: opts.KubeContext, out: out}
 	version := EmbeddedVersion()
 
 	// Fast-path: if Substrate at this exact version and the worker pool are
@@ -531,6 +531,8 @@ type kubeHelper struct {
 	runner  executil.Runner
 	kubectl string
 	context string
+	// out receives the pod status while rolloutStatus waits; nil prints nothing.
+	out io.Writer
 }
 
 func (k *kubeHelper) run(ctx context.Context, stdin io.Reader, args ...string) (executil.Result, error) {
@@ -624,8 +626,9 @@ func (k *kubeHelper) discoverOIDCIssuer(ctx context.Context) string {
 	return inClusterIssuer
 }
 
-// rolloutStatus waits for target to roll out. When it does not, the error
-// says what the pods of target are waiting for (executil.WaitRollout).
+// rolloutStatus waits for target to roll out. While it waits it prints what
+// the pods of target are waiting for, and a timeout error quotes it
+// (executil.WaitRollout).
 func (k *kubeHelper) rolloutStatus(ctx context.Context, namespace, target string, timeout time.Duration) error {
 	return executil.WaitRollout(ctx, k.runner, executil.RolloutOptions{
 		Kubectl:     k.kubectl,
@@ -633,6 +636,7 @@ func (k *kubeHelper) rolloutStatus(ctx context.Context, namespace, target string
 		Namespace:   namespace,
 		Target:      target,
 		Timeout:     timeout,
+		Out:         k.out,
 	})
 }
 
