@@ -136,3 +136,130 @@ touch %s/x 2>/dev/null || echo RUNNER_READ_ONLY`, v1alpha1.RunnerMountPath, v1al
 		assertContains(t, op+" on completed task", strings.ToLower(out), "terminal")
 	}
 }
+
+const prewarmSharedWorkspaceManifest = `apiVersion: ax.io/v1alpha1
+kind: Workspace
+metadata:
+  name: {{.Workspace}}
+  atespace: {{.Atespace}}
+spec:
+  setup:
+    files:
+    - path: seed.txt
+      content: "from-shared-workspace"
+    commands:
+    - "echo setup-cmd > /workspace/setup-marker.txt"
+`
+
+const sharedWorkspaceTaskManifest = `apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: {{.Task}}
+  atespace: {{.Atespace}}
+spec:
+  {{- if .Image }}
+  profile:
+    image: {{.Image}}
+  {{- end }}
+  workspace:
+    name: {{.Workspace}}
+    path: /workspace
+  debug: true
+  commands:
+  - sh
+  - -c
+  - {{.Script}}
+`
+
+// TestE2E_PrewarmAndCustomImageSharedWorkspace verifies Workspace snapshot
+// pre-warming and Hero Demo Step 4 end-to-end: a pre-warmed Workspace reaches
+// Ready with a SnapshotTag, Task 1 completes against it, and Task 2 on a plain
+// custom image injects ax-task-runner, preserves /workspace across explicit
+// suspend/resume, and completes with the shared workspace data in Outcome.
+func TestE2E_PrewarmAndCustomImageSharedWorkspace(t *testing.T) {
+	image := os.Getenv("AX_E2E_LAUNCHER_IMAGE")
+	if image == "" {
+		t.Skip("AX_E2E_LAUNCHER_IMAGE is not set; run ./hack/setup-e2e-kind.sh")
+	}
+	ns := defaultAtespace
+	ws := uniqueName("ws-prewarm")
+	task1 := uniqueName("task-shared-1")
+	task2 := uniqueName("task-shared-2")
+	env.deleteOnCleanup(t, ns, "task", task2)
+	env.deleteOnCleanup(t, ns, "task", task1)
+	env.deleteOnCleanup(t, ns, "workspace", ws)
+
+	// 1. Apply Workspace and verify pre-warming completed before any Task runs.
+	env.apply(t, ns, renderYAML(t, prewarmSharedWorkspaceManifest, map[string]string{
+		"Workspace": ws, "Atespace": ns,
+	}))
+	gotWS, err := env.AXClient.GetWorkspace(t.Context(), &v1alpha1.GetWorkspaceRequest{Name: ws, Atespace: ns})
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	if gotWS.GetStatus().GetPhase() != v1alpha1.WorkspacePhaseReady {
+		t.Fatalf("pre-warmed workspace status = %+v, want Phase=%q", gotWS.GetStatus(), v1alpha1.WorkspacePhaseReady)
+	}
+
+	// 2. Task 1 executes against the pre-warmed workspace and completes.
+	env.apply(t, ns, renderYAML(t, sharedWorkspaceTaskManifest, map[string]string{
+		"Task":      task1,
+		"Workspace": ws,
+		"Atespace":  ns,
+		"Image":     "",
+		"Script":    `"{ cat /workspace/seed.txt; echo; cat /workspace/setup-marker.txt; } > \"$AX_OUTPUT_FILE\""`,
+	}))
+	env.mustRunAX(t, ns, "resume", "task", task1)
+	waitForCompletedWithOutput(t, ns, task1, "from-shared-workspace", "setup-cmd")
+
+	// 3. Task 2 uses a plain custom image in the same workspace, exercises
+	// explicit suspend/resume, and completes with the shared workspace files.
+	env.apply(t, ns, renderYAML(t, sharedWorkspaceTaskManifest, map[string]string{
+		"Task":      task2,
+		"Workspace": ws,
+		"Atespace":  ns,
+		"Image":     image,
+		"Script":    `"if [ ! -f /workspace/resumed.flag ]; then touch /workspace/resumed.flag && sleep 300; fi; { cat /workspace/seed.txt; echo; cat /workspace/setup-marker.txt; } > \"$AX_OUTPUT_FILE\""`,
+	}))
+	assertState(t, env.getTask(t, ns, task2), v1alpha1.TaskState_TASK_STATE_SUSPENDED)
+
+	env.mustRunAX(t, ns, "resume", "task", task2)
+	if err := poll(30*time.Second, 250*time.Millisecond, func() error {
+		_, err := env.runAX(ns, "ssh", task2, "--", "test", "-f", "/workspace/resumed.flag")
+		return err
+	}); err != nil {
+		t.Fatalf("waiting for task2 first run to write resumed.flag: %v", err)
+	}
+
+	env.mustRunAX(t, ns, "suspend", "task", task2)
+	assertState(t, env.getTask(t, ns, task2), v1alpha1.TaskState_TASK_STATE_SUSPENDED)
+
+	env.mustRunAX(t, ns, "resume", "task", task2)
+	waitForCompletedWithOutput(t, ns, task2, "from-shared-workspace", "setup-cmd")
+}
+
+func waitForCompletedWithOutput(t *testing.T, ns, task string, wants ...string) {
+	t.Helper()
+	var completed *v1alpha1.Task
+	if err := poll(time.Minute, 500*time.Millisecond, func() error {
+		got, err := env.AXClient.GetTask(t.Context(), &v1alpha1.GetTaskRequest{Name: task, Atespace: ns})
+		if err != nil {
+			return err
+		}
+		if got.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_FAILED {
+			t.Fatalf("task %s failed: detail=%+v outcome=%+v", task, got.GetStatus().GetStatusDetail(), got.GetStatus().GetOutcome())
+		}
+		if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED {
+			return fmt.Errorf("state = %v, want COMPLETED", got.GetStatus().GetState())
+		}
+		completed = got
+		return nil
+	}); err != nil {
+		t.Fatalf("waiting for task %s completion: %v", task, err)
+	}
+	outcome := completed.GetStatus().GetOutcome()
+	if outcome.GetResult() != v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED || outcome.GetExitCode() != 0 {
+		t.Fatalf("unexpected outcome for %s: %+v", task, outcome)
+	}
+	assertContains(t, "task "+task+" outcome output", outcome.GetOutput(), wants...)
+}

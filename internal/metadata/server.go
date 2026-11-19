@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agent-substrate/env/guest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -50,6 +51,8 @@ type Server struct {
 	workspaceReady      bool
 	workspaceCheckReady bool
 	onReadyz            func()
+	assignmentCh        chan struct{}
+	assignmentOnce      sync.Once
 }
 
 // ServerOptions configures optional settings for the metadata and guest server.
@@ -87,6 +90,10 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 		goalText:            task.GetSpec().GetGoal().GetText(),
 		workspaceCheckReady: true,
 		onReadyz:            opt.OnReadyz,
+		assignmentCh:        make(chan struct{}),
+	}
+	if task != nil {
+		s.assignmentOnce.Do(func() { close(s.assignmentCh) })
 	}
 
 	// Guest services expose process execution and file access inside the container,
@@ -103,10 +110,23 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isGRPC := r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc")
 		s.mu.RLock()
 		grpcSrv := s.grpcServer
 		s.mu.RUnlock()
-		if grpcSrv != nil && r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+		if grpcSrv == nil && isGRPC && s.onReadyz != nil {
+			timer := time.NewTimer(10 * time.Second)
+			select {
+			case <-s.assignmentCh:
+			case <-r.Context().Done():
+			case <-timer.C:
+			}
+			timer.Stop()
+			s.mu.RLock()
+			grpcSrv = s.grpcServer
+			s.mu.RUnlock()
+		}
+		if grpcSrv != nil && isGRPC {
 			grpcSrv.ServeHTTP(w, r)
 			return
 		}
@@ -221,6 +241,9 @@ func (s *Server) UpdateAssignment(task *v1alpha1.Task, ws *v1alpha1.Workspace, g
 	}
 	if task.GetSpec().GetDebug() {
 		s.ensureGuestServerLocked()
+	}
+	if task != nil {
+		s.assignmentOnce.Do(func() { close(s.assignmentCh) })
 	}
 }
 
