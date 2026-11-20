@@ -166,9 +166,10 @@ func runPromote(serverURL, atespace string, args []string) error {
 		return fmt.Errorf("getting task %q: %w", name, err)
 	}
 
-	// A gateway the target already has is the target's own policy under that
-	// name, so it is reused as it is.
-	if gwName := task.GetSpec().GetGateway().GetName(); gwName != "" {
+	// addGateway adds the step for a gateway that the target needs. A gateway
+	// the target already has is the target's own policy under that name, so it
+	// is reused as it is.
+	addGateway := func(gwName string) error {
 		_, err := target.GetGateway(ctx, &v1alpha1.GetGatewayRequest{Atespace: targetAtespace, Name: gwName})
 		switch {
 		case err == nil:
@@ -191,6 +192,13 @@ func runPromote(serverURL, atespace string, args []string) error {
 		default:
 			return fmt.Errorf("getting gateway %q on the target: %w", gwName, err)
 		}
+		return nil
+	}
+	taskGateway := task.GetSpec().GetGateway().GetName()
+	if taskGateway != "" {
+		if err := addGateway(taskGateway); err != nil {
+			return err
+		}
 	}
 
 	if wsName := task.GetSpec().GetWorkspace().GetName(); wsName != "" {
@@ -205,6 +213,14 @@ func runPromote(serverURL, atespace string, args []string) error {
 		}
 		if outcome == "configured" {
 			return fmt.Errorf("workspace %s/%s on the target has a different spec, and workspaces are immutable", targetAtespace, wsName)
+		}
+		// The target sets a new workspace up through the gateway that its setup
+		// names. A workspace the target already has does not need it.
+		setupGateway := ws.GetSpec().GetSetup().GetGateway().GetName()
+		if outcome == "created" && setupGateway != "" && setupGateway != taskGateway {
+			if err := addGateway(setupGateway); err != nil {
+				return err
+			}
 		}
 		ws.Metadata = manifestMetadata(ws.Metadata, targetAtespace)
 		steps = append(steps, step{resource: "workspace.ax.io/" + wsName, outcome: outcome, do: func() error {

@@ -325,4 +325,45 @@ func TestRunPromote(t *testing.T) {
 			t.Fatalf("expected output %q, got %q", wantOutput, out)
 		}
 	}
+
+	// 8. A target that has to create the workspace sets it up through the
+	// gateway that its setup names, so that gateway is promoted before it. It
+	// is not promoted for a workspace that the target already has, and only
+	// once when it is the task's gateway too.
+	if err := source.store.SaveGateway(t.Context(), &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "setup-gw", Atespace: "dev"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		setupGateway string
+		args         []string
+		wantOutput   string
+	}{
+		{
+			setupGateway: "setup-gw",
+			args:         []string{"--to-atespace", "one"},
+			wantOutput:   "gateway.ax.io/demo-gw created\n" + note + "gateway.ax.io/setup-gw created\nworkspace.ax.io/demo-ws created\ntask.ax.io/demo created\ntask.ax.io/demo resumed\n",
+		},
+		{
+			setupGateway: "setup-gw",
+			args:         []string{"--to-atespace", "one", "--replace"},
+			wantOutput:   "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\ntask.ax.io/demo resumed\n",
+		},
+		{
+			setupGateway: "demo-gw",
+			args:         []string{"--to-atespace", "two"},
+			wantOutput:   "gateway.ax.io/demo-gw created\n" + note + "workspace.ax.io/demo-ws created\ntask.ax.io/demo created\ntask.ax.io/demo resumed\n",
+		},
+	} {
+		ws.Spec.Setup.Gateway = &v1alpha1.GatewayRef{Name: tt.setupGateway}
+		if err := source.store.SaveWorkspace(t.Context(), ws); err != nil {
+			t.Fatal(err)
+		}
+		out, err = promote(append([]string{"--to", "remote"}, tt.args...)...)
+		if err != nil {
+			t.Fatalf("runPromote failed: %v", err)
+		}
+		if out != tt.wantOutput {
+			t.Fatalf("expected output %q, got %q", tt.wantOutput, out)
+		}
+	}
 }
