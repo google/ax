@@ -58,6 +58,8 @@ CUSTOM_MANIFEST="${HERO_DIR}/task-custom.yaml"
 WORKSPACE_NAME="hero-demo-ws"
 GATEWAY_NAME="hero-demo-gw"
 STARTER_TASK="hero-demo-starter-task"
+STARTER_TASK_TURN2="hero-demo-starter-task-turn2"
+STARTER_SESSION="hero-demo-session"
 CUSTOM_TASK="hero-demo-custom-task"
 
 while [[ $# -gt 0 ]]; do
@@ -149,14 +151,27 @@ with open(dst, "w", encoding="utf-8") as f:
 PY
 }
 
-# wait_for_task_output polls $AX_OUTPUT_FILE (/workspace/.ax/output) and the
-# runner's launcher-done marker via ax ssh so suspend never races exit.
-wait_for_task_output() {
+# wait_for_task_completed polls `ax describe task` until the task reaches
+# Completed with TASK_RESULT_SUCCEEDED and non-empty Output, failing fast if it
+# reaches Failed or Cancelled.
+wait_for_task_completed() {
   local task_name="$1"
   local deadline=$((SECONDS + AX_TIMEOUT))
+  local desc
   while ((SECONDS < deadline)); do
-    if run_ax ssh "${task_name}" -- sh -c 'test -s /workspace/.ax/output && test -s /workspace/.ax/launcher-done' >/dev/null 2>&1; then
-      return 0
+    if desc="$(run_ax describe task "${task_name}" 2>/dev/null)"; then
+      if grep -qE '^State:[[:space:]]+Completed$' <<<"${desc}"; then
+        if grep -qE '^Outcome:[[:space:]]+TASK_RESULT_SUCCEEDED \(exitCode=0\)$' <<<"${desc}" && \
+           grep -q '^Output:$' <<<"${desc}"; then
+          return 0
+        fi
+        printf '    %s\n' "${desc//$'\n'/$'\n'    }" >&2
+        return 1
+      fi
+      if grep -qE '^State:[[:space:]]+(Failed|Cancelled)$' <<<"${desc}"; then
+        printf '    %s\n' "${desc//$'\n'/$'\n'    }" >&2
+        return 1
+      fi
     fi
     sleep 2
   done
@@ -236,7 +251,8 @@ step3_starter_task_session() {
     mark_fail "${step}" "ax apply -f gateway.yaml failed"
     return
   fi
-  # Tasks are immutable, so start from a fresh one on every run.
+  # Tasks are immutable, so start from a fresh pair on every run.
+  run_ax delete task "${STARTER_TASK_TURN2}" >/dev/null 2>&1 || true
   run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
 
   local tmp_manifest
@@ -253,26 +269,31 @@ step3_starter_task_session() {
     mark_fail "${step}" "ax resume task ${STARTER_TASK} failed"
     return
   fi
-  if ! wait_for_task_output "${STARTER_TASK}"; then
-    mark_fail "${step}" "${STARTER_TASK} did not write /workspace/.ax/output within ${AX_TIMEOUT}s"
+  if ! wait_for_task_completed "${STARTER_TASK}"; then
+    mark_fail "${step}" "${STARTER_TASK} did not reach Completed with output within ${AX_TIMEOUT}s"
     return
   fi
 
-  local verb
-  for verb in suspend resume; do
-    if ! ax_quiet "${verb}" task "${STARTER_TASK}"; then
-      mark_fail "${step}" "ax ${verb} task ${STARTER_TASK} failed"
-      return
-    fi
-  done
-  if ! run_ax ssh "${STARTER_TASK}" -- test -s /workspace/.ax/output >/dev/null 2>&1; then
-    mark_fail "${step}" "/workspace/.ax/output was not preserved across suspend/resume"
+  # Fork Turn 2 from Turn 1's parked snapshot so it inherits Turn 1's workspace
+  # edits and sessionId (hero-demo-session) for multi-turn continuation.
+  local turn2_goal="Now add a multiply(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py, keeping the subtract function from the previous turn."
+  if ! ax_quiet fork task "${STARTER_TASK}" "${STARTER_TASK_TURN2}" --goal "${turn2_goal}"; then
+    mark_fail "${step}" "ax fork task ${STARTER_TASK} ${STARTER_TASK_TURN2} failed"
+    return
+  fi
+  if ! wait_for_task_completed "${STARTER_TASK_TURN2}"; then
+    mark_fail "${step}" "${STARTER_TASK_TURN2} did not reach Completed with output within ${AX_TIMEOUT}s"
+    return
+  fi
+  local turn2_desc
+  turn2_desc="$(run_ax describe task "${STARTER_TASK_TURN2}" 2>/dev/null || true)"
+  if ! grep -qE "^Session ID:[[:space:]]+${STARTER_SESSION}$" <<<"${turn2_desc}" || \
+     ! grep -qE "^Parent Task:[[:space:]]+${STARTER_TASK}$" <<<"${turn2_desc}"; then
+    mark_fail "${step}" "${STARTER_TASK_TURN2} did not inherit session ${STARTER_SESSION} from ${STARTER_TASK}"
     return
   fi
 
-  # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn on the
-  # same task's workspace once multi-turn input on a single task lands.
-  mark_stub "${step}" "Turn 1 + suspend/resume OK (/workspace/.ax/output preserved); wire the second Session turn"
+  mark_pass "${step}" "Turn 1 + forked Turn 2 Completed (session ${STARTER_SESSION} reused from Turn 1 snapshot)"
 }
 
 # ------------------------------------------------------------------------------

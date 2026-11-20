@@ -73,6 +73,9 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 	if attempt := st.GetAttempt(); attempt > 0 {
 		fmt.Fprintf(out, "Attempt:      %d\n", attempt)
 	}
+	if parent := st.GetParentTask(); parent != "" {
+		fmt.Fprintf(out, "Parent Task:  %s\n", parent)
+	}
 
 	if spec != nil {
 		if sid := spec.GetSessionId(); sid != "" {

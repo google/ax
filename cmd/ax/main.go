@@ -131,6 +131,15 @@ func main() {
 			}
 			return
 		}
+	case "fork":
+		if flags, err := parseForkArgs(cleanArgs); flags.help || err != nil {
+			fmt.Println(forkUsage)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
 	}
 
 	activeTrace = startCommandTrace(cmd, opts.trace, os.Stderr)
@@ -165,6 +174,8 @@ func main() {
 		err = runSuspend(serverURL, atespace, cleanArgs)
 	case "resume":
 		err = runResume(serverURL, atespace, cleanArgs)
+	case "fork":
+		err = runFork(serverURL, atespace, cleanArgs)
 	case "promote":
 		err = runPromote(serverURL, atespace, cleanArgs)
 	case "delete":
@@ -275,6 +286,7 @@ Available Commands:
                           (Ctrl-C is forwarded; press it twice quickly, or Ctrl-\, to exit locally)
   suspend task <name>     Suspend execution of a task and checkpoint state
   resume task <name>      Resume execution of a suspended task
+  fork task <src> <new>   Fork a task from its workspace snapshot
   promote task <name> --to <context> Promote a task to another cluster
   delete task <name>      Delete a task
   delete workspace <name> Delete a workspace

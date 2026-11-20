@@ -21,4 +21,5 @@ echo run >> "$(dirname "${AX_OUTPUT_FILE}")/e2e-launcher-runs"
 {
   printf 'goal=%s\n' "$(cat "${AX_GOAL_FILE}")"
   printf 'session=%s\n' "$(cat "${AX_SESSION_FILE}")"
+  printf 'runs=%s\n' "$(wc -l < "$(dirname "${AX_OUTPUT_FILE}")/e2e-launcher-runs" | tr -d ' ')"
 } > "${AX_OUTPUT_FILE}"
