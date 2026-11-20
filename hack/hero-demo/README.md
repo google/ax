@@ -30,11 +30,12 @@ With `RUN_LIVE_STEPS=1`, the harness calls:
 - Step 1: `ax get workspaces`, to check `ax-server` is reachable.
 - Step 2: `ax apply -f workspace.yaml`, which waits for the pre-warm, then `ax describe workspace` to check `SnapshotReady`.
 - Step 3: `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, wait for `/workspace/.ax/output`, and `ax suspend` / `ax resume`.
+- Step 4: `ax apply -f task-custom.yaml` and `ax resume`, then wait for `hero-demo-custom-task` to reach `Completed` in the shared `hero-demo-ws` workspace.
 - Step 5: `ax promote task hero-demo-starter-task --to <remote> --replace --suspend-source`.
 
-`task-starter.yaml` pins the published Antigravity starter image (`ghcr.io/agentexecutor/antigravity`, `v0.0.0-rc.2`, pinned by digest as Substrate requires); pass `STARTER_IMAGE=<image>@sha256:<digest>` to override it for local testing. Because pure starter images have no `ax-task-runner` baked in, `ax-server` also needs a runner volume image (`ax install --runner-volume-image` or `AX_RUNNER_VOLUME_IMAGE`, which is empty by default); Step 2 needs it too, because the workspace is pre-warmed in the same image.
+`task-starter.yaml` pins the published Antigravity starter image (`ghcr.io/agentexecutor/antigravity`, `v0.0.0-rc.2`, pinned by digest as Substrate requires); pass `STARTER_IMAGE=<image>@sha256:<digest>` to override it for local testing. Because pure starter and custom images have no `ax-task-runner` baked in, `ax-server` also needs a runner volume image (`ax install --runner-volume-image` or `AX_RUNNER_VOLUME_IMAGE`, which is empty by default); Steps 2, 3, and 4 all rely on it.
 
-Still stubbed: local mode and the AX Studio health check (Step 1), the second Session turn on the same task's workspace (Step 3), and the custom image task, which needs automatic `ax-task-runner` injection (Step 4).
+Still stubbed: local mode and the AX Studio health check (Step 1), and the second Session turn on the same task's workspace (Step 3).
 
 ## Checking the warm snapshot by hand
 

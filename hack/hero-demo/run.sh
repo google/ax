@@ -281,14 +281,37 @@ step3_starter_task_session() {
 step4_custom_image_task() {
   local step="${STEPS[3]}"
   echo "==> [Step 4] Custom Image Task - No Starter Template"
-  # A plain image has no ax-task-runner, so task-custom.yaml cannot run on main
-  # yet; nothing is called here even in live mode.
-  # TODO(@itssimrank, @siyuanfoundation): Once automatic runner injection lands, run
-  #   ax apply -f task-custom.yaml && ax resume task hero-demo-custom-task
-  # and check the unit tests pass, e.g. with
-  #   ax ssh hero-demo-custom-task -- python3 -m unittest discover -s /workspace/app
-  : "${CUSTOM_MANIFEST}" "${CUSTOM_TASK}"
-  mark_stub "${step}" "Wire custom image + command Task (needs runner injection)"
+  if ! live; then
+    mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the custom image task"
+    return
+  fi
+  # Tasks are immutable, so start from a fresh one on every run.
+  run_ax delete task "${CUSTOM_TASK}" >/dev/null 2>&1 || true
+
+  if ! AX_TIMEOUT=600 ax_quiet apply -f "${CUSTOM_MANIFEST}"; then
+    mark_fail "${step}" "ax apply -f task-custom.yaml failed"
+    return
+  fi
+  if ! ax_quiet resume task "${CUSTOM_TASK}"; then
+    mark_fail "${step}" "ax resume task ${CUSTOM_TASK} failed"
+    return
+  fi
+
+  local deadline=$((SECONDS + AX_TIMEOUT))
+  local desc=""
+  while ((SECONDS < deadline)); do
+    desc="$(run_ax describe task "${CUSTOM_TASK}" 2>/dev/null || true)"
+    if echo "${desc}" | grep -qE '^State:[[:space:]]*Completed$'; then
+      mark_pass "${step}" "${CUSTOM_TASK} completed unit tests in shared workspace ${WORKSPACE_NAME}"
+      return
+    fi
+    if echo "${desc}" | grep -qE '^State:[[:space:]]*Failed$'; then
+      mark_fail "${step}" "${CUSTOM_TASK} failed; see 'ax describe task ${CUSTOM_TASK}'"
+      return
+    fi
+    sleep 2
+  done
+  mark_fail "${step}" "${CUSTOM_TASK} did not complete within ${AX_TIMEOUT}s"
 }
 
 # ------------------------------------------------------------------------------
