@@ -130,11 +130,11 @@ func TestResolveProfileTemplate(t *testing.T) {
 		},
 	}
 
-	_, n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "", "runner@sha256:r1")
+	_, n1, tmpl1, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p1): %v", err)
 	}
-	_, n2, _, err := controller.ResolveProfileTemplate("default", p2, "", "runner@sha256:r1")
+	_, n2, _, err := controller.ResolveProfileTemplate("default", p2, "runner@sha256:r1")
 	if err != nil {
 		t.Fatalf("ResolveProfileTemplate(p2): %v", err)
 	}
@@ -152,14 +152,14 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Omitted CPU/memory equivalent to Substrate's defaults (1000m, 512Mi) hash identically.
-	_, nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "", "runner@sha256:r1")
+	_, nOmitted, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: "img@sha256:abc"}, "runner@sha256:r1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, nExplicitDefault, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{
 		Image:     "img@sha256:abc",
 		Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "1000m", Memory: "512Mi"}},
-	}, "", "runner@sha256:r1")
+	}, "runner@sha256:r1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,25 +167,16 @@ func TestResolveProfileTemplate(t *testing.T) {
 		t.Errorf("omitted defaults (%q) != explicit defaults (%q)", nOmitted, nExplicitDefault)
 	}
 
-	// Omitted profile image uses defaultTaskImage (or v1alpha1.DefaultTaskImage when empty).
-	customDefault := "us-docker.pkg.dev/proj/img@sha256:def"
-	_, nDefaultImg, tmplDefaultImg, err := controller.ResolveProfileTemplate("default", nil, customDefault, "runner@sha256:r1")
-	if err != nil {
-		t.Fatal(err)
+	// A profile without image or ateTemplate.name is rejected.
+	if _, _, _, err := controller.ResolveProfileTemplate("default", nil, "runner@sha256:r1"); err == nil {
+		t.Error("ResolveProfileTemplate(nil profile) succeeded, want an error")
 	}
-	if got := tmplDefaultImg.GetContainers()[0].GetImage(); got != customDefault {
-		t.Errorf("default image = %q, want %q", got, customDefault)
-	}
-	_, nExplicitSame, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Image: customDefault}, "", "runner@sha256:r1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if nDefaultImg != nExplicitSame {
-		t.Errorf("omitted profile image with defaultTaskImage (%q) != explicit image (%q)", nDefaultImg, nExplicitSame)
+	if _, _, _, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}}}, "runner@sha256:r1"); err == nil {
+		t.Error("ResolveProfileTemplate(resources-only profile) succeeded, want an error")
 	}
 
 	// Changing runner volume image produces a distinct template hash.
-	_, nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "", "runner@sha256:r2")
+	_, nRunner2, _, err := controller.ResolveProfileTemplate("default", p1, "runner@sha256:r2")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,13 +185,13 @@ func TestResolveProfileTemplate(t *testing.T) {
 	}
 
 	// Explicit ateTemplate.name returns that name with nil template spec.
-	directAtespace, directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "gpu-base"}}, customDefault, "runner@sha256:r1")
+	directAtespace, directName, directTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "gpu-base"}}, "runner@sha256:r1")
 	if err != nil || directAtespace != "default" || directName != "gpu-base" || directTmpl != nil {
 		t.Fatalf("ResolveProfileTemplate(ateTemplate.name) = (%q, %q, %v, %v), want (\"default\", \"gpu-base\", nil, nil)", directAtespace, directName, directTmpl, err)
 	}
 
 	// ateTemplate.atespace points the lookup at another atespace.
-	crossAtespace, crossName, crossTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "gpu-base", Atespace: "shared"}}, customDefault, "runner@sha256:r1")
+	crossAtespace, crossName, crossTmpl, err := controller.ResolveProfileTemplate("default", &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "gpu-base", Atespace: "shared"}}, "runner@sha256:r1")
 	if err != nil || crossAtespace != "shared" || crossName != "gpu-base" || crossTmpl != nil {
 		t.Fatalf("ResolveProfileTemplate(ateTemplate.atespace) = (%q, %q, %v, %v), want (\"shared\", \"gpu-base\", nil, nil)", crossAtespace, crossName, crossTmpl, err)
 	}
@@ -224,7 +215,7 @@ func TestResolveProfileTemplate_MountsRunnerVolume(t *testing.T) {
 	const runner = "ghcr.io/google/ax/ax-runner-volume@sha256:r1"
 	p := &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}
 
-	_, _, tmpl, err := controller.ResolveProfileTemplate("default", p, "", runner)
+	_, _, tmpl, err := controller.ResolveProfileTemplate("default", p, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +226,7 @@ func TestResolveProfileTemplate_MountsRunnerVolume(t *testing.T) {
 		t.Errorf("volumes = %v, want an image volume of %q", tmpl.GetVolumes(), runner)
 	}
 
-	_, _, tmpl, err = controller.ResolveProfileTemplate("default", p, "", "")
+	_, _, tmpl, err = controller.ResolveProfileTemplate("default", p, "")
 	if err != nil {
 		t.Fatal(err)
 	}

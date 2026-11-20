@@ -43,15 +43,6 @@ const (
 	// once official multi-arch release images are published.
 	DefaultServerImage = ""
 
-	// DefaultTaskImage is the optional default container image configured on
-	// ax-server (AX_DEFAULT_TASK_IMAGE) for tasks that omit spec.profile.image
-	// when --default-task-image and $AX_DEFAULT_TASK_IMAGE are unset. When empty,
-	// tasks must specify spec.profile.image explicitly.
-	//
-	// TODO(release): Populate with "ghcr.io/agentexecutor/<image>:<tag>@sha256:<digest>"
-	// once the official published prebuilt default task image is live.
-	DefaultTaskImage = ""
-
 	// DefaultRunnerVolumeImage is the optional runner volume image
 	// (Dockerfile.runner-volume) configured on ax-server
 	// (AX_RUNNER_VOLUME_IMAGE) when --runner-volume-image and
@@ -72,10 +63,9 @@ const (
 
 // InstallOptions configures `ax install`.
 type InstallOptions struct {
-	KubeContext      string
-	Namespace        string
-	ServerImage      string
-	DefaultTaskImage string
+	KubeContext string
+	Namespace   string
+	ServerImage string
 	// RunnerVolumeImage is the optional runner volume image; see
 	// DefaultRunnerVolumeImage.
 	RunnerVolumeImage string
@@ -97,8 +87,7 @@ type UninstallOptions struct {
 }
 
 // Install authorizes ax-server in Agent Substrate, resolves or builds AX
-// container images (digest-pinning the default task image and the runner volume
-// image), and deploys ax-postgres and ax-server into Namespace.
+// container images (digest-pinning the server and runner volume images), and deploys ax-postgres and ax-server into Namespace.
 func Install(ctx context.Context, opts InstallOptions) error {
 	r := opts.Runner
 	if r == nil {
@@ -115,7 +104,7 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if err := deploy.ValidateNamespace(ns); err != nil {
 		return err
 	}
-	if _, _, _, err := ResolveImageInputs(opts.ServerImage, opts.DefaultTaskImage, opts.RunnerVolumeImage); err != nil {
+	if _, _, err := ResolveImageInputs(opts.ServerImage, opts.RunnerVolumeImage); err != nil {
 		return err
 	}
 	timeout := opts.RolloutTimeout
@@ -123,7 +112,7 @@ func Install(ctx context.Context, opts InstallOptions) error {
 		timeout = 3 * time.Minute
 	}
 
-	srvImg, taskImg, runnerImg, err := resolveImages(ctx, opts)
+	srvImg, runnerImg, err := resolveImages(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -160,16 +149,12 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	srvManifest, err := deploy.RenderServer(deploy.ServerConfig{
 		Namespace:         ns,
 		ServerImage:       srvImg,
-		DefaultTaskImage:  taskImg,
 		RunnerVolumeImage: runnerImg,
 	})
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "==> Deploying ax-server (%s)...\n", srvImg)
-	if taskImg != "" {
-		fmt.Fprintf(out, "    default task image:  %s\n", taskImg)
-	}
 	if runnerImg != "" {
 		fmt.Fprintf(out, "    runner volume image: %s\n", runnerImg)
 	}
@@ -260,20 +245,18 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 	return nil
 }
 
-// ResolveImageInputs resolves the server image, the optional default task
-// image, and the optional runner volume image. Each comes from its explicit
-// flag, else its environment override ($AX_SERVER_IMAGE /
-// $AX_DEFAULT_TASK_IMAGE / $AX_RUNNER_VOLUME_IMAGE), else its package default
-// (DefaultServerImage / DefaultTaskImage / DefaultRunnerVolumeImage). It fails
-// only when the server image is unset.
-func ResolveImageInputs(serverImage, defaultTaskImage, runnerVolumeImage string) (srvImg, taskImg, runnerImg string, err error) {
+// ResolveImageInputs resolves the server image and the optional runner volume
+// image. Each comes from its explicit flag, else its environment override
+// ($AX_SERVER_IMAGE / $AX_RUNNER_VOLUME_IMAGE), else its package default
+// (DefaultServerImage / DefaultRunnerVolumeImage). It fails only when the
+// server image is unset.
+func ResolveImageInputs(serverImage, runnerVolumeImage string) (srvImg, runnerImg string, err error) {
 	srvImg = firstNonEmpty(serverImage, os.Getenv("AX_SERVER_IMAGE"), DefaultServerImage)
 	if srvImg == "" {
-		return "", "", "", fmt.Errorf("--server-image (or $AX_SERVER_IMAGE) is required until official release images are published")
+		return "", "", fmt.Errorf("--server-image (or $AX_SERVER_IMAGE) is required until official release images are published")
 	}
-	taskImg = firstNonEmpty(defaultTaskImage, os.Getenv("AX_DEFAULT_TASK_IMAGE"), DefaultTaskImage)
 	runnerImg = firstNonEmpty(runnerVolumeImage, os.Getenv("AX_RUNNER_VOLUME_IMAGE"), DefaultRunnerVolumeImage)
-	return srvImg, taskImg, runnerImg, nil
+	return srvImg, runnerImg, nil
 }
 
 // firstNonEmpty returns the first value that is not blank, trimmed.
@@ -287,21 +270,21 @@ func firstNonEmpty(values ...string) string {
 }
 
 // resolveImages resolves the image inputs and pins each one by digest. The
-// optional images stay empty when unset.
-func resolveImages(ctx context.Context, opts InstallOptions) (srvImg, taskImg, runnerImg string, err error) {
-	srvImg, taskImg, runnerImg, err = ResolveImageInputs(opts.ServerImage, opts.DefaultTaskImage, opts.RunnerVolumeImage)
+// optional runner volume image stays empty when unset.
+func resolveImages(ctx context.Context, opts InstallOptions) (srvImg, runnerImg string, err error) {
+	srvImg, runnerImg, err = ResolveImageInputs(opts.ServerImage, opts.RunnerVolumeImage)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
-	for _, img := range []*string{&srvImg, &taskImg, &runnerImg} {
+	for _, img := range []*string{&srvImg, &runnerImg} {
 		if *img == "" {
 			continue
 		}
 		if *img, err = EnsureDigestPinned(ctx, *img, opts.HTTPClient); err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 	}
-	return srvImg, taskImg, runnerImg, nil
+	return srvImg, runnerImg, nil
 }
 
 func generateRandomPassword() (string, error) {

@@ -50,8 +50,9 @@ message WorkspaceSpec {
 
   // Default compute profile (image, resources, ate_template) used to
   // pre-warm the workspace snapshot upon Workspace creation for fast warm task
-  // startup, and used as the fallback profile for Tasks binding this Workspace
-  // that omit TaskSpec.profile.
+  // startup, and used as the profile of Tasks binding this Workspace that omit
+  // TaskSpec.profile. When set, it must set image or ate_template.name; a
+  // Workspace with setup steps must set it.
   //
   // WorkspaceSpec.profile never restricts or merges fields into an explicit
   // TaskSpec.profile: if a Task sets its own profile and it differs from

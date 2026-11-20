@@ -34,7 +34,7 @@ spec:
     spec:
       containers:
         - name: echo
-          image: ${AX_DEFAULT_TASK_IMAGE}
+          image: ${AX_E2E_TASK_IMAGE}
           command:
             - python3
             - -c

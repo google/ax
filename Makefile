@@ -31,11 +31,6 @@ AX_RUNNER_VOLUME_BUILD_IMAGE ?= $(AX_IMAGE_REPO)/ax-runner-volume:$(IMAGE_TAG)
 # mount into task containers. Empty (the default) keeps running the runner baked
 # into each task image.
 AX_RUNNER_VOLUME_IMAGE ?=
-# Image the server runs for tasks that do not set spec.profile.image. Substrate only
-# accepts images pinned by digest, so after `make images` this defaults to the
-# digest it recorded for the pushed ax-task-runner image.
-AX_TASK_RUNNER_DIGEST := $(strip $(shell cat bin/ax-task-runner.digest 2>/dev/null))
-AX_DEFAULT_TASK_IMAGE ?= $(if $(AX_TASK_RUNNER_DIGEST),$(AX_IMAGE_REPO)/ax-task-runner@$(AX_TASK_RUNNER_DIGEST),$(AX_TASK_RUNNER_IMAGE))
 
 # Task image with Claude Code preinstalled; see Dockerfile.claude-code.
 CLAUDE_CODE_REPO ?= gcr.io/ax-images/ax-images
@@ -94,8 +89,11 @@ images: check-image-repo
 	@echo "==> Pushed images. To deploy exactly these builds, run:"
 	@echo ""
 	@echo "    export AX_SERVER_IMAGE=$(AX_SERVER_IMAGE)@$$(cat bin/ax-server.digest)"
-	@echo "    export AX_DEFAULT_TASK_IMAGE=$(AX_TASK_RUNNER_IMAGE)@$$(cat bin/ax-task-runner.digest)"
 	@echo "    export AX_RUNNER_VOLUME_IMAGE=$(AX_RUNNER_VOLUME_BUILD_IMAGE)@$$(cat bin/ax-runner-volume.digest)"
+	@echo ""
+	@echo "==> Tasks run ax-task-runner by setting spec.profile.image to:"
+	@echo ""
+	@echo "    $(AX_TASK_RUNNER_IMAGE)@$$(cat bin/ax-task-runner.digest)"
 	@echo ""
 
 # Build and push only the runner volume image (see Dockerfile.runner-volume)
@@ -161,7 +159,6 @@ deploy-postgres:
 deploy-server: check-image-repo
 	@echo "==> Deploying ax-server ($(AX_SERVER_IMAGE))..."
 	sed -e 's|$${AX_SERVER_IMAGE}|$(AX_SERVER_IMAGE)|g' \
-		-e 's|$${AX_DEFAULT_TASK_IMAGE}|$(AX_DEFAULT_TASK_IMAGE)|g' \
 		-e 's|$${AX_RUNNER_VOLUME_IMAGE}|$(AX_RUNNER_VOLUME_IMAGE)|g' \
 		deploy/ax-server.yaml | kubectl apply -f -
 

@@ -142,7 +142,7 @@ func TestRunPromote(t *testing.T) {
 	}
 	ws := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "demo-ws", Atespace: "dev", Uid: "source-uid", CreateTime: created},
-		Spec:     &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"make deps"}}},
+		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"make deps"}}},
 	}
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "demo", Atespace: "dev", Uid: "source-uid", CreateTime: created, Labels: map[string]string{"team": "a"}, Owner: "alice"},

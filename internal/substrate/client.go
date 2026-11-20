@@ -351,9 +351,6 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
-	if image == "" {
-		image = v1alpha1.DefaultTaskImage
-	}
 	if len(command) == 0 {
 		command = []string{DefaultGuestCommand}
 	}

@@ -143,6 +143,8 @@ metadata:
   name: {{.Workspace}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   setup:
     files:
     - path: seed.txt

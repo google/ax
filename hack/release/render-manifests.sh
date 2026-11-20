@@ -21,8 +21,7 @@
 # Reads out-dir/images.env (written by publish-images.sh; default out-dir is
 # bin/release) and writes:
 #
-#   ax-server.yaml  deploy/ax-server.yaml with ax-server and the default task
-#                   image pinned by digest.
+#   ax-server.yaml  deploy/ax-server.yaml with ax-server pinned by digest.
 #                   AX_RUNNER_VOLUME_IMAGE is the published runner volume if
 #                   AX_RENDER_RUNNER_VOLUME=true, and empty otherwise (the
 #                   runner baked into each task image, the Makefile default).
@@ -39,7 +38,7 @@ OUT="${1:-${ROOT}/bin/release}"
 
 # shellcheck disable=SC1091
 source "${OUT}/images.env"
-for v in AX_SERVER_IMAGE AX_DEFAULT_TASK_IMAGE AX_RUNNER_VOLUME_REF; do
+for v in AX_SERVER_IMAGE AX_TASK_RUNNER_IMAGE AX_RUNNER_VOLUME_REF; do
   if [[ ! "${!v:-}" =~ @sha256:[0-9a-f]{64}$ ]]; then
     echo "error: ${v} in ${OUT}/images.env is not pinned by digest: '${!v:-}'" >&2
     exit 1
@@ -52,7 +51,6 @@ if [[ "${AX_RENDER_RUNNER_VOLUME:-false}" == true ]]; then
 fi
 
 sed -e "s|\${AX_SERVER_IMAGE}|${AX_SERVER_IMAGE}|g" \
-  -e "s|\${AX_DEFAULT_TASK_IMAGE}|${AX_DEFAULT_TASK_IMAGE}|g" \
   -e "s|\${AX_RUNNER_VOLUME_IMAGE}|${runner_volume}|g" \
   "${ROOT}/deploy/ax-server.yaml" > "${OUT}/ax-server.yaml"
 cp "${ROOT}/deploy/postgres.yaml" "${OUT}/postgres.yaml"

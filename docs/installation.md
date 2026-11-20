@@ -163,28 +163,28 @@ grep -Eq '^sha256:[0-9a-f]{64}$' bin/ax-task-runner.digest
 AX_SERVER_DIGEST="$(cat bin/ax-server.digest)"
 AX_TASK_RUNNER_DIGEST="$(cat bin/ax-task-runner.digest)"
 export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@$AX_SERVER_DIGEST"
-export AX_DEFAULT_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@$AX_TASK_RUNNER_DIGEST"
+export AX_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@$AX_TASK_RUNNER_DIGEST"
 cp bin/ax-server.digest bin/ax-task-runner.digest "$AX_INSTALL_DIR/"
-printf 'AX_REF=%s\nSUBSTRATE_REF=%s\nAX_SERVER_IMAGE=%s\nAX_DEFAULT_TASK_IMAGE=%s\n' \
-  "$AX_REF" "$SUBSTRATE_REF" "$AX_SERVER_IMAGE" "$AX_DEFAULT_TASK_IMAGE" \
+printf 'AX_REF=%s\nSUBSTRATE_REF=%s\nAX_SERVER_IMAGE=%s\nAX_TASK_IMAGE=%s\n' \
+  "$AX_REF" "$SUBSTRATE_REF" "$AX_SERVER_IMAGE" "$AX_TASK_IMAGE" \
   > "$AX_INSTALL_DIR/source-and-images.txt"
 go list -m go.ate.dev/substrate github.com/agent-substrate/env \
   > "$AX_INSTALL_DIR/modules.txt"
 ```
 
 Stop if either digest check fails. Use the registry digests recorded by
-`make images`, not local image IDs or mutable tags. The server uses
-`AX_DEFAULT_TASK_IMAGE` for tasks that omit `spec.profile.image`. An explicit task image
-overrides it: replace private image references in any adapted examples with your
-own runner digest ([#424](https://github.com/google/ax/issues/424)).
+`make images`, not local image IDs or mutable tags. Every Task must set
+`spec.profile.image` (or `spec.profile.ateTemplate.name`); the server rejects a
+Task without one. Use `AX_TASK_IMAGE` there, and replace private image
+references in any adapted examples with your own runner digest
+([#424](https://github.com/google/ax/issues/424)).
 
 ## 3. Render and deploy the control plane
 
-Render both image references into a saved copy of the production manifest:
+Render the server image reference into a saved copy of the production manifest:
 
 ```bash
 sed -e "s|\${AX_SERVER_IMAGE}|$AX_SERVER_IMAGE|g" \
-  -e "s|\${AX_DEFAULT_TASK_IMAGE}|$AX_DEFAULT_TASK_IMAGE|g" \
   deploy/ax-server.yaml > "$AX_INSTALL_DIR/ax-server.yaml"
 ```
 
@@ -238,7 +238,7 @@ remove it.
 
 Control-plane rollout alone does not verify a sandbox. This task exercises the
 runner and guest exec without requiring a Workspace, Model, or model API key.
-It omits `spec.profile.image` to check the server's configured default:
+It runs the `ax-task-runner` image you built:
 
 ```bash
 AX_CHECK_TASK="ax-install-$(date +%s)"
@@ -250,6 +250,8 @@ metadata:
   atespace: default
 spec:
   debug: true
+  profile:
+    image: ${AX_TASK_IMAGE}
   commands: ["sleep", "infinity"]
 EOF
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system apply -f "$AX_INSTALL_DIR/task.yaml"
@@ -258,7 +260,7 @@ EOF
 
 A newly created task should be `Suspended`. In the server log, confirm the
 `reconciling task` entry for this task has an `image` matching
-`$AX_DEFAULT_TASK_IMAGE`. If creation fails or conditions report
+`$AX_TASK_IMAGE`. If creation fails or conditions report
 `TemplateCreationFailed`, diagnose the error before proceeding:
 
 ```bash

@@ -262,7 +262,7 @@ func TestTaskReconciler(t *testing.T) {
 	defer client.Close()
 
 	// 3. Resume the task
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -311,54 +311,43 @@ func TestTaskReconciler(t *testing.T) {
 	}
 }
 
-// TestTaskReconciler_DefaultTaskImage verifies that a task without spec.image is
-// defaulted to the image passed to NewTaskReconciler (or the API default when
-// none is given), and that the image
-// is what ends up in the per-task ActorTemplate.
-func TestTaskReconciler_DefaultTaskImage(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		override string
-		want     string
-	}{
-		{name: "api default", want: v1alpha1.DefaultTaskImage},
-		{name: "server override", override: "localhost:5001/ax-task-runner:e2e", want: "localhost:5001/ax-task-runner:e2e"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			lis, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatalf("failed to listen: %v", err)
-			}
-			defer lis.Close()
+// TestTaskReconciler_MissingImage verifies that a task whose profile names no
+// image or ateTemplate fails with TemplateCreationFailed instead of creating a
+// template.
+func TestTaskReconciler_MissingImage(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
 
-			mockSrv := &mockControlServer{}
-			grpcServer := grpc.NewServer()
-			ateapipb.RegisterControlServer(grpcServer, mockSrv)
-			go grpcServer.Serve(lis)
-			defer grpcServer.Stop()
+	mockSrv := &mockControlServer{}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
 
-			client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				t.Fatalf("failed to create substrate client: %v", err)
-			}
-			defer client.Close()
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
 
-			reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, tc.override)
-			reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
-			task := &v1alpha1.Task{
-				ApiVersion: v1alpha1.APIVersion,
-				Kind:       v1alpha1.KindTask,
-				Metadata:   &v1alpha1.ObjectMeta{Name: "no-image", Atespace: "default"},
-				Spec:       &v1alpha1.TaskSpec{},
-			}
-			if err := reconciler.Resume(context.Background(), task, nil, nil); err != nil {
-				t.Fatalf("Resume failed: %v", err)
-			}
-			if len(mockSrv.templateImages) != 1 || mockSrv.templateImages[0] != tc.want {
-				t.Errorf("ActorTemplate images = %v, want [%q]", mockSrv.templateImages, tc.want)
-			}
-		})
+	task := &v1alpha1.Task{
+		ApiVersion: v1alpha1.APIVersion,
+		Kind:       v1alpha1.KindTask,
+		Metadata:   &v1alpha1.ObjectMeta{Name: "no-image", Atespace: "default"},
+		Spec:       &v1alpha1.TaskSpec{},
+	}
+	if err := reconciler.Resume(context.Background(), task, nil, nil); err == nil {
+		t.Fatal("Resume succeeded, want an error for a task without an image")
+	}
+	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
+	if len(mockSrv.createdTemplates) != 0 {
+		t.Errorf("created %d ActorTemplates, want 0", len(mockSrv.createdTemplates))
 	}
 }
 
@@ -385,7 +374,7 @@ func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
 		}
 		t.Cleanup(func() { client.Close() })
 
-		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 		reconciler.RunnerVolumeImage = runner
 		task := &v1alpha1.Task{
@@ -456,7 +445,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -509,7 +498,7 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	newTask := func(name string) *v1alpha1.Task {
@@ -589,7 +578,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -643,7 +632,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -717,7 +706,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -784,7 +773,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -794,7 +783,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 			Name:     "ready-task",
 			Atespace: "default",
 		},
-		Spec: &v1alpha1.TaskSpec{},
+		Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}},
 	}
 
 	// Case 1: Worker not responding on readyz -> WorkspaceReady=False.
@@ -867,7 +856,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -971,7 +960,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			grpcServer.Stop()
 			lis.Close()
 		})
-		reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system", "")
+		reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
 		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 		return reconciler
 	}
@@ -1078,7 +1067,7 @@ func TestDelete_RemovesActorAndTemplates(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	if err := reconciler.Delete(ctx, "default", "job"); err != nil {
@@ -1140,7 +1129,7 @@ func TestDelete_BlocksUntilActorDeleted(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 
 	if err := reconciler.Delete(ctx, "default", "slow-delete-task"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
@@ -1181,7 +1170,7 @@ func TestDelete_ActorDeletionTimeout(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 
 	err = reconciler.Delete(ctx, "default", "stuck-task")
 	if err == nil {
@@ -1244,7 +1233,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	// 1. A transient error during EnsureAtespace is recorded with Reason="SubstrateUnavailable".
@@ -1326,7 +1315,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, "")
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -1392,8 +1381,8 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	}
 	defer client.Close()
 
-	const defaultImg = "ghcr.io/default/runner@sha256:1111"
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace, defaultImg)
+	const taskImg = "ghcr.io/task/image@sha256:1111"
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
 	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	ws := &v1alpha1.Workspace{
@@ -1431,13 +1420,14 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		t.Errorf("inherited resources = %v, want %v", gotInherited.GetResources(), wantWsRes)
 	}
 
-	// 2. Non-empty task profile (resources only) uses task profile as-is:
-	// falls back to server default image and default CPU, NOT Workspace.spec.profile.
+	// 2. A task profile is used as-is: unset CPU falls back to the default,
+	// NOT Workspace.spec.profile.
 	resourcesOnlyTask := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "resources-only-task", Atespace: "default"},
 		Spec: &v1alpha1.TaskSpec{
 			Workspace: &v1alpha1.WorkspaceRef{Name: "warm-ws"},
 			Profile: &v1alpha1.Profile{
+				Image: taskImg,
 				Resources: &v1alpha1.ResourcesSpec{
 					Limits: &v1alpha1.ResourceList{Memory: "2Gi"},
 				},
@@ -1451,8 +1441,8 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		t.Fatalf("createdTemplates = %d, want 2", len(mockSrv.createdTemplates))
 	}
 	gotResOnly := mockSrv.createdTemplates[1]
-	if got := gotResOnly.GetContainers()[0].GetImage(); got != defaultImg {
-		t.Errorf("resources-only task image = %q, want server default %q", got, defaultImg)
+	if got := gotResOnly.GetContainers()[0].GetImage(); got != taskImg {
+		t.Errorf("resources-only task image = %q, want %q", got, taskImg)
 	}
 	wantTaskRes := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
 		CpuMillicores: substrate.DefaultCPUMillicores,
@@ -1462,8 +1452,8 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		t.Errorf("resources-only task resources = %v, want %v", gotResOnly.GetResources(), wantTaskRes)
 	}
 
-	// 3. Even when Workspace uses ateTemplate.name, a task setting resources-only
-	// uses its own profile cleanly without conflicting with Workspace.spec.profile.
+	// 3. Even when Workspace uses ateTemplate.name, a task setting its own
+	// profile uses it cleanly without conflicting with Workspace.spec.profile.
 	wsWithTpl := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-ws", Atespace: "default"},
 		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ws-base-tpl"}}},
@@ -1473,6 +1463,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		Spec: &v1alpha1.TaskSpec{
 			Workspace: &v1alpha1.WorkspaceRef{Name: "tpl-ws"},
 			Profile: &v1alpha1.Profile{
+				Image: taskImg,
 				Resources: &v1alpha1.ResourcesSpec{
 					Limits: &v1alpha1.ResourceList{Memory: "1Gi"},
 				},
@@ -1485,7 +1476,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	if len(mockSrv.createdTemplates) != 3 {
 		t.Fatalf("createdTemplates = %d, want 3", len(mockSrv.createdTemplates))
 	}
-	if got := mockSrv.createdTemplates[2].GetContainers()[0].GetImage(); got != defaultImg {
-		t.Errorf("taskOverTplWs image = %q, want %q", got, defaultImg)
+	if got := mockSrv.createdTemplates[2].GetContainers()[0].GetImage(); got != taskImg {
+		t.Errorf("taskOverTplWs image = %q, want %q", got, taskImg)
 	}
 }

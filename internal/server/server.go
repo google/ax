@@ -87,9 +87,8 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 	workspaces := opt.WorkspaceManager
 	if workspaces == nil {
 		workspaces = controller.NewWorkspaceManager(reconciler.Client(), controller.WorkspaceManagerOptions{
-			Locker:           locker,
-			Store:            s,
-			DefaultTaskImage: reconciler.DefaultTaskImage(),
+			Locker: locker,
+			Store:  s,
 		})
 	}
 
@@ -250,6 +249,11 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		case v1alpha1.WorkspacePhaseFailed:
 			return nil, status.Errorf(codes.FailedPrecondition, "workspace %q in atespace %q failed setup: %s", wsName, atespace, workspace.GetStatus().GetLastSetupError())
 		}
+	}
+	// A task without a profile runs its Workspace's; there is no default
+	// image to fall back to.
+	if !apivalidation.ProfileNamesImage(task.GetSpec().GetProfile()) && !apivalidation.ProfileNamesImage(workspace.GetSpec().GetProfile()) {
+		return nil, status.Errorf(codes.InvalidArgument, "spec.profile: image or ateTemplate.name is required because workspace %q sets no spec.profile", task.GetSpec().GetWorkspace().GetName())
 	}
 	// A task gets its Gateway's rules when it is created, so the Gateway must
 	// already exist.

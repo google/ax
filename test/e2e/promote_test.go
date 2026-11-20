@@ -26,6 +26,8 @@ metadata:
   name: {{.Workspace}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   setup:
     gateway:
       name: {{.SetupGateway}}
@@ -39,6 +41,8 @@ metadata:
   name: {{.Task}}
   atespace: {{.Atespace}}
 spec:
+  profile:
+    image: {{taskImage}}
   debug: true
   gateway:
     name: {{.Gateway}}

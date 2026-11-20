@@ -2,7 +2,7 @@
 
 A runner is the program that AX starts as PID 1 inside every task container. It is the bridge between the control plane and whatever your agent actually is: the control plane hands it the `Task` and `Workspace` specs, and the runner turns them into a prepared workspace, a running command, and a small HTTP surface that the rest of AX uses to observe the sandbox.
 
-AX ships a default runner, `ax-task-runner`, baked into the default task image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.profile.image`, and the control plane will treat it exactly like the default.
+AX ships a default runner, `ax-task-runner`, baked into the `ax-task-runner` image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.profile.image`, and the control plane will treat it exactly like the default.
 
 This page describes what a runner must do. For what the default runner exposes to your command once it is up, see [Sandbox](sandbox.md).
 

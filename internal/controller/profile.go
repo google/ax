@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"github.com/google/ax/internal/resources"
@@ -88,8 +89,7 @@ func (p profile) templateName(runnerImage string) string {
 }
 
 // ResolveProfileTemplate resolves p into a deterministic Substrate
-// ActorTemplate name and specification. When p omits image, defaultTaskImage is
-// used (falling back to v1alpha1.DefaultTaskImage if defaultTaskImage is empty).
+// ActorTemplate name and specification. p must set image or ateTemplate.name.
 //
 // The returned atespace is where the template lives: ateTemplate.atespace when set,
 // otherwise atespace (the task's own, defaulting to DefaultAtespace).
@@ -105,7 +105,7 @@ func (p profile) templateName(runnerImage string) string {
 // profile and runner volume image) is returned ready for EnsureActorTemplate.
 // A non-empty runnerImage is mounted read-only into the template's container,
 // which then runs the runner from it (see substrate.MountRunnerVolume).
-func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, string, *ateapipb.ActorTemplate, error) {
+func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, runnerImage string) (string, string, *ateapipb.ActorTemplate, error) {
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
@@ -113,12 +113,9 @@ func ResolveProfileTemplate(atespace string, p *v1alpha1.Profile, defaultTaskIma
 		return ProfileTemplateAtespace(atespace, p), tpl, nil, nil
 	}
 
-	if defaultTaskImage == "" {
-		defaultTaskImage = v1alpha1.DefaultTaskImage
-	}
 	image := p.GetImage()
 	if image == "" {
-		image = defaultTaskImage
+		return "", "", nil, errors.New("profile must set image or ateTemplate.name")
 	}
 
 	cpuMillicores := substrate.DefaultCPUMillicores
@@ -175,8 +172,8 @@ func ProfileTemplateAtespace(taskAtespace string, p *v1alpha1.Profile) string {
 // name and ensures it exists on Substrate: verifying user-supplied ateTemplate
 // references via GetActorTemplate without mutating them, or provisioning
 // AX-managed templates via EnsureActorTemplate.
-func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, defaultTaskImage, runnerImage string) (string, string, error) {
-	tplAtespace, tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, defaultTaskImage, runnerImage)
+func ensureProfileTemplate(ctx context.Context, client *substrate.Client, atespace string, p *v1alpha1.Profile, runnerImage string) (string, string, error) {
+	tplAtespace, tplName, tplSpec, err := ResolveProfileTemplate(atespace, p, runnerImage)
 	if err != nil {
 		return "", "", err
 	}

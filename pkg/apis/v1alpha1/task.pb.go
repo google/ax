@@ -288,19 +288,20 @@ func (x *Task) GetStatus() *TaskStatus {
 
 type TaskSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Optional compute profile (image, resources, ate_template) for this
-	// task's sandbox.
+	// Compute profile (image, resources, ate_template) for this task's sandbox.
+	// There is no server-wide default image, so the task must get one from here
+	// or from its bound Workspace.
 	//
 	// Precedence is whole-profile, never field-merged with WorkspaceSpec.profile:
 	//   - If omitted (or empty), the task uses the bound Workspace's
-	//     spec.profile when set (hitting its pre-warmed workspace snapshot), or
-	//     server defaults otherwise.
-	//   - If set (any field populated), TaskSpec.profile is used as-is and
-	//     WorkspaceSpec.profile is ignored; any unset fields within
-	//     TaskSpec.profile fall back to server defaults (not WorkspaceSpec.profile).
-	//     When this differs from WorkspaceSpec.profile, the task cold-boots and
-	//     runs workspace setup in its own compute profile instead of starting
-	//     from the pre-warmed snapshot.
+	//     spec.profile (hitting its pre-warmed workspace snapshot). The task is
+	//     rejected if it binds no Workspace or its Workspace has no profile.
+	//   - If set (any field populated), it must set image or ate_template.name
+	//     and is used as-is; WorkspaceSpec.profile is ignored and unset resource
+	//     limits fall back to server defaults. When it differs from
+	//     WorkspaceSpec.profile, the task cold-boots and runs workspace setup in
+	//     its own compute profile instead of starting from the pre-warmed
+	//     snapshot.
 	Profile *Profile `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
 	// Command argv; if empty, runs the resolved image's ENTRYPOINT + CMD in its WORKDIR.
 	Commands []string `protobuf:"bytes,2,rep,name=commands,proto3" json:"commands,omitempty"`

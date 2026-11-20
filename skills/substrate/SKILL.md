@@ -97,6 +97,14 @@ instead. No mocking library is in `go.mod`.
   `spec.profile.image` fails at ActorTemplate creation with reason
   `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
   `bin/ax-server.digest` / `bin/ax-task-runner.digest` for this reason.
+- There is no server-wide default task image. A set `spec.profile` must name
+  `image` or `ateTemplate.name` (`validateProfile` in
+  `internal/apivalidation/common.go`), a Workspace with setup steps must set
+  one, and a Task that omits it inherits its Workspace's (`EffectiveProfile`);
+  `CreateTask` in `internal/server/server.go` rejects a Task with neither.
+  `ResolveProfileTemplate` errors on an empty image. E2E Task and Workspace
+  manifests get the image from `{{taskImage}}` (`$AX_E2E_TASK_IMAGE`, written
+  to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
   stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
   its readiness probe (`internal/controller/reconciler.go`), and `ax ssh`

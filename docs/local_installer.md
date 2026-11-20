@@ -16,10 +16,10 @@ export PATH="$HOME/.ax/bin:$PATH"
 #    colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs
 
 # 3. Stand up the local Kubernetes + Substrate v1.0.0 + AX stack (or switch to a remote cluster via `ax ctx`)
-#    Note: Until official release images are published, specify --server-image and --default-task-image
-#    (or export AX_SERVER_IMAGE and AX_DEFAULT_TASK_IMAGE).
+#    Note: Until official release images are published, specify --server-image (or export AX_SERVER_IMAGE).
+#    Tasks name their own image in spec.profile.image, pinned by digest.
 export AX_SERVER_IMAGE="<registry>/ax-server:<tag>"
-export AX_DEFAULT_TASK_IMAGE="<registry>/ax-task-runner:<tag>"
+export AX_TASK_IMAGE="<registry>/ax-task-runner@sha256:<digest>"
 #    Optional: mount the runner from a runner volume image, so task images need no runner baked in.
 # export AX_RUNNER_VOLUME_IMAGE="<registry>/ax-runner-volume:<tag>"
 ax local start
@@ -114,7 +114,7 @@ go install github.com/agentexecutor/studio/cmd/ax-studio@latest
 
 ### Expected Behavior
 - Produces a single self-contained `ax` binary (with `@sha256`-pinned Agent Substrate `v1.0.0` manifests and canonical AX deployment manifests embedded via `//go:embed`).
-- `ax local --help` lists the `start`, `status`, `stop`, and `delete` subcommands along with `--name`, `--workers`, `--server-image`, `--default-task-image`, `--runner-volume-image`, and `-n`/`--namespace`.
+- `ax local --help` lists the `start`, `status`, `stop`, and `delete` subcommands along with `--name`, `--workers`, `--server-image`, `--runner-volume-image`, and `-n`/`--namespace`.
 
 ---
 
@@ -122,13 +122,12 @@ go install github.com/agentexecutor/studio/cmd/ax-studio@latest
 
 ```bash
 ax local start \
-  --server-image "$AX_SERVER_IMAGE" \
-  --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+  --server-image "$AX_SERVER_IMAGE"
 ```
 
 *(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
-*(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--default-task-image`, `--runner-volume-image`, and each task's `spec.profile.image`.)*
+*(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--runner-volume-image` and each task's `spec.profile.image`.)*
 
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
@@ -143,7 +142,7 @@ The installer prints progress (`==>`) across three stages:
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
-   - Resolves multi-arch (`linux/amd64` + `linux/arm64`) `@sha256:...` digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image`.
+   - Resolves multi-arch (`linux/amd64` + `linux/arm64`) `@sha256:...` digests for `--server-image` and, when set, `--runner-volume-image`.
    - Labels `ax-system` (`ate.dev/api-access=true`) and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider` (scoped strictly to Secrets carrying `ax.io/credential: "true"`).
    - Generates a one-time `ax-postgres` password Secret, deploys `ax-postgres` and `ax-server`, waits for readiness, and prints:
      ```text
@@ -171,7 +170,7 @@ ax studio --no-open       # do not open a browser (SSH sessions, scripts)
 ```
 
 - `ax studio` starts `ax-studio` with your `ax` (`--ax-bin`) and AX namespace (`-n`), and passes any other flags through. `ax studio --help` lists them.
-- Studio needs no image flags: it deploys the AX images it was built with. `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`, or the **AX images** fields on its setup page, override them.
+- Studio needs no image flags: it deploys the AX images it was built with. `$AX_SERVER_IMAGE`, or the **AX images** fields on its setup page, override them.
 - Studio works with the local cluster only. It names `--context ax-local` on every command, whatever your current context is, and never edits your kubeconfig. Remote clusters (Step 5) are CLI-only.
 - Studio and `ax-server` must be built from compatible AX versions; Studio reports a mismatch and offers to redeploy `ax-server`.
 - It listens on `127.0.0.1` only. To use it from another computer, forward the port: `ssh -N -L 8080:127.0.0.1:8080 <host-running-studio>`, then open `http://localhost:8080`.
@@ -207,7 +206,7 @@ ax ctx
 ### 4.1 Create a Task (`ax apply`)
 
 ```bash
-cat <<'EOF' > /tmp/demo-task.yaml
+cat <<EOF > /tmp/demo-task.yaml
 apiVersion: ax.io/v1alpha1
 kind: Task
 metadata:
@@ -215,6 +214,8 @@ metadata:
   atespace: default
 spec:
   debug: true
+  profile:
+    image: "${AX_TASK_IMAGE}"
   commands: ["sleep", "infinity"]
   env:
     - name: GREETING
@@ -229,7 +230,7 @@ ax ctx
 *(Note: if `AX_SERVER` is exported in your shell from an earlier manual session, run `unset AX_SERVER` first so `ax` uses automatic per-context tunneling.)*
 
 #### Expected Behavior
-- Outputs `task.ax.io/demo-task created` (using `ax-server`'s `@sha256`-pinned default task image since `spec.profile.image` is omitted).
+- Outputs `task.ax.io/demo-task created`. A Task without `spec.profile.image` (or `spec.profile.ateTemplate.name`) is rejected with `spec.profile: image or ateTemplate.name is required`.
 - `ax get tasks` displays `NAME`, `ATESPACE`, `STATE`, `ACTOR`, and `AGE`, with `demo-task` in `STATE: Suspended` (new tasks start checkpointed without consuming worker capacity).
 - `ax ctx` now shows `127.0.0.1:<port> -> ax-system/ax-server (Healthy)` under `AX TUNNEL` for `ax-local`.
 
@@ -280,14 +281,13 @@ ax ctx "$GKE_CTX"
 
 # 2. Resolve @sha256 multi-arch digests, wire Substrate allowlists, and deploy AX
 ax install \
-  --server-image "$AX_SERVER_IMAGE" \
-  --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+  --server-image "$AX_SERVER_IMAGE"
 ```
 
-*(Pass `--server-image <ref>` and `--default-task-image <ref>`, or set `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
+*(Pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
 
 #### Expected Behavior
-- Resolves `@sha256:...` multi-arch OCI digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
+- Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
 - Creates `ax-system` with `ate.dev/api-access=true` and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider-namespace-policy`, waiting for rollouts to finish.
 - Provisions the `ax-postgres` PVC and rolls out `ax-postgres` and `ax-server`.
 
@@ -398,8 +398,7 @@ kubectl --context ax-local -n ate-system get deploy ate-api-server atenet-router
   -o custom-columns=NAME:.metadata.name,GEN:.metadata.generation
 
 ax install \
-  --server-image "$AX_SERVER_IMAGE" \
-  --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+  --server-image "$AX_SERVER_IMAGE"
 
 kubectl --context ax-local -n ate-system get deploy ate-api-server atenet-router k8s-credential-provider \
   -o custom-columns=NAME:.metadata.name,GEN:.metadata.generation
@@ -421,8 +420,7 @@ ax local stop
 ax local status
 
 ax local start \
-  --server-image "$AX_SERVER_IMAGE" \
-  --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+  --server-image "$AX_SERVER_IMAGE"
 ax get tasks
 ax resume task demo-task
 ax ssh demo-task -- cat /workspace/durable.txt

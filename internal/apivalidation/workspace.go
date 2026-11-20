@@ -35,10 +35,13 @@ func ValidateWorkspace(w *v1alpha1.Workspace) error {
 	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {
 		return err
 	}
-	return validateSetup(spec.GetSetup())
+	return validateSetup(spec.GetSetup(), spec.GetProfile())
 }
 
-func validateSetup(setup *v1alpha1.WorkspaceSetup) error {
+// validateSetup reports the first problem with a workspace's setup steps.
+// Setup steps run in a sandbox started from the workspace's profile when the
+// Workspace is pre-warmed, so a Workspace with any step must set a profile.
+func validateSetup(setup *v1alpha1.WorkspaceSetup, profile *v1alpha1.Profile) error {
 	if setup == nil {
 		return nil
 	}
@@ -55,7 +58,13 @@ func validateSetup(setup *v1alpha1.WorkspaceSetup) error {
 	if err := validateSkills(setup.GetSkills()); err != nil {
 		return err
 	}
-	return validateGatewayRef("spec.setup.gateway", setup.GetGateway())
+	if err := validateGatewayRef("spec.setup.gateway", setup.GetGateway()); err != nil {
+		return err
+	}
+	if (len(setup.GetGit()) > 0 || len(setup.GetFiles()) > 0 || setup.GetSkills() != nil || len(setup.GetCommands()) > 0) && !ProfileNamesImage(profile) {
+		return fmt.Errorf("spec.profile: image or ateTemplate.name is required when spec.setup has steps")
+	}
+	return nil
 }
 
 func validateGitRepo(field string, g *v1alpha1.GitRepo) error {

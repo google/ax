@@ -90,6 +90,10 @@ func validateResources(field string, reqs *v1alpha1.ResourcesSpec) error {
 	return nil
 }
 
+// validateProfile reports the first problem with a profile. A nil or empty
+// profile is valid and means the profile is omitted. A profile that sets any
+// field must name the container image to run, through image or
+// ateTemplate.name, because there is no server-wide default image.
 func validateProfile(field string, p *v1alpha1.Profile) error {
 	if p == nil {
 		return nil
@@ -111,7 +115,20 @@ func validateProfile(field string, p *v1alpha1.Profile) error {
 		}
 		return nil
 	}
-	return validateResources(field+".resources", p.GetResources())
+	if err := validateResources(field+".resources", p.GetResources()); err != nil {
+		return err
+	}
+	if p.GetImage() == "" && p.GetResources() != nil {
+		return fmt.Errorf("%s: image or ateTemplate.name is required", field)
+	}
+	return nil
+}
+
+// ProfileNamesImage reports whether p names the container image to run, either
+// directly or through an existing ActorTemplate. After validateProfile, it is
+// true exactly when p is set.
+func ProfileNamesImage(p *v1alpha1.Profile) bool {
+	return p.GetImage() != "" || p.GetAteTemplate().GetName() != ""
 }
 
 func validateGatewayRef(field string, ref *v1alpha1.GatewayRef) error {

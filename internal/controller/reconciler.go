@@ -68,8 +68,6 @@ type TaskReconciler struct {
 	httpClient              *http.Client
 	defaultTemplate         string
 	defaultTemplateAtespace string
-	// defaultTaskImage is used when the effective profile omits image and ateTemplate.name.
-	defaultTaskImage string
 
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
 	// to report ready before recording it as still initializing.
@@ -101,24 +99,19 @@ type TaskReconciler struct {
 }
 
 // NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
-// "default-template", v1alpha1.DefaultSystemNamespace and
-// v1alpha1.DefaultTaskImage respectively.
-func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace, defaultTaskImage string) *TaskReconciler {
+// "default-template" and v1alpha1.DefaultSystemNamespace respectively.
+func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskReconciler {
 	if defaultTemplate == "" {
 		defaultTemplate = "default-template"
 	}
 	if defaultTemplateAtespace == "" {
 		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
 	}
-	if defaultTaskImage == "" {
-		defaultTaskImage = v1alpha1.DefaultTaskImage
-	}
 	return &TaskReconciler{
 		client:                  client,
 		httpClient:              newProbeHTTPClient(),
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
-		defaultTaskImage:        defaultTaskImage,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
 		RunnerEndpoint:          substrate.DefaultRunnerEndpoint,
 		RunnerAudience:          substrate.DefaultRunnerAudience,
@@ -128,11 +121,6 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 // Client returns the Substrate client used by the reconciler.
 func (r *TaskReconciler) Client() *substrate.Client {
 	return r.client
-}
-
-// DefaultTaskImage returns the fallback container image configured on the reconciler.
-func (r *TaskReconciler) DefaultTaskImage() string {
-	return r.defaultTaskImage
 }
 
 func newProbeHTTPClient() *http.Client {
@@ -211,7 +199,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	actorName := task.Metadata.Name
 
 	// 3. Resolve or provision the ActorTemplate for the task.
-	templateAtespace, templateName, err := ensureProfileTemplate(ctx, r.client, atespace, effective, r.defaultTaskImage, r.RunnerVolumeImage)
+	templateAtespace, templateName, err := ensureProfileTemplate(ctx, r.client, atespace, effective, r.RunnerVolumeImage)
 	if err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)

@@ -34,10 +34,7 @@ const (
 	KindModel     = "Model"
 	KindGateway   = "Gateway"
 
-	DefaultAtespace = "default"
-	// TODO: DefaultTaskImage has no @sha256 digest and points to a private repo,
-	// so Substrate rejects it unless overridden via --default-task-image / AX_DEFAULT_TASK_IMAGE.
-	DefaultTaskImage       = "gcr.io/ax-substrate/ate-images/ax-task-runner"
+	DefaultAtespace        = "default"
 	DefaultSystemNamespace = "ax-system"
 )
 

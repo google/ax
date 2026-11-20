@@ -20,13 +20,12 @@ metadata:
     team: platform
 spec:
   profile:
-    image: "ghcr.io/my-org/my-agent-image@sha256:..."   # optional; omit to use ax-server's digest-pinned default
+    image: "ghcr.io/my-org/my-agent-image@sha256:..."   # image or ateTemplate.name; pinned by digest. Omit spec.profile to use the Workspace's
     resources:
       limits:
         cpu: "2"
         memory: "4Gi"
-    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources;
-    # not available yet: rejected until pull-based runner assignment is wired):
+    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources):
     # ateTemplate:
     #   name: "base-tmpl"
     #   atespace: "shared"   # optional; defaults to the task's atespace
@@ -74,12 +73,12 @@ cannot be reached; `describe` shows `<none>` in those cases.
 
 ### Compute profile and image references
 
-`spec.profile` configures the task's sandbox compute environment (`image` and `resources.limits`, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the task's atespace unless `ateTemplate.atespace` names another; *not available yet: ax-server rejects `spec.profile.ateTemplate.name` until pull-based runner assignment is wired*).
+`spec.profile` configures the task's sandbox compute environment (`image` and `resources.limits`, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the task's atespace unless `ateTemplate.atespace` names another).
 
-When a task binds a `Workspace`, profile selection operates on the **whole `Profile`** rather than merging individual fields:
+A Task runs the image named by its `spec.profile.image` or `spec.profile.ateTemplate.name`; there is no server-wide default image. When a task binds a `Workspace`, profile selection operates on the **whole `Profile`** rather than merging individual fields:
 
-- **Omitted `Task.spec.profile` (warm path):** If `Task.spec.profile` is omitted (or empty), the task falls back to `Workspace.spec.profile` when set (or server defaults otherwise), allowing it to start directly from the Workspace's pre-warmed snapshot.
-- **Explicit `Task.spec.profile` (independent override / cold-boot on mismatch):** `Workspace.spec.profile` exists to pre-warm a default workspace snapshot for fast warm startup—it never constrains or leaks fields into an explicit `Task.spec.profile`. Whenever `Task.spec.profile` sets any field (`image`, `resources.limits`, or `ateTemplate.name`), it is used **as-is** and `Workspace.spec.profile` is ignored; any unset fields within `Task.spec.profile` fall back to server defaults (`AX_DEFAULT_TASK_IMAGE`, `1` CPU / `1000m`, `512Mi` memory), never to `Workspace.spec.profile`. If the resulting profile differs from `Workspace.spec.profile`, the task simply misses the pre-warmed snapshot and cold-boots to run workspace setup in its own sandbox profile first.
+- **Omitted `Task.spec.profile` (warm path):** the task uses `Workspace.spec.profile` and starts directly from the Workspace's pre-warmed snapshot. ax-server rejects a Task that omits `spec.profile` unless it binds a Workspace whose `spec.profile` sets `image` or `ateTemplate.name`.
+- **Explicit `Task.spec.profile` (independent override / cold-boot on mismatch):** it must set `image` or `ateTemplate.name` and is used **as-is**; `Workspace.spec.profile` never constrains or leaks fields into it. Unset `resources.limits` default to `1` CPU (`1000m`) and `512Mi` memory, never to `Workspace.spec.profile`. If the profile differs from `Workspace.spec.profile`, the task misses the pre-warmed snapshot and cold-boots to run workspace setup in its own sandbox first.
 
 Substrate requires `spec.profile.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
 
@@ -186,7 +185,7 @@ spec:
 
 ### Workspace fields
 
-- **`spec.profile`** defines the compute profile pre-warmed upon Workspace creation for fast warm task startup (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the workspace's atespace unless `ateTemplate.atespace` names another). Tasks that bind this Workspace and omit `Task.spec.profile` use `Workspace.spec.profile` as their default profile and start warm from the snapshot; tasks that set their own `Task.spec.profile` use it as-is without field-merging from `Workspace.spec.profile` (cold-booting workspace setup when the profiles differ). Because `ateTemplate.name` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS).
+- **`spec.profile`** defines the compute profile pre-warmed upon Workspace creation for fast warm task startup (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the workspace's atespace unless `ateTemplate.atespace` names another). It must set `image` or `ateTemplate.name`, and a Workspace with setup steps must set it, because setup runs in a sandbox started from it. Tasks that bind this Workspace and omit `Task.spec.profile` use `Workspace.spec.profile` as their default profile and start warm from the snapshot; tasks that set their own `Task.spec.profile` use it as-is without field-merging from `Workspace.spec.profile` (cold-booting workspace setup when the profiles differ). Because `ateTemplate.name` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS).
 - **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).
@@ -199,7 +198,7 @@ spec:
 
 A Workspace with a `spec.profile` or any `spec.setup` step is pre-warmed when it is created. `ax apply` returns once that finishes (the CLI waits up to 5 minutes), so the first apply takes as long as the image pull, the setup steps, and the snapshot upload:
 
-1. `ax-server` starts a temporary setup actor from the workspace's profile (the server's default task image when `spec.profile` is omitted).
+1. `ax-server` starts a temporary setup actor from the workspace's profile.
 2. The actor runs `spec.setup` in `/workspace`.
 3. `ax-server` suspends the actor, tags its snapshot, and deletes the actor.
 

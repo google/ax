@@ -45,6 +45,11 @@ func ValidateTask(t *v1alpha1.Task) error {
 	if err := validateProfile("spec.profile", spec.GetProfile()); err != nil {
 		return err
 	}
+	// A task without a profile uses its Workspace's, which the API server
+	// checks against the stored Workspace.
+	if !ProfileNamesImage(spec.GetProfile()) && spec.GetWorkspace() == nil {
+		return errors.New("spec.profile: image or ateTemplate.name is required unless spec.workspace names a Workspace with a profile")
+	}
 	if ref := spec.GetWorkspace(); ref != nil {
 		if ref.GetName() == "" {
 			return errors.New("spec.workspace: name is required")

@@ -19,6 +19,8 @@ kind: Workspace
 metadata:
   name: golang
 spec:
+  profile:          # tasks that bind this workspace and omit spec.profile use it
+    image: "ghcr.io/my-org/my-coding-agent@sha256:..."
   setup:
     git:
       - repo: https://github.com/golang/go.git
@@ -34,8 +36,6 @@ kind: Task
 metadata:
   name: test
 spec:
-  profile:
-    image: "ghcr.io/my-org/my-coding-agent@sha256:..."
   goal:
     text: "Fix what's broken please."
   workspace:
@@ -61,6 +61,7 @@ Agents are a new kind of workload. They are neither stateless microservices nor 
 | Run untrusted agent code in an isolated sandbox with CPU/memory limits | **`Task`** |
 | Pre-wire Git repos, MCP servers, and skill packages so every agent starts warm | **`Workspace`** |
 | Configure which LLM the platform itself uses, with credentials from a Kubernetes secret | **`Model`** |
+| Decide which hosts an agent can reach, and inject credentials without the agent ever seeing them | **`Gateway`** |
 | Pause an idle agent and pick up exactly where it left off | `ax suspend` / `ax resume` |
 | Shell into a running agent to see what it is doing | `ax ssh` |
 
@@ -86,7 +87,6 @@ Until release images are published, build and push your own from an ax checkout 
 export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
 make images                            # prints the digest of each pushed image
 export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
-export AX_DEFAULT_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@<digest>"
 ```
 
 ### 3. Install AX
@@ -94,13 +94,13 @@ export AX_DEFAULT_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@<digest>"
 **Locally**, on a new Kind cluster with Substrate and a WorkerPool:
 
 ```bash
-ax local start --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+ax local start --server-image "$AX_SERVER_IMAGE"
 ```
 
 **On an existing cluster** with Kubernetes 1.37+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
-ax install --server-image "$AX_SERVER_IMAGE" --default-task-image "$AX_DEFAULT_TASK_IMAGE"
+ax install --server-image "$AX_SERVER_IMAGE"
 ```
 
 Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
@@ -125,7 +125,9 @@ ax resume task simple-task               # pick up where it left off
 
 The first resume also waits for the workspace to initialize (cloning its git repos), so it can take a while; if the CLI gives up first, the task keeps coming up in the background — `ax get tasks` tells you where it is.
 
-Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
+Every Task runs an image pinned by digest, named by `spec.profile.image` or `spec.profile.ateTemplate.name` or inherited from its Workspace's `spec.profile`; replace the image in `examples/simple.yaml` with `$AX_TASK_IMAGE` if you built your own.
+
+Want to see the whole lifecycle end to end? Run `AX_TASK_IMAGE=... ./demo.sh` ([`demo.sh`](demo.sh)). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
 
 ## Documentation
 

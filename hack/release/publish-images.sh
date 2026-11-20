@@ -24,7 +24,7 @@
 # deploy/ax-server.yaml takes:
 #
 #   AX_SERVER_IMAGE=<repo>/ax-server@sha256:...
-#   AX_DEFAULT_TASK_IMAGE=<repo>/ax-task-runner@sha256:...
+#   AX_TASK_RUNNER_IMAGE=<repo>/ax-task-runner@sha256:...
 #   AX_RUNNER_VOLUME_REF=<repo>/ax-runner-volume@sha256:...
 #
 # render-manifests.sh sets the manifest's AX_RUNNER_VOLUME_IMAGE to
@@ -253,7 +253,7 @@ fi
 
 cat > "${OUT}/images.env" <<EOF
 AX_SERVER_IMAGE=${AX_IMAGE_REPO}/ax-server@${DIGESTS[ax-server]}
-AX_DEFAULT_TASK_IMAGE=${AX_IMAGE_REPO}/ax-task-runner@${DIGESTS[ax-task-runner]}
+AX_TASK_RUNNER_IMAGE=${AX_IMAGE_REPO}/ax-task-runner@${DIGESTS[ax-task-runner]}
 AX_RUNNER_VOLUME_REF=${AX_IMAGE_REPO}/ax-runner-volume@${DIGESTS[ax-runner-volume]}
 EOF
 echo "==> Wrote ${OUT}/images.env:"

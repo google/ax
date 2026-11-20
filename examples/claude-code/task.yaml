@@ -67,6 +67,15 @@ metadata:
   name: itsdangerous
   atespace: default
 spec:
+  # Built from Dockerfile.claude-code; replace the digest with the one
+  # `make push-claude-code-image` prints. Setup runs in this image, and the
+  # task below, which sets no profile of its own, runs in it too.
+  profile:
+    image: "gcr.io/ax-images/ax-images@sha256:REPLACE_WITH_PUSHED_DIGEST"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
   setup:
     git:
       - name: origin
@@ -91,14 +100,6 @@ metadata:
   name: claude-code
   atespace: default
 spec:
-  # Built from Dockerfile.claude-code; replace the digest with the one
-  # `make push-claude-code-image` prints.
-  profile:
-    image: "gcr.io/ax-images/ax-images@sha256:REPLACE_WITH_PUSHED_DIGEST"
-    resources:
-      limits:
-        cpu: "2"
-        memory: "4Gi"
   # The prompt and claude's flags from `claude --help`, in camelCase
   # (maxTurns is --max-turns). The runner runs:
   #   claude --print --<flag>=<value>... -- <prompt>
