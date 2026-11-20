@@ -158,11 +158,13 @@ task_state() {
 }
 
 # wait_for_file polls over ax ssh until the task's sandbox has the file.
+# Redirect stdin from /dev/null because timeout puts ax ssh in a background
+# process group, where reading the controlling tty triggers SIGTTIN.
 wait_for_file() {
   local task_name="$1" file="$2"
   local deadline=$((SECONDS + AX_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if AX_TIMEOUT=10 run_ax ssh "${task_name}" -- test -f "${file}" >/dev/null 2>&1; then
+    if AX_TIMEOUT=10 run_ax ssh "${task_name}" -- test -f "${file}" </dev/null >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
