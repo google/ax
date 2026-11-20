@@ -22,6 +22,12 @@ Runs everything, including the mock Substrate gRPC server, in-memory store valid
 make test        # or: go test -v ./...
 ```
 
+Smoke test of `ax local start` on a real Kind cluster, with images built into a registry on `localhost` (needs Docker; about 3 minutes):
+
+```bash
+make test-local-install
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines, CLA requirements, and PR workflows.

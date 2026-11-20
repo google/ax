@@ -43,7 +43,7 @@ CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/d
 BUF := go tool -modfile=hack/tools/buf/go.mod buf
 GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
 
-.PHONY: build install images push-runner-volume check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images push-runner-volume check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e test-local-install e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -213,6 +213,12 @@ e2e-run:
 # Delete the Kind E2E cluster.
 e2e-cleanup:
 	./hack/cleanup-e2e-kind.sh
+
+# Smoke test of `ax local start`: build the images into a registry on
+# localhost, start a local cluster from them, and run a task. It deletes the
+# cluster on exit.
+test-local-install:
+	./hack/test-local-install.sh
 
 clean:
 	@echo "==> Cleaning build artifacts..."

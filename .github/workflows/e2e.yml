@@ -91,3 +91,25 @@ jobs:
         kubectl get pods -A -o wide || true
         kubectl -n ax-system logs deployment/ax-server --tail=200 || true
         kubectl -n ate-system logs deployment/ate-api-server --all-containers --tail=200 || true
+
+  # The only job that runs `ax local start`: the E2E job above installs AX
+  # with Substrate's own tools. It builds the AX images into a registry on
+  # localhost, as docs/local_installer.md describes, starts a local cluster
+  # from them, and runs a task. The Substrate it installs is the one embedded
+  # in ax, so substrate_ref does not apply.
+  local-install:
+    name: Local install (ax local start)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - name: Checkout AX
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+    - name: Set up Go
+      uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
+      with:
+        go-version-file: go.mod
+
+    # The script prints the state of the cluster when it fails.
+    - name: Run the local install smoke test
+      run: make test-local-install

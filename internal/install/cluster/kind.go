@@ -71,6 +71,10 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 	if err := executil.CheckContainerHost(ctx, p.Runner, rt, p.Out); err != nil {
 		return Info{}, err
 	}
+	registries := loopbackRegistries(opts.Images)
+	if err := p.checkLocalRegistry(ctx, rt, registries, opts.LocalRegistry); err != nil {
+		return Info{}, err
+	}
 	if err := p.verifyContextOwnership(ctx, kubectlBin, name); err != nil {
 		return Info{}, err
 	}
@@ -153,6 +157,9 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 		return Info{}, err
 	}
 	if err := p.configureNodes(ctx, rt, nodes); err != nil {
+		return Info{}, err
+	}
+	if err := p.configureLocalRegistry(ctx, rt, nodes, registries, opts.LocalRegistry); err != nil {
 		return Info{}, err
 	}
 	p.warnIfNoEgress(ctx, rt, nodes)

@@ -40,7 +40,7 @@ pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.g
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
-hack/                  E2E provisioning, Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
+hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
 hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
 docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote / ax studio
 skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
@@ -58,6 +58,7 @@ go test ./...                    # ~25 s, 31 packages with tests; Postgres + E2E
 Opt-in tiers:
 - **Postgres store**: set `AX_TEST_POSTGRES_URL='postgres://ax:ax@localhost:5432/ax?sslmode=disable'` (CI runs `postgres:17-alpine`) and run `go test -count=1 ./internal/store/postgres/...`.
 - **E2E**: `make test-e2e` (or `make test-e2e E2E_ARGS='-test.run TestE2E_ModelCRUD'`; see `test/e2e/README.md`).
+- **Local install**: `make test-local-install` (`hack/test-local-install.sh`) is the only test that runs `ax local start` on a real cluster; E2E installs AX with Substrate's own tools. It builds the images into a registry on `localhost`, starts a cluster `ax-smoke` with its own kubeconfig and AX home below `.tmp`, runs a task, and deletes the cluster. CI runs it as job `local-install` in `e2e.yml`.
 
 ## Rules
 
@@ -125,7 +126,7 @@ skill source there. Adding a skill means adding a row above.
 ## Definition of done
 
 1. The three CI commands above pass locally.
-2. Postgres or E2E tier passes if you touched `internal/store/postgres` or
-   the E2E paths.
+2. Postgres, E2E or local install tier passes if you touched
+   `internal/store/postgres`, the E2E paths, or `internal/install`.
 3. `/sync-contract` has been run against your diff so `AGENTS.md` and `skills/`
    stay in sync with the code.

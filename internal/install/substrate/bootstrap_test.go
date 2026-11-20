@@ -15,6 +15,8 @@
 package substrate
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -63,6 +65,43 @@ func TestEmbeddedManifestsContainNoUnresolvedPlaceholders(t *testing.T) {
 	}
 	if yamlCount != 8 {
 		t.Fatalf("expected 8 embedded YAML bundles, got %d", yamlCount)
+	}
+}
+
+func TestLocalRegistryEndpoint(t *testing.T) {
+	// The embedded manifests name the registry as <host>:<port>.
+	endpoint, err := LocalRegistryEndpoint()
+	if err != nil {
+		t.Fatalf("LocalRegistryEndpoint: %v", err)
+	}
+	if host, port, err := net.SplitHostPort(endpoint); err != nil || host == "" || port == "" {
+		t.Fatalf("LocalRegistryEndpoint() = %q, want <host>:<port> (error: %v)", endpoint, err)
+	}
+
+	manifest := func(daemonSet string, args ...string) []byte {
+		var b strings.Builder
+		fmt.Fprintf(&b, "kind: Deployment\nmetadata:\n  name: atelet\n---\nkind: DaemonSet\nmetadata:\n  name: %s\n", daemonSet)
+		b.WriteString("spec:\n  template:\n    spec:\n      containers:\n      - name: atelet\n        args:\n")
+		for _, arg := range args {
+			fmt.Fprintf(&b, "        - %s\n", arg)
+		}
+		return []byte(b.String())
+	}
+	for _, tc := range []struct {
+		name     string
+		manifest []byte
+		want     string
+	}{
+		{name: "flag set", manifest: manifest("atelet", "--log-level=debug", "--localhost-registry-replacement=my-registry:5000"), want: "my-registry:5000"},
+		{name: "flag not set", manifest: manifest("atelet", "--log-level=debug")},
+		{name: "flag on another DaemonSet", manifest: manifest("other", "--localhost-registry-replacement=my-registry:5000")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := localRegistryEndpoint(tc.manifest)
+			if err != nil || got != tc.want {
+				t.Errorf("localRegistryEndpoint() = %q, %v, want %q", got, err, tc.want)
+			}
+		})
 	}
 }
 

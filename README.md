@@ -89,6 +89,8 @@ make images                            # prints the digest of each pushed image
 export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
 ```
 
+For `ax local start` you can use a registry on `localhost` instead of a remote one: see [Using Locally Built Images](docs/local_installer.md#using-locally-built-images).
+
 ### 3. Install AX
 
 **Locally**, on a new Kind cluster with Substrate and a WorkerPool:

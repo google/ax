@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -336,6 +338,130 @@ func TestKindProviderUpWarnsWithoutEgress(t *testing.T) {
 			for _, want := range tc.wantWarnings {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("output does not contain %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestLoopbackRegistries(t *testing.T) {
+	got := loopbackRegistries([]string{
+		"localhost:5001/ax-server@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		"localhost:5001/ax-task-runner:latest",
+		"127.0.0.1:5002/ax-runner-volume",
+		"[::1]:5003/ax-server",
+		"localhost/ax-server",
+		"ghcr.io/google/ax/ax-server:v1.0.0",
+		"registry.example.com:5000/ax-server",
+		"busybox",
+		"",
+	})
+	want := []string{"127.0.0.1:5002", "[::1]:5003", "localhost", "localhost:5001"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("loopbackRegistries() = %q, want %q", got, want)
+	}
+}
+
+// localRegistryRunner answers as a host with a container my-registry that is
+// not yet on the network of the cluster.
+func localRegistryRunner(registryRunning bool) *recordedRunner {
+	return &recordedRunner{
+		runFn: func(spec executil.Spec) (executil.Result, error) {
+			cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+			switch {
+			case strings.HasSuffix(cmd, "kind version"):
+				return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+			case strings.Contains(cmd, "kind get nodes"):
+				return executil.Result{Stdout: "ax-local-control-plane\n"}, nil
+			case strings.HasSuffix(cmd, "{{.State.Running}} my-registry"):
+				if !registryRunning {
+					return executil.Result{}, fmt.Errorf("no such container")
+				}
+				return executil.Result{Stdout: "true\n"}, nil
+			case strings.Contains(cmd, ".NetworkSettings.Networks") && strings.HasSuffix(cmd, "ax-local-control-plane"):
+				return executil.Result{Stdout: "kind\n"}, nil
+			case strings.Contains(cmd, ".NetworkSettings.Networks") && strings.HasSuffix(cmd, "my-registry"):
+				return executil.Result{Stdout: "bridge\n"}, nil
+			default:
+				return executil.Result{}, nil
+			}
+		},
+	}
+}
+
+func TestKindProviderUpServesLoopbackRegistry(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	rr := localRegistryRunner(true)
+	p := NewKindProvider(rr, &bytes.Buffer{})
+	if _, err := p.Up(context.Background(), UpOptions{
+		Images: []string{
+			"localhost:5001/ax-server@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+			"ghcr.io/google/ax/ax-task-runner:v1.0.0",
+		},
+		LocalRegistry: "my-registry:5050",
+	}); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	var connected bool
+	var hosts string
+	for _, c := range rr.calls {
+		joined := c.Name + " " + strings.Join(c.Args, " ")
+		if strings.HasSuffix(joined, "network connect kind my-registry") {
+			connected = true
+		}
+		if strings.Contains(joined, "exec -i ax-local-control-plane") && strings.HasSuffix(joined, "/etc/containerd/certs.d/localhost:5001") {
+			raw, err := io.ReadAll(c.Stdin)
+			if err != nil {
+				t.Fatalf("reading hosts.toml: %v", err)
+			}
+			hosts = string(raw)
+		}
+		if strings.Contains(joined, "certs.d/ghcr.io") {
+			t.Fatalf("unexpected registry configuration for a remote registry: %q", joined)
+		}
+	}
+	if !connected {
+		t.Errorf("expected my-registry to be connected to the network of the nodes, calls: %v", rr.calls)
+	}
+	if want := "[host.\"http://my-registry:5050\"]\n"; hosts != want {
+		t.Errorf("hosts.toml for localhost:5001 = %q, want %q", hosts, want)
+	}
+}
+
+func TestKindProviderUpNeedsLocalRegistry(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	for _, tc := range []struct {
+		name          string
+		localRegistry string
+		wantErr       []string
+	}{
+		{
+			name:          "registry container not running",
+			localRegistry: "my-registry:5050",
+			wantErr:       []string{`"my-registry"`, "-p 127.0.0.1:5001:5050 --name my-registry"},
+		},
+		{name: "no registry for localhost images", wantErr: []string{"localhost:5001", "no registry serves"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := localRegistryRunner(false)
+			p := NewKindProvider(rr, &bytes.Buffer{})
+			_, err := p.Up(context.Background(), UpOptions{
+				Images:        []string{"localhost:5001/ax-server:latest"},
+				LocalRegistry: tc.localRegistry,
+			})
+			for _, want := range tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Errorf("Up error = %v, want it to contain %q", err, want)
+				}
+			}
+			for _, c := range rr.calls {
+				if joined := c.Name + " " + strings.Join(c.Args, " "); strings.Contains(joined, "create cluster") {
+					t.Fatalf("expected no cluster to be created, saw: %q", joined)
 				}
 			}
 		})

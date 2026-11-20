@@ -131,6 +131,19 @@ ax local start \
 
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
+### Using Locally Built Images
+
+A local cluster can also pull images that you build yourself, from a registry on `localhost`, so you need no remote registry. Run the registry as a container named `kind-registry` and push the images to it:
+
+```bash
+docker run -d -p 127.0.0.1:5001:5000 --name kind-registry registry:2
+make images AX_IMAGE_REPO=localhost:5001 CONTAINER_CLI=docker   # prints the AX_SERVER_IMAGE export to run
+export AX_TASK_IMAGE="localhost:5001/ax-task-runner@$(cat bin/ax-task-runner.digest)"   # for spec.profile.image in Step 4
+ax local start --server-image "$AX_SERVER_IMAGE"
+```
+
+For each image reference on `localhost` or a loopback address, `ax local start` connects that container to the network of the cluster and makes the Kind node pull the image from it. `ax` does not choose the name `kind-registry` and the port `5000`: Agent Substrate's local profile pulls task images on `localhost` from `kind-registry:5000`, and `ax local start` reads that address from the profile, so that the images of pods come from the same registry. If the container is not running, `ax local start` stops before it creates the cluster and prints the command that starts it.
+
 ### Expected Behavior (~2–3 minutes on cold start)
 The installer prints progress (`==>`) across three stages:
 
@@ -139,6 +152,7 @@ The installer prints progress (`==>`) across three stages:
    - Uses `kind >= v0.32.0` and `kubectl` from `PATH` when available, or downloads and SHA-256-verifies `kind v0.32.0` and `kubectl v1.36.0` into `~/.ax/bin/`.
    - Creates the Kubernetes `v1.36.1` Kind cluster (`ax-local`) with `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and `PodCertificateRequest` (`certificates.k8s.io/v1beta1=true`) enabled, configures `net.ipv4.conf.all.proxy_arp=1`, and switches your active kubeconfig context to **`ax-local`**.
    - Checks from inside the Kind node that `https://ghcr.io` is reachable, and prints a warning when it is not (for example on a Docker host with IPv4 forwarding off, where containers have no outbound network and every image pull would fail).
+   - For images on a `localhost` registry, connects the local registry container to the network of the cluster and makes the Kind node pull them from it (see [Using Locally Built Images](#using-locally-built-images)).
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
