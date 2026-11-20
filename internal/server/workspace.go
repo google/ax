@@ -78,15 +78,7 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	if err := apivalidation.ValidateWorkspace(req.Workspace); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// TODO: Remove prewarmEnabled (and firstUnimplementedWorkspaceField) once
-	// SetupCoordinator is wired in cmd/ax-server/main.go.
 	prewarmEnabled := s.workspaces.PrewarmEnabled()
-	// Workspaces are immutable, so until the pull-based runner SetupCoordinator
-	// is connected to drive setup actors, reject profile and setup.gateway
-	// rather than saving fields that nothing enforces yet.
-	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); !prewarmEnabled && field != "" {
-		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
-	}
 
 	ws := req.Workspace
 	ws.Status = nil
@@ -231,18 +223,4 @@ func workspaceSpecEqual(a, b *v1alpha1.WorkspaceSpec) bool {
 		b = &v1alpha1.WorkspaceSpec{}
 	}
 	return proto.Equal(a, b)
-}
-
-// TODO: Drop this check once SetupCoordinator is wired to the pull-based runner.
-func firstUnimplementedWorkspaceField(spec *v1alpha1.WorkspaceSpec) string {
-	if spec == nil {
-		return ""
-	}
-	if spec.GetProfile() != nil {
-		return "spec.profile"
-	}
-	if spec.GetSetup().GetGateway() != nil {
-		return "spec.setup.gateway"
-	}
-	return ""
 }

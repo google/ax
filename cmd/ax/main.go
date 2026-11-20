@@ -397,7 +397,10 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if outcome == "unchanged" && existing.GetStatus().GetPhase() == v1alpha1.WorkspacePhasePreparing {
 			outcome = "configured"
 		}
-		res, err := client.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
+		// CreateWorkspace returns only once the workspace is pre-warmed.
+		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lifecycleRPCTimeout)
+		defer cancel()
+		res, err := client.CreateWorkspace(createCtx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
 		return head.Kind, res.GetMetadata().GetName(), outcome, err
 
 	case v1alpha1.KindGateway:

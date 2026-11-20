@@ -136,16 +136,16 @@ metadata:
   name: default-workspace
   atespace: default
 spec:
-  # profile:                         # not available yet: rejected until snapshot pre-warming is wired
-  #   image: "ghcr.io/my-org/my-agent-image@sha256:..."
-  #   resources:
-  #     limits:
-  #       cpu: "2"
-  #       memory: "4Gi"
-  #   # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources):
-  #   # ateTemplate:
-  #   #   name: "base-tmpl"
-  #   #   atespace: "shared"   # optional; defaults to the workspace's atespace
+  profile:
+    image: "ghcr.io/my-org/my-agent-image@sha256:..."
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    # Or use an existing Substrate ActorTemplate directly (mutually exclusive with image and resources):
+    # ateTemplate:
+    #   name: "base-tmpl"
+    #   atespace: "shared"   # optional; defaults to the workspace's atespace
 
   setup:
     git:
@@ -168,7 +168,7 @@ spec:
       path: "/workspace/.ax/skills"  # optional; defaults to <workspace>/.ax/skills
     commands:
       - "npm ci --prefer-offline"
-    # gateway:                       # not available yet: rejected until workspace gateways are enforced
+    # gateway:                       # egress for setup only; the Gateway must already exist
     #   name: build-egress
 
   mcp:
@@ -186,14 +186,26 @@ spec:
 
 ### Workspace fields
 
-- **`spec.profile`** defines the compute profile pre-warmed upon Workspace creation for fast warm task startup (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the workspace's atespace unless `ateTemplate.atespace` names another). Tasks that bind this Workspace and omit `Task.spec.profile` use `Workspace.spec.profile` as their default profile and start warm from the snapshot; tasks that set their own `Task.spec.profile` use it as-is without field-merging from `Workspace.spec.profile` (cold-booting workspace setup when the profiles differ). Because `ateTemplate.name` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS). *Not available yet: ax-server rejects `spec.profile` until snapshot pre-warming is wired.*
+- **`spec.profile`** defines the compute profile pre-warmed upon Workspace creation for fast warm task startup (`image` and `resources.limits`, which synthesize an AX-managed `ActorTemplate` defaulting to `ROOTFS` snapshot fidelity, or a mutually exclusive `ateTemplate.name` referencing an existing `ActorTemplate`, in the workspace's atespace unless `ateTemplate.atespace` names another). Tasks that bind this Workspace and omit `Task.spec.profile` use `Workspace.spec.profile` as their default profile and start warm from the snapshot; tasks that set their own `Task.spec.profile` use it as-is without field-merging from `Workspace.spec.profile` (cold-booting workspace setup when the profiles differ). Because `ateTemplate.name` is used directly without `BuildActorTemplate`, a user-supplied template must provide the [sandbox contract](sandbox.md) itself (`ax-task-runner` entrypoint, HTTP `/readyz` wakeup probe on port 80, durable `/workspace` volume, and the `egress-trust-bundle` `SystemInfo` mount at `/run/ate/egress-trust-bundle/trust-bundle.pem` for Gateway HTTPS).
 - **`spec.setup`** groups deterministic environment preparation steps executed once when initializing the workspace volume:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).
   - `skills`: skill registries (`provider`, `project`, `query`) and optional destination `path` (defaults to `<workspace>/.ax/skills`).
   - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace after git/files/skills complete (5m timeout per command). A non-zero exit or timeout aborts workspace setup without recording the initialization marker.
-  - `gateway`: optional `Gateway` binding for setup-time network egress (*not available yet: ax-server rejects `spec.setup.gateway` until workspace gateways are enforced*).
+  - `gateway`: optional `Gateway` binding for setup-time network egress (applies to the setup actor only; tasks do not inherit it).
 - **`spec.mcp`** declares static `servers` (remote `endpoint` or local `command`/`args`) and `registries` (`provider`, `project`, `query`) read by agents through the in-sandbox metadata server.
+
+### Workspace pre-warming
+
+A Workspace with a `spec.profile` or any `spec.setup` step is pre-warmed when it is created. `ax apply` returns once that finishes (the CLI waits up to 5 minutes), so the first apply takes as long as the image pull, the setup steps, and the snapshot upload:
+
+1. `ax-server` starts a temporary setup actor from the workspace's profile (the server's default task image when `spec.profile` is omitted).
+2. The actor runs `spec.setup` in `/workspace`.
+3. `ax-server` suspends the actor, tags its snapshot, and deletes the actor.
+
+`ax describe workspace <name>` shows the result: `Phase` is `Ready`, and the `SnapshotReady` condition names the snapshot tag. A task that binds the Workspace at the default path (`/workspace`) is created from that tag, so `spec.setup` does not run again; `ax describe task <name>` shows `Workspace seeded from snapshot tag <tag>` on its `WorkspaceReady` condition. A task that mounts the Workspace at another `spec.workspace.path` skips the snapshot and runs setup in its own sandbox.
+
+If setup fails, `Phase` is `Failed` and `Last Error` holds the cause; delete the Workspace and create it again. If the apply is interrupted, `Phase` stays `Preparing` and applying the same manifest again retries.
 
 ## Gateway
 

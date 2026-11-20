@@ -50,8 +50,7 @@ type Options struct {
 	Locker lock.Locker
 	// WorkspaceManager manages Workspace snapshot pre-warming and Tag cleanup.
 	// When omitted, NewServer constructs one backed by reconciler's Substrate
-	// client and Locker (with pre-warming gated off until a SetupCoordinator is
-	// provided).
+	// client and Locker; it has no SetupCoordinator, so it does not pre-warm.
 	WorkspaceManager *controller.WorkspaceManager
 	// TaskApplier executes atomic task-row transitions shared with the runner
 	// HTTP handler. When omitted, NewServer adapts s via TaskApplierForStore.
