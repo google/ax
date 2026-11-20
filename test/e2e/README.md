@@ -75,3 +75,15 @@ resolved values the tests need to `.tmp/e2e.env`.
 | `CLEANUP_KIND` | `false` | `hack/run-e2e-kind.sh` only: delete the cluster on exit |
 | `SKIP_SETUP` | `false` | `hack/run-e2e-kind.sh` only: skip provisioning |
 | `E2E_TIMEOUT` | `30m` | `go test` timeout |
+
+## Live task logs
+
+E2E enables task logs and applies the optional worker-pool Role. After setup:
+
+```bash
+make e2e-run E2E_ARGS='-test.run TestE2E_TaskLogs'
+```
+
+The test verifies that log requests leave a suspended actor asleep, then
+resumes it and receives three synthetic records matching its UID. Worker moves,
+recreation and failures use fixtures in `internal/server/task_logs_test.go`.

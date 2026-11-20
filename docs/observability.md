@@ -173,3 +173,23 @@ Spans, events, and log attributes use the names in
 actor reuse Agent Substrate's names, `ate.atespace` and `ate.actor.uid`, so
 ax-server and Substrate records join on them. Identity attributes such as
 `ax.task.id`, `ate.atespace`, and `ate.actor.uid` never appear on metrics.
+
+## Live task logs
+
+`AX/StreamTaskLogs` is off by default (`Unimplemented`). To enable it, set the
+RoleBinding subject namespace to the namespace where ax-server runs. Run
+`kubectl apply -n <worker-pool-namespace> -f deploy/task-logs-rbac.yaml` in
+each worker-pool namespace and set `--enable-task-logs` on ax-server.
+It uses ax-server's in-cluster service account; read [SECURITY.md](../SECURITY.md#opt-in-task-log-streaming) first.
+
+The request names a Task and atespace (default: `default`). The actor must be
+running initially (`FailedPrecondition` otherwise). Logs never wake an actor.
+Each response's `line` is one actorlog JSON record selected by its Substrate UID.
+Each RPC owns at most one worker `pods/log` stream and requests records since
+that connection opened, with no history or shared cache. Substrate is polled
+once per second: suspension closes the worker stream, resumption/moves open
+the current worker, and actor recreation ends the RPC with `Aborted`.
+Disconnects and moves can lose lines. Cancellation closes the worker stream.
+Records larger than 1 MiB are skipped. A read failure ends the RPC with
+`Unavailable`.
+Task completion remains the responsibility of `TaskStatus.outcome`.

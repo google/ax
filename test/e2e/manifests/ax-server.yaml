@@ -67,6 +67,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - "--addr=:8080"
+            - "--enable-task-logs"
             - "--store=postgres://ax@ax-postgres.${AX_SYSTEM_NAMESPACE}.svc.cluster.local:5432/ax?sslmode=disable"
             - "--substrate-endpoint=api.ate-system.svc.cluster.local:443"
             - "--substrate-authority=api.ate-system.svc"
