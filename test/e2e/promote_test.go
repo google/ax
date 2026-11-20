@@ -27,6 +27,8 @@ metadata:
   atespace: {{.Atespace}}
 spec:
   setup:
+    gateway:
+      name: {{.SetupGateway}}
     files:
     - path: seed.txt
       content: "initial-seed"
@@ -47,15 +49,17 @@ spec:
 // TestE2E_Promote verifies that `ax promote` copies a running task, with the
 // Gateway and Workspace it binds, to another cluster and runs it there:
 //   - --suspend-source suspends the source task.
+//   - The Gateway that the Workspace is set up through is copied too.
 //   - The promoted task is a new task with the same session ID, in a
 //     workspace set up from the Workspace.
 //   - --replace recreates a task that the target already has.
 func TestE2E_Promote(t *testing.T) {
 	remote := env.remote(t)
 	ns := defaultAtespace
-	gw, ws, task := uniqueName("gw-promote"), uniqueName("ws-promote"), uniqueName("task-promote")
+	gw, setupGW, ws, task := uniqueName("gw-promote"), uniqueName("gw-promote-setup"), uniqueName("ws-promote"), uniqueName("task-promote")
 	for _, cluster := range []*suiteEnv{env, remote} {
 		cluster.deleteOnCleanup(t, ns, "gateway", gw)
+		cluster.deleteOnCleanup(t, ns, "gateway", setupGW)
 		cluster.deleteOnCleanup(t, ns, "workspace", ws)
 		cluster.deleteOnCleanup(t, ns, "task", task)
 	}
@@ -63,12 +67,15 @@ func TestE2E_Promote(t *testing.T) {
 	// tunnel to it.
 	t.Cleanup(func() { _, _ = env.runAX("", "tunnel", "stop", remote.KubeContext) })
 
-	// Setup: a running task on the source cluster.
-	env.apply(t, ns, renderYAML(t, gatewayCRUDManifest, map[string]string{
-		"Name": gw, "Atespace": ns, "Host": "ax-echo." + env.AXSystemNamespace + ".svc",
-	}))
+	// Setup: a running task on the source cluster, in a workspace that is set
+	// up through a gateway of its own.
+	for _, name := range []string{gw, setupGW} {
+		env.apply(t, ns, renderYAML(t, gatewayCRUDManifest, map[string]string{
+			"Name": name, "Atespace": ns, "Host": "ax-echo." + env.AXSystemNamespace + ".svc",
+		}))
+	}
 	env.apply(t, ns, renderYAML(t, promoteManifest, map[string]string{
-		"Gateway": gw, "Workspace": ws, "Task": task, "Atespace": ns,
+		"Gateway": gw, "SetupGateway": setupGW, "Workspace": ws, "Task": task, "Atespace": ns,
 	}))
 	env.mustRunAX(t, ns, "resume", "task", task)
 	promote := func(flags ...string) string {
@@ -77,9 +84,9 @@ func TestE2E_Promote(t *testing.T) {
 		return env.mustRunAX(t, ns, append(args, flags...)...)
 	}
 
-	// 1. The task is suspended on the source.
+	// 1. The task is suspended on the source. The target gets both gateways.
 	assertContains(t, "'ax promote'", promote("--suspend-source"),
-		"gateway.ax.io/"+gw+" created", "workspace.ax.io/"+ws+" created", "task.ax.io/"+task+" suspended on the source")
+		"gateway.ax.io/"+gw+" created", "gateway.ax.io/"+setupGW+" created", "workspace.ax.io/"+ws+" created", "task.ax.io/"+task+" suspended on the source")
 	source := env.getTask(t, ns, task)
 	assertState(t, source, v1alpha1.TaskState_TASK_STATE_SUSPENDED)
 

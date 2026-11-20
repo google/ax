@@ -298,4 +298,72 @@ func TestRunPromote(t *testing.T) {
 	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
 		t.Errorf("expected the task suspended on the source, got %v", got)
 	}
+
+	// 7. A task that has run to its end has an outcome, and is not suspended on
+	// the source, which the source would refuse. A task that failed without
+	// one can still be resumed there, so it is suspended as any other.
+	full.sub.SetErrors(substratetest.Errors{})
+	for _, tt := range []struct {
+		status    *v1alpha1.TaskStatus
+		suspended string
+	}{
+		{
+			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, StatusDetail: &v1alpha1.TaskStatusDetail{Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED}},
+			suspended: "task.ax.io/demo suspended on the source\n",
+		},
+		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED, Outcome: &v1alpha1.TaskOutcome{Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED}}},
+	} {
+		if err := source.store.UpdateTaskStatus(t.Context(), "dev", "demo", tt.status); err != nil {
+			t.Fatal(err)
+		}
+		out, err = promote("--to", "full", "--suspend-source", "--replace")
+		if err != nil {
+			t.Fatalf("runPromote failed: %v", err)
+		}
+		wantOutput = "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\n" + tt.suspended + "task.ax.io/demo resumed\n"
+		if out != wantOutput {
+			t.Fatalf("expected output %q, got %q", wantOutput, out)
+		}
+	}
+
+	// 8. A target that has to create the workspace sets it up through the
+	// gateway that its setup names, so that gateway is promoted before it. It
+	// is not promoted for a workspace that the target already has, and only
+	// once when it is the task's gateway too.
+	if err := source.store.SaveGateway(t.Context(), &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "setup-gw", Atespace: "dev"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		setupGateway string
+		args         []string
+		wantOutput   string
+	}{
+		{
+			setupGateway: "setup-gw",
+			args:         []string{"--to-atespace", "one"},
+			wantOutput:   "gateway.ax.io/demo-gw created\n" + note + "gateway.ax.io/setup-gw created\nworkspace.ax.io/demo-ws created\ntask.ax.io/demo created\ntask.ax.io/demo resumed\n",
+		},
+		{
+			setupGateway: "setup-gw",
+			args:         []string{"--to-atespace", "one", "--replace"},
+			wantOutput:   "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\ntask.ax.io/demo resumed\n",
+		},
+		{
+			setupGateway: "demo-gw",
+			args:         []string{"--to-atespace", "two"},
+			wantOutput:   "gateway.ax.io/demo-gw created\n" + note + "workspace.ax.io/demo-ws created\ntask.ax.io/demo created\ntask.ax.io/demo resumed\n",
+		},
+	} {
+		ws.Spec.Setup.Gateway = &v1alpha1.GatewayRef{Name: tt.setupGateway}
+		if err := source.store.SaveWorkspace(t.Context(), ws); err != nil {
+			t.Fatal(err)
+		}
+		out, err = promote(append([]string{"--to", "remote"}, tt.args...)...)
+		if err != nil {
+			t.Fatalf("runPromote failed: %v", err)
+		}
+		if out != tt.wantOutput {
+			t.Fatalf("expected output %q, got %q", tt.wantOutput, out)
+		}
+	}
 }
