@@ -486,8 +486,8 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 }
 
-// The actor of a task that binds a gateway gets that gateway's rules. For a
-// task that binds none, the reconciler makes no egress policy call.
+// The actor of a task that binds a gateway gets that gateway's rules. A task
+// that binds none still gets a policy, for the runner rule.
 func TestTaskReconciler_GatewayRules(t *testing.T) {
 	ctx := context.Background()
 
@@ -550,6 +550,19 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
 		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 2 || policy.GetRules()[1].GetHttps().GetHostnames()[0] != "a.example.com" {
 		t.Errorf("egress policy request = %v, want runner egress + gateway rule for actor default/bound-task", req)
+	}
+
+	// A recreated task gets a new policy for the same actor name. Its extra
+	// audience differs from the old policy's.
+	mockSrv.createdEgressPolicies = nil
+	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil || len(mockSrv.createdEgressPolicies) != 1 {
+		t.Fatalf("Suspend created %d egress policies, want 1; error %v", len(mockSrv.createdEgressPolicies), err)
+	}
+	audiences := func(r *ateapipb.CreateActorEgressPolicyRequest) []string {
+		return r.GetEgressPolicy().GetRules()[0].GetHttp().GetEffects().GetReplaceHeaders()[0].GetActorJwt().GetAudiences()
+	}
+	if a, b := audiences(req), audiences(mockSrv.createdEgressPolicies[0]); len(a) != 2 || len(b) != 2 || a[1] == b[1] {
+		t.Errorf("runner rule audiences = %v, then %v; want a different extra audience in each policy", a, b)
 	}
 }
 
