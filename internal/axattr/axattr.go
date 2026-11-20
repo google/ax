@@ -30,12 +30,17 @@ package axattr
 import "go.opentelemetry.io/otel/attribute"
 
 const (
-	// TaskID is the task's status.id, unique across the task's lifetime.
+	// TaskID is the task's metadata.uid, unique across the task's lifetime.
 	TaskID = attribute.Key("ax.task.id")
 	// TaskName is the task's metadata.name.
 	TaskName = attribute.Key("ax.task.name")
-	// TaskPhase is the task's status.phase, for example Running.
+	// TaskPhase is the task's phase, for example Queued or Completed.
 	TaskPhase = attribute.Key("ax.task.phase")
+	// TaskPreviousPhase is the task's phase before a state change.
+	TaskPreviousPhase = attribute.Key("ax.task.previous_phase")
+	// TaskGeneration is the task record's revision, which increases with each
+	// committed write; it orders a task's state changes.
+	TaskGeneration = attribute.Key("ax.task.generation")
 	// TaskResidency is where the task's actor is in its lifecycle: queued,
 	// resuming, running, suspending, suspended, reverting, crashed, deleting,
 	// or deleted.
@@ -43,6 +48,8 @@ const (
 	// TaskOutcome is how the task's command ended: succeeded, failed, or
 	// cancelled.
 	TaskOutcome = attribute.Key("ax.task.outcome")
+	// TaskPreviousOutcome is the task's outcome before a state change.
+	TaskPreviousOutcome = attribute.Key("ax.task.previous_outcome")
 	// TaskOutcomeSource is what decided the outcome: sandbox, orchestrator, or
 	// external.
 	TaskOutcomeSource = attribute.Key("ax.task.outcome_source")
