@@ -123,23 +123,27 @@ ax_quiet() {
   return 1
 }
 
-# TODO(@Lukeluds): Drop this once task-starter.yaml has the published image.
-starter_image_is_placeholder() {
-  [[ -z "${STARTER_IMAGE}" ]] && grep -q '<starter-image>' "${STARTER_MANIFEST}"
-}
-
 # render_starter_manifest writes task-starter.yaml to a temp file, substituting
 # STARTER_IMAGE when set.
 render_starter_manifest() {
   local out_file="$1"
   python3 - "${STARTER_MANIFEST}" "${out_file}" "${STARTER_IMAGE}" <<'PY'
+import re
 import sys
 
 src, dst, image = sys.argv[1:4]
 with open(src, "r", encoding="utf-8") as f:
     text = f.read()
 if image:
-    text = text.replace("<starter-image>@sha256:<digest>", image)
+    text, count = re.subn(
+        r'^(\s*image:\s*)"[^"]*"',
+        lambda m: f'{m.group(1)}"{image}"',
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise SystemExit("failed to substitute spec.profile.image in task-starter.yaml")
 with open(dst, "w", encoding="utf-8") as f:
     f.write(text)
 PY
@@ -224,10 +228,6 @@ step3_starter_task_session() {
     mark_fail "${step}" "ax apply -f gateway.yaml failed"
     return
   fi
-  if starter_image_is_placeholder; then
-    mark_stub "${step}" "Gateway ${GATEWAY_NAME} applied; the starter image is still a placeholder"
-    return
-  fi
   # Tasks are immutable, so start from a fresh one on every run.
   run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
 
@@ -296,10 +296,6 @@ step5_remote_promote() {
   fi
   if ! have_ax; then
     mark_fail "${step}" "ax CLI not found; run 'make install' or set AX_BIN"
-    return
-  fi
-  if starter_image_is_placeholder; then
-    mark_stub "${step}" "No starter task to promote to ${REMOTE_CONTEXT}; the starter image is still a placeholder"
     return
   fi
   # Copies the starter task that Step 3 runs, with the Gateway and Workspace it
