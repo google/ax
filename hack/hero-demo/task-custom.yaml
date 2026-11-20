@@ -23,22 +23,25 @@ metadata:
   atespace: default
 spec:
   profile:
-    # TODO(@itssimrank): A plain image has no /usr/local/bin/ax-task-runner, so this
-    # needs automatic runner injection. Pin by digest as well: Substrate rejects
-    # tag-only images.
-    image: python:3.12-slim
+    # A plain image has no ax-task-runner: ax-server mounts it from its runner
+    # volume image. Pinned by digest, because Substrate rejects tag-only images.
+    image: "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
     resources:
       limits:
         cpu: "1"
         memory: "2Gi"
   workspace:
     name: hero-demo-ws
+  debug: true # serve guest services so `ax ssh` works; off by default
+  # The first run leaves a marker and waits, so that the task can be suspended
+  # and resumed while it runs. The command then starts again, finds the marker
+  # and runs the workspace's unit tests.
   commands:
-    - python3
-    - -m
-    - unittest
-    - discover
-    - -s
-    - /workspace/app
-    - -p
-    - "test_*.py"
+    - sh
+    - -c
+    - |
+      if [ ! -f /workspace/first-run ]; then
+        touch /workspace/first-run
+        sleep 300
+      fi
+      python3 -m unittest discover -s /workspace/app -p "test_*.py"
