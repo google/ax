@@ -28,12 +28,25 @@ RUN_LIVE_STEPS=1 ./hack/hero-demo/run.sh --remote-context <kube-context>  # and 
 With `RUN_LIVE_STEPS=1`, the harness calls:
 
 - Step 1: `ax get workspaces`, to check `ax-server` is reachable.
-- Step 2: `ax apply -f workspace.yaml`.
-- Step 3: `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, `ax suspend` and `ax resume`.
+- Step 2: `ax apply -f workspace.yaml`, which waits for the pre-warm, then `ax describe workspace` to check `SnapshotReady`.
+- Step 3: `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, wait for `/workspace/.ax/output`, and `ax suspend` / `ax resume`.
 - Step 5: `ax promote task hero-demo-starter-task --to <remote> --replace --suspend-source`.
 
-The starter image is a placeholder until it is published (Substrate requires images pinned by digest), so Step 3 stops before `ax apply -f task-starter.yaml`, Step 5 has no task to promote, and both report `🟡 STUB`.
+`task-starter.yaml` pins the published Antigravity starter image (`ghcr.io/agentexecutor/antigravity`, `v0.0.0-rc.2`, pinned by digest as Substrate requires); pass `STARTER_IMAGE=<image>@sha256:<digest>` to override it for local testing. Because pure starter images have no `ax-task-runner` baked in, `ax-server` also needs a runner volume image (`ax install --runner-volume-image` or `AX_RUNNER_VOLUME_IMAGE`, which is empty by default); Step 2 needs it too, because the workspace is pre-warmed in the same image.
 
-Still stubbed: local mode and the AX Studio health check (Step 1), the warm snapshot check (Step 2), the second Session turn (Step 3), and the custom image task, which needs automatic `ax-task-runner` injection (Step 4).
+Still stubbed: local mode and the AX Studio health check (Step 1), the second Session turn on the same task's workspace (Step 3), and the custom image task, which needs automatic `ax-task-runner` injection (Step 4).
+
+## Checking the warm snapshot by hand
+
+Step 2 waits for the pre-warm, so the first run takes as long as the image pull, `spec.setup`, and the snapshot upload. Later runs find the workspace unchanged and return at once.
+
+```bash
+ax apply -f hack/hero-demo/workspace.yaml
+ax describe workspace hero-demo-ws         # Phase: Ready; SnapshotReady names the tag ws-<workspace>-<template>-r1
+ax describe task hero-demo-starter-task    # WorkspaceReady: "Workspace seeded from snapshot tag <the same tag>"
+ax ssh hero-demo-starter-task -- ls /workspace/app   # after `ax resume`: the files spec.setup wrote
+```
+
+While the apply runs, `kubectl -n ax-system logs deploy/ax-server -f` shows `provisioning workspace setup actor`. Workspaces are immutable, so to pre-warm again, or to change `STARTER_IMAGE`, delete the tasks and then `ax delete workspace hero-demo-ws`.
 
 The manifests use the `v1alpha1` schema on `main`. The starter task reaches the Gemini API through the Gateway in [`gateway.yaml`](./gateway.yaml), which names the Secret that holds the API key.

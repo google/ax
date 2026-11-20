@@ -38,6 +38,7 @@ message Workspace {
   string kind = 2;
   ObjectMeta metadata = 3;
   WorkspaceSpec spec = 4;
+  // Set by the server; ignored on input.
   WorkspaceStatus status = 5;
 }
 
@@ -47,13 +48,14 @@ message WorkspaceSpec {
   // delivered to the runner rather than baked into an immutable snapshot.
   MCPConfig mcp = 1;
 
-  // Compute profile (image, resources, ate_template) used to pre-warm the
-  // workspace snapshot upon Workspace creation for fast warm task startup. A
-  // pre-warmed Workspace with a profile or setup steps must set image or
-  // ate_template.name.
+  // Default compute profile (image, resources, ate_template) used to
+  // pre-warm the workspace snapshot upon Workspace creation for fast warm task
+  // startup, and used as the profile of Tasks binding this Workspace that omit
+  // TaskSpec.profile. When set, it must set image or ate_template.name; a
+  // Workspace with setup steps must set it.
   //
-  // WorkspaceSpec.profile never restricts or merges fields into a
-  // TaskSpec.profile: if a Task's profile differs from
+  // WorkspaceSpec.profile never restricts or merges fields into an explicit
+  // TaskSpec.profile: if a Task sets its own profile and it differs from
   // WorkspaceSpec.profile, the Task uses its own profile as-is and cold-boots
   // workspace setup rather than starting from the pre-warmed snapshot.
   Profile profile = 2;
@@ -157,12 +159,18 @@ message GetWorkspaceRequest {
 
 message ListWorkspacesRequest {
   string atespace = 1;
-  int64 limit = 2;
-  int64 offset = 3;
+  // Maximum number of workspaces to return; the server may return fewer. If unset,
+  // at most 50 are returned. Values above 1000 are coerced to 1000.
+  int32 page_size = 2;
+  // Page token from a previous ListWorkspaces response. Leave empty for the first
+  // page.
+  string page_token = 3;
 }
 
 message ListWorkspacesResponse {
   repeated Workspace workspaces = 1;
+  // Token for the next page. Empty if this is the last page.
+  string next_page_token = 2;
 }
 
 // CreateWorkspaceRequest creates an immutable Workspace resource.

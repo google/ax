@@ -19,6 +19,8 @@ kind: Workspace
 metadata:
   name: golang
 spec:
+  profile:          # tasks that bind this workspace and omit spec.profile use it
+    image: "ghcr.io/my-org/my-coding-agent@sha256:..."
   setup:
     git:
       - repo: https://github.com/golang/go.git
@@ -34,8 +36,6 @@ kind: Task
 metadata:
   name: test
 spec:
-  profile:
-    image: "ghcr.io/my-org/my-coding-agent@sha256:..."
   goal:
     text: "Fix what's broken please."
   workspace:
@@ -76,6 +76,9 @@ curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
+> [!TIP]
+> Prefer a UI? [AX Studio](https://github.com/agentexecutor/studio#readme) is a local web app that sets up AX on your computer and starts tasks for you. It deploys its own AX images, so you can skip steps 2 and 3. Install it as its README describes, then run `ax studio`.
+
 ### 2. Build the images
 
 Until release images are published, build and push your own from an ax checkout and pin them by digest:
@@ -94,7 +97,7 @@ export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
 ax local start --server-image "$AX_SERVER_IMAGE"
 ```
 
-**On an existing cluster** with Kubernetes 1.36+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
+**On an existing cluster** with Kubernetes 1.37+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
 ax install --server-image "$AX_SERVER_IMAGE"
@@ -122,7 +125,7 @@ ax resume task simple-task               # pick up where it left off
 
 The first resume also waits for the workspace to initialize (cloning its git repos), so it can take a while; if the CLI gives up first, the task keeps coming up in the background — `ax get tasks` tells you where it is.
 
-Every Task must set `spec.profile.image` (pinned by digest) or `spec.profile.ateTemplate.name`; replace the image in `examples/simple.yaml` with `$AX_TASK_IMAGE` if you built your own.
+Every Task runs an image pinned by digest, named by `spec.profile.image` or `spec.profile.ateTemplate.name` or inherited from its Workspace's `spec.profile`; replace the image in `examples/simple.yaml` with `$AX_TASK_IMAGE` if you built your own.
 
 Want to see the whole lifecycle end to end? Run `AX_TASK_IMAGE=... ./demo.sh` ([`demo.sh`](demo.sh)). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
 
@@ -130,7 +133,8 @@ Want to see the whole lifecycle end to end? Run `AX_TASK_IMAGE=... ./demo.sh` ([
 
 | Guide | Read it to... |
 |---|---|
-| [Local Installer](docs/local_installer.md) | Walk through `ax local`, `ax ctx`, `ax install`, and promoting tasks unchanged from local Kind to a remote GKE cluster. |
+| [Local Installer](docs/local_installer.md) | Walk through `ax local`, `ax studio`, `ax ctx`, `ax install`, and promoting tasks unchanged from local Kind to a remote GKE cluster. |
+| [AX Studio](https://github.com/agentexecutor/studio#readme) | Set up AX on your computer and start, watch, and shell into tasks from a local web app (`ax studio`). |
 | [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, and `Model` each do, and how a task moves through phases and conditions. |
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
@@ -192,7 +196,7 @@ ax local status                       # check local environment, Substrate, and 
 ax local stop                         # stop local environment while keeping state
 ax local delete                       # destroy local environment and clean up owned context
 ax install / ax uninstall             # install or remove AX on the active Kubernetes cluster
-ax studio                             # launch the AX Studio local Web UI on 127.0.0.1:8080
+ax studio                             # launch the AX Studio local Web UI on 127.0.0.1:8080 (needs the ax-studio binary)
 ax ctx                                # list kube contexts and active AX tunnel status
 ax ctx <name>                         # switch active Kubernetes context in kubeconfig
 ax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)

@@ -22,10 +22,12 @@ metadata:
   atespace: default
 spec:
   profile:
-    # TODO(@Lukeluds): Replace with the Antigravity starter image published from
-    # github.com/agentexecutor/images, pinned by digest. Substrate rejects tag-only
-    # images when it creates the actor template.
-    image: "<starter-image>@sha256:<digest>"
+    # Antigravity starter image published from github.com/agentexecutor/images
+    # (v0.0.0-rc.2, pinned by digest; pass STARTER_IMAGE to hack/hero-demo/run.sh
+    # to override). Substrate rejects tag-only images when it creates the actor
+    # template. Keep the image and limits identical to workspace.yaml, so the
+    # task starts from the workspace's pre-warmed snapshot.
+    image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
     resources:
       limits:
         cpu: "2"
@@ -35,10 +37,11 @@ spec:
   gateway:
     name: hero-demo-gw
   env:
+    - name: AGY_RUNTIME_INSTALL
+      value: "true" # published starter image installs pinned agy at startup
     - name: GEMINI_API_KEY
       value: placeholder # replaced outside the sandbox by hero-demo-gw
-  # The Antigravity starter reads its prompt from spec.config.
-  # TODO(@itssimrank): Move this to spec.goal once the runner reads spec.goal.text.
-  config:
-    prompt: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
+  sessionId: hero-demo-session
+  goal:
+    text: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
   debug: true # serve guest services so `ax ssh` works; off by default

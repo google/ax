@@ -41,8 +41,10 @@ func TestValidateTask(t *testing.T) {
 		spec    *v1alpha1.TaskSpec
 		wantErr string
 	}{
-		{name: "nil spec", wantErr: "spec.profile: image or ateTemplate.name is required"},
-		{name: "no profile", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}, wantErr: "spec.profile: image or ateTemplate.name is required"},
+		{name: "nil spec", wantErr: "spec.profile: image or ateTemplate.name is required unless spec.workspace"},
+		{name: "no profile or workspace", spec: &v1alpha1.TaskSpec{Commands: []string{"true"}}, wantErr: "spec.profile: image or ateTemplate.name is required unless spec.workspace"},
+		{name: "empty profile without workspace", spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{}}, wantErr: "spec.profile: image or ateTemplate.name is required unless spec.workspace"},
+		{name: "no profile inherits workspace", spec: &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "a"}}},
 		{
 			name: "profile resources without image",
 			spec: &v1alpha1.TaskSpec{

@@ -58,7 +58,6 @@ func main() {
 		runnerEndpoint          string
 		actorJWTIssuer          string
 		actorJWTAudience        string
-		enablePrewarm           bool
 	)
 
 	flag.StringVar(&listenAddr, "addr", ":8080", "HTTP listen address")
@@ -77,7 +76,6 @@ func main() {
 	flag.StringVar(&runnerEndpoint, "runner-endpoint", substrate.DefaultRunnerEndpoint, "In-cluster host:port of the :8081 runner service allowed in actor EgressPolicies (env: AX_RUNNER_ENDPOINT)")
 	flag.StringVar(&actorJWTIssuer, "actor-jwt-issuer", "https://idp.ate-system.svc", "Substrate OIDC issuer URL for verifying Actor JWTs on :8081 (env: AX_ACTOR_JWT_ISSUER)")
 	flag.StringVar(&actorJWTAudience, "actor-jwt-audience", substrate.DefaultRunnerAudience, "Expected OIDC audience for Actor JWTs on :8081 (env: AX_ACTOR_JWT_AUDIENCE)")
-	flag.BoolVar(&enablePrewarm, "enable-prewarm", false, "Enable Workspace snapshot pre-warming via the :8081 runner setup coordinator (env: AX_ENABLE_PREWARM)")
 	flag.Parse()
 
 	if envAddr := os.Getenv("ADDR"); envAddr != "" {
@@ -103,9 +101,6 @@ func main() {
 	}
 	if envAud := os.Getenv("AX_ACTOR_JWT_AUDIENCE"); envAud != "" {
 		actorJWTAudience = envAud
-	}
-	if envPrewarm := os.Getenv("AX_ENABLE_PREWARM"); envPrewarm == "true" || envPrewarm == "1" {
-		enablePrewarm = true
 	}
 
 	logger := slog.New(telemetry.NewLogHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -182,14 +177,16 @@ func main() {
 			Store:       backend,
 			Verifier:    oidcVerifier,
 			ActorParker: subClient,
+			Locker:      backend,
 		})
-		if enablePrewarm {
-			setupCoordinator = runnerSrv
-		}
+		setupCoordinator = runnerSrv
 	}
 
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
 	reconciler.RunnerVolumeImage = runnerVolumeImage
+	reconciler.RunnerEndpoint = runnerEndpoint
+	reconciler.RunnerAudience = actorJWTAudience
+	reconciler.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:           backend,
 		Store:            backend,
@@ -198,9 +195,11 @@ func main() {
 		RunnerEndpoint:   runnerEndpoint,
 		RunnerAudience:   actorJWTAudience,
 	})
+	reconciler.WorkspaceManager = workspaces
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
+		TaskApplier:      server.TaskApplierForStore(backend),
 	})
 
 	httpServer := &http.Server{

@@ -49,29 +49,26 @@ func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceReq
 	return ws, nil
 }
 
-const (
-	defaultListLimit  int64 = 50
-	defaultListOffset int64 = 0
-)
-
 func (s *Server) ListWorkspaces(ctx context.Context, req *v1alpha1.ListWorkspacesRequest) (*v1alpha1.ListWorkspacesResponse, error) {
 	atespace := ""
-	limit := defaultListLimit
-	offset := defaultListOffset
+	pageSize := int32(0)
+	token := ""
 	if req != nil {
 		atespace = req.Atespace
-		if req.Limit > 0 {
-			limit = req.Limit
-		}
-		if req.Offset >= 0 {
-			offset = req.Offset
-		}
+		pageSize = req.PageSize
+		token = req.PageToken
 	}
-	workspaces, err := s.store.ListWorkspaces(ctx, atespace, limit, offset)
+	offset, size, err := pageStart(atespace, pageSize, token)
+	if err != nil {
+		return nil, err
+	}
+	// One workspace more than the page shows whether another page follows.
+	workspaces, err := s.store.ListWorkspaces(ctx, atespace, size+1, offset)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "listing workspaces: %v", err)
 	}
-	return &v1alpha1.ListWorkspacesResponse{Workspaces: workspaces}, nil
+	workspaces, next := pageOf(workspaces, atespace, offset, size)
+	return &v1alpha1.ListWorkspacesResponse{Workspaces: workspaces, NextPageToken: next}, nil
 }
 
 func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorkspaceRequest) (*v1alpha1.Workspace, error) {
@@ -81,20 +78,7 @@ func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorksp
 	if err := apivalidation.ValidateWorkspace(req.Workspace); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// TODO: Remove prewarmEnabled (and firstUnimplementedWorkspaceField) once
-	// SetupCoordinator is wired in cmd/ax-server/main.go.
 	prewarmEnabled := s.workspaces.PrewarmEnabled()
-	// Workspaces are immutable, so until the pull-based runner SetupCoordinator
-	// is connected to drive setup actors, reject profile and setup.gateway
-	// rather than saving fields that nothing enforces yet.
-	if field := firstUnimplementedWorkspaceField(req.Workspace.GetSpec()); !prewarmEnabled && field != "" {
-		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
-	}
-	if prewarmEnabled {
-		if err := apivalidation.ValidateWorkspacePrewarm(req.Workspace); err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-	}
 
 	ws := req.Workspace
 	ws.Status = nil
@@ -239,18 +223,4 @@ func workspaceSpecEqual(a, b *v1alpha1.WorkspaceSpec) bool {
 		b = &v1alpha1.WorkspaceSpec{}
 	}
 	return proto.Equal(a, b)
-}
-
-// TODO: Drop this check once SetupCoordinator is wired to the pull-based runner.
-func firstUnimplementedWorkspaceField(spec *v1alpha1.WorkspaceSpec) string {
-	if spec == nil {
-		return ""
-	}
-	if spec.GetProfile() != nil {
-		return "spec.profile"
-	}
-	if spec.GetSetup().GetGateway() != nil {
-		return "spec.setup.gateway"
-	}
-	return ""
 }

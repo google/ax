@@ -16,6 +16,7 @@ package runner_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -233,6 +234,115 @@ func TestPullModeWorkspaceSetup(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(wsDir, "hello.txt"))
 	if err != nil || string(raw) != "setup-ok" {
 		t.Fatalf("setup file content = %q (err=%v), want %q", string(raw), err, "setup-ok")
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("runner.Run() error = %v", err)
+	}
+}
+
+type pullTestWSReader struct {
+	ws *v1alpha1.Workspace
+}
+
+func (r pullTestWSReader) GetWorkspace(_ context.Context, _, _ string) (*v1alpha1.Workspace, error) {
+	return r.ws, nil
+}
+
+func TestPullModeIdleTaskSetsUpWorkspace(t *testing.T) {
+	wsDir := t.TempDir()
+	origWS := runner.DefaultWorkspacePath
+	runner.DefaultWorkspacePath = wsDir
+	t.Cleanup(func() { runner.DefaultWorkspacePath = origWS })
+	t.Setenv("PULL_IDLE_TEST_ENV", "")
+
+	metaDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(metaDir, "actor-uid"), []byte("uid-idle-1\n"), 0o600); err != nil {
+		t.Fatalf("writing actor-uid: %v", err)
+	}
+	stateDir := t.TempDir()
+
+	ws := &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "ws-idle"},
+		Spec: &v1alpha1.WorkspaceSpec{
+			Setup: &v1alpha1.WorkspaceSetup{
+				Files: []*v1alpha1.File{{Path: "hello.txt", Content: "idle-setup-ok"}},
+			},
+		},
+	}
+
+	applier := &pullTestApplier{
+		rows: map[store.TaskKey]*store.TaskRow{
+			{Atespace: "default", Name: "idle-task"}: {
+				Task: &v1alpha1.Task{
+					Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "idle-task"},
+					Spec: &v1alpha1.TaskSpec{
+						Workspace: &v1alpha1.WorkspaceRef{Name: "ws-idle", Path: wsDir},
+						Env:       []*v1alpha1.EnvVar{{Name: "PULL_IDLE_TEST_ENV", Value: "val1"}},
+					},
+					Status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED},
+				},
+				ActorUID: "uid-idle-1",
+				Runnable: true,
+			},
+		},
+	}
+
+	srv := runnerhttp.NewServer(runnerhttp.Options{
+		TaskApplier: applier,
+		Store:       pullTestWSReader{ws: ws},
+		Verifier: runnerhttp.ActorVerifierFunc(func(_ context.Context, _ *http.Request) (runnerhttp.ActorIdentity, error) {
+			return runnerhttp.ActorIdentity{
+				Atespace:  "default",
+				ActorName: "idle-task",
+				ActorUID:  "uid-idle-1",
+			}, nil
+		}),
+	})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	port := freePort(t)
+	runCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	dropPrivs := false
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runner.Run(runCtx, runner.Config{
+			Port:             port,
+			MetadataPort:     freePort(t),
+			PullMode:         true,
+			ControlURL:       ts.URL,
+			ActorMetadataDir: metaDir,
+			StateDir:         stateDir,
+			DropPrivileges:   &dropPrivs,
+		})
+	}()
+
+	readyURL := fmt.Sprintf("http://127.0.0.1:%d/readyz?check=workspace", port)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get(readyURL)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for /readyz?check=workspace")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(wsDir, "hello.txt"))
+	if err != nil || string(raw) != "idle-setup-ok" {
+		t.Fatalf("workspace file content = %q (err=%v), want %q", string(raw), err, "idle-setup-ok")
+	}
+	if got := os.Getenv("PULL_IDLE_TEST_ENV"); got != "val1" {
+		t.Fatalf("PULL_IDLE_TEST_ENV = %q, want %q", got, "val1")
 	}
 
 	cancel()

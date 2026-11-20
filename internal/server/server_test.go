@@ -17,11 +17,13 @@ package server_test
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -275,6 +277,107 @@ func TestServerGRPC(t *testing.T) {
 	}
 }
 
+// TestServer_ListPagination pages through every kind with page tokens, then
+// checks the page size and page token rules, which the kinds share, on models.
+func TestServer_ListPagination(t *testing.T) {
+	st := memory.NewStore()
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	ctx := context.Background()
+
+	for _, name := range []string{"a", "b", "c", "d"} {
+		meta := &v1alpha1.ObjectMeta{Name: name, Atespace: "default"}
+		if err := st.SaveTask(ctx, &v1alpha1.Task{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveGateway(ctx, &v1alpha1.Gateway{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SaveModel(ctx, &v1alpha1.Model{Metadata: meta}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Each list returns the names on one page of two, and the next page token.
+	lists := []struct {
+		kind string
+		list func(pageToken string) ([]string, string, error)
+	}{
+		{kind: "tasks", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetTasks()), resp.GetNextPageToken(), err
+		}},
+		{kind: "workspaces", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetWorkspaces()), resp.GetNextPageToken(), err
+		}},
+		{kind: "gateways", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetGateways()), resp.GetNextPageToken(), err
+		}},
+		{kind: "models", list: func(pageToken string) ([]string, string, error) {
+			resp, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: "default", PageSize: 2, PageToken: pageToken})
+			return resourceNames(resp.GetModels()), resp.GetNextPageToken(), err
+		}},
+	}
+	for _, tc := range lists {
+		t.Run(tc.kind, func(t *testing.T) {
+			first, pageToken, err := tc.list("")
+			if err != nil || !slices.Equal(first, []string{"a", "b"}) || pageToken == "" {
+				t.Fatalf("first page = (%v, %q, %v), want [a b] and a next page token", first, pageToken, err)
+			}
+			last, pageToken, err := tc.list(pageToken)
+			if err != nil || !slices.Equal(last, []string{"c", "d"}) || pageToken != "" {
+				t.Fatalf("last page = (%v, %q, %v), want [c d] and no next page token", last, pageToken, err)
+			}
+		})
+	}
+
+	// One model more than the largest page.
+	for i := range 1001 {
+		if err := st.SaveModel(ctx, &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: fmt.Sprintf("m%04d", i), Atespace: "big"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: "big"})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	tests := []struct {
+		name      string
+		atespace  string
+		pageSize  int32
+		pageToken string
+		want      int
+		wantCode  codes.Code
+	}{
+		{name: "default page size", atespace: "big", want: 50},
+		{name: "page size above the maximum", atespace: "big", pageSize: 5000, want: 1000},
+		{name: "negative page size", atespace: "big", pageSize: -1, wantCode: codes.InvalidArgument},
+		{name: "malformed page token", pageToken: "not a token", wantCode: codes.InvalidArgument},
+		{name: "page token of another atespace", atespace: "default", pageToken: first.GetNextPageToken(), wantCode: codes.InvalidArgument},
+		{name: "page token with a negative offset", atespace: "big", pageToken: base64.RawURLEncoding.EncodeToString([]byte(`{"atespace":"big","offset":-1}`)), wantCode: codes.InvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := srv.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: tc.atespace, PageSize: tc.pageSize, PageToken: tc.pageToken})
+			if status.Code(err) != tc.wantCode || len(resp.GetModels()) != tc.want {
+				t.Fatalf("ListModels = (%d models, %v), want (%d models, %v)", len(resp.GetModels()), err, tc.want, tc.wantCode)
+			}
+		})
+	}
+}
+
+// resourceNames returns the names of resources, in order.
+func resourceNames[T interface{ GetMetadata() *v1alpha1.ObjectMeta }](resources []T) []string {
+	var names []string
+	for _, r := range resources {
+		names = append(names, r.GetMetadata().GetName())
+	}
+	return names
+}
+
 // Names and atespaces become Substrate resource names, which must be RFC 1123
 // labels. The server rejects them up front instead of failing during Substrate
 // actor creation.
@@ -400,7 +503,8 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 				}
 			}
 			sub := substratetest.NewServer(t)
-			srv := server.NewServer(st, newTestReconciler(sub))
+			rec := newTestReconciler(sub)
+			srv := server.NewServer(st, rec)
 
 			task := &v1alpha1.Task{
 				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
@@ -436,18 +540,8 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 				t.Fatal("accepted task has no actor")
 			}
 			ref := actor.GetActorTemplate()
-			tmpl, ok := sub.Template(ref.GetAtespace(), ref.GetName())
-			if !ok {
+			if _, ok := sub.Template(ref.GetAtespace(), ref.GetName()); !ok {
 				t.Fatalf("actor template %v not found", ref)
-			}
-			var gotWorkspace bool
-			for _, env := range tmpl.GetContainers()[0].GetEnv() {
-				if env.GetName() == "AX_WORKSPACE_YAML" {
-					gotWorkspace = true
-				}
-			}
-			if gotWorkspace != tc.wantWorkspace {
-				t.Errorf("template has AX_WORKSPACE_YAML = %v, want %v", gotWorkspace, tc.wantWorkspace)
 			}
 		})
 	}
@@ -500,7 +594,8 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 				}
 			}
 			sub := substratetest.NewServer(t)
-			srv := server.NewServer(st, newTestReconciler(sub))
+			rec := newTestReconciler(sub)
+			srv := server.NewServer(st, rec)
 
 			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
@@ -529,8 +624,8 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 				t.Fatalf("stored task: %v", getErr)
 			}
 			policy, _ := sub.EgressPolicy(atespace, "task")
-			if rules := policy.GetRules(); len(rules) != 1 || rules[0].GetHttps().GetEffects().GetReplaceHeaders()[0].GetCredentialUri() != credentialURI {
-				t.Errorf("actor's rules = %v, want the gateway's", rules)
+			if rules := policy.GetRules(); len(rules) != 2 || rules[1].GetHttps().GetEffects().GetReplaceHeaders()[0].GetCredentialUri() != credentialURI {
+				t.Errorf("actor's rules = %v, want runner egress + the gateway's", rules)
 			}
 			// The credential URI must not be passed into the sandbox.
 			ref := actor.GetActorTemplate()
@@ -569,10 +664,10 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	hostname := func() string {
 		t.Helper()
 		policy, ok := sub.EgressPolicy("default", "task")
-		if !ok {
+		if !ok || len(policy.GetRules()) < 2 {
 			return ""
 		}
-		return policy.GetRules()[0].GetHttps().GetHostnames()[0]
+		return policy.GetRules()[1].GetHttps().GetHostnames()[0]
 	}
 	suspend := &v1alpha1.SuspendTaskRequest{Name: "task"}
 	resume := &v1alpha1.ResumeTaskRequest{Name: "task"}
@@ -736,8 +831,8 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 			if err := tc.next(ctx, srv); err != nil {
 				t.Fatalf("%s: %v", tc.name, err)
 			}
-			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 1 {
-				t.Errorf("actor's rules after %s = %v, want the gateway's", tc.name, policy.GetRules())
+			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 2 {
+				t.Errorf("actor's rules after %s = %v, want runner egress + the gateway's", tc.name, policy.GetRules())
 			}
 		})
 	}
@@ -778,9 +873,12 @@ func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
 func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
 	ctx := context.Background()
+	// Every request carries timestamps, as a manifest copied from
+	// `ax get gateway` does. The server keeps its own.
+	copied := timestamppb.New(time.Unix(1, 0))
 	gateway := func(hostname string) *v1alpha1.Gateway {
 		return &v1alpha1.Gateway{
-			Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+			Metadata: &v1alpha1.ObjectMeta{Name: "gw", CreateTime: copied, UpdateTime: copied, DeleteTime: copied},
 			Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
 				Https: &ateapipb.HttpsRule{Hostnames: []string{hostname}},
 			}}},
@@ -808,8 +906,14 @@ func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	if hostname := got.GetSpec().GetEgress()[0].GetHttps().GetHostnames()[0]; hostname != "b.example.com" {
 		t.Errorf("hostname after update = %q, want b.example.com", hostname)
 	}
+	if meta := created.GetMetadata(); meta.GetCreateTime().AsTime().Equal(copied.AsTime()) || !meta.GetUpdateTime().AsTime().Equal(meta.GetCreateTime().AsTime()) {
+		t.Errorf("expected CreateGateway to assign CreateTime and UpdateTime, got %v and %v", meta.GetCreateTime(), meta.GetUpdateTime())
+	}
 	if !got.GetMetadata().GetCreateTime().AsTime().Equal(created.GetMetadata().GetCreateTime().AsTime()) {
 		t.Errorf("expected CreateTime to be preserved across update")
+	}
+	if meta := got.GetMetadata(); meta.GetUpdateTime().AsTime().Before(meta.GetCreateTime().AsTime()) || meta.GetDeleteTime() != nil {
+		t.Errorf("expected UpdateGateway to assign UpdateTime and ignore DeleteTime, got %v and %v", meta.GetUpdateTime(), meta.GetDeleteTime())
 	}
 }
 
@@ -866,7 +970,7 @@ func TestServer_DirectReconcilerLifecycle(t *testing.T) {
 		t.Errorf("expected state SUSPENDED, got %v", task.GetStatus().GetState())
 	}
 
-	// 4. DeleteTask deletes the actor and its ActorTemplate
+	// 4. DeleteTask deletes the actor and preserves shared ax-* profile templates.
 	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "task-rec"})
 	if err != nil {
 		t.Fatalf("DeleteTask: %v", err)
@@ -874,8 +978,8 @@ func TestServer_DirectReconcilerLifecycle(t *testing.T) {
 	if _, ok := sub.Actor("default", "task-rec"); ok {
 		t.Error("expected the actor to be deleted")
 	}
-	if _, ok := sub.Template(tmpl.GetAtespace(), tmpl.GetName()); ok {
-		t.Errorf("expected ActorTemplate %s/%s to be deleted", tmpl.GetAtespace(), tmpl.GetName())
+	if _, ok := sub.Template(tmpl.GetAtespace(), tmpl.GetName()); !ok {
+		t.Errorf("expected shared profile ActorTemplate %s/%s to be preserved", tmpl.GetAtespace(), tmpl.GetName())
 	}
 
 	// 5. Verify task is gone
@@ -895,7 +999,8 @@ func TestServer_DeleteTask_BlocksAndSetsDeleteTime(t *testing.T) {
 			observedDeleteTimeDuringDelete = true
 		}
 	})
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -926,7 +1031,8 @@ func TestServer_DeleteTask_BlocksAndSetsDeleteTime(t *testing.T) {
 func TestServer_DeleteTask_ReconcileErrorRetainsTask(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -973,7 +1079,8 @@ func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 	base := memory.NewStore()
 	st := &failDeleteTimeStore{Store: base}
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1007,7 +1114,8 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 	workerIP := readySrv.Listener.Addr().String()
 	sub := substratetest.NewServer(t)
 	sub.SetWorkerIP(workerIP)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -1105,7 +1213,8 @@ func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
 func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	for _, name := range []string{"observed-a", "observed-b"} {
@@ -1192,7 +1301,8 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1229,11 +1339,51 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	}
 }
 
+// TestCreateTask_IgnoresServerAssignedFields creates a task from a manifest
+// copied from `ax get task`, which carries metadata.uid, the timestamps, and
+// status. The server must assign its own.
+func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	// Provisioning fails so that the task reads back as CreateTask stored it; a
+	// successful CreateTask clears deleteTime on its own.
+	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
+	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	ctx := context.Background()
+
+	copied := timestamppb.New(time.Unix(1, 0))
+	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "task-copy", Uid: "copied-uid", CreateTime: copied, DeleteTime: copied},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+			Status:   &v1alpha1.TaskStatus{Attempt: 7},
+		},
+	})
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("expected Internal error when Substrate fails to suspend the new actor, got %v", err)
+	}
+
+	task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-copy"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	meta := task.GetMetadata()
+	if meta.GetUid() == "" || meta.GetUid() == "copied-uid" {
+		t.Errorf("uid = %q, want a server-assigned uid", meta.GetUid())
+	}
+	if meta.GetCreateTime().AsTime().Equal(copied.AsTime()) || meta.GetDeleteTime() != nil {
+		t.Errorf("createTime = %v, deleteTime = %v, want the client-supplied timestamps ignored", meta.GetCreateTime(), meta.GetDeleteTime())
+	}
+	if attempt := task.GetStatus().GetAttempt(); attempt != 1 {
+		t.Errorf("status.attempt = %d, want 1", attempt)
+	}
+}
+
 func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{CreateAtespace: status.Error(codes.DeadlineExceeded, "substrate control plane timed out")})
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	// 1. CreateTask while Substrate is unavailable records State=QUEUED (not FAILED)
@@ -1375,7 +1525,8 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 		t.Run(actorState.String(), func(t *testing.T) {
 			st := memory.NewStore()
 			sub := substratetest.NewServer(t)
-			srv := server.NewServer(st, newTestReconciler(sub))
+			rec := newTestReconciler(sub)
+			srv := server.NewServer(st, rec)
 			ctx := context.Background()
 
 			spec := &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}}
@@ -1470,7 +1621,8 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -1478,11 +1630,6 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		spec      *v1alpha1.TaskSpec
 		wantField string
 	}{
-		{
-			name:      "ateTemplate.name",
-			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "user-tpl"}}},
-			wantField: "spec.profile.ateTemplate.name is not supported yet",
-		},
 		{
 			name:      "retry",
 			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Retry: &v1alpha1.RetryConfig{MaxRetries: 2}},
@@ -1514,14 +1661,47 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 		t.Fatalf("CreateTask(negative maxRetries) = %v, want InvalidArgument", err)
 	}
 
-	// A task's own spec.profile ignores a Workspace's profile with
-	// ateTemplate.name completely and succeeds.
+	// When a Workspace in the store defines a profile with ateTemplate,
+	// a task omitting spec.profile inherits the Workspace's template.
+	if _, err := rec.Client().EnsureActorTemplateWithImage(ctx, "default", "default", "default", "ws-user-tpl", "alpine", "", nil, nil); err != nil {
+		t.Fatalf("EnsureActorTemplateWithImage: %v", err)
+	}
 	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "ws-tpl", Atespace: "default"},
 		Spec:     &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ws-user-tpl"}}},
 	}); err != nil {
 		t.Fatalf("SaveWorkspace: %v", err)
 	}
+	inherited, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "inherits-ws-tpl"},
+		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-tpl"}},
+	}})
+	if err != nil {
+		t.Fatalf("CreateTask inheriting workspace ateTemplate: %v", err)
+	}
+	if got := inherited.GetStatus().GetAteTemplate().GetName(); got != "ws-user-tpl" {
+		t.Errorf("AteTemplate.Name = %q, want ws-user-tpl", got)
+	}
+
+	// With no default image, a task omitting spec.profile is rejected when
+	// its Workspace has no profile to inherit.
+	if err := st.SaveWorkspace(ctx, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws-no-profile", Atespace: "default"},
+		Spec:     &v1alpha1.WorkspaceSpec{},
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "nothing-to-inherit"},
+		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "ws-no-profile"}},
+	}})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "spec.profile") {
+		t.Fatalf("CreateTask without a profile to inherit = %v, want InvalidArgument about spec.profile", err)
+	}
+	if _, err := st.GetTask(ctx, "default", "nothing-to-inherit"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expected rejected task not to be saved, got %v", err)
+	}
+
 	overrideTask, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "overrides-ws-profile"},
 		Spec: &v1alpha1.TaskSpec{
@@ -1537,15 +1717,16 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask with explicit profile over workspace ateTemplate.name failed: %v", err)
 	}
-	if got := overrideTask.GetStatus().GetAteTemplate().GetName(); !strings.HasPrefix(got, "overrides-ws-profile-tmpl-") {
-		t.Errorf("AteTemplate.Name = %q, want per-task template prefix overrides-ws-profile-tmpl-", got)
+	if got := overrideTask.GetStatus().GetAteTemplate().GetName(); !strings.HasPrefix(got, "ax-") {
+		t.Errorf("AteTemplate.Name = %q, want profile template prefix ax-", got)
 	}
 }
 
 func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	rec := newTestReconciler(sub)
+	srv := server.NewServer(st, rec)
 	ctx := t.Context()
 	// Even a client-supplied UID must not enter storage.
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -1606,4 +1787,228 @@ func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
 	if uid := got.GetStatus().GetActorUid(); uid != "" {
 		t.Errorf("UID after actor deletion = %q, want empty", uid)
 	}
+}
+
+func TestServer_LifecycleSuspendResume(t *testing.T) {
+	st := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	rec := newTestReconciler(sub)
+	applier := server.TaskApplierForStore(st)
+	srv := server.NewServer(st, rec, server.Options{TaskApplier: applier})
+
+	t.Run("create_records_actor_uid_and_suspend_clears_active_run_on_rootfs", func(t *testing.T) {
+		ctx := t.Context()
+		created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "rootfs-task"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+		}})
+		if err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		key := store.TaskKey{Atespace: "default", Name: "rootfs-task"}
+		row, err := applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow: %v", err)
+		}
+		if row.ActorUID == "" || row.ActorUID != created.GetStatus().GetActorUid() {
+			t.Errorf("row.ActorUID = %q, want %q", row.ActorUID, created.GetStatus().GetActorUid())
+		}
+		if row.Runnable {
+			t.Error("row.Runnable = true after CreateTask, want false")
+		}
+
+		// ResumeTask sets Runnable=true before resuming the actor.
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); err != nil {
+			t.Fatalf("ResumeTask: %v", err)
+		}
+		// Simulate an active run and confirmed runner token.
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.ActiveRunID = "r-1"
+			next.RunnerTokenHash = []byte("hash")
+			next.RunnerTokenConfirmed = true
+			next.ClaimNonce = "nonce-1"
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply active run: %v", err)
+		}
+
+		// If SuspendActor fails while the actor is still running, Runnable and ActiveRunID roll back.
+		sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Unavailable, "busy")})
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.Unavailable {
+			t.Fatalf("SuspendTask error = %v, want Unavailable", err)
+		}
+		row, err = applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow after failed suspend: %v", err)
+		}
+		if !row.Runnable || row.ActiveRunID != "r-1" || !row.RunnerTokenConfirmed {
+			t.Errorf("after failed suspend: Runnable=%v ActiveRunID=%q Confirmed=%v, want true / r-1 / true", row.Runnable, row.ActiveRunID, row.RunnerTokenConfirmed)
+		}
+
+		// Successful SuspendTask clears Runnable, ActiveRunID, and token state on ROOTFS (ax-*) templates.
+		sub.SetErrors(substratetest.Errors{})
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); err != nil {
+			t.Fatalf("SuspendTask: %v", err)
+		}
+		row, err = applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow after suspend: %v", err)
+		}
+		if row.Runnable || row.ActiveRunID != "" || row.RunnerTokenHash != nil || row.RunnerTokenConfirmed || row.ClaimNonce != "" {
+			t.Errorf("after suspend: got %+v, want Runnable=false, ActiveRunID='', and cleared token state", row)
+		}
+
+		// Simulate a prior actor UID with confirmed runner token state; ResumeTask
+		// must reset token state when Substrate reports a different actor UID.
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.ActorUID = "old-actor-uid"
+			next.RunnerTokenHash = []byte("hash")
+			next.RunnerTokenConfirmed = true
+			next.ClaimNonce = "nonce-1"
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply old ActorUID: %v", err)
+		}
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); err != nil {
+			t.Fatalf("ResumeTask after actor UID change: %v", err)
+		}
+		row, err = applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow after recreate: %v", err)
+		}
+		if row.RunnerTokenHash != nil || row.RunnerTokenConfirmed || row.ClaimNonce != "" {
+			t.Errorf("token state not reset on actor UID change: %+v", row)
+		}
+
+		// Terminal tasks reject SuspendTask and ResumeTask with FailedPrecondition.
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply COMPLETED: %v", err)
+		}
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("SuspendTask on COMPLETED = %v, want FailedPrecondition", err)
+		}
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("ResumeTask on COMPLETED = %v, want FailedPrecondition", err)
+		}
+	})
+
+	t.Run("suspend_preserves_active_run_on_memory_fidelity_template", func(t *testing.T) {
+		ctx := t.Context()
+		if _, err := rec.Client().EnsureActorTemplate(ctx, &ateapipb.ActorTemplate{
+			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "mem-tpl"},
+			SnapshotConfig: &ateapipb.SnapshotConfig{
+				PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
+			},
+		}); err != nil {
+			t.Fatalf("EnsureActorTemplate: %v", err)
+		}
+		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "mem-task"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "mem-tpl"}}},
+		}}); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		key := store.TaskKey{Atespace: "default", Name: "mem-task"}
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.Runnable = true
+			next.ActiveRunID = "r-7"
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply active run: %v", err)
+		}
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "mem-task"}); err != nil {
+			t.Fatalf("SuspendTask: %v", err)
+		}
+		row, err := applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow: %v", err)
+		}
+		if row.Runnable || row.ActiveRunID != "r-7" {
+			t.Errorf("after MEMORY suspend: Runnable=%v ActiveRunID=%q, want false / r-7", row.Runnable, row.ActiveRunID)
+		}
+	})
+
+	t.Run("suspend_checks_memory_fidelity_on_ax_prefixed_user_template", func(t *testing.T) {
+		ctx := t.Context()
+		if _, err := rec.Client().EnsureActorTemplate(ctx, &ateapipb.ActorTemplate{
+			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "ax-user-mem"},
+			SnapshotConfig: &ateapipb.SnapshotConfig{
+				PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
+			},
+		}); err != nil {
+			t.Fatalf("EnsureActorTemplate: %v", err)
+		}
+		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "ax-prefixed-mem-task"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ax-user-mem"}}},
+		}}); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		key := store.TaskKey{Atespace: "default", Name: "ax-prefixed-mem-task"}
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.Runnable = true
+			next.ActiveRunID = "r-8"
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply active run: %v", err)
+		}
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "ax-prefixed-mem-task"}); err != nil {
+			t.Fatalf("SuspendTask: %v", err)
+		}
+		row, err := applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow: %v", err)
+		}
+		if row.Runnable || row.ActiveRunID != "r-8" {
+			t.Errorf("after ax-prefixed MEMORY suspend: Runnable=%v ActiveRunID=%q, want false / r-8", row.Runnable, row.ActiveRunID)
+		}
+	})
+
+	t.Run("suspend_failure_preserves_active_run_and_token", func(t *testing.T) {
+		ctx := t.Context()
+		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "suspend-fail-task"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+		}}); err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "suspend-fail-task"}); err != nil {
+			t.Fatalf("ResumeTask: %v", err)
+		}
+		key := store.TaskKey{Atespace: "default", Name: "suspend-fail-task"}
+		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			next := current.Clone()
+			next.ActiveRunID = "r-9"
+			next.RunnerTokenHash = []byte("hash-9")
+			next.RunnerTokenConfirmed = true
+			next.ClaimNonce = "nonce-9"
+			return next, nil
+		}); err != nil {
+			t.Fatalf("Apply active run: %v", err)
+		}
+
+		sub.SetErrors(substratetest.Errors{
+			SuspendActor: status.Error(codes.Unavailable, "transient suspend failure"),
+		})
+		defer sub.SetErrors(substratetest.Errors{})
+
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "suspend-fail-task"}); status.Code(err) != codes.Unavailable {
+			t.Fatalf("SuspendTask = %v, want Unavailable", err)
+		}
+		row, err := applier.GetTaskRow(ctx, key)
+		if err != nil {
+			t.Fatalf("GetTaskRow: %v", err)
+		}
+		if !row.Runnable || row.ActiveRunID != "r-9" || string(row.RunnerTokenHash) != "hash-9" || !row.RunnerTokenConfirmed || row.ClaimNonce != "nonce-9" {
+			t.Errorf("failed SuspendTask corrupted run/token state: %+v", row)
+		}
+	})
 }

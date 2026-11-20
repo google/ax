@@ -155,11 +155,65 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 	if err := p.configureNodes(ctx, rt, nodes); err != nil {
 		return Info{}, err
 	}
+	p.warnIfNoEgress(ctx, rt, nodes)
 
 	return Info{
 		Name:        name,
 		KubeContext: kubeCtx,
 	}, nil
+}
+
+// egressProbeURL is the registry that serves Agent Substrate's images, the
+// first images a new cluster pulls.
+const egressProbeURL = "https://ghcr.io/v2/"
+
+// warnIfNoEgress warns when a Kind node cannot reach the image registry.
+//
+// The host checks (executil.CheckContainerHost) cannot see this: the host
+// itself usually has network access, and what fails is traffic from a
+// container on the Kind network, for example on a host with IPv4 forwarding
+// off. Without the warning the first sign is an image pull that fails inside
+// the cluster while `ax local start` waits for a rollout.
+//
+// It is a warning and not an error, because a cluster that gets its images
+// from a registry mirror works without reaching the registry itself.
+func (p *KindProvider) warnIfNoEgress(ctx context.Context, rt executil.ContainerRuntime, nodes []string) {
+	if len(nodes) == 0 {
+		return
+	}
+	node := nodes[0]
+	// The request runs in the node's network namespace, like the node's image
+	// pulls. Any HTTP answer, such as 401, means the registry is reachable.
+	res, err := p.Runner.Run(ctx, executil.Spec{
+		Name: rt.Binary,
+		Args: []string{"exec", node, "curl", "--silent", "--show-error", "--output", "/dev/null",
+			"--connect-timeout", "5", "--max-time", "10", egressProbeURL},
+	})
+	if err == nil || ctx.Err() != nil {
+		return
+	}
+	if res.ExitCode == 126 || res.ExitCode == 127 {
+		// The node image has no curl: nothing was learned.
+		return
+	}
+	detail := strings.TrimSpace(res.Stderr)
+	if i := strings.LastIndex(detail, "\n"); i >= 0 {
+		detail = strings.TrimSpace(detail[i+1:])
+	}
+	if detail == "" {
+		detail = err.Error()
+	}
+	cause := "Check for a proxy that containers do not use, or a firewall."
+	if !rt.IsPodman {
+		if fwd, fwdErr := p.Runner.Run(ctx, executil.Spec{
+			Name: rt.Binary,
+			Args: []string{"info", "--format", "{{.IPv4Forwarding}}"},
+		}); fwdErr == nil && strings.TrimSpace(fwd.Stdout) == "false" {
+			cause = "The Docker host has IPv4 forwarding off ('docker info' reports IPv4Forwarding: false), so its containers have no outbound network: turn on net.ipv4.ip_forward on the host, or use a host that allows it."
+		}
+	}
+	fmt.Fprintf(p.Out, "==> Warning: Kind node %s cannot reach %s (%s). The cluster pulls its images through this node, so the install is likely to fail on image pulls. %s\n",
+		node, egressProbeURL, detail, cause)
 }
 
 // Stop halts the Kind node containers (preserving cluster etcd and PVC state)

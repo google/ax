@@ -65,7 +65,7 @@ func main() {
 	// Commands that don't require an AX server connection
 	switch cmd {
 	case "version":
-		fmt.Printf("ax version %s (API v1alpha1)\n", version.Version)
+		fmt.Printf("ax version %s (API v1alpha1)\n", version.String())
 		return
 	case "help", "-h", "--help":
 		printUsage()
@@ -397,7 +397,10 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if outcome == "unchanged" && existing.GetStatus().GetPhase() == v1alpha1.WorkspacePhasePreparing {
 			outcome = "configured"
 		}
-		res, err := client.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
+		// CreateWorkspace returns only once the workspace is pre-warmed.
+		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lifecycleRPCTimeout)
+		defer cancel()
+		res, err := client.CreateWorkspace(createCtx, &v1alpha1.CreateWorkspaceRequest{Workspace: &ws})
 		return head.Kind, res.GetMetadata().GetName(), outcome, err
 
 	case v1alpha1.KindGateway:
@@ -473,6 +476,23 @@ func applyOutcome(lookupErr error, existingSpec, newSpec proto.Message) (string,
 	return "configured", nil
 }
 
+// listAll returns every resource of a list, following next page tokens until
+// the last page.
+func listAll[T any](list func(pageToken string) (page []T, nextPageToken string, err error)) ([]T, error) {
+	var all []T
+	for pageToken := ""; ; {
+		page, next, err := list(pageToken)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			return all, nil
+		}
+		pageToken = next
+	}
+}
+
 func runGet(serverURL, atespace string, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("specify resource to get (e.g. 'ax get tasks' or 'ax get task <name>')")
@@ -490,14 +510,17 @@ func runGet(serverURL, atespace string, args []string) error {
 	defer cancel()
 
 	if (resource == "tasks" || resource == "task") && len(args) == 1 {
-		resp, err := client.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: atespace})
+		tasks, err := listAll(func(pageToken string) ([]*v1alpha1.Task, string, error) {
+			resp, err := client.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: atespace, PageToken: pageToken})
+			return resp.GetTasks(), resp.GetNextPageToken(), err
+		})
 		if err != nil {
 			return fmt.Errorf("listing tasks: %w", err)
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
 		fmt.Fprintln(w, "NAME\tATESPACE\tSTATE\tACTOR\tAGE")
-		for _, t := range resp.Tasks {
+		for _, t := range tasks {
 			printTaskRow(w, t)
 		}
 		return w.Flush()
@@ -514,14 +537,17 @@ func runGet(serverURL, atespace string, args []string) error {
 	}
 
 	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
-		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
+		workspaces, err := listAll(func(pageToken string) ([]*v1alpha1.Workspace, string, error) {
+			resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace, PageToken: pageToken})
+			return resp.GetWorkspaces(), resp.GetNextPageToken(), err
+		})
 		if err != nil {
 			return fmt.Errorf("listing workspaces: %w", err)
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
 		fmt.Fprintln(w, "NAME\tATESPACE\tPHASE\tGIT-REPOS\tMCP-SERVERS")
-		for _, ws := range resp.Workspaces {
+		for _, ws := range workspaces {
 			printWorkspaceRow(w, ws)
 		}
 		return w.Flush()
@@ -538,12 +564,13 @@ func runGet(serverURL, atespace string, args []string) error {
 	}
 
 	if (resource == "gateways" || resource == "gateway") && len(args) == 1 {
-		resp, err := client.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: atespace})
+		gateways, err := listAll(func(pageToken string) ([]*v1alpha1.Gateway, string, error) {
+			resp, err := client.ListGateways(ctx, &v1alpha1.ListGatewaysRequest{Atespace: atespace, PageToken: pageToken})
+			return resp.GetGateways(), resp.GetNextPageToken(), err
+		})
 		if err != nil {
 			return fmt.Errorf("listing gateways: %w", err)
 		}
-
-		gateways := resp.Gateways
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
 		fmt.Fprintln(w, "NAME\tATESPACE\tEGRESS-RULES")
@@ -578,12 +605,13 @@ func runGet(serverURL, atespace string, args []string) error {
 	}
 
 	if (resource == "models" || resource == "model") && len(args) == 1 {
-		resp, err := client.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: atespace})
+		models, err := listAll(func(pageToken string) ([]*v1alpha1.Model, string, error) {
+			resp, err := client.ListModels(ctx, &v1alpha1.ListModelsRequest{Atespace: atespace, PageToken: pageToken})
+			return resp.GetModels(), resp.GetNextPageToken(), err
+		})
 		if err != nil {
 			return fmt.Errorf("listing models: %w", err)
 		}
-
-		models := resp.Models
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 3, ' ', 0)
 		fmt.Fprintln(w, "NAME\tATESPACE\tPROVIDER\tMODEL")

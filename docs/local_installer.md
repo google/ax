@@ -1,6 +1,6 @@
 # AX Local Installer & Multi-Cluster User Guide
 
-This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` in one command (`install.sh`), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), promoting a local task to it (`ax promote`), and cleaning up (`ax uninstall` + `ax local delete`).
+This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` (`install.sh`, or from source), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), doing the same from the AX Studio web app (`ax studio`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), promoting a local task to it (`ax promote`), and cleaning up (`ax uninstall` + `ax local delete`).
 
 ---
 
@@ -31,7 +31,19 @@ ax local status
 Paste this prompt into Claude Code, Gemini CLI, Antigravity, or Cursor to let your local coding agent check prerequisites and set up AX automatically:
 
 ```text
-Help me install AX on this computer and get a local isolated agent sandbox ready. Read docs/local_installer.md first. Check my operating system, CPU architecture, free disk space, and container runtime (on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a Linux >= 6.8 kernel is running; if not, install/start Colima with `brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`). Install or build `ax`, verify `ax version`, run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`), and verify `ax local status`. Let me handle any password or cloud sign-in prompts.
+Help me install AX on this computer and get a local isolated agent sandbox ready.
+Read https://github.com/google/ax/blob/main/docs/local_installer.md first.
+Check my operating system, CPU architecture, free disk space, and container runtime
+(on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a
+Linux >= 6.8 kernel is running; if not, install/start Colima with
+`brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`).
+Install `ax` with the installer from that guide, then run `~/.ax/bin/ax version`.
+If that fails, the install did not work: stop and tell me, or build `ax` from source
+as the guide describes.
+Run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`),
+and verify `ax local status`.
+If a step fails, show me its error message and stop instead of retrying.
+Let me handle any password or cloud sign-in prompts.
 ```
 
 ---
@@ -70,9 +82,18 @@ ax version
 ax local --help
 ```
 
-*(When an AX Studio release is available, `install.sh` also installs `~/.ax/bin/ax-studio` so you can launch the local web UI via `ax studio`; set `AX_SKIP_STUDIO=1` to install only `ax`.)*
+`install.sh` installs `ax` into `~/.ax/bin`. It also installs `ax-studio` there when it knows which AX Studio release to use: the one pinned in the script, or the one you name with `AX_STUDIO_VERSION` (and `AX_STUDIO_GITHUB_REPO` for a fork). Without either it installs only `ax`, as it does with `AX_SKIP_STUDIO=1`. It prints `==> Installed ax-studio at ...` when it installed Studio; a Studio download that fails is skipped without an error.
 
-### Option B: Build from a local repository checkout
+### Option B: Build from source (needs Go 1.27 or later)
+
+Without a checkout:
+
+```bash
+go install github.com/google/ax/cmd/ax@main      # lands in $(go env GOPATH)/bin, usually ~/go/bin
+ax local --help
+```
+
+From a local repository checkout:
 
 ```bash
 export GOTOOLCHAIN=auto
@@ -80,6 +101,16 @@ go build -o "$PWD/bin/ax" ./cmd/ax
 export PATH="$PWD/bin:$PATH"
 ax local --help
 ```
+
+### Optional: Install AX Studio
+
+[AX Studio](https://github.com/agentexecutor/studio#readme) is the local web app for AX (see [Step 2b](#step-2b-or-use-ax-studio-ax-studio)). It is a separate binary, `ax-studio`. If `install.sh` did not install it, build it from source (needs Go 1.27 or later):
+
+```bash
+go install github.com/agentexecutor/studio/cmd/ax-studio@latest
+```
+
+`ax studio` runs the `ax-studio` named by `$AX_STUDIO_BIN`, else `~/.ax/bin/ax-studio`, else the one on `PATH`.
 
 ### Expected Behavior
 - Produces a single self-contained `ax` binary (with `@sha256`-pinned Agent Substrate `v1.0.0` manifests and canonical AX deployment manifests embedded via `//go:embed`).
@@ -96,6 +127,8 @@ ax local start \
 
 *(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
+*(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--runner-volume-image` and each task's `spec.profile.image`.)*
+
 *(Note: `--workers` defaults to `1` to fit comfortably inside 6–8 GiB macOS container VMs; pass `--workers 2` if you need multi-worker concurrency.)*
 
 ### Expected Behavior (~2–3 minutes on cold start)
@@ -105,6 +138,7 @@ The installer prints progress (`==>`) across three stages:
    - Verifies that the container host / macOS Linux VM runs in rootful mode with Linux kernel `>= 6.8` and `>= 4 GiB` RAM, and checks that any pre-existing `ax-local` kubeconfig context belongs to `kind-ax-local`.
    - Uses `kind >= v0.32.0` and `kubectl` from `PATH` when available, or downloads and SHA-256-verifies `kind v0.32.0` and `kubectl v1.36.0` into `~/.ax/bin/`.
    - Creates the Kubernetes `v1.36.1` Kind cluster (`ax-local`) with `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and `PodCertificateRequest` (`certificates.k8s.io/v1beta1=true`) enabled, configures `net.ipv4.conf.all.proxy_arp=1`, and switches your active kubeconfig context to **`ax-local`**.
+   - Checks from inside the Kind node that `https://ghcr.io` is reachable, and prints a warning when it is not (for example on a Docker host with IPv4 forwarding off, where containers have no outbound network and every image pull would fail).
 2. **Agent Substrate `v1.0.0` Bootstrap**
    - Applies Substrate CRDs, generates `podcertificate-controller-system` (`Ed25519`) and `ate-system` (`ECDSA P-256` + `ES256` JWK) CA pool Secrets in pure Go, initializes `ate-system/postgres-0` over PodCertificate mTLS, and rolls out `ate-api-server`, `atenet-router`, `atenet-egress` (`--credential-provider={"name":"k8s.io"}`), `rustfs` (`gs://ate-snapshots/`), `k8s-credential-provider`, and the `ax-workers` gVisor `WorkerPool`.
 3. **AX `@sha256` Digest Resolution & Deployment**
@@ -114,6 +148,35 @@ The installer prints progress (`==>`) across three stages:
      ```text
      Local environment "ax-local" is ready (active context: ax-local).
      ```
+
+While it waits for a rollout, `ax` reads the status of the rollout's pods every 15 seconds and prints it when it changes. If the rollout times out, the error ends with the last status, in Kubernetes' own words:
+
+```text
+==> Deploying ax-server (...)...
+    ax-system/deployment/ax-server is not ready: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
+Error: waiting for ax-system/deployment/ax-server rollout: timed out after 3m0s: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
+```
+
+---
+
+## Step 2b: Or Use AX Studio (`ax studio`)
+
+AX Studio does Step 2 and Step 4 from a web page: it checks this computer, runs `ax local start` and shows each stage, then lets you create tasks, read their logs, and open a shell in them.
+
+```bash
+ax studio                 # opens http://127.0.0.1:8080
+ax studio --port 8081     # another port
+ax studio --no-open       # do not open a browser (SSH sessions, scripts)
+```
+
+- `ax studio` starts `ax-studio` with your `ax` (`--ax-bin`) and AX namespace (`-n`), and passes any other flags through. `ax studio --help` lists them.
+- Studio needs no image flags: it deploys the AX images it was built with. `$AX_SERVER_IMAGE`, or the **AX images** fields on its setup page, override them.
+- Studio works with the local cluster only. It names `--context ax-local` on every command, whatever your current context is, and never edits your kubeconfig. Remote clusters (Step 5) are CLI-only.
+- Studio and `ax-server` must be built from compatible AX versions; Studio reports a mismatch and offers to redeploy `ax-server`.
+- It listens on `127.0.0.1` only. To use it from another computer, forward the port: `ssh -N -L 8080:127.0.0.1:8080 <host-running-studio>`, then open `http://localhost:8080`.
+- `Ctrl-C` stops only the web app. The local cluster and its tasks keep running.
+
+Every action in Studio shows the `ax` command that does the same, so the rest of this guide applies unchanged. See the [AX Studio README](https://github.com/agentexecutor/studio#readme) for a tour and troubleshooting.
 
 ---
 
@@ -224,7 +287,7 @@ ax install \
 *(Pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
 
 #### Expected Behavior
-- Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and, when set, `--runner-volume-image` via `crane`.
+- Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
 - Creates `ax-system` with `ate.dev/api-access=true` and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider-namespace-policy`, waiting for rollouts to finish.
 - Provisions the `ax-postgres` PVC and rolls out `ax-postgres` and `ax-server`.
 
@@ -272,9 +335,9 @@ ax get tasks
 #### Expected Behavior
 - `--preflight-only` prints what would change on GKE, such as `task.ax.io/demo-task replaced (preflight only)`, and changes nothing. Without it, the same lines are printed as each change is made, ending with `task.ax.io/demo-task resumed`.
 - The promoted Task has the same `spec` as the local one, including `spec.sessionId`. GKE assigns its `metadata.uid`, timestamps, and `status`.
-- `--suspend-source` suspends the local `demo-task` once GKE has created the Task and before GKE resumes it (`task.ax.io/demo-task suspended on the source`), so the Task never runs on both clusters. If GKE then cannot resume it, the local Task stays suspended; resume it on either cluster. Without `--suspend-source` the local cluster is only read and the local Task keeps running.
-- A Workspace or Gateway the Task binds is created on GKE when it is missing. A Gateway that GKE already has is reused as it is (`reused`), so each cluster keeps its own egress rules and credentials. A Workspace that GKE already has must have the same spec, because Workspaces are immutable.
-- The sandbox is not copied: on GKE the Task starts as a new Task does, in a workspace built from the Workspace's `spec.setup`. Kubernetes Secrets that a Gateway names in `credentialUri` are not copied either: when `ax promote` creates a Gateway that injects credentials, it prints a note that names them. Create those Secrets on GKE (see [Injecting credentials](manifests.md#injecting-credentials)); until they exist, the Task's requests through the Gateway get a `403`.
+- `--suspend-source` suspends the local `demo-task` once GKE has created the Task and before GKE resumes it (`task.ax.io/demo-task suspended on the source`), so the Task never runs on both clusters. If GKE then cannot resume it, the local Task stays suspended; resume it on either cluster. A Task that has already run to its end, so that its status has an outcome, is not suspended, because it is no longer running. Without `--suspend-source` the local cluster is only read and the local Task keeps running.
+- A Workspace or Gateway the Task binds is created on GKE when it is missing. So is the Gateway that a missing Workspace names in `spec.setup.gateway`, because GKE sets the Workspace up through it. A Gateway that GKE already has is reused as it is (`reused`), so each cluster keeps its own egress rules and credentials. A Workspace that GKE already has must have the same spec, because Workspaces are immutable.
+- The sandbox is not copied: on GKE the Task starts as a new Task does, in a workspace built from the Workspace's `spec.setup`. Kubernetes Secrets that a Gateway names in `credentialUri` are not copied either: when `ax promote` creates a Gateway that injects credentials, it prints a note that names them. Create those Secrets on GKE (see [Injecting credentials](manifests.md#injecting-credentials)); until they exist, the Task's requests through the Gateway get a `403`. The setup of a new Workspace gets the same `403`, which fails the promotion, so create the Secrets that its `spec.setup.gateway` needs before promoting.
 - Without `--replace`, promoting a Task that GKE already has fails with `task default/demo-task already exists on target; pass --replace to recreate it`.
 - Other flags: `--no-resume` creates the Task on the target without resuming it, `--to-atespace` promotes into another atespace, `--to-namespace` names the namespace AX runs in on the target (default `ax-system`), and `--to-server` addresses the target by its AX server address instead of a kube context. The global flags (`--context`, `--server`, `-n`, `-a`) select the source.
 
@@ -365,4 +428,6 @@ ax ssh demo-task -- cat /workspace/durable.txt
 
 #### Expected Behavior
 - `ax local stop` halts the `ax-local-control-plane` container and stops its background tunnel (`State: Stopped`).
-- `ax local start` restarts the existing node container, refreshes its API server port and `proxy_arp=1` sysctl in ~15–30 seconds, skips re-bootstrapping Substrate once pods report Ready, and restores `demo-task`'s `/workspace/durable.txt` (`durable-across-suspend`) on `ax resume`.
+- `ax local start` restarts the existing node container and refreshes its API server port and `proxy_arp=1` sysctl. It then waits for the Substrate pods to become Ready again and skips re-bootstrapping Substrate once they are. Nothing is reinstalled, but the pods restart one after another, so this can take about as long as a cold start (close to 3 minutes in one run on a Linux host).
+- Pass the same image flags (or environment variables) as the first `ax local start`. A different value, including setting `--runner-volume-image` only the second time, rolls out `ax-server` again.
+- `ax resume` restores `demo-task`'s `/workspace/durable.txt` (`durable-across-suspend`).

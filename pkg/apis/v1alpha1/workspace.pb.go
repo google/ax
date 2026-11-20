@@ -93,12 +93,13 @@ func (x *WorkspaceRef) GetPath() string {
 // Workspace defines a pre-warmed, shareable environment recipe and its cached
 // snapshots across one or more compute Profiles.
 type Workspace struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec          *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
-	Status        *WorkspaceStatus       `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Metadata   *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec       *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	// Set by the server; ignored on input.
+	Status        *WorkspaceStatus `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -174,13 +175,14 @@ type WorkspaceSpec struct {
 	// Resolved dynamically by ax-server on every Task wakeup (create/resume) and
 	// delivered to the runner rather than baked into an immutable snapshot.
 	Mcp *MCPConfig `protobuf:"bytes,1,opt,name=mcp,proto3" json:"mcp,omitempty"`
-	// Compute profile (image, resources, ate_template) used to pre-warm the
-	// workspace snapshot upon Workspace creation for fast warm task startup. A
-	// pre-warmed Workspace with a profile or setup steps must set image or
-	// ate_template.name.
+	// Default compute profile (image, resources, ate_template) used to
+	// pre-warm the workspace snapshot upon Workspace creation for fast warm task
+	// startup, and used as the profile of Tasks binding this Workspace that omit
+	// TaskSpec.profile. When set, it must set image or ate_template.name; a
+	// Workspace with setup steps must set it.
 	//
-	// WorkspaceSpec.profile never restricts or merges fields into a
-	// TaskSpec.profile: if a Task's profile differs from
+	// WorkspaceSpec.profile never restricts or merges fields into an explicit
+	// TaskSpec.profile: if a Task sets its own profile and it differs from
 	// WorkspaceSpec.profile, the Task uses its own profile as-is and cold-boots
 	// workspace setup rather than starting from the pre-warmed snapshot.
 	Profile *Profile `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
@@ -881,10 +883,14 @@ func (x *GetWorkspaceRequest) GetName() string {
 }
 
 type ListWorkspacesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
-	Limit         int64                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Atespace string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	// Maximum number of workspaces to return; the server may return fewer. If unset,
+	// at most 50 are returned. Values above 1000 are coerced to 1000.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Page token from a previous ListWorkspaces response. Leave empty for the first
+	// page.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -926,23 +932,25 @@ func (x *ListWorkspacesRequest) GetAtespace() string {
 	return ""
 }
 
-func (x *ListWorkspacesRequest) GetLimit() int64 {
+func (x *ListWorkspacesRequest) GetPageSize() int32 {
 	if x != nil {
-		return x.Limit
+		return x.PageSize
 	}
 	return 0
 }
 
-func (x *ListWorkspacesRequest) GetOffset() int64 {
+func (x *ListWorkspacesRequest) GetPageToken() string {
 	if x != nil {
-		return x.Offset
+		return x.PageToken
 	}
-	return 0
+	return ""
 }
 
 type ListWorkspacesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Workspaces    []*Workspace           `protobuf:"bytes,1,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Workspaces []*Workspace           `protobuf:"bytes,1,rep,name=workspaces,proto3" json:"workspaces,omitempty"`
+	// Token for the next page. Empty if this is the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -982,6 +990,13 @@ func (x *ListWorkspacesResponse) GetWorkspaces() []*Workspace {
 		return x.Workspaces
 	}
 	return nil
+}
+
+func (x *ListWorkspacesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 // CreateWorkspaceRequest creates an immutable Workspace resource.
@@ -1147,15 +1162,17 @@ const file_pkg_apis_v1alpha1_workspace_proto_rawDesc = "" +
 	"\x10last_setup_error\x18\x03 \x01(\tR\x0elastSetupError\"E\n" +
 	"\x13GetWorkspaceRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"a\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"o\n" +
 	"\x15ListWorkspacesRequest\x12\x1a\n" +
-	"\batespace\x18\x01 \x01(\tR\batespace\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x03R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x03R\x06offset\"P\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"x\n" +
 	"\x16ListWorkspacesResponse\x126\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x16.ax.v1alpha1.WorkspaceR\n" +
-	"workspaces\"N\n" +
+	"workspaces\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"N\n" +
 	"\x16CreateWorkspaceRequest\x124\n" +
 	"\tworkspace\x18\x01 \x01(\v2\x16.ax.v1alpha1.WorkspaceR\tworkspace\"H\n" +
 	"\x16DeleteWorkspaceRequest\x12\x1a\n" +

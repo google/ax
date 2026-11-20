@@ -23,8 +23,6 @@
 # The cluster must also grant atespace default the ax-system namespace in
 # Substrate's k8s-credential-provider-namespace-policy; without the grant, the
 # request gets a 403. See "Injecting credentials" in docs/manifests.md.
-#
-# TODO(@Lukeluds): Add any other hosts the starter image needs, such as the ones it installs agy from.
 apiVersion: ax.io/v1alpha1
 kind: Gateway
 metadata:
@@ -32,6 +30,10 @@ metadata:
   atespace: default
 spec:
   egress:
+    - tlsPassthrough:
+        hostnames: ["storage.googleapis.com"] # runtime agy install
+        ports:
+          numbers: [443]
     - https:
         hostnames: ["generativelanguage.googleapis.com"]
         effects:

@@ -198,12 +198,11 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	}
 }
 
-// PrewarmEnabled reports whether a SetupCoordinator has been wired into
-// ax-server.
-//
-// TODO: Remove this temporary wiring gate (and firstUnimplementedWorkspaceField
-// in server/workspace.go) once the pull-based runner SetupCoordinator is always
-// injected in cmd/ax-server/main.go.
+// PrewarmEnabled reports whether m has a SetupCoordinator to run setup actors
+// with. cmd/ax-server always provides one (its runner server) unless the runner
+// server is disabled with an empty --runner-addr; without one, Workspaces are
+// stored but never pre-warmed, tasks run spec.setup in their own sandbox, and
+// spec.setup.gateway has no effect.
 func (m *WorkspaceManager) PrewarmEnabled() bool {
 	return m != nil && m.coordinator != nil
 }

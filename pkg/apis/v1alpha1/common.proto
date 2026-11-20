@@ -24,15 +24,17 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 message ObjectMeta {
   string name = 1;
   string atespace = 2;
+  // Set by the server; ignored on input.
   google.protobuf.Timestamp create_time = 3;
-  // Server-assigned UUID.
+  // Server-assigned UUID; ignored on input.
   string uid = 4;
   // Arbitrary key-value labels.
   map<string, string> labels = 5;
   // Authenticated creator identity.
   string owner = 6;
+  // Set by the server; ignored on input.
   google.protobuf.Timestamp update_time = 7;
-  // Set while resource deletion is in progress.
+  // Set while resource deletion is in progress; ignored on input.
   google.protobuf.Timestamp delete_time = 8;
 }
 

@@ -97,28 +97,39 @@ instead. No mocking library is in `go.mod`.
   `spec.profile.image` fails at ActorTemplate creation with reason
   `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
   `bin/ax-server.digest` / `bin/ax-task-runner.digest` for this reason.
-- There is no server-wide default task image: `apivalidation.ValidateTask`
-  rejects a Task without `spec.profile.image` or `spec.profile.ateTemplate.name`,
-  and `ResolveProfileTemplate` errors on an empty image. E2E Task manifests get
-  the image from `{{taskImage}}` (`$AX_E2E_TASK_IMAGE`, written to
-  `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
+- There is no server-wide default task image. A set `spec.profile` must name
+  `image` or `ateTemplate.name` (`validateProfile` in
+  `internal/apivalidation/common.go`), a Workspace with setup steps must set
+  one, and a Task that omits it inherits its Workspace's (`EffectiveProfile`);
+  `CreateTask` in `internal/server/server.go` rejects a Task with neither.
+  `ResolveProfileTemplate` errors on an empty image. E2E Task and Workspace
+  manifests get the image from `{{taskImage}}` (`$AX_E2E_TASK_IMAGE`, written
+  to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
   stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
   its readiness probe (`internal/controller/reconciler.go`), and `ax ssh`
   connects through `atenet-router`.
-- Egress: an actor without an egress policy has no outbound access. For a
-  task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
-  asks Substrate whether the actor has a policy. If it has none, `bindGateway`
-  copies the Gateway's rules to the actor as its one policy (named `default`).
-  An actor that has a policy keeps it, so the rules are copied once and never
-  updated. `bindGateway` runs after the actor is suspended (`CreateTask`,
+- Egress: an actor without an egress policy has no outbound access. For
+  every task, `bindGateway` (`internal/controller/reconciler.go`) asks
+  Substrate whether the actor has a policy. If it has none, `bindGateway`
+  creates its one policy (named `default`): the runner rule
+  (`substrate.RunnerEgressRule`), then the rules of the Gateway the task
+  binds, if any. An actor that has a policy keeps it, so the rules are copied
+  once and never updated; Substrate deletes the policy with the actor.
+  `bindGateway` runs after the actor is suspended (`CreateTask`,
   `SuspendTask`) and before it is resumed (`ResumeTask`). Substrate validates
   the rules when they are copied. `bindGateway` fails with reason
   `GatewayBindingFailed` when Substrate refuses them, or when the actor has no
   policy and the Gateway cannot be loaded. `SuspendTask` and `ResumeTask` do
   not fail on the Gateway themselves (`fetchGateway` in
-  `internal/server/server.go`), so a suspend always reaches `SuspendActor`. A
-  task without a Gateway makes no egress policy call at all.
+  `internal/server/server.go`), so a suspend always reaches `SuspendActor`.
+- Substrate's egress gateway reuses an Actor JWT by actor name and audiences
+  (agent-substrate/substrate#2208), and ax-server's runner endpoint refuses a
+  JWT of another actor UID (`internal/runnerhttp/server.go`). So `bindGateway`
+  adds an extra audience, unique to the policy, to the runner rule: a task
+  recreated under the same name then gets a JWT for its new actor. Its first
+  calls can still fail for about 10 seconds, until the gateway reads the new
+  policy.
 - `status.actorUid` is read live by `setActorStatus` in
   `internal/server/server.go` and cleared by `storedStatus` before writes.
   It changes when Substrate recreates the actor and is empty when the actor

@@ -22,10 +22,10 @@
 # Worker selection is cluster-wide (matched by sandbox class and labels), so
 # the namespace below only decides where the worker pods are managed.
 #
-# The `ko://` worker image builds from Substrate sources, so apply this file
-# with `ko apply` from a Substrate checkout:
+# The worker image is the published Substrate v1.0.0 release, pinned by
+# digest, so this file applies as is:
 #
-#   KO_DOCKER_REPO=<your-registry> ko apply -f <path-to-this-file>
+#   kubectl apply -f <path-to-this-file>
 #
 # Substrate requires every pool to name its sandbox class. Leaving out
 # `configRef` uses the platform's default gVisor SandboxConfig.
@@ -36,7 +36,7 @@ metadata:
   namespace: default
 spec:
   replicas: 2
-  workerImage: ko://go.ate.dev/substrate/cmd/ateworker-gvisor
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0@sha256:f8987236c6256f58c4b2625e543b43f4ae4bdded6ee6821c03d966effb7c0f17
   sandboxClasses:
     - name: gvisor
   template:

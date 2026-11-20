@@ -51,6 +51,7 @@ func TestValidateWorkspace_Valid(t *testing.T) {
 		{
 			name: "local_repo_fixture_path",
 			spec: &v1alpha1.WorkspaceSpec{
+				Profile: &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"},
 				Setup: &v1alpha1.WorkspaceSetup{
 					Git: []*v1alpha1.GitRepo{{Repo: "/opt/e2e-fixtures/sample-repo.git", Ref: "main"}},
 				},
@@ -302,7 +303,7 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 	}
 }
 
-func TestValidateWorkspacePrewarm(t *testing.T) {
+func TestValidateWorkspace_ProfileImage(t *testing.T) {
 	img := &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"}
 	mcp := &v1alpha1.MCPConfig{Servers: []*v1alpha1.MCPServer{{Name: "gh", Endpoint: "https://example.com/mcp"}}}
 	tests := []struct {
@@ -316,16 +317,18 @@ func TestValidateWorkspacePrewarm(t *testing.T) {
 		{name: "ateTemplate", spec: &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "tpl"}}}},
 		{name: "setup_without_profile", spec: &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"npm ci"}}}, wantErr: true},
 		{name: "profile_without_image", spec: &v1alpha1.WorkspaceSpec{Profile: &v1alpha1.Profile{Resources: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}}}}, wantErr: true},
+		{name: "setup_gateway_only", spec: &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Gateway: &v1alpha1.GatewayRef{Name: "gw"}}}},
+		{name: "git_without_profile", spec: &v1alpha1.WorkspaceSpec{Setup: &v1alpha1.WorkspaceSetup{Git: []*v1alpha1.GitRepo{{Repo: "https://github.com/google/ax"}}}}, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := apivalidation.ValidateWorkspacePrewarm(&v1alpha1.Workspace{Spec: tc.spec})
+			err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws"}, Spec: tc.spec})
 			if tc.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "spec.profile: image or ateTemplate.name is required") {
-					t.Fatalf("ValidateWorkspacePrewarm() = %v, want image required", err)
+					t.Fatalf("ValidateWorkspace() = %v, want image required", err)
 				}
 			} else if err != nil {
-				t.Fatalf("ValidateWorkspacePrewarm() = %v, want nil", err)
+				t.Fatalf("ValidateWorkspace() = %v, want nil", err)
 			}
 		})
 	}

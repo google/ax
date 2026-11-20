@@ -260,8 +260,14 @@ func (x *GetGatewayRequest) GetName() string {
 }
 
 type ListGatewaysRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Atespace string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	// Maximum number of gateways to return; the server may return fewer. If unset,
+	// at most 50 are returned. Values above 1000 are coerced to 1000.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Page token from a previous ListGateways response. Leave empty for the first
+	// page.
+	PageToken     string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -303,9 +309,25 @@ func (x *ListGatewaysRequest) GetAtespace() string {
 	return ""
 }
 
+func (x *ListGatewaysRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListGatewaysRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListGatewaysResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Gateways      []*Gateway             `protobuf:"bytes,1,rep,name=gateways,proto3" json:"gateways,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Gateways []*Gateway             `protobuf:"bytes,1,rep,name=gateways,proto3" json:"gateways,omitempty"`
+	// Token for the next page. Empty if this is the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -345,6 +367,13 @@ func (x *ListGatewaysResponse) GetGateways() []*Gateway {
 		return x.Gateways
 	}
 	return nil
+}
+
+func (x *ListGatewaysResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type CreateGatewayRequest struct {
@@ -505,11 +534,15 @@ const file_pkg_apis_v1alpha1_gateway_proto_rawDesc = "" +
 	"\x06egress\x18\x01 \x03(\v2\x1f.substrate.ateapi.v1.EgressRuleR\x06egress\"C\n" +
 	"\x11GetGatewayRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"1\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"m\n" +
 	"\x13ListGatewaysRequest\x12\x1a\n" +
-	"\batespace\x18\x01 \x01(\tR\batespace\"H\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"p\n" +
 	"\x14ListGatewaysResponse\x120\n" +
-	"\bgateways\x18\x01 \x03(\v2\x14.ax.v1alpha1.GatewayR\bgateways\"F\n" +
+	"\bgateways\x18\x01 \x03(\v2\x14.ax.v1alpha1.GatewayR\bgateways\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"F\n" +
 	"\x14CreateGatewayRequest\x12.\n" +
 	"\agateway\x18\x01 \x01(\v2\x14.ax.v1alpha1.GatewayR\agateway\"F\n" +
 	"\x14UpdateGatewayRequest\x12.\n" +

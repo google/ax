@@ -17,7 +17,6 @@ package server_test
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -104,6 +103,7 @@ func TestCreateWorkspace_Immutability(t *testing.T) {
 	ctx := t.Context()
 
 	wsSpec := &v1alpha1.WorkspaceSpec{
+		Profile: prewarmProfile,
 		Setup: &v1alpha1.WorkspaceSetup{
 			Commands: []string{"echo setup"},
 		},
@@ -135,100 +135,13 @@ func TestCreateWorkspace_Immutability(t *testing.T) {
 		Workspace: &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "imm-ws"},
 			Spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{Commands: []string{"echo mutated"}},
+				Profile: prewarmProfile,
+				Setup:   &v1alpha1.WorkspaceSetup{Commands: []string{"echo mutated"}},
 			},
 		},
 	})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("CreateWorkspace(mutated) = %v, want FailedPrecondition", err)
-	}
-}
-
-func TestCreateWorkspace_RejectsUnimplementedFields(t *testing.T) {
-	srv := newWorkspaceTestServer(t)
-
-	tests := []struct {
-		name      string
-		spec      *v1alpha1.WorkspaceSpec
-		wantField string
-	}{
-		{
-			name: "profile",
-			spec: &v1alpha1.WorkspaceSpec{
-				Profile: &v1alpha1.Profile{
-					Resources: &v1alpha1.ResourcesSpec{
-						Limits: &v1alpha1.ResourceList{Cpu: "1", Memory: "512Mi"},
-					},
-				},
-			},
-			wantField: "spec.profile is not supported yet",
-		},
-		{
-			name: "setup_gateway",
-			spec: &v1alpha1.WorkspaceSpec{
-				Setup: &v1alpha1.WorkspaceSetup{
-					Gateway: &v1alpha1.GatewayRef{Name: "build-gw"},
-				},
-			},
-			wantField: "spec.setup.gateway is not supported yet",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
-				Workspace: &v1alpha1.Workspace{
-					Metadata: &v1alpha1.ObjectMeta{Name: "unimpl-ws"},
-					Spec:     tc.spec,
-				},
-			})
-			if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), tc.wantField) {
-				t.Fatalf("CreateWorkspace() = %v, want Unimplemented containing %q", err, tc.wantField)
-			}
-		})
-	}
-}
-
-func TestListWorkspaces_Pagination(t *testing.T) {
-	srv := newWorkspaceTestServer(t)
-	ctx := t.Context()
-
-	for _, name := range []string{"ws-a", "ws-b", "ws-c"} {
-		if _, err := srv.CreateWorkspace(ctx, &v1alpha1.CreateWorkspaceRequest{
-			Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: name}},
-		}); err != nil {
-			t.Fatalf("CreateWorkspace(%s) failed: %v", name, err)
-		}
-	}
-
-	tests := []struct {
-		name   string
-		limit  int64
-		offset int64
-		want   []string
-	}{
-		{name: "first_page", limit: 2, offset: 0, want: []string{"ws-a", "ws-b"}},
-		{name: "middle_page", limit: 1, offset: 1, want: []string{"ws-b"}},
-		{name: "out_of_range", limit: 10, offset: 99, want: nil},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			resp, err := srv.ListWorkspaces(t.Context(), &v1alpha1.ListWorkspacesRequest{
-				Atespace: "default",
-				Limit:    tc.limit,
-				Offset:   tc.offset,
-			})
-			if err != nil {
-				t.Fatalf("ListWorkspaces() failed: %v", err)
-			}
-			var got []string
-			for _, ws := range resp.GetWorkspaces() {
-				got = append(got, ws.GetMetadata().GetName())
-			}
-			if !slices.Equal(got, tc.want) {
-				t.Fatalf("ListWorkspaces(limit=%d, offset=%d) = %v, want %v", tc.limit, tc.offset, got, tc.want)
-			}
-		})
 	}
 }
 
@@ -330,7 +243,7 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 	}
 }
 
-func TestWorkspacePrewarm_RequiresImage(t *testing.T) {
+func TestCreateWorkspace_SetupRequiresImage(t *testing.T) {
 	coord := &testSetupCoordinator{}
 	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
 

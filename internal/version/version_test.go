@@ -14,7 +14,10 @@
 
 package version
 
-import "testing"
+import (
+	"runtime/debug"
+	"testing"
+)
 
 func TestImage(t *testing.T) {
 	orig := Version
@@ -35,5 +38,32 @@ func TestImage(t *testing.T) {
 		if got := Image("ax-server"); got != tc.want {
 			t.Errorf("Version=%q: Image(ax-server) = %q, want %q", tc.version, got, tc.want)
 		}
+	}
+}
+
+func TestDevVersion(t *testing.T) {
+	const rev = "8e2a187a622c3d33312ba4b349f921efe604fe72"
+	for _, tc := range []struct {
+		name     string
+		settings []debug.BuildSetting
+		want     string
+	}{
+		{"no VCS information", []debug.BuildSetting{{Key: "GOOS", Value: "linux"}}, "dev"},
+		{"clean checkout", []debug.BuildSetting{{Key: "vcs.revision", Value: rev}, {Key: "vcs.modified", Value: "false"}}, "dev+8e2a187a622c"},
+		{"modified checkout", []debug.BuildSetting{{Key: "vcs.revision", Value: rev}, {Key: "vcs.modified", Value: "true"}}, "dev+8e2a187a622c-dirty"},
+		{"short revision", []debug.BuildSetting{{Key: "vcs.revision", Value: "abc"}}, "dev+abc"},
+	} {
+		if got := devVersion(tc.settings); got != tc.want {
+			t.Errorf("%s: devVersion = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestStringOfReleaseBuild(t *testing.T) {
+	orig := Version
+	t.Cleanup(func() { Version = orig })
+	Version = "v0.4.0"
+	if got := String(); got != "v0.4.0" {
+		t.Errorf("String() = %q, want %q", got, "v0.4.0")
 	}
 }

@@ -38,18 +38,20 @@ const (
 
 // ObjectMeta is metadata for AX resources.
 type ObjectMeta struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Name       string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Atespace   string                 `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Atespace string                 `protobuf:"bytes,2,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	// Set by the server; ignored on input.
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
-	// Server-assigned UUID.
+	// Server-assigned UUID; ignored on input.
 	Uid string `protobuf:"bytes,4,opt,name=uid,proto3" json:"uid,omitempty"`
 	// Arbitrary key-value labels.
 	Labels map[string]string `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Authenticated creator identity.
-	Owner      string                 `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
+	Owner string `protobuf:"bytes,6,opt,name=owner,proto3" json:"owner,omitempty"`
+	// Set by the server; ignored on input.
 	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
-	// Set while resource deletion is in progress.
+	// Set while resource deletion is in progress; ignored on input.
 	DeleteTime    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=delete_time,json=deleteTime,proto3" json:"delete_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

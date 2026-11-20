@@ -34,9 +34,7 @@ import (
 //
 // Workspace.spec.profile exists to pre-warm a default workspace snapshot for
 // fast warm task startup; it does not constrain or bleed fields into an
-// explicit Task.spec.profile. apivalidation.ValidateTask requires every new
-// Task to set Task.spec.profile, so the fallback below only applies to Tasks
-// stored before that rule:
+// explicit Task.spec.profile:
 //   - When taskProfile is non-empty (sets image, ateTemplate.name, or any
 //     CPU/memory limit), EffectiveProfile returns a copy of taskProfile as-is
 //     and ignores workspaceProfile completely. Omitted fields within
