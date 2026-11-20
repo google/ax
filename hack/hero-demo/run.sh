@@ -322,7 +322,7 @@ step4_custom_image_task() {
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the custom image task"
     return
   fi
-  # The image is a plain one: ax-server mounts ax-task-runner into it from its
+  # The image is a plain one: ax-server mounts ax-runner into it from its
   # runner volume image.
   start_task "${step}" "${CUSTOM_TASK}" "${CUSTOM_MANIFEST}" task-custom.yaml || return
   # The command waits on its first run, so the task can be suspended while it

@@ -14,7 +14,7 @@
 
 # Pushing a vX.Y.Z[-PRERELEASE] tag publishes a release:
 #
-#   1. images:  builds ax-server, ax-task-runner, and ax-runner-volume for
+#   1. images:  builds ax-server, ax-runner, and ax-runner-volume for
 #               linux/amd64 and linux/arm64 and pushes them to
 #               ghcr.io/google/ax/<image>:<tag>.
 #   2. release: builds the ax CLI, renders deploy/ax-server.yaml with
@@ -52,7 +52,7 @@ on:
     - 'go.sum'
     - 'cmd/ax/**'
     - 'cmd/ax-server/**'
-    - 'cmd/ax-task-runner/**'
+    - 'cmd/ax-runner/**'
     - 'internal/version/**'
   workflow_dispatch:
     inputs:
@@ -106,7 +106,7 @@ jobs:
         - 5000:5000
     outputs:
       server_image: ${{ steps.publish.outputs.AX_SERVER_IMAGE }}
-      task_image: ${{ steps.publish.outputs.AX_TASK_RUNNER_IMAGE }}
+      task_image: ${{ steps.publish.outputs.AX_RUNNER_IMAGE }}
       runner_volume_image: ${{ steps.publish.outputs.AX_RUNNER_VOLUME_REF }}
     steps:
     - name: Checkout
@@ -218,15 +218,15 @@ jobs:
     - name: Render install manifests
       env:
         AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
-        AX_TASK_RUNNER_IMAGE: ${{ needs.images.outputs.task_image }}
+        AX_RUNNER_IMAGE: ${{ needs.images.outputs.task_image }}
         AX_RUNNER_VOLUME_REF: ${{ needs.images.outputs.runner_volume_image }}
         # Repository variable; "true" (case-insensitive) makes release
         # manifests mount the runner from ax-runner-volume (#625). Off by
         # default. Fork pull requests may not see repository variables.
         AX_RENDER_RUNNER_VOLUME: ${{ vars.AX_RELEASE_RUNNER_VOLUME == 'true' }}
       run: |
-        printf 'AX_SERVER_IMAGE=%s\nAX_TASK_RUNNER_IMAGE=%s\nAX_RUNNER_VOLUME_REF=%s\n' \
-          "${AX_SERVER_IMAGE}" "${AX_TASK_RUNNER_IMAGE}" "${AX_RUNNER_VOLUME_REF}" > bin/release/images.env
+        printf 'AX_SERVER_IMAGE=%s\nAX_RUNNER_IMAGE=%s\nAX_RUNNER_VOLUME_REF=%s\n' \
+          "${AX_SERVER_IMAGE}" "${AX_RUNNER_IMAGE}" "${AX_RUNNER_VOLUME_REF}" > bin/release/images.env
         hack/release/render-manifests.sh bin/release
 
     - name: Publish release

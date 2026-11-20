@@ -75,7 +75,7 @@ go test -v ./...
 
 ### Building the Images
 
-Cross-compile `ax-server` and `ax-task-runner` for `linux/amd64`, build their container images (with `podman` if available, otherwise `docker`), and push them to `$AX_IMAGE_REPO`:
+Cross-compile `ax-server` and `ax-runner` for `linux/amd64`, build their container images (with `podman` if available, otherwise `docker`), and push them to `$AX_IMAGE_REPO`:
 
 ```bash
 export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project

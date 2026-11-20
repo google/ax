@@ -96,7 +96,7 @@ instead. No mocking library is in `go.mod`.
 - Actor template images must be digest-pinned (`@sha256:…`); a tag-only
   `spec.profile.image` fails at ActorTemplate creation with reason
   `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
-  `bin/ax-server.digest` / `bin/ax-task-runner.digest` for this reason.
+  `bin/ax-server.digest` / `bin/ax-runner.digest` for this reason.
 - There is no server-wide default task image. A set `spec.profile` must name
   `image` or `ateTemplate.name` (`validateProfile` in
   `internal/apivalidation/common.go`), a Workspace with setup steps must set

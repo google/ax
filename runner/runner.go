@@ -18,7 +18,7 @@
 // performs the maiden-run workspace setup, and then starts the task's command
 // as a supervised child process. The runner stays up as the container's main
 // process until it is told to stop, so the sandbox remains inspectable after
-// the command has finished. The ax-task-runner binary is a thin wrapper around
+// the command has finished. The ax-runner binary is a thin wrapper around
 // [Run]; custom images can embed the same behavior by calling it directly.
 //
 // A program that imports this package also answers git's credential prompts
@@ -115,7 +115,7 @@ type CommandExit struct {
 	Err error
 }
 
-// Run executes the task-runner lifecycle and blocks until ctx is cancelled.
+// Run executes the runner lifecycle and blocks until ctx is cancelled.
 //
 // The task's workspace is set up at its path, /workspace unless the binding
 // says otherwise, and the files of the launcher contract (see GoalFileEnv) are

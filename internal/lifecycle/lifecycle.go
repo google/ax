@@ -117,7 +117,7 @@ func IsExecutionTerminal(task *v1alpha1.Task) bool {
 	}
 }
 
-// Claim evaluates an assignment claim from ax-task-runner against row and
+// Claim evaluates an assignment claim from ax-runner against row and
 // returns the updated row (or row itself when no stored fields changed) along
 // with the ClaimAssignmentResponse to send back to the runner.
 //

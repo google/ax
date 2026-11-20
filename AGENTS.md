@@ -21,7 +21,7 @@ reconciler or server.
 client                 Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/studio/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
-cmd/ax-task-runner     PID 1 inside the sandbox; materializes the Workspace, runs the agent
+cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template
@@ -51,7 +51,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 ```bash
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
-go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
+go build ./cmd/ax ./cmd/ax-server ./cmd/ax-runner
 go test ./...                    # ~25 s, 31 packages with tests; Postgres + E2E tiers self-skip
 ```
 

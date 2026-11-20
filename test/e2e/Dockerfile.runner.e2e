@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASE_IMAGE=ax-task-runner:base
+ARG BASE_IMAGE=ax-runner:base
 FROM ${BASE_IMAGE}
 
 # Initialize the sample Git repository used by E2E tests
@@ -33,4 +33,4 @@ RUN mkdir -p /workspace /tmp/sample-src && \
 
 WORKDIR /workspace
 EXPOSE 80
-ENTRYPOINT ["/usr/local/bin/ax-task-runner"]
+ENTRYPOINT ["/usr/local/bin/ax-runner"]

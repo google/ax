@@ -62,7 +62,7 @@ type TaskRow struct {
 	// claim) to the expected actor incarnation.
 	ActorUID string
 
-	// Runnable records whether ax-server currently authorizes ax-task-runner to
+	// Runnable records whether ax-server currently authorizes ax-runner to
 	// execute the task's command (false when newly created suspended, after
 	// SuspendTask, or once terminal; true after ResumeTask). This allows
 	// ClaimAssignment to return ASSIGNMENT_MODE_IDLE when a paused actor is
@@ -71,7 +71,7 @@ type TaskRow struct {
 	Runnable bool
 
 	// ActiveRunID is the server-issued run ID ("r-1", "r-2", ...) currently
-	// executing on ax-task-runner. Empty before the first run claim and once
+	// executing on ax-runner. Empty before the first run claim and once
 	// terminal. Used to fence sequenced runner events.
 	ActiveRunID string
 

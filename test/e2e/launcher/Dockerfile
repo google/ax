@@ -17,7 +17,7 @@
 # runner volume ax-server mounts at /opt/ax.
 ARG BASE_IMAGE=python:3.12-slim
 FROM ${BASE_IMAGE}
-RUN rm -f /usr/local/bin/ax-task-runner
+RUN rm -f /usr/local/bin/ax-runner
 COPY test/e2e/launcher/ax-harness /usr/local/bin/ax-harness
 RUN chmod 0755 /usr/local/bin/ax-harness
 ENTRYPOINT ["/usr/local/bin/ax-harness"]

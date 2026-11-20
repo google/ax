@@ -46,10 +46,10 @@ import (
 )
 
 const (
-	// ClaimAssignmentPath is the HTTP POST path where ax-task-runner claims its
+	// ClaimAssignmentPath is the HTTP POST path where ax-runner claims its
 	// current assignment.
 	ClaimAssignmentPath = "/runner/v1/assignment:claim"
-	// ReportEventsPath is the HTTP POST path where ax-task-runner reports
+	// ReportEventsPath is the HTTP POST path where ax-runner reports
 	// ordered setup and command execution events.
 	ReportEventsPath = "/runner/v1/events"
 	// RunnerTokenHeader carries the per-actor bearer token minted on the

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The runner volume: an image that holds only the static ax-task-runner.
+# The runner volume: an image that holds only the static ax-runner.
 #
 # It is never run as a container. Agent Substrate mounts it read-only into a
 # task's container as an image volume, and the container runs the runner from
@@ -23,4 +23,4 @@
 #   make images   # builds and pushes it, and records its digest
 FROM scratch
 ARG TARGETARCH
-COPY bin/linux_${TARGETARCH:-amd64}/ax-task-runner /ax-task-runner
+COPY bin/linux_${TARGETARCH:-amd64}/ax-runner /ax-runner

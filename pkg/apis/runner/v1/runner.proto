@@ -22,7 +22,7 @@ import "pkg/apis/v1alpha1/workspace.proto";
 
 option go_package = "github.com/google/ax/pkg/apis/runner/v1;runnerv1";
 
-// AssignmentMode tells ax-task-runner how to act upon claiming work from
+// AssignmentMode tells ax-runner how to act upon claiming work from
 // ax-server's internal runner control endpoint (:8081).
 enum AssignmentMode {
   ASSIGNMENT_MODE_UNSPECIFIED = 0;
@@ -37,7 +37,7 @@ enum AssignmentMode {
   ASSIGNMENT_MODE_SETUP = 4;
 }
 
-// ClaimAssignmentRequest is sent by ax-task-runner to
+// ClaimAssignmentRequest is sent by ax-runner to
 // POST /runner/v1/assignment:claim on startup and after each wakeup probe.
 message ClaimAssignmentRequest {
   // Run ID currently held in memory by this runner process (non-empty across a
@@ -53,7 +53,7 @@ message ClaimAssignmentRequest {
   string nonce = 4;
 }
 
-// ClaimAssignmentResponse describes the assignment granted to ax-task-runner.
+// ClaimAssignmentResponse describes the assignment granted to ax-runner.
 message ClaimAssignmentResponse {
   AssignmentMode mode = 1;
   // Monotonic server-allocated execution identifier ("r-1", "r-2", ...) when
@@ -97,7 +97,7 @@ message ReportEventsRequest {
   repeated RunnerEvent events = 2;
 }
 
-// RunnerEvent is a single sequenced event emitted by ax-task-runner.
+// RunnerEvent is a single sequenced event emitted by ax-runner.
 message RunnerEvent {
   // 1-based per-run monotonic sequence number used to deduplicate retries.
   int64 seq = 1;

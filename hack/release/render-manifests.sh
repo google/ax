@@ -38,7 +38,7 @@ OUT="${1:-${ROOT}/bin/release}"
 
 # shellcheck disable=SC1091
 source "${OUT}/images.env"
-for v in AX_SERVER_IMAGE AX_TASK_RUNNER_IMAGE AX_RUNNER_VOLUME_REF; do
+for v in AX_SERVER_IMAGE AX_RUNNER_IMAGE AX_RUNNER_VOLUME_REF; do
   if [[ ! "${!v:-}" =~ @sha256:[0-9a-f]{64}$ ]]; then
     echo "error: ${v} in ${OUT}/images.env is not pinned by digest: '${!v:-}'" >&2
     exit 1
