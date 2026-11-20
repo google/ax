@@ -94,6 +94,8 @@ func fullTask() *v1alpha1.Task {
 			Generation:      3,
 			ResolvedArgv:    []string{"sh", "-c", "true"},
 			PreviousFailure: "exit status 1",
+			ParentTask:      "parent-1",
+			ParentTag:       "fork-deadbeef01234567",
 		},
 	}
 }
@@ -133,6 +135,8 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"ateTemplate:",
 		"resolvedArgv:",
 		"previousFailure: exit status 1",
+		"parentTask: parent-1",
+		"parentTag: fork-deadbeef01234567",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("yaml missing %s:\n%s", want, out)
@@ -155,7 +159,6 @@ func TestTask_RejectsRemovedAndDeferredFields(t *testing.T) {
 		{name: "status_phase_removed", src: "kind: Task\nstatus:\n  phase: Running\n", wantErr: "phase"},
 		{name: "status_id_removed", src: "kind: Task\nstatus:\n  id: t-1\n", wantErr: "id"},
 		{name: "status_worker_ip_removed", src: "kind: Task\nstatus:\n  workerIP: 10.0.0.1\n", wantErr: "workerIP"},
-		{name: "status_parent_tag_deferred", src: "kind: Task\nstatus:\n  parentTag: tag-1\n", wantErr: "parentTag"},
 		{name: "status_init_start_time_deferred", src: "kind: Task\nstatus:\n  initStartTime: 2026-09-19T12:00:00Z\n", wantErr: "initStartTime"},
 		{name: "status_current_start_time_deferred", src: "kind: Task\nstatus:\n  currentStartTime: 2026-09-19T12:00:00Z\n", wantErr: "currentStartTime"},
 		{name: "status_end_time_deferred", src: "kind: Task\nstatus:\n  endTime: 2026-09-19T12:00:00Z\n", wantErr: "endTime"},
