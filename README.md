@@ -75,6 +75,9 @@ curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
+> [!TIP]
+> Prefer a UI? [AX Studio](https://github.com/agentexecutor/studio#readme) is a local web app that sets up AX on your computer and starts tasks for you. It deploys its own AX images, so you can skip steps 2 and 3. Install it as its README describes, then run `ax studio`.
+
 ### 2. Build the images
 
 Until release images are published, build and push your own from an ax checkout and pin them by digest:
@@ -128,7 +131,8 @@ Want to see the whole lifecycle end to end? Run [`./demo.sh`](demo.sh). It appli
 
 | Guide | Read it to... |
 |---|---|
-| [Local Installer](docs/local_installer.md) | Walk through `ax local`, `ax ctx`, `ax install`, and promoting tasks unchanged from local Kind to a remote GKE cluster. |
+| [Local Installer](docs/local_installer.md) | Walk through `ax local`, `ax studio`, `ax ctx`, `ax install`, and promoting tasks unchanged from local Kind to a remote GKE cluster. |
+| [AX Studio](https://github.com/agentexecutor/studio#readme) | Set up AX on your computer and start, watch, and shell into tasks from a local web app (`ax studio`). |
 | [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, and `Model` each do, and how a task moves through phases and conditions. |
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
@@ -190,7 +194,7 @@ ax local status                       # check local environment, Substrate, and 
 ax local stop                         # stop local environment while keeping state
 ax local delete                       # destroy local environment and clean up owned context
 ax install / ax uninstall             # install or remove AX on the active Kubernetes cluster
-ax studio                             # launch the AX Studio local Web UI on 127.0.0.1:8080
+ax studio                             # launch the AX Studio local Web UI on 127.0.0.1:8080 (needs the ax-studio binary)
 ax ctx                                # list kube contexts and active AX tunnel status
 ax ctx <name>                         # switch active Kubernetes context in kubeconfig
 ax tunnel list                        # background tunnels (state lives in ~/.ax/tunnels)
