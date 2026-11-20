@@ -123,11 +123,11 @@ ax_quiet() {
   return 1
 }
 
-# render_starter_manifest writes task-starter.yaml to a temp file, substituting
-# STARTER_IMAGE when set.
+# render_starter_manifest writes a manifest (task-starter.yaml by default) to a
+# temp file, substituting STARTER_IMAGE when set.
 render_starter_manifest() {
   local out_file="$1"
-  python3 - "${STARTER_MANIFEST}" "${out_file}" "${STARTER_IMAGE}" <<'PY'
+  python3 - "${2:-${STARTER_MANIFEST}}" "${out_file}" "${STARTER_IMAGE}" <<'PY'
 import re
 import sys
 
@@ -143,7 +143,7 @@ if image:
         flags=re.MULTILINE,
     )
     if count != 1:
-        raise SystemExit("failed to substitute spec.profile.image in task-starter.yaml")
+        raise SystemExit(f"failed to substitute spec.profile.image in {src}")
 with open(dst, "w", encoding="utf-8") as f:
     f.write(text)
 PY
@@ -203,14 +203,22 @@ step2_warm_workspace() {
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to apply workspace.yaml"
     return
   fi
+  local tmp_manifest
+  tmp_manifest="$(mktemp)"
+  render_starter_manifest "${tmp_manifest}" "${WORKSPACE_MANIFEST}"
   # Workspaces are immutable, and applying an identical spec again is a no-op.
-  if ! ax_quiet apply -f "${WORKSPACE_MANIFEST}"; then
+  # The first apply waits for the pre-warm: image pull, spec.setup, snapshot.
+  if ! AX_TIMEOUT=600 ax_quiet apply -f "${tmp_manifest}"; then
+    rm -f "${tmp_manifest}"
     mark_fail "${step}" "ax apply -f workspace.yaml failed"
     return
   fi
-  # TODO(@YoyinZyc): Check that the workspace reaches Ready from a warm snapshot
-  # once pre-warmed workspace snapshots land on main (#584).
-  mark_stub "${step}" "Workspace ${WORKSPACE_NAME} applied; wire the warm snapshot check"
+  rm -f "${tmp_manifest}"
+  if ! run_ax describe workspace "${WORKSPACE_NAME}" 2>/dev/null | grep -q 'SnapshotReady  *True'; then
+    mark_fail "${step}" "Workspace ${WORKSPACE_NAME} has no warm snapshot; see 'ax describe workspace ${WORKSPACE_NAME}'"
+    return
+  fi
+  mark_pass "${step}" "Workspace ${WORKSPACE_NAME} is Ready with a warm snapshot"
 }
 
 # ------------------------------------------------------------------------------

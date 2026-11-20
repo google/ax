@@ -22,8 +22,14 @@ metadata:
   name: hero-demo-ws
   atespace: default
 spec:
-  # TODO(@YoyinZyc): Add a spec.profile (image and resources) once workspace
-  # pre-warming is enabled; ax-server rejects spec.profile until then.
+  # Same image and limits as task-starter.yaml, so the starter task starts from
+  # this workspace's snapshot.
+  profile:
+    image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
   setup:
     commands:
       - git init /workspace/app
