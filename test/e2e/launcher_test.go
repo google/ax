@@ -23,6 +23,8 @@ import (
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const launcherTaskManifest = `apiVersion: ax.io/v1alpha1
@@ -111,7 +113,7 @@ touch %s/x 2>/dev/null || echo RUNNER_READ_ONLY`, v1alpha1.RunnerMountPath, v1al
 	if outcome.GetResult() != v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED || outcome.GetExitCode() != 0 {
 		t.Fatalf("unexpected outcome: %+v", outcome)
 	}
-	assertContains(t, "launcher outcome output", outcome.GetOutput(), "goal="+goal, "session="+session)
+	assertContains(t, "launcher outcome output", outcome.GetOutput(), "goal="+goal, "session="+session, "runs=1")
 
 	if err := poll(time.Minute, 500*time.Millisecond, func() error {
 		actor, err := env.SubstrateClient.GetActor(t.Context(), ns, task)
@@ -134,6 +136,54 @@ touch %s/x 2>/dev/null || echo RUNNER_READ_ONLY`, v1alpha1.RunnerMountPath, v1al
 			t.Fatalf("expected 'ax %s task %s' on completed task to fail, got:\n%s", op, task, out)
 		}
 		assertContains(t, op+" on completed task", strings.ToLower(out), "terminal")
+	}
+
+	// 4. Forking the parked Turn 1 task seeds Turn 2 from Turn 1's workspace
+	// snapshot (e2e-launcher-runs already has 1 line -> runs=2) while inheriting
+	// sessionId and running the new goal.
+	const goal2 = "follow-up-turn"
+	task2 := uniqueName("task-launcher-turn2")
+	env.deleteOnCleanup(t, ns, "task", task2)
+	env.mustRunAX(t, ns, "fork", "task", task, task2, "--goal", goal2)
+
+	var completed2 *v1alpha1.Task
+	if err := poll(time.Minute, 500*time.Millisecond, func() error {
+		got, err := env.AXClient.GetTask(t.Context(), &v1alpha1.GetTaskRequest{Name: task2, Atespace: ns})
+		if err != nil {
+			return err
+		}
+		if got.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_FAILED {
+			t.Fatalf("forked launcher task failed: detail=%+v outcome=%+v", got.GetStatus().GetStatusDetail(), got.GetStatus().GetOutcome())
+		}
+		if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED {
+			return fmt.Errorf("state = %v, want COMPLETED", got.GetStatus().GetState())
+		}
+		completed2 = got
+		return nil
+	}); err != nil {
+		t.Fatalf("waiting for forked launcher task completion: %v", err)
+	}
+
+	if completed2.GetSpec().GetSessionId() != session {
+		t.Errorf("forked task session_id = %q, want %q", completed2.GetSpec().GetSessionId(), session)
+	}
+	if completed2.GetStatus().GetParentTask() != task {
+		t.Errorf("forked task parent_task = %q, want %q", completed2.GetStatus().GetParentTask(), task)
+	}
+	parentTag := completed2.GetStatus().GetParentTag()
+	if parentTag == "" {
+		t.Fatal("expected forked task parent_tag to be populated")
+	}
+	outcome2 := completed2.GetStatus().GetOutcome()
+	if outcome2.GetResult() != v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED || outcome2.GetExitCode() != 0 {
+		t.Fatalf("unexpected forked outcome: %+v", outcome2)
+	}
+	assertContains(t, "forked launcher outcome output", outcome2.GetOutput(), "goal="+goal2, "session="+session, "runs=2")
+
+	// Deleting the forked task cleans up its owned snapshot tag on Substrate.
+	env.mustRunAX(t, ns, "delete", "task", task2)
+	if _, err := env.SubstrateClient.GetTag(t.Context(), ns, parentTag); status.Code(err) != codes.NotFound {
+		t.Errorf("GetTag(%s/%s) after delete = %v, want NotFound", ns, parentTag, err)
 	}
 }
 
