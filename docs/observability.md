@@ -176,9 +176,10 @@ ax-server and Substrate records join on them. Identity attributes such as
 
 ## Live task logs
 
-`AX/StreamTaskLogs` is off by default (`Unimplemented`). To enable it, apply
-`deploy/task-logs-rbac.yaml` in each worker-pool namespace, adjusting the
-RoleBinding subject to ax-server's namespace, and set `--enable-task-logs`.
+`AX/StreamTaskLogs` is off by default (`Unimplemented`). To enable it, set the
+RoleBinding subject namespace to the namespace where ax-server runs. Run
+`kubectl apply -n <worker-pool-namespace> -f deploy/task-logs-rbac.yaml` in
+each worker-pool namespace and set `--enable-task-logs` on ax-server.
 It uses ax-server's in-cluster service account; read [SECURITY.md](../SECURITY.md#opt-in-task-log-streaming) first.
 
 The request names a Task and atespace (default: `default`). The actor must be
@@ -189,5 +190,6 @@ that connection opened, with no history or shared cache. Substrate is polled
 once per second: suspension closes the worker stream, resumption/moves open
 the current worker, and actor recreation ends the RPC with `Aborted`.
 Disconnects and moves can lose lines. Cancellation closes the worker stream.
-Records are capped at 1 MiB; a read failure ends the RPC with `Unavailable`.
+Records larger than 1 MiB are skipped. A read failure ends the RPC with
+`Unavailable`.
 Task completion remains the responsibility of `TaskStatus.outcome`.

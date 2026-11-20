@@ -141,6 +141,9 @@ func TestTaskLogsFollowMovesAndCancel(t *testing.T) {
 			t.Errorf("unexpected log options: %v", q)
 		}
 		fmt.Fprintln(w, `{"labels":{"ate.actor.uid":"another-actor"},"message":"must not leak"}`)
+		if strings.HasSuffix(r.URL.Path, "/pods/a/log") {
+			fmt.Fprintln(w, strings.Repeat("x", (1<<20)+1))
+		}
 		fmt.Fprintf(w, `{"labels":{"ate.actor.uid":"uid"},"message":%q}`+"\n", r.URL.Path)
 		w.(http.Flusher).Flush()
 		<-r.Context().Done()
@@ -203,13 +206,13 @@ func TestTaskLogsErrorsAndRecreation(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		openErr  error
-		text     string
+		readErr  error
 		recreate bool
 		want     codes.Code
 	}{
 		{name: "permission denied", openErr: status.Error(codes.PermissionDenied, "denied"), want: codes.PermissionDenied},
 		{name: "upstream unavailable", openErr: status.Error(codes.Unavailable, "offline"), want: codes.Unavailable},
-		{name: "record too large", text: strings.Repeat("x", 1024*1024+1), want: codes.Unavailable},
+		{name: "upstream read failure", readErr: io.ErrClosedPipe, want: codes.Unavailable},
 		{name: "recreated actor", recreate: true, want: codes.Aborted},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,12 +225,11 @@ func TestTaskLogsErrorsAndRecreation(t *testing.T) {
 				close(opened)
 				pr, pw := io.Pipe()
 				go func() {
-					if tt.text != "" {
-						_, _ = io.WriteString(pw, tt.text+"\n")
+					defer close(closed)
+					if tt.readErr == nil {
+						<-ctx.Done()
 					}
-					<-ctx.Done()
-					pw.Close()
-					close(closed)
+					pw.CloseWithError(tt.readErr)
 				}()
 				return pr, nil
 			})
