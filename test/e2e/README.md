@@ -5,7 +5,7 @@ This directory contains the end-to-end test suite for **AX** running on
 the manifests and Dockerfiles used to deploy AX for the tests.
 
 The suite exercises real gVisor sandboxes, Substrate's `ate-api-server`,
-in-cluster RustFS snapshot storage, PostgreSQL, `ax-server`, `ax-task-runner`, and
+in-cluster RustFS snapshot storage, PostgreSQL, `ax-server`, `ax-runner`, and
 the `ax` CLI, against a configurable Substrate branch, tag, or commit.
 
 | Path | Purpose |
@@ -13,7 +13,7 @@ the `ax` CLI, against a configurable Substrate branch, tag, or commit.
 | `harness_test.go` | `TestMain`, cluster connection setup, and shared helpers |
 | `e2e_test.go` | The test cases |
 | `manifests/` | Namespace, WorkerPool, PostgreSQL, ax-server, credential policy, and echo server manifests (rendered with `envsubst`) |
-| `Dockerfile.task-runner.e2e` | Extends `Dockerfile.task-runner` with test fixtures (a sample Git repo) |
+| `Dockerfile.runner.e2e` | Extends `Dockerfile.runner` with test fixtures (a sample Git repo) |
 
 ## Quick Start
 
@@ -50,7 +50,7 @@ make e2e-cleanup                   # delete the Kind clusters
 ```
 
 `make e2e-run` rebuilds the `ax` CLI, but not the in-cluster `ax-server` or
-`ax-task-runner` images; re-run `make e2e-setup` to redeploy those.
+`ax-runner` images; re-run `make e2e-setup` to redeploy those.
 
 `go test ./...` skips this package unless `-args --e2e` is passed or `AX_E2E=true` is set.
 

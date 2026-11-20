@@ -45,4 +45,4 @@ Expand documentation in `docs/` to cover architecture rationale and extensibilit
 
 - **Layering with Substrate**: Document the architectural division of responsibilities between AX and Agent Substrate, answering major questions.
 - **Custom Images**: Provide guides and conventions for authoring, building, and configuring custom container images for `Task` workloads.
-- **Custom Runners**: Document the internal contract of `ax-task-runner` more comprehensively.
+- **Custom Runners**: Document the internal contract of `ax-runner` more comprehensively.

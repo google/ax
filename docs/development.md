@@ -11,7 +11,7 @@
 ```bash
 make build                 # bin/ax, bin/ax-server
 make install               # install the ax CLI into $(go env GOPATH)/bin
-make images                # build and push the ax-server and ax-task-runner images to $AX_IMAGE_REPO
+make images                # build and push the ax-server and ax-runner images to $AX_IMAGE_REPO
 ```
 
 ## Test

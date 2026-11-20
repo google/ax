@@ -6,7 +6,7 @@ A task that sets `spec.commands` runs that command unchanged, so the same image 
 
 ## Build the image
 
-The image is built from [`Dockerfile.claude-code`](../../Dockerfile.claude-code). It is the `ax-task-runner` image with Claude Code installed and `claude-code-runner` at `/usr/local/bin/ax-task-runner`:
+The image is built from [`Dockerfile.claude-code`](../../Dockerfile.claude-code). It is the `ax-runner` image with Claude Code installed and `claude-code-runner` at `/usr/local/bin/ax-runner`:
 
 ```bash
 make push-claude-code-image CLAUDE_CODE_REPO=<your-registry>/<image>

@@ -219,7 +219,7 @@ func TestResolveProfileTemplate_MountsRunnerVolume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := tmpl.GetContainers()[0].GetCommand(), v1alpha1.RunnerMountPath+"/ax-task-runner"; len(got) != 1 || got[0] != want {
+	if got, want := tmpl.GetContainers()[0].GetCommand(), v1alpha1.RunnerMountPath+"/ax-runner"; len(got) != 1 || got[0] != want {
 		t.Errorf("command = %v, want [%s]", got, want)
 	}
 	if !hasImageVolume(tmpl.GetVolumes(), runner) {

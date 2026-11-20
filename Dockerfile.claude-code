@@ -14,9 +14,9 @@
 
 # Task image with Claude Code preinstalled.
 #
-# Extends the default ax-task-runner image and replaces its runner with
+# Extends the default ax-runner image and replaces its runner with
 # claude-code-runner (cmd/runners/claude-code-runner), installed at the same
-# /usr/local/bin/ax-task-runner path. A Task that leaves spec.commands empty is
+# /usr/local/bin/ax-runner path. A Task that leaves spec.commands empty is
 # configured through spec.config, which holds the prompt and claude's flags:
 # the runner turns it into a headless `claude --print` session. A Task that sets spec.commands runs it as usual.
 #
@@ -57,6 +57,6 @@ ENV IS_SANDBOX=1 \
 
 # The Makefile cross-compiles the runner into bin/ before building the image.
 ARG TARGETARCH=amd64
-COPY bin/linux_${TARGETARCH}/claude-code-runner /usr/local/bin/ax-task-runner
+COPY bin/linux_${TARGETARCH}/claude-code-runner /usr/local/bin/ax-runner
 
-ENTRYPOINT ["/usr/local/bin/ax-task-runner"]
+ENTRYPOINT ["/usr/local/bin/ax-runner"]

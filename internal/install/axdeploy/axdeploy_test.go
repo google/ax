@@ -46,9 +46,9 @@ func TestEnsureDigestPinnedWithBearerChallenge(t *testing.T) {
 		case "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"token":"test-jwt"}`))
-		case "/v2/google/ax/ax-task-runner/manifests/v0.1.0":
+		case "/v2/google/ax/ax-runner/manifests/v0.1.0":
 			if r.Header.Get("Authorization") != "Bearer test-jwt" {
-				w.Header().Set("Www-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="ghcr.io",scope="repository:google/ax/ax-task-runner:pull"`, srvURL))
+				w.Header().Set("Www-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="ghcr.io",scope="repository:google/ax/ax-runner:pull"`, srvURL))
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -67,7 +67,7 @@ func TestEnsureDigestPinnedWithBearerChallenge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	imgRef := u.Host + "/google/ax/ax-task-runner:v0.1.0"
+	imgRef := u.Host + "/google/ax/ax-runner:v0.1.0"
 	pinned, err := EnsureDigestPinned(context.Background(), imgRef, srv.Client())
 	if err != nil {
 		t.Fatalf("EnsureDigestPinned: %v", err)
@@ -156,8 +156,8 @@ func TestMutateNamespacePolicyYAML(t *testing.T) {
 func TestEnsureDigestPinnedValidatesReferences(t *testing.T) {
 	const validDigest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
 	for _, alreadyPinned := range []string{
-		"ghcr.io/google/ax/ax-task-runner@" + validDigest,
-		"ghcr.io/google/ax/ax-task-runner:v0.1.0@" + validDigest,
+		"ghcr.io/google/ax/ax-runner@" + validDigest,
+		"ghcr.io/google/ax/ax-runner:v0.1.0@" + validDigest,
 	} {
 		got, err := EnsureDigestPinned(context.Background(), alreadyPinned, nil)
 		if err != nil || got != alreadyPinned {
@@ -168,9 +168,9 @@ func TestEnsureDigestPinnedValidatesReferences(t *testing.T) {
 	for _, bad := range []string{
 		"",
 		"@" + validDigest,
-		"ghcr.io/google/ax/ax-task-runner:@" + validDigest,
-		"ghcr.io/google/ax/ax-task-runner@sha256:not64hex",
-		"ghcr.io/google/ax/ax-task-runner:v1\nevil: true",
+		"ghcr.io/google/ax/ax-runner:@" + validDigest,
+		"ghcr.io/google/ax/ax-runner@sha256:not64hex",
+		"ghcr.io/google/ax/ax-runner:v1\nevil: true",
 	} {
 		if _, err := EnsureDigestPinned(context.Background(), bad, nil); err == nil {
 			t.Fatalf("EnsureDigestPinned(%q) succeeded, want validation error", bad)

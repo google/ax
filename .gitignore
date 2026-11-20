@@ -6,7 +6,7 @@ bin/
 *.test
 /ax
 /ax-server
-/ax-task-runner
+/ax-runner
 
 .vscode/
 /claude-code-runner

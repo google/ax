@@ -513,7 +513,7 @@ func TestMountRunnerVolume(t *testing.T) {
 		t.Fatalf("runner volume = %v, want an image volume of %q", vol, runner)
 	}
 	c := tmpl.GetContainers()[0]
-	if got, want := c.GetCommand(), []string{v1alpha1.RunnerMountPath + "/ax-task-runner"}; !slices.Equal(got, want) {
+	if got, want := c.GetCommand(), []string{v1alpha1.RunnerMountPath + "/ax-runner"}; !slices.Equal(got, want) {
 		t.Errorf("command = %v, want %v", got, want)
 	}
 	if !slices.ContainsFunc(c.GetVolumeMounts(), func(m *ateapipb.VolumeMount) bool {

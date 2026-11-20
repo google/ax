@@ -72,8 +72,8 @@ func TestE2E_PureImageLauncher(t *testing.T) {
 	}))
 	env.mustRunAX(t, ns, "resume", "task", idleTask)
 
-	out := env.ssh(t, ns, idleTask, fmt.Sprintf(`test ! -e /usr/local/bin/ax-task-runner && echo NO_BAKED_RUNNER
-test -x %s/ax-task-runner && echo RUNNER_MOUNTED
+	out := env.ssh(t, ns, idleTask, fmt.Sprintf(`test ! -e /usr/local/bin/ax-runner && echo NO_BAKED_RUNNER
+test -x %s/ax-runner && echo RUNNER_MOUNTED
 touch %s/x 2>/dev/null || echo RUNNER_READ_ONLY`, v1alpha1.RunnerMountPath, v1alpha1.RunnerMountPath))
 	assertContains(t, "runner check", out, "NO_BAKED_RUNNER", "RUNNER_MOUNTED", "RUNNER_READ_ONLY")
 
@@ -176,7 +176,7 @@ spec:
 // TestE2E_PrewarmAndCustomImageSharedWorkspace verifies Workspace snapshot
 // pre-warming and Hero Demo Step 4 end-to-end: a pre-warmed Workspace reaches
 // Ready with a SnapshotTag, Task 1 completes against it, and Task 2 on a plain
-// custom image injects ax-task-runner, preserves /workspace across explicit
+// custom image injects ax-runner, preserves /workspace across explicit
 // suspend/resume, and completes with the shared workspace data in Outcome.
 func TestE2E_PrewarmAndCustomImageSharedWorkspace(t *testing.T) {
 	image := os.Getenv("AX_E2E_LAUNCHER_IMAGE")

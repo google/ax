@@ -31,15 +31,15 @@ import (
 const (
 	defaultAtespace = "default"
 
-	// sampleRepo is a bare Git repository baked into the E2E task-runner image
-	// (see test/e2e/Dockerfile.task-runner.e2e). Tag v1.0.0 contains
+	// sampleRepo is a bare Git repository baked into the E2E runner image
+	// (see test/e2e/Dockerfile.runner.e2e). Tag v1.0.0 contains
 	// app.py printing "hello from git repo v1".
 	sampleRepo = "file:///opt/ax-e2e-sample-repo.git"
 
-	// probeURL is the in-sandbox address of the ax-task-runner probe server.
+	// probeURL is the in-sandbox address of the ax-runner probe server.
 	probeURL = "http://127.0.0.1:80"
 
-	// metadataURL is the in-sandbox address of the ax-task-runner metadata server.
+	// metadataURL is the in-sandbox address of the ax-runner metadata server.
 	metadataURL = "http://127.0.0.1:8099"
 )
 

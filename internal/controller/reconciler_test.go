@@ -395,7 +395,7 @@ func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
 	const runner1 = "ghcr.io/google/ax/ax-runner-volume@sha256:r1"
 	tmpl := resume(t, runner1)
 	c := tmpl.GetContainers()[0]
-	if got, want := c.GetCommand(), v1alpha1.RunnerMountPath+"/ax-task-runner"; len(got) != 1 || got[0] != want {
+	if got, want := c.GetCommand(), v1alpha1.RunnerMountPath+"/ax-runner"; len(got) != 1 || got[0] != want {
 		t.Errorf("command = %v, want [%s]", got, want)
 	}
 	var mounted bool

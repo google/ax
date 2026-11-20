@@ -39,7 +39,7 @@ TASK_NAME="demo-task"
 WORKSPACE_NAME="demo-workspace"
 TASK_IMAGE="${AX_TASK_IMAGE:-}"
 if [[ -z "${TASK_IMAGE}" ]]; then
-  echo "error: set AX_TASK_IMAGE to a digest-pinned task image, e.g. the ax-task-runner image \`make images\` printed" >&2
+  echo "error: set AX_TASK_IMAGE to a digest-pinned task image, e.g. the ax-runner image \`make images\` printed" >&2
   exit 1
 fi
 

@@ -2,7 +2,7 @@
 
 A runner is the program that AX starts as PID 1 inside every task container. It is the bridge between the control plane and whatever your agent actually is: the control plane hands it the `Task` and `Workspace` specs, and the runner turns them into a prepared workspace, a running command, and a small HTTP surface that the rest of AX uses to observe the sandbox.
 
-AX ships a default runner, `ax-task-runner`, baked into the `ax-task-runner` image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.profile.image`, and the control plane will treat it exactly like the default.
+AX ships a default runner, `ax-runner`, baked into the `ax-runner` image. You do not have to use it. Any binary that honors the contract below can be packaged into a container image and named in `spec.profile.image`, and the control plane will treat it exactly like the default.
 
 This page describes what a runner must do. For what the default runner exposes to your command once it is up, see [Sandbox](sandbox.md).
 
@@ -12,8 +12,8 @@ The control plane does not run `spec.commands` as the container entrypoint. It a
 
 | What AX sets | Value |
 |---|---|
-| Container image | `spec.profile.image`, or the default `ax-task-runner` image when unset |
-| Container command | `/usr/local/bin/ax-task-runner`, always |
+| Container image | `spec.profile.image`, or the default `ax-runner` image when unset |
+| Container command | `/usr/local/bin/ax-runner`, always |
 | `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
 | `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
 | `spec.env` entries | Each one set directly in the container environment |
@@ -21,7 +21,7 @@ The control plane does not run `spec.commands` as the container entrypoint. It a
 | CA bundle | `/run/ate/egress-trust-bundle/trust-bundle.pem`: the CA certificates to trust for outbound TLS, including the egress gateway's |
 | Readiness probe | `GET /readyz` on port 80 |
 
-Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-task-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.commands` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
+Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.commands` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
 
 **Runner-specific settings** belong in `spec.config`, a free-form object that AX passes through unchanged inside `AX_TASK_YAML` (and the task metadata endpoint). The runner owns its schema; the control plane only checks that it is an object of at most 16 KiB and that the whole encoded task fits in 31 KiB. Decode `AX_TASK_YAML` leniently (the Go package offers `v1alpha1.UnmarshalYAMLLenient`) so the runner keeps working when a newer control plane adds fields. See [Runner configuration](manifests.md#runner-configuration).
 
@@ -57,7 +57,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 ## The default runner
 
-`ax-task-runner` lives in `cmd/ax-task-runner` and is a thin wrapper over the `runner` Go package. It implements everything above and is documented from the inside in [Sandbox](sandbox.md). Its image, built from `Dockerfile.task-runner`, is Python 3.12 with `git`, `curl`, and `openssh-client` installed.
+`ax-runner` lives in `cmd/ax-runner` and is a thin wrapper over the `runner` Go package. It implements everything above and is documented from the inside in [Sandbox](sandbox.md). Its image, built from `Dockerfile.runner`, is Python 3.12 with `git`, `curl`, and `openssh-client` installed.
 
 ```bash
 make images                # cross-compile for linux/amd64, build, and push to $AX_IMAGE_REPO
@@ -85,7 +85,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
 RUN npm install -g my-agent
 ```
 
-The runner binary stays at `/usr/local/bin/ax-task-runner`, so nothing else changes.
+The runner binary stays at `/usr/local/bin/ax-runner`, so nothing else changes.
 
 
 ### 2. Embed the runner package in your own binary
@@ -136,13 +136,13 @@ func main() {
 }
 ```
 
-Cross-compile it for `linux/amd64` with `CGO_ENABLED=0` and copy it into your image at `/usr/local/bin/ax-task-runner`.
+Cross-compile it for `linux/amd64` with `CGO_ENABLED=0` and copy it into your image at `/usr/local/bin/ax-runner`.
 
 For a working example, see [`cmd/runners/claude-code-runner`](../cmd/runners/claude-code-runner), which builds a Claude Code invocation from `spec.config` and passes it to `runner.Run` as the command. [Claude Code runner](../examples/claude-code/README.md) documents it.
 
 ### 3. Write a runner from scratch
 
-If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-task-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.
+If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.
 
 ### Ship it
 
@@ -167,7 +167,7 @@ AX provisions a dedicated Agent Substrate actor template for each distinct image
 The default runner accepts its specs from files as well as the environment, which makes it easy to run outside a cluster. Your own runner should offer something similar:
 
 ```bash
-ax-task-runner --task-file task.yaml --workspace-file code.yaml --port 8080 --metadata-port 8099
+ax-runner --task-file task.yaml --workspace-file code.yaml --port 8080 --metadata-port 8099
 
 # In another shell:
 curl -i http://127.0.0.1:8080/readyz
@@ -178,7 +178,7 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 
 ## Checklist
 
-- Executable present at `/usr/local/bin/ax-task-runner`
+- Executable present at `/usr/local/bin/ax-runner`
 - Reads `AX_TASK_YAML` and `AX_WORKSPACE_YAML`
 - Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until the workspace is ready
 - Serves the metadata endpoints on loopback only, at `AX_METADATA_URL`

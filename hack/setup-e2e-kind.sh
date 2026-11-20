@@ -322,25 +322,25 @@ for _ in $(seq 1 60); do
 done
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-workers --timeout=180s
 
-# 4. Build AX binaries and images. ax-server and ax-task-runner run in the
+# 4. Build AX binaries and images. ax-server and ax-runner run in the
 #    cluster (linux); the ax CLI runs on the host.
-log "Building ax (host), ax-server and ax-task-runner (linux/${GOARCH})..."
+log "Building ax (host), ax-server and ax-runner (linux/${GOARCH})..."
 (
   cd "${REPO_ROOT}"
   mkdir -p "bin/linux_${GOARCH}"
   CGO_ENABLED=0 go build -o "${TMP_DIR}/bin/ax" ./cmd/ax
   CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-server" ./cmd/ax-server
-  CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-task-runner" ./cmd/ax-task-runner
+  CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-runner" ./cmd/ax-runner
 )
 
 log "Building and pushing images to ${REGISTRY_ADDR}..."
 AX_SERVER_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-server:e2e" \
   --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.server")"
-# The E2E task-runner image extends the production image with test fixtures.
-docker build -q -t "${REGISTRY_ADDR}/ax-task-runner:base" \
-  --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.task-runner" "${REPO_ROOT}" > /dev/null
-AX_E2E_TASK_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-task-runner:e2e" \
-  --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-task-runner:base" -f "${E2E_DIR}/Dockerfile.task-runner.e2e")"
+# The E2E runner image extends the production image with test fixtures.
+docker build -q -t "${REGISTRY_ADDR}/ax-runner:base" \
+  --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.runner" "${REPO_ROOT}" > /dev/null
+AX_E2E_TASK_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner:e2e" \
+  --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-runner:base" -f "${E2E_DIR}/Dockerfile.runner.e2e")"
 # ax-server mounts the runner volume into every task, so tasks run the runner
 # built here rather than one baked into their image.
 AX_RUNNER_VOLUME_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner-volume:e2e" \
@@ -348,7 +348,7 @@ AX_RUNNER_VOLUME_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner-volume:e2e"
 # A pure image (no runner inside) with a stand-in launcher, built from the
 # local base image so E2E does not pull a second base image from Docker Hub.
 AX_E2E_LAUNCHER_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-e2e-launcher:e2e" \
-  --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-task-runner:base" -f "${E2E_DIR}/launcher/Dockerfile")"
+  --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-runner:base" -f "${E2E_DIR}/launcher/Dockerfile")"
 export AX_SERVER_IMAGE AX_E2E_TASK_IMAGE AX_RUNNER_VOLUME_IMAGE AX_E2E_LAUNCHER_IMAGE
 printf '  AX_SERVER_IMAGE=%s\n  AX_E2E_TASK_IMAGE=%s\n  AX_RUNNER_VOLUME_IMAGE=%s\n  AX_E2E_LAUNCHER_IMAGE=%s\n' \
   "${AX_SERVER_IMAGE}" "${AX_E2E_TASK_IMAGE}" "${AX_RUNNER_VOLUME_IMAGE}" "${AX_E2E_LAUNCHER_IMAGE}"

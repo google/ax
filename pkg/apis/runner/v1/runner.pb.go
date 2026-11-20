@@ -37,7 +37,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// AssignmentMode tells ax-task-runner how to act upon claiming work from
+// AssignmentMode tells ax-runner how to act upon claiming work from
 // ax-server's internal runner control endpoint (:8081).
 type AssignmentMode int32
 
@@ -99,7 +99,7 @@ func (AssignmentMode) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_apis_runner_v1_runner_proto_rawDescGZIP(), []int{0}
 }
 
-// ClaimAssignmentRequest is sent by ax-task-runner to
+// ClaimAssignmentRequest is sent by ax-runner to
 // POST /runner/v1/assignment:claim on startup and after each wakeup probe.
 type ClaimAssignmentRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -176,7 +176,7 @@ func (x *ClaimAssignmentRequest) GetNonce() string {
 	return ""
 }
 
-// ClaimAssignmentResponse describes the assignment granted to ax-task-runner.
+// ClaimAssignmentResponse describes the assignment granted to ax-runner.
 type ClaimAssignmentResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Mode  AssignmentMode         `protobuf:"varint,1,opt,name=mode,proto3,enum=ax.runner.v1.AssignmentMode" json:"mode,omitempty"`
@@ -450,7 +450,7 @@ func (x *ReportEventsRequest) GetEvents() []*RunnerEvent {
 	return nil
 }
 
-// RunnerEvent is a single sequenced event emitted by ax-task-runner.
+// RunnerEvent is a single sequenced event emitted by ax-runner.
 type RunnerEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 1-based per-run monotonic sequence number used to deduplicate retries.

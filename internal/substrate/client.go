@@ -214,7 +214,7 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
 }
 
 const (
-	DefaultGuestCommand = "/usr/local/bin/ax-task-runner"
+	DefaultGuestCommand = "/usr/local/bin/ax-runner"
 
 	// RunnerVolumeName names the read-only image volume that carries the
 	// runner when a template mounts one; see MountRunnerVolume.
@@ -436,7 +436,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 	}
 }
 
-// MountRunnerVolume makes tmpl's container run ax-task-runner from image, a
+// MountRunnerVolume makes tmpl's container run ax-runner from image, a
 // digest-pinned runner volume image (Dockerfile.runner-volume), instead of the
 // runner baked into the container image. Substrate mounts image read-only at
 // v1alpha1.RunnerMountPath, so the container image needs no AX binaries. An
@@ -444,7 +444,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 //
 // Callers should keep three operational constraints in mind:
 //   - Setting image overrides the container command of every AX-managed
-//     template to /opt/ax/ax-task-runner, so images that rely on a custom
+//     template to /opt/ax/ax-runner, so images that rely on a custom
 //     runner binary (such as Dockerfile.claude-code before migrating to
 //     /usr/local/bin/ax-harness) must migrate before enabling this setting.
 //   - User-managed ate_template references are not mutated by AX and do
@@ -460,7 +460,7 @@ func MountRunnerVolume(tmpl *ateapipb.ActorTemplate, image string) {
 		Image: &ateapipb.ImageVolumeSource{Reference: image},
 	})
 	for _, c := range tmpl.GetContainers() {
-		c.Command = []string{path.Join(v1alpha1.RunnerMountPath, "ax-task-runner")}
+		c.Command = []string{path.Join(v1alpha1.RunnerMountPath, "ax-runner")}
 		c.VolumeMounts = append(c.VolumeMounts, &ateapipb.VolumeMount{
 			Name:      RunnerVolumeName,
 			MountPath: v1alpha1.RunnerMountPath,

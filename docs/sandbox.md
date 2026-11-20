@@ -1,6 +1,6 @@
 # Inside the sandbox
 
-Every task container starts with `ax-task-runner` as PID 1. On boot it:
+Every task container starts with `ax-runner` as PID 1. On boot it:
 
 1. Loads the `Task` and every bound `Workspace` spec.
 2. Starts its servers: probes and guest management on port 80, and the metadata endpoints on `127.0.0.1:8099`.

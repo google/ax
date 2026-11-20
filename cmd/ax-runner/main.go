@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command ax-task-runner is the entrypoint of every AX task container. It
+// Command ax-runner is the entrypoint of every AX task container. It
 // loads the Task and Workspace specs and hands them to the runner package,
 // which does everything else.
 //

@@ -45,14 +45,14 @@ import (
 )
 
 const (
-	// DefaultControlURL is the in-cluster URL where ax-task-runner claims
+	// DefaultControlURL is the in-cluster URL where ax-runner claims
 	// assignments and posts events when Config.ControlURL and AX_RUNNER_URL are
 	// both unset.
 	DefaultControlURL = "http://" + substrate.DefaultRunnerEndpoint
 	// DefaultActorMetadataDir is where Substrate projects actor identity files
 	// (such as actor-uid) inside every sandbox.
 	DefaultActorMetadataDir = "/run/ate"
-	// DefaultRunnerStateDir is the durable directory where ax-task-runner
+	// DefaultRunnerStateDir is the durable directory where ax-runner
 	// persists its per-actor bearer token and last started run ID.
 	DefaultRunnerStateDir = "/var/lib/ax"
 

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Cross-compiles ax-server and ax-task-runner for linux/amd64 and linux/arm64,
+# Cross-compiles ax-server and ax-runner for linux/amd64 and linux/arm64,
 # then builds and pushes multi-arch OCI Image Indexes via `docker buildx`.
 #
 # Usage:
@@ -39,16 +39,16 @@ cd "${REPO_ROOT}"
 export GOTOOLCHAIN=auto
 
 for arch in amd64 arm64; do
-  echo "==> Cross-compiling ax-server and ax-task-runner for linux/${arch}..."
+  echo "==> Cross-compiling ax-server and ax-runner for linux/${arch}..."
   mkdir -p "bin/linux_${arch}"
   CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags="-s -w" \
     -o "bin/linux_${arch}/ax-server" ./cmd/ax-server
   CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags="-s -w" \
-    -o "bin/linux_${arch}/ax-task-runner" ./cmd/ax-task-runner
+    -o "bin/linux_${arch}/ax-runner" ./cmd/ax-runner
 done
 
 # Ensure QEMU binfmt is registered on x86_64/arm64 Linux hosts so cross-arch
-# Dockerfile RUN steps (such as apt-get in Dockerfile.task-runner) succeed.
+# Dockerfile RUN steps (such as apt-get in Dockerfile.runner) succeed.
 if [[ "$(uname -s)" == "Linux" ]]; then
   if ! [[ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 && -f /proc/sys/fs/binfmt_misc/qemu-x86_64 ]]; then
     echo "==> Registering QEMU binfmt handlers for cross-architecture RUN steps..."
@@ -66,7 +66,7 @@ else
 fi
 
 SERVER_REF="${AX_IMAGE_REPO}/ax-server:${IMAGE_TAG}"
-RUNNER_REF="${AX_IMAGE_REPO}/ax-task-runner:${IMAGE_TAG}"
+RUNNER_REF="${AX_IMAGE_REPO}/ax-runner:${IMAGE_TAG}"
 
 echo "==> Building and pushing multi-arch (${PLATFORMS}) ${SERVER_REF}..."
 docker buildx build \
@@ -81,7 +81,7 @@ echo "==> Building and pushing multi-arch (${PLATFORMS}) ${RUNNER_REF}..."
 docker buildx build \
   --builder "${BUILDER_NAME}" \
   --platform "${PLATFORMS}" \
-  -f Dockerfile.task-runner \
+  -f Dockerfile.runner \
   -t "${RUNNER_REF}" \
   --push \
   .

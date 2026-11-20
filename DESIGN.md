@@ -32,7 +32,7 @@ writes. It identifies the current actor for correlation with Substrate telemetry
 |---|---|
 | `ax` | Developer CLI. Applies manifests, inspects resources, tunnels to the cluster. |
 | `ax-server` | Direct-execution gRPC API on port 8080. Validates manifests, manages distributed locks, reconciles directly with Agent Substrate, and persists state to PostgreSQL. |
-| `ax-task-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
+| `ax-runner` | Entrypoint inside every task container. Bootstraps the workspace, serves metadata, and runs the agent command. A thin wrapper over the `runner` package, which custom images can embed directly. |
 
 ## API reference
 

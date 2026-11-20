@@ -156,15 +156,15 @@ IMAGE_TAG="ax-${AX_REF:0:12}"
 make images CONTAINER_CLI=docker IMAGE_ARCH=amd64 \
   AX_IMAGE_REPO="$AX_IMAGE_REPO" IMAGE_TAG="$IMAGE_TAG" \
   AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server:$IMAGE_TAG" \
-  AX_TASK_RUNNER_IMAGE="$AX_IMAGE_REPO/ax-task-runner:$IMAGE_TAG"
+  AX_RUNNER_IMAGE="$AX_IMAGE_REPO/ax-runner:$IMAGE_TAG"
 
 grep -Eq '^sha256:[0-9a-f]{64}$' bin/ax-server.digest
-grep -Eq '^sha256:[0-9a-f]{64}$' bin/ax-task-runner.digest
+grep -Eq '^sha256:[0-9a-f]{64}$' bin/ax-runner.digest
 AX_SERVER_DIGEST="$(cat bin/ax-server.digest)"
-AX_TASK_RUNNER_DIGEST="$(cat bin/ax-task-runner.digest)"
+AX_RUNNER_DIGEST="$(cat bin/ax-runner.digest)"
 export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@$AX_SERVER_DIGEST"
-export AX_TASK_IMAGE="$AX_IMAGE_REPO/ax-task-runner@$AX_TASK_RUNNER_DIGEST"
-cp bin/ax-server.digest bin/ax-task-runner.digest "$AX_INSTALL_DIR/"
+export AX_TASK_IMAGE="$AX_IMAGE_REPO/ax-runner@$AX_RUNNER_DIGEST"
+cp bin/ax-server.digest bin/ax-runner.digest "$AX_INSTALL_DIR/"
 printf 'AX_REF=%s\nSUBSTRATE_REF=%s\nAX_SERVER_IMAGE=%s\nAX_TASK_IMAGE=%s\n' \
   "$AX_REF" "$SUBSTRATE_REF" "$AX_SERVER_IMAGE" "$AX_TASK_IMAGE" \
   > "$AX_INSTALL_DIR/source-and-images.txt"
@@ -238,7 +238,7 @@ remove it.
 
 Control-plane rollout alone does not verify a sandbox. This task exercises the
 runner and guest exec without requiring a Workspace, Model, or model API key.
-It runs the `ax-task-runner` image you built:
+It runs the `ax-runner` image you built:
 
 ```bash
 AX_CHECK_TASK="ax-install-$(date +%s)"

@@ -19,7 +19,7 @@ export PATH="$HOME/.ax/bin:$PATH"
 #    Note: Until official release images are published, specify --server-image (or export AX_SERVER_IMAGE).
 #    Tasks name their own image in spec.profile.image, pinned by digest.
 export AX_SERVER_IMAGE="<registry>/ax-server:<tag>"
-export AX_TASK_IMAGE="<registry>/ax-task-runner@sha256:<digest>"
+export AX_TASK_IMAGE="<registry>/ax-runner@sha256:<digest>"
 #    Optional: mount the runner from a runner volume image, so task images need no runner baked in.
 # export AX_RUNNER_VOLUME_IMAGE="<registry>/ax-runner-volume:<tag>"
 ax local start
@@ -125,7 +125,7 @@ ax local start \
   --server-image "$AX_SERVER_IMAGE"
 ```
 
-*(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-task-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
+*(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
 
 *(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--runner-volume-image` and each task's `spec.profile.image`.)*
 

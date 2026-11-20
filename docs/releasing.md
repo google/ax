@@ -4,13 +4,13 @@ Pushing a `vX.Y.Z` or `vX.Y.Z-PRERELEASE` tag publishes a release.
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) runs two
 jobs:
 
-1. **images** builds `ax-server`, `ax-task-runner`, and `ax-runner-volume` for
+1. **images** builds `ax-server`, `ax-runner`, and `ax-runner-volume` for
    `linux/amd64` and `linux/arm64` and pushes them as
    `ghcr.io/google/ax/<image>:<tag>`.
 2. **release** builds the `ax` CLI, renders the install manifests with
    `ax-server` pinned by digest (and the runner volume, when it is switched
    on), and publishes the GitHub release with them attached. The release notes
-   list the digest-pinned `ax-task-runner` image for `spec.profile.image`.
+   list the digest-pinned `ax-runner` image for `spec.profile.image`.
 
 If the images job fails, no release is created. Every run's image digests are
 in its job summary.
@@ -58,7 +58,7 @@ previous stable tag.
 
 ## Images
 
-Images go to `ghcr.io/google/ax/ax-server`, `ghcr.io/google/ax/ax-task-runner`,
+Images go to `ghcr.io/google/ax/ax-server`, `ghcr.io/google/ax/ax-runner`,
 and `ghcr.io/google/ax/ax-runner-volume` (`version.ImageRepo` in
 [`internal/version`](../internal/version/version.go)), tagged with the release
 tag. The highest stable release also moves `:latest`. The list is
@@ -66,7 +66,7 @@ tag. The highest stable release also moves `:latest`. The list is
 image is published only once it is added there.
 
 `ax-runner-volume` (`Dockerfile.runner-volume`) holds only the static
-`ax-task-runner` binary. When ax-server's `AX_RUNNER_VOLUME_IMAGE` is set to
+`ax-runner` binary. When ax-server's `AX_RUNNER_VOLUME_IMAGE` is set to
 it, every task mounts the runner read-only at `/opt/ax` instead of needing it
 built into the task image (#620). Release manifests leave it empty unless the
 repository variable `AX_RELEASE_RUNNER_VOLUME` is `true` (case-insensitive;

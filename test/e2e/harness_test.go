@@ -430,7 +430,7 @@ func (s *suiteEnv) deleteOnCleanup(t *testing.T, atespace, kind, name string) {
 // ---------------------------------------------------------------------------
 
 // renderYAML executes tmpl (a text/template) with data. {{taskImage}} expands
-// to $AX_E2E_TASK_IMAGE, the digest-pinned task-runner image that Tasks and
+// to $AX_E2E_TASK_IMAGE, the digest-pinned runner image that Tasks and
 // Workspaces name in spec.profile.image.
 func renderYAML(t *testing.T, tmpl string, data any) string {
 	t.Helper()

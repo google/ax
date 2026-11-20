@@ -110,8 +110,8 @@ func needsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
 // replicas via shared storage:
 //  1. WorkspaceManager calls RegisterSetup after EnsureActor (recording the
 //     expected actorUID and ws) and before ResumeActor, avoiding any boot race
-//     if ax-task-runner claims its assignment immediately on startup.
-//  2. Inside the sandbox, ax-task-runner calls POST /runner/v1/assignment:claim
+//     if ax-runner claims its assignment immediately on startup.
+//  2. Inside the sandbox, ax-runner calls POST /runner/v1/assignment:claim
 //     and POST /runner/v1/events (SetupFinished) against any ax-server replica.
 //  3. WorkspaceManager blocks in AwaitSetup until the setup record transitions
 //     to succeeded or failed, and always removes the temporary record via

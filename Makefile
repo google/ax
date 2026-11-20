@@ -23,7 +23,7 @@ AX_IMAGE_REPO ?=
 IMAGE_TAG ?= latest
 IMAGE_ARCH ?= amd64
 AX_SERVER_IMAGE ?= $(AX_IMAGE_REPO)/ax-server:$(IMAGE_TAG)
-AX_TASK_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-task-runner:$(IMAGE_TAG)
+AX_RUNNER_IMAGE ?= $(AX_IMAGE_REPO)/ax-runner:$(IMAGE_TAG)
 # Image holding only the runner binary, mounted read-only into task containers;
 # see Dockerfile.runner-volume.
 AX_RUNNER_VOLUME_BUILD_IMAGE ?= $(AX_IMAGE_REPO)/ax-runner-volume:$(IMAGE_TAG)
@@ -66,24 +66,24 @@ check-image-repo:
 		echo "error: AX_IMAGE_REPO is not set (e.g. AX_IMAGE_REPO=gcr.io/my-project)"; exit 1; \
 	fi
 
-# Cross-compile ax-server and ax-task-runner for linux/$(IMAGE_ARCH), then build
+# Cross-compile ax-server and ax-runner for linux/$(IMAGE_ARCH), then build
 # and push their container images.
 images: check-image-repo
 	@if [ -z "$(CONTAINER_CLI)" ]; then \
 		echo "error: neither podman nor docker found in PATH (or set CONTAINER_CLI)"; exit 1; \
 	fi
-	@echo "==> Cross-compiling ax-server and ax-task-runner for linux/$(IMAGE_ARCH)..."
+	@echo "==> Cross-compiling ax-server and ax-runner for linux/$(IMAGE_ARCH)..."
 	@mkdir -p bin/linux_$(IMAGE_ARCH)
 	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-server ./cmd/ax-server
-	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-task-runner ./cmd/ax-task-runner
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-runner ./cmd/ax-runner
 	@echo "==> Building $(AX_SERVER_IMAGE) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_SERVER_IMAGE) -f Dockerfile.server .
-	@echo "==> Building $(AX_TASK_RUNNER_IMAGE) using $(CONTAINER_CLI)..."
-	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_TASK_RUNNER_IMAGE) -f Dockerfile.task-runner .
+	@echo "==> Building $(AX_RUNNER_IMAGE) using $(CONTAINER_CLI)..."
+	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_RUNNER_IMAGE) -f Dockerfile.runner .
 	@echo "==> Building $(AX_RUNNER_VOLUME_BUILD_IMAGE) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_RUNNER_VOLUME_BUILD_IMAGE) -f Dockerfile.runner-volume .
 	$(call push_image,$(AX_SERVER_IMAGE),ax-server)
-	$(call push_image,$(AX_TASK_RUNNER_IMAGE),ax-task-runner)
+	$(call push_image,$(AX_RUNNER_IMAGE),ax-runner)
 	$(call push_image,$(AX_RUNNER_VOLUME_BUILD_IMAGE),ax-runner-volume)
 	@echo ""
 	@echo "==> Pushed images. To deploy exactly these builds, run:"
@@ -91,9 +91,9 @@ images: check-image-repo
 	@echo "    export AX_SERVER_IMAGE=$(AX_SERVER_IMAGE)@$$(cat bin/ax-server.digest)"
 	@echo "    export AX_RUNNER_VOLUME_IMAGE=$(AX_RUNNER_VOLUME_BUILD_IMAGE)@$$(cat bin/ax-runner-volume.digest)"
 	@echo ""
-	@echo "==> Tasks run ax-task-runner by setting spec.profile.image to:"
+	@echo "==> Tasks run ax-runner by setting spec.profile.image to:"
 	@echo ""
-	@echo "    $(AX_TASK_RUNNER_IMAGE)@$$(cat bin/ax-task-runner.digest)"
+	@echo "    $(AX_RUNNER_IMAGE)@$$(cat bin/ax-runner.digest)"
 	@echo ""
 
 # Build and push only the runner volume image (see Dockerfile.runner-volume)
@@ -103,7 +103,7 @@ push-runner-volume: check-image-repo
 		echo "error: neither podman nor docker found in PATH (or set CONTAINER_CLI)"; exit 1; \
 	fi
 	@mkdir -p bin/linux_$(IMAGE_ARCH)
-	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-task-runner ./cmd/ax-task-runner
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-runner ./cmd/ax-runner
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_RUNNER_VOLUME_BUILD_IMAGE) -f Dockerfile.runner-volume .
 	$(call push_image,$(AX_RUNNER_VOLUME_BUILD_IMAGE),ax-runner-volume)
 	@echo "==> Pushed digest: $(AX_RUNNER_VOLUME_BUILD_IMAGE)@$$(cat bin/ax-runner-volume.digest)"

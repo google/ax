@@ -24,6 +24,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG TARGETARCH
-COPY bin/linux_${TARGETARCH:-amd64}/ax-task-runner /usr/local/bin/ax-task-runner
+COPY bin/linux_${TARGETARCH:-amd64}/ax-runner /usr/local/bin/ax-runner
 
-ENTRYPOINT ["/usr/local/bin/ax-task-runner"]
+ENTRYPOINT ["/usr/local/bin/ax-runner"]
