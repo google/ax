@@ -30,6 +30,7 @@ internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
 internal/store/        memory + postgres backends, plus TaskApplier contract (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
+internal/taskevents    TaskApplier wrapper that emits ax.task.state_changed after committed task writes
 internal/workspace     spec.setup execution (git clone / inline files / skills dir / commands; MCP is read via metadata server)
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
 internal/telemetry     ax-server's OpenTelemetry setup: OTLP traces, metrics, and events (Emit, stdout fallback), Prometheus /metrics (:9090), JSON slog with trace IDs
@@ -52,7 +53,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-task-runner
-go test ./...                    # ~25 s, 31 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 32 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:

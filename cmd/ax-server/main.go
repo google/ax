@@ -30,9 +30,9 @@ import (
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/runnerhttp"
 	"github.com/google/ax/internal/server"
-	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/taskevents"
 	"github.com/google/ax/internal/telemetry"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -162,6 +162,7 @@ func main() {
 	}
 	defer subClient.Close()
 
+	taskApplier := taskevents.Wrap(server.TaskApplierForStore(backend))
 	var (
 		runnerSrv        *runnerhttp.Server
 		setupCoordinator controller.SetupCoordinator
@@ -177,7 +178,6 @@ func main() {
 			slog.Error("initializing runner OIDC verifier", "error", err)
 			os.Exit(1)
 		}
-		taskApplier, _ := any(backend).(store.TaskApplier)
 		runnerSrv = runnerhttp.NewServer(runnerhttp.Options{
 			TaskApplier: taskApplier,
 			Store:       backend,
@@ -206,7 +206,7 @@ func main() {
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
-		TaskApplier:      server.TaskApplierForStore(backend),
+		TaskApplier:      taskApplier,
 	})
 
 	httpServer := &http.Server{

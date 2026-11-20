@@ -89,6 +89,38 @@ OTLP event records are batched, so a slow collector never delays the task
 operation that emits them. Records still queued when ax-server exits
 ungracefully are lost, unless `console` also wrote them to stdout.
 
+### `ax.task.state_changed`
+
+ax-server emits `ax.task.state_changed` after each committed write of a task
+record that changes the task's phase, its outcome, or its actor (a new or
+replaced `ate.actor.uid`). A failed write, or a write that changes none of
+them, emits nothing. The first record is for the task's creation and has no
+previous values; the last is for the record's deletion.
+
+The record's timestamp is the time of the commit, taken under the row lock,
+so a task's records are in commit order by timestamp, and
+`ax.task.generation` breaks ties. Delivery is at most once: a dropped record
+is not sent again, and if Postgres reports an error for a commit that in fact
+succeeded, that transition has no record and the next one's previous values
+skip it.
+
+| Attribute | Value |
+|---|---|
+| `ax.task.name`, `ate.atespace` | The task's name and atespace. |
+| `ax.task.id` | The task's `metadata.uid`. |
+| `ax.task.generation` | The task record's revision after the write; for `Deleted`, one past the last write. |
+| `ate.actor.uid` | The task's actor, once one is created. |
+| `ax.task.phase`, `ax.task.previous_phase` | `Queued`, `Provisioned`, `Completed`, `Failed`, `Cancelled`, `Terminating`, or `Deleted`. No previous phase on creation. |
+| `ax.task.outcome`, `ax.task.previous_outcome` | `succeeded`, `failed`, or `cancelled`, once the command has ended. |
+| `ax.task.exit_code` | The command's exit code, with `ax.task.outcome` other than `cancelled`. |
+
+`Provisioned` means the task has an actor that owns its live state. A new
+task is created suspended, so it enters `Provisioned` at once and stays there
+while the actor is `Working`, `Resuming`, `Reverting`, `Suspending`,
+`Suspended`, or `Crashed`. ax-server does not store these states; Agent
+Substrate reports them in `ate.actor.state_changed`, which you join on
+`ate.actor.uid`.
+
 ## Metrics
 
 Each instrument keeps at most 2000 attribute sets per collection (the SDK
