@@ -751,8 +751,12 @@ type TaskStatus struct {
 	ResolvedArgv []string `protobuf:"bytes,10,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
 	// Summary of the previous attempt's failure, provided as context on retry.
 	PreviousFailure string `protobuf:"bytes,11,opt,name=previous_failure,json=previousFailure,proto3" json:"previous_failure,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Source task name if this task was created via ForkTask.
+	ParentTask string `protobuf:"bytes,12,opt,name=parent_task,json=parentTask,proto3" json:"parent_task,omitempty"`
+	// Snapshot tag owned by this fork; cleaned up when the task is deleted.
+	ParentTag     string `protobuf:"bytes,13,opt,name=parent_tag,json=parentTag,proto3" json:"parent_tag,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskStatus) Reset() {
@@ -858,6 +862,20 @@ func (x *TaskStatus) GetResolvedArgv() []string {
 func (x *TaskStatus) GetPreviousFailure() string {
 	if x != nil {
 		return x.PreviousFailure
+	}
+	return ""
+}
+
+func (x *TaskStatus) GetParentTask() string {
+	if x != nil {
+		return x.ParentTask
+	}
+	return ""
+}
+
+func (x *TaskStatus) GetParentTag() string {
+	if x != nil {
+		return x.ParentTag
 	}
 	return ""
 }
@@ -1232,6 +1250,159 @@ func (x *ResumeTaskRequest) GetName() string {
 	return ""
 }
 
+type ForkTaskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Atespace      string                 `protobuf:"bytes,1,opt,name=atespace,proto3" json:"atespace,omitempty"`
+	SourceTask    string                 `protobuf:"bytes,2,opt,name=source_task,json=sourceTask,proto3" json:"source_task,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,4,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Overrides     *ForkOverrides         `protobuf:"bytes,5,opt,name=overrides,proto3" json:"overrides,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForkTaskRequest) Reset() {
+	*x = ForkTaskRequest{}
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForkTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForkTaskRequest) ProtoMessage() {}
+
+func (x *ForkTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForkTaskRequest.ProtoReflect.Descriptor instead.
+func (*ForkTaskRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ForkTaskRequest) GetAtespace() string {
+	if x != nil {
+		return x.Atespace
+	}
+	return ""
+}
+
+func (x *ForkTaskRequest) GetSourceTask() string {
+	if x != nil {
+		return x.SourceTask
+	}
+	return ""
+}
+
+func (x *ForkTaskRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ForkTaskRequest) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+func (x *ForkTaskRequest) GetOverrides() *ForkOverrides {
+	if x != nil {
+		return x.Overrides
+	}
+	return nil
+}
+
+type ForkOverrides struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Commands []string               `protobuf:"bytes,1,rep,name=commands,proto3" json:"commands,omitempty"`
+	Env      []*EnvVar              `protobuf:"bytes,2,rep,name=env,proto3" json:"env,omitempty"`
+	Goal     *Goal                  `protobuf:"bytes,3,opt,name=goal,proto3" json:"goal,omitempty"`
+	Config   *structpb.Struct       `protobuf:"bytes,4,opt,name=config,proto3" json:"config,omitempty"`
+	// Overrides the inherited session_id when non-empty.
+	SessionId     string `protobuf:"bytes,5,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForkOverrides) Reset() {
+	*x = ForkOverrides{}
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForkOverrides) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForkOverrides) ProtoMessage() {}
+
+func (x *ForkOverrides) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForkOverrides.ProtoReflect.Descriptor instead.
+func (*ForkOverrides) Descriptor() ([]byte, []int) {
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ForkOverrides) GetCommands() []string {
+	if x != nil {
+		return x.Commands
+	}
+	return nil
+}
+
+func (x *ForkOverrides) GetEnv() []*EnvVar {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+func (x *ForkOverrides) GetGoal() *Goal {
+	if x != nil {
+		return x.Goal
+	}
+	return nil
+}
+
+func (x *ForkOverrides) GetConfig() *structpb.Struct {
+	if x != nil {
+		return x.Config
+	}
+	return nil
+}
+
+func (x *ForkOverrides) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 var File_pkg_apis_v1alpha1_task_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
@@ -1276,7 +1447,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x06output\x18\x04 \x01(\tR\x06output\"a\n" +
 	"\x10TaskStatusDetail\x125\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1d.ax.v1alpha1.TaskStatusReasonR\x06reason\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xe2\x03\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xa2\x04\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
@@ -1294,7 +1465,11 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"generation\x12#\n" +
 	"\rresolved_argv\x18\n" +
 	" \x03(\tR\fresolvedArgv\x12)\n" +
-	"\x10previous_failure\x18\v \x01(\tR\x0fpreviousFailure\"@\n" +
+	"\x10previous_failure\x18\v \x01(\tR\x0fpreviousFailure\x12\x1f\n" +
+	"\vparent_task\x18\f \x01(\tR\n" +
+	"parentTask\x12\x1d\n" +
+	"\n" +
+	"parent_tag\x18\r \x01(\tR\tparentTag\"@\n" +
 	"\x0eGetTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"j\n" +
@@ -1316,7 +1491,24 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
 	"\x11ResumeTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name*\x8b\x02\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x99\x02\n" +
+	"\x0fForkTaskRequest\x12\x1a\n" +
+	"\batespace\x18\x01 \x01(\tR\batespace\x12\x1f\n" +
+	"\vsource_task\x18\x02 \x01(\tR\n" +
+	"sourceTask\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12@\n" +
+	"\x06labels\x18\x04 \x03(\v2(.ax.v1alpha1.ForkTaskRequest.LabelsEntryR\x06labels\x128\n" +
+	"\toverrides\x18\x05 \x01(\v2\x1a.ax.v1alpha1.ForkOverridesR\toverrides\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc9\x01\n" +
+	"\rForkOverrides\x12\x1a\n" +
+	"\bcommands\x18\x01 \x03(\tR\bcommands\x12%\n" +
+	"\x03env\x18\x02 \x03(\v2\x13.ax.v1alpha1.EnvVarR\x03env\x12%\n" +
+	"\x04goal\x18\x03 \x01(\v2\x11.ax.v1alpha1.GoalR\x04goal\x12/\n" +
+	"\x06config\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06config\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x05 \x01(\tR\tsessionId*\x8b\x02\n" +
 	"\tTaskState\x12\x1a\n" +
 	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fTASK_STATE_IDLE\x10\x01\x12\x16\n" +
@@ -1352,7 +1544,7 @@ func file_pkg_apis_v1alpha1_task_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(TaskState)(0),              // 0: ax.v1alpha1.TaskState
 	(TaskResult)(0),             // 1: ax.v1alpha1.TaskResult
@@ -1372,44 +1564,52 @@ var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(*DeleteTaskRequest)(nil),   // 15: ax.v1alpha1.DeleteTaskRequest
 	(*SuspendTaskRequest)(nil),  // 16: ax.v1alpha1.SuspendTaskRequest
 	(*ResumeTaskRequest)(nil),   // 17: ax.v1alpha1.ResumeTaskRequest
-	(*ObjectMeta)(nil),          // 18: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),             // 19: ax.v1alpha1.Profile
-	(*WorkspaceRef)(nil),        // 20: ax.v1alpha1.WorkspaceRef
-	(*structpb.Struct)(nil),     // 21: google.protobuf.Struct
-	(*GatewayRef)(nil),          // 22: ax.v1alpha1.GatewayRef
-	(*durationpb.Duration)(nil), // 23: google.protobuf.Duration
-	(*status.Status)(nil),       // 24: google.rpc.Status
-	(*ObjectRef)(nil),           // 25: ax.v1alpha1.ObjectRef
-	(*Condition)(nil),           // 26: ax.v1alpha1.Condition
+	(*ForkTaskRequest)(nil),     // 18: ax.v1alpha1.ForkTaskRequest
+	(*ForkOverrides)(nil),       // 19: ax.v1alpha1.ForkOverrides
+	nil,                         // 20: ax.v1alpha1.ForkTaskRequest.LabelsEntry
+	(*ObjectMeta)(nil),          // 21: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),             // 22: ax.v1alpha1.Profile
+	(*WorkspaceRef)(nil),        // 23: ax.v1alpha1.WorkspaceRef
+	(*structpb.Struct)(nil),     // 24: google.protobuf.Struct
+	(*GatewayRef)(nil),          // 25: ax.v1alpha1.GatewayRef
+	(*durationpb.Duration)(nil), // 26: google.protobuf.Duration
+	(*status.Status)(nil),       // 27: google.rpc.Status
+	(*ObjectRef)(nil),           // 28: ax.v1alpha1.ObjectRef
+	(*Condition)(nil),           // 29: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
-	18, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	21, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	4,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
 	10, // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	19, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
+	22, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
 	5,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	20, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
-	21, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
+	23, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
+	24, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
 	7,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
 	6,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
-	22, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
-	23, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
-	23, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
+	25, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	26, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
+	26, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
 	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
-	24, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
+	27, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
 	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	25, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
-	26, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	28, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
+	29, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
 	0,  // 17: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
 	9,  // 18: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
 	8,  // 19: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
 	3,  // 20: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
 	3,  // 21: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	20, // 22: ax.v1alpha1.ForkTaskRequest.labels:type_name -> ax.v1alpha1.ForkTaskRequest.LabelsEntry
+	19, // 23: ax.v1alpha1.ForkTaskRequest.overrides:type_name -> ax.v1alpha1.ForkOverrides
+	5,  // 24: ax.v1alpha1.ForkOverrides.env:type_name -> ax.v1alpha1.EnvVar
+	7,  // 25: ax.v1alpha1.ForkOverrides.goal:type_name -> ax.v1alpha1.Goal
+	24, // 26: ax.v1alpha1.ForkOverrides.config:type_name -> google.protobuf.Struct
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }
@@ -1426,7 +1626,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_task_proto_rawDesc), len(file_pkg_apis_v1alpha1_task_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

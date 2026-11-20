@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -209,25 +210,41 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	// interchangeably (for example in the router's ate-target-actor header).
 	actorName := task.Metadata.Name
 
-	// 3. Resolve or provision the ActorTemplate for the task.
-	templateAtespace, templateName, err := ensureProfileTemplate(ctx, r.client, atespace, effective, r.defaultTaskImage, r.RunnerVolumeImage)
-	if err != nil {
-		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+	// 3. Resolve or provision the ActorTemplate for the task. A forked task
+	// reuses the exact ActorTemplate recorded on its parent snapshot tag so
+	// Substrate's tag.actor_template_uid check always matches.
+	parentTag := task.GetStatus().GetParentTag()
+	var templateAtespace, templateName string
+	var err error
+	if parentTag != "" && task.GetStatus().GetAteTemplate().GetName() != "" {
+		tplRef := task.GetStatus().GetAteTemplate()
+		templateName = tplRef.GetName()
+		templateAtespace = tplRef.GetAtespace()
+		if templateAtespace == "" {
+			templateAtespace = atespace
+		}
+	} else {
+		templateAtespace, templateName, err = ensureProfileTemplate(ctx, r.client, atespace, effective, r.defaultTaskImage, r.RunnerVolumeImage)
+		if err != nil {
+			if substrate.IsTransientError(err) {
+				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+				return fmt.Errorf("ensuring actor template: %w", err)
+			}
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 			return fmt.Errorf("ensuring actor template: %w", err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
-		return fmt.Errorf("ensuring actor template: %w", err)
 	}
 
-	// 4. Resolve the warm Workspace snapshot Tag when the bound Workspace has
-	// setup steps or a compute profile and snapshot pre-warming is enabled.
-	// Tasks mounting a Workspace at a non-default path skip the pre-warmed
-	// snapshot so setup runs directly at their target path.
+	// 4. Resolve the source snapshot Tag: forked tasks seed directly from their
+	// parent snapshot tag; otherwise resolve the warm Workspace snapshot Tag
+	// when the bound Workspace has setup steps or a compute profile and
+	// snapshot pre-warming is enabled. Tasks mounting a Workspace at a
+	// non-default path skip the pre-warmed snapshot so setup runs directly at
+	// their target path.
 	wsPath := task.GetSpec().WorkspacePath()
 	usesDefaultWorkspacePath := wsPath == "" || wsPath == v1alpha1.DefaultWorkspacePath
-	var sourceTag string
-	if usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
+	sourceTag := parentTag
+	if sourceTag == "" && usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
 		var setupGW *v1alpha1.Gateway
 		if gwName := ws.GetSpec().GetSetup().GetGateway().GetName(); gwName != "" && r.GatewayStore != nil {
 			setupGW, _ = r.GatewayStore.GetGateway(ctx, atespace, gwName)
@@ -260,12 +277,16 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if len(task.Spec.Commands) > 0 && len(task.Status.ResolvedArgv) == 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
-	if usesDefaultWorkspacePath && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
-		msg := "Workspace requires no setup"
-		if sourceTag != "" {
-			msg = fmt.Sprintf("Workspace seeded from snapshot tag %s", sourceTag)
+	if !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
+		if parentTag != "" {
+			setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, fmt.Sprintf("Workspace seeded from fork snapshot tag %s", parentTag), now)
+		} else if usesDefaultWorkspacePath && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
+			msg := "Workspace requires no setup"
+			if sourceTag != "" {
+				msg = fmt.Sprintf("Workspace seeded from snapshot tag %s", sourceTag)
+			}
+			setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, msg, now)
 		}
-		setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, msg, now)
 	}
 	return nil
 }
@@ -541,9 +562,51 @@ func (r *TaskReconciler) Delete(ctx context.Context, atespace, taskName string) 
 	return r.delete(ctx, atespace, taskName, false)
 }
 
+// ForkTagName returns a deterministic RFC 1123 Substrate Tag name owned by a
+// forked task ("fork-<16hex(childUID)>").
+func ForkTagName(childUID string) string {
+	sum := sha256.Sum256([]byte(childUID))
+	return fmt.Sprintf("fork-%x", sum[:8])
+}
+
+// CreateForkTag ensures sourceActorName is durably suspended and creates a
+// Substrate snapshot Tag named tagName capturing its state.
+func (r *TaskReconciler) CreateForkTag(ctx context.Context, atespace, sourceActorName, tagName string) error {
+	if atespace == "" {
+		atespace = v1alpha1.DefaultAtespace
+	}
+	if err := r.client.SuspendActorAndWaitForSnapshot(ctx, atespace, sourceActorName); err != nil {
+		return fmt.Errorf("suspending source actor %s/%s for fork: %w", atespace, sourceActorName, err)
+	}
+	if _, err := r.client.CreateTag(ctx, atespace, tagName, sourceActorName); err != nil {
+		if status.Code(err) == codes.AlreadyExists {
+			if delErr := r.client.DeleteTag(ctx, atespace, tagName); delErr != nil {
+				return fmt.Errorf("replacing incomplete fork tag %s/%s: %w", atespace, tagName, delErr)
+			}
+			if _, err = r.client.CreateTag(ctx, atespace, tagName, sourceActorName); err == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("creating fork tag %s/%s: %w", atespace, tagName, err)
+	}
+	return nil
+}
+
+// DeleteForkTag deletes a fork snapshot Tag. Deleting a missing tag is a no-op.
+func (r *TaskReconciler) DeleteForkTag(ctx context.Context, atespace, tagName string) error {
+	if tagName == "" {
+		return nil
+	}
+	if atespace == "" {
+		atespace = v1alpha1.DefaultAtespace
+	}
+	return r.client.DeleteTag(ctx, atespace, tagName)
+}
+
 // DeleteTask cleans up Substrate resources for task. If the task runs directly
 // from a user-supplied ActorTemplate (rather than a per-task template), template
-// cleanup is skipped.
+// cleanup is skipped. Any fork snapshot tag owned by the task is deleted once
+// its actor has been removed.
 func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task == nil {
 		return nil
@@ -556,7 +619,15 @@ func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) er
 	tpl := task.GetStatus().GetAteTemplate().GetName()
 	skipTemplates := task.GetSpec().GetProfile().GetAteTemplate().GetName() != "" ||
 		(tpl != "" && !taskTemplatePattern(taskName).MatchString(tpl))
-	return r.delete(ctx, atespace, taskName, skipTemplates)
+	if err := r.delete(ctx, atespace, taskName, skipTemplates); err != nil {
+		return err
+	}
+	if parentTag := task.GetStatus().GetParentTag(); parentTag != "" {
+		if err := r.client.DeleteTag(ctx, atespace, parentTag); err != nil {
+			return fmt.Errorf("deleting fork tag %s/%s: %w", atespace, parentTag, err)
+		}
+	}
+	return nil
 }
 
 func (r *TaskReconciler) delete(ctx context.Context, atespace, taskName string, skipTemplates bool) error {
