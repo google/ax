@@ -31,7 +31,19 @@ ax local status
 Paste this prompt into Claude Code, Gemini CLI, Antigravity, or Cursor to let your local coding agent check prerequisites and set up AX automatically:
 
 ```text
-Help me install AX on this computer and get a local isolated agent sandbox ready. Read https://github.com/google/ax/blob/main/docs/local_installer.md first. Check my operating system, CPU architecture, free disk space, and container runtime (on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a Linux >= 6.8 kernel is running; if not, install/start Colima with `brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`). Install `ax` with the installer from that guide, then run `~/.ax/bin/ax version`. If that fails, the install did not work: stop and tell me, or build `ax` from source as the guide describes. Run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`), and verify `ax local status`. If a step fails, show me its error message and stop instead of retrying. Let me handle any password or cloud sign-in prompts.
+Help me install AX on this computer and get a local isolated agent sandbox ready.
+Read https://github.com/google/ax/blob/main/docs/local_installer.md first.
+Check my operating system, CPU architecture, free disk space, and container runtime
+(on macOS, check whether OrbStack, Docker Desktop, or Colima with >= 6 GiB RAM and a
+Linux >= 6.8 kernel is running; if not, install/start Colima with
+`brew install docker colima && colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs`).
+Install `ax` with the installer from that guide, then run `~/.ax/bin/ax version`.
+If that fails, the install did not work: stop and tell me, or build `ax` from source
+as the guide describes.
+Run `ax local start` (or let me choose a remote kubeconfig context with `ax ctx`),
+and verify `ax local status`.
+If a step fails, show me its error message and stop instead of retrying.
+Let me handle any password or cloud sign-in prompts.
 ```
 
 ---
