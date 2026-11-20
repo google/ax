@@ -1,6 +1,6 @@
 # AX Local Installer & Multi-Cluster User Guide
 
-This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` in one command (`install.sh`), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), promoting a local task to it (`ax promote`), and cleaning up (`ax uninstall` + `ax local delete`).
+This guide walks through the end-to-end developer lifecycle with the `ax` CLI: installing `ax` (`install.sh`, or from source), bootstrapping a self-contained local Kubernetes + Agent Substrate + AX stack (`ax local start`), doing the same from the AX Studio web app (`ax studio`), running and checkpointing sandboxed tasks locally, deploying AX onto a remote Kubernetes cluster (`ax ctx` + `ax install`), promoting a local task to it (`ax promote`), and cleaning up (`ax uninstall` + `ax local delete`).
 
 ---
 
@@ -70,9 +70,18 @@ ax version
 ax local --help
 ```
 
-*(When an AX Studio release is available, `install.sh` also installs `~/.ax/bin/ax-studio` so you can launch the local web UI via `ax studio`; set `AX_SKIP_STUDIO=1` to install only `ax`.)*
+`install.sh` installs `ax` into `~/.ax/bin`. It also installs `ax-studio` there when it knows which AX Studio release to use: the one pinned in the script, or the one you name with `AX_STUDIO_VERSION` (and `AX_STUDIO_GITHUB_REPO` for a fork). Without either it installs only `ax`, as it does with `AX_SKIP_STUDIO=1`. It prints `==> Installed ax-studio at ...` when it installed Studio; a Studio download that fails is skipped without an error.
 
-### Option B: Build from a local repository checkout
+### Option B: Build from source (needs Go 1.27 or later)
+
+Without a checkout:
+
+```bash
+go install github.com/google/ax/cmd/ax@main      # lands in $(go env GOPATH)/bin, usually ~/go/bin
+ax local --help
+```
+
+From a local repository checkout:
 
 ```bash
 export GOTOOLCHAIN=auto
@@ -80,6 +89,16 @@ go build -o "$PWD/bin/ax" ./cmd/ax
 export PATH="$PWD/bin:$PATH"
 ax local --help
 ```
+
+### Optional: Install AX Studio
+
+[AX Studio](https://github.com/agentexecutor/studio#readme) is the local web app for AX (see [Step 2b](#step-2b-or-use-ax-studio-ax-studio)). It is a separate binary, `ax-studio`. If `install.sh` did not install it, build it from source (needs Go 1.27 or later):
+
+```bash
+go install github.com/agentexecutor/studio/cmd/ax-studio@latest
+```
+
+`ax studio` runs the `ax-studio` named by `$AX_STUDIO_BIN`, else `~/.ax/bin/ax-studio`, else the one on `PATH`.
 
 ### Expected Behavior
 - Produces a single self-contained `ax` binary (with `@sha256`-pinned Agent Substrate `v1.0.0` manifests and canonical AX deployment manifests embedded via `//go:embed`).
@@ -126,6 +145,27 @@ While it waits for a rollout, `ax` reads the status of the rollout's pods every 
     ax-system/deployment/ax-server is not ready: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
 Error: waiting for ax-system/deployment/ax-server rollout: timed out after 3m0s: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
 ```
+
+---
+
+## Step 2b: Or Use AX Studio (`ax studio`)
+
+AX Studio does Step 2 and Step 4 from a web page: it checks this computer, runs `ax local start` and shows each stage, then lets you create tasks, read their logs, and open a shell in them.
+
+```bash
+ax studio                 # opens http://127.0.0.1:8080
+ax studio --port 8081     # another port
+ax studio --no-open       # do not open a browser (SSH sessions, scripts)
+```
+
+- `ax studio` starts `ax-studio` with your `ax` (`--ax-bin`) and AX namespace (`-n`), and passes any other flags through. `ax studio --help` lists them.
+- Studio needs no image flags: it deploys the AX images it was built with. `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`, or the **AX images** fields on its setup page, override them.
+- Studio works with the local cluster only. It names `--context ax-local` on every command, whatever your current context is, and never edits your kubeconfig. Remote clusters (Step 5) are CLI-only.
+- Studio and `ax-server` must be built from compatible AX versions; Studio reports a mismatch and offers to redeploy `ax-server`.
+- It listens on `127.0.0.1` only. To use it from another computer, forward the port: `ssh -N -L 8080:127.0.0.1:8080 <host-running-studio>`, then open `http://localhost:8080`.
+- `Ctrl-C` stops only the web app. The local cluster and its tasks keep running.
+
+Every action in Studio shows the `ax` command that does the same, so the rest of this guide applies unchanged. See the [AX Studio README](https://github.com/agentexecutor/studio#readme) for a tour and troubleshooting.
 
 ---
 
@@ -235,7 +275,7 @@ ax install \
 *(Pass `--server-image <ref>` and `--default-task-image <ref>`, or set `$AX_SERVER_IMAGE` and `$AX_DEFAULT_TASK_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
 
 #### Expected Behavior
-- Resolves `@sha256:...` multi-arch OCI digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image` via `crane`.
+- Resolves `@sha256:...` multi-arch OCI digests for `--server-image`, `--default-task-image`, and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
 - Creates `ax-system` with `ate.dev/api-access=true` and registers `ax-server` in `ate-api-server`, `atenet-router`, and `k8s-credential-provider-namespace-policy`, waiting for rollouts to finish.
 - Provisions the `ax-postgres` PVC and rolls out `ax-postgres` and `ax-server`.
 
@@ -378,4 +418,6 @@ ax ssh demo-task -- cat /workspace/durable.txt
 
 #### Expected Behavior
 - `ax local stop` halts the `ax-local-control-plane` container and stops its background tunnel (`State: Stopped`).
-- `ax local start` restarts the existing node container, refreshes its API server port and `proxy_arp=1` sysctl in ~15–30 seconds, skips re-bootstrapping Substrate once pods report Ready, and restores `demo-task`'s `/workspace/durable.txt` (`durable-across-suspend`) on `ax resume`.
+- `ax local start` restarts the existing node container and refreshes its API server port and `proxy_arp=1` sysctl. It then waits for the Substrate pods to become Ready again and skips re-bootstrapping Substrate once they are. Nothing is reinstalled, but the pods restart one after another, so this can take about as long as a cold start (close to 3 minutes in one run on a Linux host).
+- Pass the same image flags (or environment variables) as the first `ax local start`. A different value, including setting `--runner-volume-image` only the second time, rolls out `ax-server` again.
+- `ax resume` restores `demo-task`'s `/workspace/durable.txt` (`durable-across-suspend`).
