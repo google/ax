@@ -17,6 +17,7 @@ package tasklogs
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -66,6 +67,7 @@ func InCluster() (*Client, error) {
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	// The kubelet flushes headers before waiting for new log records.
 	transport.ResponseHeaderTimeout = 10 * time.Second
 	return &Client{URL: "https://" + net.JoinHostPort(host, port), TokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token", HTTP: &http.Client{
 		Transport:     transport,
@@ -137,33 +139,48 @@ type Record struct {
 	Err  error
 }
 
-// Read filters a bounded worker stream. The caller must stop it before opening
-// another stream; stop closes the body and waits for the reader to exit.
+// Read filters worker logs and drops records larger than 1 MiB. The caller
+// must stop it before opening another stream. Stop closes the body and waits
+// for the reader to exit.
 func Read(ctx context.Context, body io.ReadCloser, uid string) (<-chan Record, func()) {
+	const maxRecordSize = 1 << 20
 	ctx, cancel := context.WithCancel(ctx)
 	output := make(chan Record)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		scanner := bufio.NewScanner(body)
-		scanner.Buffer(make([]byte, 4096), 1024*1024)
-		for scanner.Scan() {
-			if !MatchActorLog(scanner.Bytes(), uid) {
+		reader := bufio.NewReader(body)
+		var line []byte
+		oversized := false
+		for {
+			fragment, err := reader.ReadSlice('\n')
+			// Allow room for CRLF, which does not count toward the record size.
+			if !oversized && len(line)+len(fragment) <= maxRecordSize+2 {
+				line = append(line, fragment...)
+			} else {
+				oversized = true
+			}
+			if err == bufio.ErrBufferFull {
 				continue
 			}
-			select {
-			case output <- Record{Line: scanner.Text()}:
-			case <-ctx.Done():
+			line = bytes.TrimSuffix(line, []byte("\n"))
+			line = bytes.TrimSuffix(line, []byte("\r"))
+			if !oversized && len(line) <= maxRecordSize && MatchActorLog(line, uid) {
+				select {
+				case output <- Record{Line: string(line)}:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if err != nil {
+				select {
+				case output <- Record{Err: err}:
+				case <-ctx.Done():
+				}
 				return
 			}
-		}
-		err := scanner.Err()
-		if err == nil {
-			err = io.EOF
-		}
-		select {
-		case output <- Record{Err: err}:
-		case <-ctx.Done():
+			line = line[:0]
+			oversized = false
 		}
 	}()
 	return output, func() { cancel(); body.Close(); <-done }

@@ -30,7 +30,11 @@ and placeholders instead of real credentials in tasks
 ([#475](https://github.com/google/ax/issues/475)). Enabling streaming does not
 resolve either risk.
 
-The optional `deploy/task-logs-rbac.yaml` grants `get` on `pods/log` only in
-the worker-pool namespace. Kubernetes cannot restrict this permission by
-actor UID: ax-server can read all container logs in that namespace. Bind it
-only in namespaces whose worker logs the deployment is trusted to read.
+Apply the optional RBAC manifest with
+`kubectl apply -n <worker-pool-namespace> -f deploy/task-logs-rbac.yaml` in
+each worker-pool namespace. Set the RoleBinding subject namespace to the
+namespace where ax-server runs (`ax-system` by default). The manifest grants
+`get` on `pods/log` in the selected namespace. Because Kubernetes cannot
+restrict this permission by actor UID, ax-server can read all container logs
+there. Bind it only in namespaces whose worker logs the deployment is trusted
+to read.

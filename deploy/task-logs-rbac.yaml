@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Optional: apply only when enabling task logs. This namespace must contain
-# the worker pool; the subject namespace must contain ax-server.
+# Apply only when enabling task logs. Pass the worker-pool namespace to
+# kubectl apply -n. Set the RoleBinding subject namespace to the namespace
+# where ax-server runs.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: ax-task-logs
-  namespace: ax-system
 rules:
   - apiGroups: [""]
     resources: ["pods/log"]
@@ -28,7 +28,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ax-task-logs
-  namespace: ax-system
 subjects:
   - kind: ServiceAccount
     name: ax-server

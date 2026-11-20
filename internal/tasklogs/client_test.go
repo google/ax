@@ -122,3 +122,46 @@ func TestReadFiltersAndReachesEOF(t *testing.T) {
 		}
 	}
 }
+
+func TestReadRecordSize(t *testing.T) {
+	const limit = 1 << 20
+	const target = `{"labels":{"ate.actor.uid":"uid"},"message":"yes"}`
+	const foreign = `{"labels":{"ate.actor.uid":"other"}}`
+	atLimit := target + strings.Repeat(" ", limit-len(target))
+	for _, tt := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"foreign oversized record", foreign + strings.Repeat(" ", limit) + "\n" + target + "\n", target},
+		{"matching oversized record", atLimit + " \n" + target + "\n", target},
+		{"exact limit with CRLF", atLimit + "\r\n", atLimit},
+		{"exact limit without newline", atLimit, atLimit},
+		{"oversized record without newline", atLimit + " ", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			records, stop := Read(ctx, io.NopCloser(strings.NewReader(tt.input)), "uid")
+			defer stop()
+			if tt.want != "" {
+				select {
+				case got := <-records:
+					if got.Err != nil || got.Line != tt.want {
+						t.Fatalf("got %d bytes and error %v, want %d bytes", len(got.Line), got.Err, len(tt.want))
+					}
+				case <-ctx.Done():
+					t.Fatal("timed out waiting for matching record")
+				}
+			}
+			select {
+			case got := <-records:
+				if got.Err != io.EOF || got.Line != "" {
+					t.Fatalf("got %d bytes and error %v, want EOF", len(got.Line), got.Err)
+				}
+			case <-ctx.Done():
+				t.Fatal("timed out waiting for EOF")
+			}
+		})
+	}
+}
