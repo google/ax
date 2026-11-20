@@ -73,6 +73,58 @@ func EmbeddedVersion() string {
 	return strings.TrimSpace(string(b))
 }
 
+// localRegistryFlag is the atelet flag that names the registry from which
+// atelet pulls the actor images of a localhost or loopback registry.
+const localRegistryFlag = "--localhost-registry-replacement"
+
+// LocalRegistryEndpoint returns the registry, as "<host>:<port>", from which
+// the Agent Substrate that Bootstrap installs pulls the actor images of a
+// localhost or loopback registry, such as localhost:5001/my-agent. Only the
+// embedded manifests name it. A local cluster reads it here, so that it pulls
+// the images of its pods from the same registry. It is "" when the manifests
+// name none.
+func LocalRegistryEndpoint() (string, error) {
+	raw, err := embeddedManifests.ReadFile("manifests/05-ate-system.yaml")
+	if err != nil {
+		return "", err
+	}
+	return localRegistryEndpoint(raw)
+}
+
+// localRegistryEndpoint returns the value of localRegistryFlag on the atelet
+// DaemonSet in manifest, or "" when the flag is not set.
+func localRegistryEndpoint(manifest []byte) (string, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(manifest))
+	for {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			return "", nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("decoding ate-system manifest: %w", err)
+		}
+		meta, _ := doc["metadata"].(map[string]any)
+		if doc["kind"] != "DaemonSet" || meta["name"] != "atelet" {
+			continue
+		}
+		spec, _ := doc["spec"].(map[string]any)
+		tmpl, _ := spec["template"].(map[string]any)
+		podSpec, _ := tmpl["spec"].(map[string]any)
+		containers, _ := podSpec["containers"].([]any)
+		for _, c := range containers {
+			container, _ := c.(map[string]any)
+			args, _ := container["args"].([]any)
+			for _, a := range args {
+				arg, _ := a.(string)
+				if endpoint, ok := strings.CutPrefix(arg, localRegistryFlag+"="); ok {
+					return endpoint, nil
+				}
+			}
+		}
+	}
+}
+
 // Bootstrap installs or reconciles Agent Substrate (control plane, bundled
 // mTLS Postgres, RustFS snapshot store, k8s-credential-provider, atenet-egress,
 // and gVisor WorkerPool) on a local cluster.

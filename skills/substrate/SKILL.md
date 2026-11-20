@@ -62,6 +62,7 @@ All Control API traffic goes through this package. It encapsulates:
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which blocks both from `:8080`/`:9090` and allows only `app: atenet-egress` (in `ate-system`) to reach `:8081` (`ax-server-runner`) |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
+| `kind-registry:5000`, the registry container that serves the images of a loopback registry (`localhost:5001/...`) to an `ax local` cluster | Only atelet's `--localhost-registry-replacement` in `internal/install/substrate/manifests/05-ate-system.yaml` (generated; actor images). `LocalRegistryEndpoint` (`internal/install/substrate/bootstrap.go`) reads it from there, and `cmd/ax/install_cmd.go` passes it as `cluster.UpOptions.LocalRegistry` to the Kind provider (`internal/install/cluster/registry.go`), which writes the containerd mirror for pod images such as ax-server. No Go file names the registry; `docs/local_installer.md` does |
 
 Why it matters: tasks never get a Service/Ingress. Every request to a task is
 proxied by the **atenet router**, which picks the target from the
@@ -179,6 +180,13 @@ instead. No mocking library is in `go.mod`.
 | `make test-e2e` | exactly `go list -m -f '{{.Version}}' go.ate.dev/substrate` | PR CI (skipped when only `paths-ignore` files change, e.g. docs) and the nightly schedule (06:00 UTC) in `e2e.yml` |
 | `make test-e2e SUBSTRATE_REF=<release tag>` | override | local, or `workflow_dispatch` input `substrate_ref` in `e2e.yml` |
 | `make e2e-setup` / `e2e-run` / `e2e-cleanup` | same as above | iterate without re-provisioning |
+| `make test-local-install` | the manifests embedded in `ax` (`internal/install/substrate/manifests`) | job `local-install` in `e2e.yml`, with the same triggers; `substrate_ref` does not apply |
+
+`make test-local-install` (`hack/test-local-install.sh`) is not part of the E2E
+suite. It is the only test that runs `ax local start`, and so the only one that
+runs the Kind provider, `installsubstrate.Bootstrap`, and `axdeploy.Install` on
+a real cluster. It reads the registry container to start from atelet's
+`--localhost-registry-replacement` in the embedded manifests (section 3).
 
 `hack/setup-e2e-kind.sh` sets up two clusters in one kubeconfig, `ax-e2e` and
 a one-worker `ax-e2e-remote` that `TestE2E_Promote` promotes a task to

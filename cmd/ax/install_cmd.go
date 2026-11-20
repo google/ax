@@ -177,9 +177,17 @@ func runLocal(axNamespace string, args []string) error {
 		if err != nil {
 			return err
 		}
+		// The Substrate that Step 2 installs names the registry that serves the
+		// images of localhost to the cluster.
+		localRegistry, err := installsubstrate.LocalRegistryEndpoint()
+		if err != nil {
+			return err
+		}
 		// Step 1: Provision or resume the local Kind cluster and select its kubeconfig context.
 		info, err := provider.Up(ctx, cluster.UpOptions{
-			Name: parsed.name,
+			Name:          parsed.name,
+			Images:        []string{srvImg, runnerImg},
+			LocalRegistry: localRegistry,
 		})
 		if err != nil {
 			return err

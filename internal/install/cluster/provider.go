@@ -39,6 +39,14 @@ const (
 type UpOptions struct {
 	Name      string
 	NodeImage string
+	// Images are the image references that the cluster will pull. Up makes
+	// those on a loopback registry, such as localhost:5001/ax-server, pullable
+	// from LocalRegistry.
+	Images []string
+	// LocalRegistry is the registry, as "<host>:<port>", from which the
+	// cluster pulls the images of a loopback registry. The Kind provider
+	// serves it from the container on the host that has the name <host>.
+	LocalRegistry string
 }
 
 // Info describes a provisioned local cluster.
