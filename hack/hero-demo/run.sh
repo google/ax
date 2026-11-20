@@ -149,18 +149,77 @@ with open(dst, "w", encoding="utf-8") as f:
 PY
 }
 
-# wait_for_task_output polls $AX_OUTPUT_FILE (/workspace/.ax/output) and the
-# runner's launcher-done marker via ax ssh so suspend never races exit.
-wait_for_task_output() {
+# task_state prints the State line of `ax describe task`, such as Working.
+# Arguments after the task name are global ax flags, such as --context.
+task_state() {
   local task_name="$1"
+  shift
+  run_ax "$@" describe task "${task_name}" 2>/dev/null | awk '/^State:/ { print $2 }'
+}
+
+# wait_for_file polls over ax ssh until the task's sandbox has the file.
+wait_for_file() {
+  local task_name="$1" file="$2"
   local deadline=$((SECONDS + AX_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if run_ax ssh "${task_name}" -- sh -c 'test -s /workspace/.ax/output && test -s /workspace/.ax/launcher-done' >/dev/null 2>&1; then
+    if AX_TIMEOUT=10 run_ax ssh "${task_name}" -- test -f "${file}" >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
   done
   return 1
+}
+
+# start_task applies a task from a fresh start and resumes it. On failure it
+# marks the step failed and returns 1.
+start_task() {
+  local step="$1" task_name="$2" manifest="$3" manifest_name="$4"
+  # Tasks are immutable, so start from a fresh one on every run.
+  run_ax delete task "${task_name}" >/dev/null 2>&1 || true
+  if ! ax_quiet apply -f "${manifest}"; then
+    mark_fail "${step}" "ax apply -f ${manifest_name} failed"
+    return 1
+  fi
+  if ! ax_quiet resume task "${task_name}"; then
+    mark_fail "${step}" "ax resume task ${task_name} failed"
+    return 1
+  fi
+}
+
+# finish_task waits until the task has completed with output. A finished task
+# is terminal, so ax ssh, ax suspend and ax resume refuse it. Arguments after
+# the task name are global ax flags, such as --context. On failure finish_task
+# marks the step failed and returns 1.
+finish_task() {
+  local step="$1" task_name="$2"
+  shift 2
+  local state="" deadline=$((SECONDS + AX_TIMEOUT))
+  while ((SECONDS < deadline)); do
+    state="$(task_state "${task_name}" "$@")"
+    if [[ "${state}" == Completed || "${state}" == Failed ]]; then
+      break
+    fi
+    sleep 2
+  done
+  case "${state}" in
+    Completed) ;;
+    Failed)
+      # Show the end of its output, as ax_quiet does for a command that fails.
+      run_ax "$@" describe task "${task_name}" 2>/dev/null | sed -n '/^Output:/,/^$/p' | grep -v '^$' | tail -n 12 | sed 's/^/    /' >&2
+      mark_fail "${step}" "${task_name} is Failed; see 'ax${*:+ $*} describe task ${task_name}'"
+      return 1
+      ;;
+    *)
+      mark_fail "${step}" "${task_name} did not complete within ${AX_TIMEOUT}s (state: ${state:-unknown})"
+      return 1
+      ;;
+  esac
+  # The output is the task's $AX_OUTPUT_FILE (/workspace/.ax/output), or else
+  # the end of what its command printed.
+  if [[ "$(run_ax "$@" describe task "${task_name}" 2>/dev/null)" != *$'\n'"Output:"* ]]; then
+    mark_fail "${step}" "${task_name} completed without output"
+    return 1
+  fi
 }
 
 # ------------------------------------------------------------------------------
@@ -236,43 +295,19 @@ step3_starter_task_session() {
     mark_fail "${step}" "ax apply -f gateway.yaml failed"
     return
   fi
-  # Tasks are immutable, so start from a fresh one on every run.
-  run_ax delete task "${STARTER_TASK}" >/dev/null 2>&1 || true
-
   local tmp_manifest
   tmp_manifest="$(mktemp)"
   render_starter_manifest "${tmp_manifest}"
-  if ! ax_quiet apply -f "${tmp_manifest}"; then
-    rm -f "${tmp_manifest}"
-    mark_fail "${step}" "ax apply -f task-starter.yaml failed"
-    return
-  fi
+  start_task "${step}" "${STARTER_TASK}" "${tmp_manifest}" task-starter.yaml
+  local rc=$?
   rm -f "${tmp_manifest}"
-
-  if ! ax_quiet resume task "${STARTER_TASK}"; then
-    mark_fail "${step}" "ax resume task ${STARTER_TASK} failed"
-    return
-  fi
-  if ! wait_for_task_output "${STARTER_TASK}"; then
-    mark_fail "${step}" "${STARTER_TASK} did not write /workspace/.ax/output within ${AX_TIMEOUT}s"
-    return
-  fi
-
-  local verb
-  for verb in suspend resume; do
-    if ! ax_quiet "${verb}" task "${STARTER_TASK}"; then
-      mark_fail "${step}" "ax ${verb} task ${STARTER_TASK} failed"
-      return
-    fi
-  done
-  if ! run_ax ssh "${STARTER_TASK}" -- test -s /workspace/.ax/output >/dev/null 2>&1; then
-    mark_fail "${step}" "/workspace/.ax/output was not preserved across suspend/resume"
-    return
-  fi
+  ((rc == 0)) || return
+  finish_task "${step}" "${STARTER_TASK}" || return
 
   # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn on the
-  # same task's workspace once multi-turn input on a single task lands.
-  mark_stub "${step}" "Turn 1 + suspend/resume OK (/workspace/.ax/output preserved); wire the second Session turn"
+  # same task's workspace once multi-turn input on a single task lands. A
+  # completed task refuses suspend/resume, so Step 4 shows those.
+  mark_stub "${step}" "Turn 1 OK (task completed with output); wire the second Session turn"
 }
 
 # ------------------------------------------------------------------------------
@@ -281,14 +316,29 @@ step3_starter_task_session() {
 step4_custom_image_task() {
   local step="${STEPS[3]}"
   echo "==> [Step 4] Custom Image Task - No Starter Template"
-  # A plain image has no ax-task-runner, so task-custom.yaml cannot run on main
-  # yet; nothing is called here even in live mode.
-  # TODO(@itssimrank, @siyuanfoundation): Once automatic runner injection lands, run
-  #   ax apply -f task-custom.yaml && ax resume task hero-demo-custom-task
-  # and check the unit tests pass, e.g. with
-  #   ax ssh hero-demo-custom-task -- python3 -m unittest discover -s /workspace/app
-  : "${CUSTOM_MANIFEST}" "${CUSTOM_TASK}"
-  mark_stub "${step}" "Wire custom image + command Task (needs runner injection)"
+  if ! live; then
+    mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the custom image task"
+    return
+  fi
+  # The image is a plain one: ax-server mounts ax-task-runner into it from its
+  # runner volume image.
+  start_task "${step}" "${CUSTOM_TASK}" "${CUSTOM_MANIFEST}" task-custom.yaml || return
+  # The command waits on its first run, so the task can be suspended while it
+  # is Working. After the resume it starts again and runs the workspace's unit
+  # tests, and the task fails unless they pass.
+  if ! wait_for_file "${CUSTOM_TASK}" /workspace/first-run; then
+    mark_fail "${step}" "${CUSTOM_TASK} did not start its command within ${AX_TIMEOUT}s"
+    return
+  fi
+  local verb
+  for verb in suspend resume; do
+    if ! ax_quiet "${verb}" task "${CUSTOM_TASK}"; then
+      mark_fail "${step}" "ax ${verb} task ${CUSTOM_TASK} failed"
+      return
+    fi
+  done
+  finish_task "${step}" "${CUSTOM_TASK}" || return
+  mark_pass "${step}" "${CUSTOM_TASK} survived suspend/resume and ran the unit tests of ${WORKSPACE_NAME} in a plain image"
 }
 
 # ------------------------------------------------------------------------------
@@ -307,13 +357,16 @@ step5_remote_promote() {
     return
   fi
   # Copies the starter task that Step 3 runs, with the Gateway and Workspace it
-  # binds, to the remote cluster and suspends it here. --replace lets a rerun
-  # start from a fresh task there.
-  if ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
-    mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT}"
-  else
+  # binds, to the remote cluster. --suspend-source suspends it here if it is
+  # still running; after Step 3 it has finished. --replace lets a rerun start
+  # from a fresh task there.
+  if ! ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
     mark_fail "${step}" "ax promote task ${STARTER_TASK} --to ${REMOTE_CONTEXT} failed"
+    return
   fi
+  # The promoted task runs from the start on the remote cluster.
+  finish_task "${step}" "${STARTER_TASK}" --context "${REMOTE_CONTEXT}" || return
+  mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT} and completed there"
 }
 
 FUNCS=(step1_local_up step2_warm_workspace step3_starter_task_session step4_custom_image_task step5_remote_promote)
