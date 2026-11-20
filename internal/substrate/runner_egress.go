@@ -37,8 +37,9 @@ const (
 // actor to reach ax-server's internal runner control service (runnerHostPort,
 // defaulting to DefaultRunnerEndpoint) while instructing Substrate's egress
 // gateway to replace the actor's placeholder Authorization header with a
-// verified Actor JWT bound to audience (defaulting to DefaultRunnerAudience).
-func RunnerEgressRule(runnerHostPort, audience string) *ateapipb.EgressRule {
+// verified Actor JWT bound to audience (defaulting to DefaultRunnerAudience)
+// and to extraAudiences.
+func RunnerEgressRule(runnerHostPort, audience string, extraAudiences ...string) *ateapipb.EgressRule {
 	if runnerHostPort == "" {
 		runnerHostPort = DefaultRunnerEndpoint
 	}
@@ -64,7 +65,7 @@ func RunnerEgressRule(runnerHostPort, audience string) *ateapipb.EgressRule {
 					Header: "Authorization",
 					Prefix: "Bearer ",
 					ActorJwt: &ateapipb.ActorJwtSource{
-						Audiences:         []string{audience},
+						Audiences:         append([]string{audience}, extraAudiences...),
 						ExpirationSeconds: defaultActorJWTExpirationSeconds,
 					},
 				}},

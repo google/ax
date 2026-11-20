@@ -32,6 +32,7 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"github.com/google/uuid"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -301,8 +302,11 @@ func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, g
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	_, err := r.client.GetActorEgressPolicy(ctx, atespace, actorName)
 	if status.Code(err) == codes.NotFound {
+		// A unique extra audience per policy. Without it, a task recreated under
+		// the same name gets its old actor's JWT, which ax-server refuses.
+		// TODO: Drop it once agent-substrate/substrate#2208 is fixed.
 		rules := []*ateapipb.EgressRule{
-			substrate.RunnerEgressRule(r.RunnerEndpoint, r.RunnerAudience),
+			substrate.RunnerEgressRule(r.RunnerEndpoint, r.RunnerAudience, uuid.NewString()),
 		}
 		if gwName != "" {
 			if gw == nil {
