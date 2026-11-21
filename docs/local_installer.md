@@ -138,7 +138,7 @@ A local cluster can also pull images that you build yourself, from a registry on
 ```bash
 docker run -d -p 127.0.0.1:5001:5000 --name kind-registry registry:2
 make images AX_IMAGE_REPO=localhost:5001 CONTAINER_CLI=docker   # prints the AX_SERVER_IMAGE export to run
-export AX_TASK_IMAGE="localhost:5001/ax-task-runner@$(cat bin/ax-task-runner.digest)"   # for spec.profile.image in Step 4
+export AX_TASK_IMAGE="localhost:5001/ax-runner@$(cat bin/ax-runner.digest)"   # for spec.profile.image in Step 4
 ax local start --server-image "$AX_SERVER_IMAGE"
 ```
 

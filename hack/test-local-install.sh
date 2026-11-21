@@ -45,7 +45,7 @@ REGISTRY_IMAGE="${REGISTRY_IMAGE:-registry:3@sha256:82f6ff4a7f982960c8aa51617fea
 export CONTAINER_CLI="${CONTAINER_CLI:-docker}"
 export KUBECONFIG="${TMP_DIR}/kubeconfig-${CLUSTER}"
 export AX_HOME="${TMP_DIR}/ax-home-${CLUSTER}"
-unset AX_SERVER AX_SERVER_IMAGE AX_TASK_RUNNER_IMAGE AX_RUNNER_VOLUME_IMAGE AX_RUNNER_VOLUME_BUILD_IMAGE
+unset AX_SERVER AX_SERVER_IMAGE AX_RUNNER_IMAGE AX_RUNNER_VOLUME_IMAGE AX_RUNNER_VOLUME_BUILD_IMAGE
 
 AX="${TMP_DIR}/bin/ax"
 TASK="local-smoke"
@@ -57,7 +57,9 @@ log() {
 
 cleanup() {
   local status=$?
-  if ((status != 0)); then
+  # Without a current context there is no cluster to describe: the failure
+  # was before `ax local start` created one.
+  if ((status != 0)) && kubectl config current-context > /dev/null 2>&1; then
     log "Failed. State of the cluster:"
     kubectl get pods -A -o wide >&2 || true
     kubectl -n ax-system logs deployment/ax-server --tail=100 >&2 || true
@@ -108,7 +110,7 @@ log "Building ax and the AX images into localhost:${REGISTRY_PORT}..."
     { tail -n 40 "${TMP_DIR}/local-install-images.log" >&2; exit 1; }
 )
 server_image="localhost:${REGISTRY_PORT}/ax-server@$(cat "${REPO_ROOT}/bin/ax-server.digest")"
-task_image="localhost:${REGISTRY_PORT}/ax-task-runner@$(cat "${REPO_ROOT}/bin/ax-task-runner.digest")"
+task_image="localhost:${REGISTRY_PORT}/ax-runner@$(cat "${REPO_ROOT}/bin/ax-runner.digest")"
 
 log "Running ax local start with ${server_image}..."
 "${AX}" local start --name "${CLUSTER}" --server-image "${server_image}"
