@@ -29,10 +29,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -85,24 +86,18 @@ type Config struct {
 	// LauncherPath is the image's launcher, started when the task has a goal
 	// but no spec.commands. Empty means DefaultLauncherPath.
 	LauncherPath string
-	// PullMode enables the pull-based runner loop against ControlURL instead
-	// of the legacy AX_TASK_YAML / Config.Task push mode.
-	PullMode bool
-	// ControlURL is the base URL of ax-server's :8081 runner HTTP service
-	// (defaults to AX_RUNNER_URL or DefaultControlURL).
-	ControlURL string
-	// ActorMetadataDir overrides DefaultActorMetadataDir (/run/ate) in tests.
-	ActorMetadataDir string
-	// StateDir overrides DefaultRunnerStateDir (/var/lib/ax) in tests.
-	StateDir string
-	// HTTPClient overrides the HTTP client used by pull mode in tests.
-	HTTPClient *http.Client
-	// DropPrivileges overrides whether pull mode drops from UID 0 to UID 1000.
+	// AwaitPush makes Run ignore Task and Workspace and wait for ax-server to
+	// push them to the probe port (see v1alpha1.RunnerTaskPath), as it does
+	// for actors started from a template shared by many tasks. A Workspace
+	// pushed for setup alone (v1alpha1.RunnerSetupPath) is set up while Run
+	// keeps waiting for a task.
+	AwaitPush bool
+	// PrepareTask, when set, rewrites the task before it runs, whether it came
+	// from Config.Task or was pushed. It may return the task unchanged.
+	PrepareTask func(*v1alpha1.Task, *v1alpha1.Workspace) (*v1alpha1.Task, error)
+	// DropPrivileges overrides whether a pushed task's command runs as UID and
+	// GID 1000 when the runner runs as root, which it does by default.
 	DropPrivileges *bool
-	// ClaimRetryInitialBackoff and ClaimRetryMaxBackoff bound pull-mode claim
-	// retry backoff (optional; defaults to 200ms and 5s).
-	ClaimRetryInitialBackoff time.Duration
-	ClaimRetryMaxBackoff     time.Duration
 }
 
 // CommandExit describes how the task command finished.
@@ -129,12 +124,13 @@ type CommandExit struct {
 // cancelled a running command is sent SIGTERM, given a grace period, and then
 // killed.
 //
-// Run returns an error when workspace setup fails or the runner itself cannot
-// start, for example when the metadata server or the command fails to launch.
+// With Config.AwaitPush, Run first waits for ax-server to push the task.
+//
+// Run returns an error when the runner itself cannot start, for example when
+// the metadata server fails to listen, and, unless the task was pushed, when
+// workspace setup fails or the command fails to launch. A pushed task reports
+// those failures on /readyz?check=workspace instead.
 func Run(ctx context.Context, cfg Config) error {
-	if cfg.PullMode || cfg.ControlURL != "" {
-		return runPull(ctx, cfg)
-	}
 	port := cfg.Port
 	if port <= 0 {
 		port = DefaultPort
@@ -143,12 +139,18 @@ func Run(ctx context.Context, cfg Config) error {
 	if metadataPort <= 0 {
 		metadataPort = DefaultMetadataPort
 	}
-	ref := cfg.Task.GetSpec().GetWorkspace()
-	wsPath := ref.GetPath()
-	if wsPath == "" {
-		wsPath = DefaultWorkspacePath
+	if cfg.AwaitPush {
+		return runPushed(ctx, cfg, port, metadataPort)
 	}
-	slog.Info("initializing AX task runner", "port", port, "workspace", ref.GetName(), "wsPath", wsPath)
+	if cfg.PrepareTask != nil && cfg.Task != nil {
+		t, err := cfg.PrepareTask(cfg.Task, cfg.Workspace)
+		if err != nil {
+			return fmt.Errorf("preparing task: %w", err)
+		}
+		cfg.Task = t
+	}
+	wsPath := taskWorkspacePath(cfg.Task)
+	slog.Info("initializing AX task runner", "port", port, "workspace", cfg.Task.GetSpec().GetWorkspace().GetName(), "wsPath", wsPath)
 
 	metaServer := metadata.NewServer(port, cfg.Task, cfg.Workspace, metadata.ServerOptions{
 		WorkspacePath: wsPath,
@@ -157,36 +159,109 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := metaServer.Start(); err != nil {
 		return fmt.Errorf("starting metadata server: %w", err)
 	}
-	metadataURL := metaServer.MetadataURL()
-	_ = os.Setenv("AX_METADATA_URL", metadataURL)
-	for _, e := range cfg.Task.GetSpec().GetEnv() {
-		_ = os.Setenv(e.GetName(), e.GetValue())
-	}
-	setDefaultEnv(cfg.Task, cmp.Or(cfg.CABundle, v1alpha1.EgressTrustBundlePath), linkGitAskpass(workspace.AXDir))
 	defer func() {
 		slog.Info("shutting down metadata server")
 		_ = metaServer.Stop(context.Background())
 	}()
+	return runTask(ctx, cfg, metaServer, cfg.Task, cfg.Workspace, false)
+}
 
-	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath); err != nil {
-		return fmt.Errorf("setting up workspace %q: %w", ref.GetName(), err)
+// runPushed serves the probe port until ax-server pushes a task, then runs it.
+// A Workspace pushed for setup alone is set up first, so a snapshot of the
+// actor holds the prepared workspace. A failed setup is reported on
+// /readyz?check=workspace and keeps the sandbox up for inspection.
+func runPushed(ctx context.Context, cfg Config, port, metadataPort int) error {
+	slog.Info("initializing AX task runner; waiting for work from ax-server", "port", port)
+	metaServer := metadata.NewServer(port, nil, nil, metadata.ServerOptions{
+		WorkspacePath: DefaultWorkspacePath,
+		MetadataPort:  metadataPort,
+		AcceptPushes:  true,
+	})
+	// Substrate's WakeupProbe reads /readyz, so it reports ready while the
+	// runner waits; /readyz?check=workspace reports the pushed work.
+	metaServer.SetWorkspaceCheckReady(false)
+	metaServer.SetWorkspaceReady(true)
+	if err := metaServer.Start(); err != nil {
+		return fmt.Errorf("starting metadata server: %w", err)
+	}
+	defer func() {
+		slog.Info("shutting down metadata server")
+		_ = metaServer.Stop(context.Background())
+	}()
+	drop := cfg.DropPrivileges == nil || *cfg.DropPrivileges
+	drop = drop && os.Geteuid() == 0
+
+	for {
+		var push metadata.Push
+		select {
+		case <-ctx.Done():
+			return nil
+		case push = <-metaServer.Pushes():
+		}
+		if push.Task == nil {
+			slog.Info("setting up pushed workspace", "workspace", push.Workspace.GetMetadata().GetName(), "path", DefaultWorkspacePath)
+			if err := setupWorkspace(ctx, push.Workspace, DefaultWorkspacePath, drop); err != nil {
+				slog.Error("workspace setup failed", "error", err)
+				metaServer.SetSetupFailed(err)
+				continue
+			}
+			metaServer.SetWorkspaceCheckReady(true)
+			continue
+		}
+		slog.Info("running pushed task", "task", push.Task.GetMetadata().GetName())
+		if cfg.PrepareTask != nil {
+			t, err := cfg.PrepareTask(push.Task, push.Workspace)
+			if err != nil {
+				slog.Error("preparing pushed task failed", "error", err)
+				metaServer.SetSetupFailed(fmt.Errorf("preparing task: %w", err))
+				<-ctx.Done()
+				return nil
+			}
+			push.Task = t
+		}
+		metaServer.UpdateState(push.Task, push.Workspace)
+		pushed := cfg
+		pushed.DropPrivileges = &drop
+		if err := runTask(ctx, pushed, metaServer, push.Task, push.Workspace, true); err != nil {
+			slog.Error("task failed to start", "error", err)
+			metaServer.SetSetupFailed(err)
+			<-ctx.Done()
+		}
+		return nil
+	}
+}
+
+// runTask sets up the task's workspace, writes the launcher contract's files,
+// and runs the task's command or launcher until ctx is cancelled. A pushed
+// task runs as UID 1000 when cfg.DropPrivileges says so.
+func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task *v1alpha1.Task, ws *v1alpha1.Workspace, pushed bool) error {
+	wsPath := taskWorkspacePath(task)
+	drop := pushed && cfg.DropPrivileges != nil && *cfg.DropPrivileges
+	metadataURL := metaServer.MetadataURL()
+	_ = os.Setenv("AX_METADATA_URL", metadataURL)
+	for _, e := range task.GetSpec().GetEnv() {
+		_ = os.Setenv(e.GetName(), e.GetValue())
+	}
+	setDefaultEnv(task, cmp.Or(cfg.CABundle, v1alpha1.EgressTrustBundlePath), linkGitAskpass(workspace.AXDir))
+
+	if err := setupWorkspace(ctx, ws, wsPath, drop); err != nil {
+		return fmt.Errorf("setting up workspace %q: %w", task.GetSpec().GetWorkspace().GetName(), err)
 	}
 
-	cmdArgs := cfg.Task.GetSpec().GetCommands()
+	cmdArgs := task.GetSpec().GetCommands()
 	launched := len(cmdArgs) == 0
-	files, err := writeLauncherFiles(cfg.RunDir, wsPath, cfg.Task, cfg.Workspace)
+	files, err := writeLauncherFiles(cfg.RunDir, wsPath, task, ws)
 	switch {
-	case err != nil && launched && cfg.Task.GetSpec().GetGoal().GetText() != "":
+	case err != nil && launched && task.GetSpec().GetGoal().GetText() != "":
 		// The launcher would have nothing to read.
 		return fmt.Errorf("writing the launcher's files: %w", err)
 	case err != nil:
 		slog.Warn("failed to write the launcher contract files; the command runs without them", "error", err)
 	case launched:
-		cmdArgs = launcherCommand(cmp.Or(cfg.LauncherPath, DefaultLauncherPath), wsPath, cfg.Task, files)
+		cmdArgs = launcherCommand(cmp.Or(cfg.LauncherPath, DefaultLauncherPath), wsPath, task, files)
 	}
 	if len(cmdArgs) == 0 {
-		metaServer.SetWorkspaceReady(true)
-		slog.Info("workspace maiden run setup marked ready", "path", wsPath)
+		markWorkspaceReady(metaServer, wsPath)
 		<-ctx.Done()
 		return nil
 	}
@@ -196,17 +271,25 @@ func Run(ctx context.Context, cfg Config) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(commandEnv(cfg.Task, metadataURL), files.env...)
+	cmd.Env = append(commandEnv(task, metadataURL), files.env...)
 	// A dedicated process group lets shutdown signal the command together with
 	// anything it spawned.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if drop {
+		ensureWritableForUser(wsPath, unprivilegedUID, unprivilegedGID)
+		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: unprivilegedUID, Gid: unprivilegedGID}
+		if !hasTaskEnv(task, "HOME") {
+			if home := os.Getenv("HOME"); home == "" || home == "/root" {
+				cmd.Env = append(cmd.Env, "HOME="+wsPath)
+			}
+		}
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting task command %v: %w", cmdArgs, err)
 	}
 	slog.Info("started task command", "pid", cmd.Process.Pid, "command", cmdArgs)
-	metaServer.SetWorkspaceReady(true)
-	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
+	markWorkspaceReady(metaServer, wsPath)
 
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
@@ -223,6 +306,35 @@ func Run(ctx context.Context, cfg Config) error {
 		reportExit(cfg, cmd, stopCommand(cmd, exited))
 	}
 	return nil
+}
+
+// taskWorkspacePath is where the task's workspace is set up and its command
+// runs: the binding's path, or DefaultWorkspacePath.
+func taskWorkspacePath(task *v1alpha1.Task) string {
+	if p := task.GetSpec().GetWorkspace().GetPath(); p != "" {
+		return p
+	}
+	return DefaultWorkspacePath
+}
+
+// setupWorkspace runs ws's maiden-run setup at wsPath, which does nothing when
+// it already ran there, and hands the tree to UID 1000 when drop is set.
+func setupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, wsPath string, drop bool) error {
+	if _, err := workspace.SetupWorkspace(ctx, ws, wsPath); err != nil {
+		return err
+	}
+	if drop {
+		if err := chownTree(wsPath, unprivilegedUID, unprivilegedGID); err != nil {
+			slog.Warn("failed to chown workspace directory", "path", wsPath, "error", err)
+		}
+	}
+	return nil
+}
+
+func markWorkspaceReady(metaServer *metadata.Server, wsPath string) {
+	metaServer.SetWorkspaceReady(true)
+	metaServer.SetWorkspaceCheckReady(true)
+	slog.Info("workspace maiden run setup marked ready", "path", wsPath)
 }
 
 // stopCommand asks the command's process group to terminate, kills it if it has
@@ -268,4 +380,47 @@ func commandEnv(task *v1alpha1.Task, metadataURL string) []string {
 		env = append(env, fmt.Sprintf("%s=%s", e.GetName(), e.GetValue()))
 	}
 	return env
+}
+
+// The user a pushed task's command runs as when the runner runs as root.
+const (
+	unprivilegedUID = 1000
+	unprivilegedGID = 1000
+)
+
+// ensureWritableForUser hands the workspace directory itself and the files the
+// runner wrote under it after setup to uid.
+func ensureWritableForUser(wsPath string, uid, gid int) {
+	axDir := filepath.Join(wsPath, ".ax")
+	if _, err := os.Stat(axDir); err == nil {
+		if err := chownTree(axDir, uid, gid); err != nil {
+			slog.Warn("failed to chown .ax dir for unprivileged user", "path", axDir, "uid", uid, "error", err)
+		}
+	}
+	if err := os.Chown(wsPath, uid, gid); err != nil {
+		slog.Warn("failed to chown workspace dir for unprivileged user", "path", wsPath, "uid", uid, "error", err)
+	}
+}
+
+// chownTree changes the owner of root and everything below it, not following
+// symbolic links.
+func chownTree(root string, uid, gid int) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		return os.Chown(p, uid, gid)
+	})
+}
+
+func hasTaskEnv(task *v1alpha1.Task, key string) bool {
+	for _, e := range task.GetSpec().GetEnv() {
+		if e.GetName() == key {
+			return true
+		}
+	}
+	return false
 }

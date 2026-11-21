@@ -399,3 +399,126 @@ func TestRun_SetupFailureAbortsBeforeStartingCommand(t *testing.T) {
 		t.Fatalf("spec.command started despite workspace setup failure")
 	}
 }
+
+// pushYAML posts body to path on the runner's probe port and returns the status.
+func pushYAML(t *testing.T, port int, path, body string) int {
+	t.Helper()
+	resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d%s", port, path), "application/yaml", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+// waitWorkspaceCheck polls /readyz?check=workspace until it answers other than
+// 503 and returns that status.
+func waitWorkspaceCheck(t *testing.T, port int) int {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/readyz?check=workspace", port))
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				return resp.StatusCode
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("workspace check never settled")
+	return 0
+}
+
+func newPushHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t)
+	h.cfg.Task = nil
+	h.cfg.AwaitPush = true
+	noDrop := false
+	h.cfg.DropPrivileges = &noDrop
+	return h
+}
+
+func TestRun_AwaitPushRunsPushedTask(t *testing.T) {
+	h := newPushHarness(t)
+	outFile := filepath.Join(t.TempDir(), "out.txt")
+	h.cfg.PrepareTask = func(task *v1alpha1.Task, ws *v1alpha1.Workspace) (*v1alpha1.Task, error) {
+		task.Spec.Env = append(task.Spec.Env, &v1alpha1.EnvVar{Name: "PREPARED", Value: ws.GetMetadata().GetName()})
+		return task, nil
+	}
+	h.start(t)
+	waitHealthy(t, h.cfg.Port)
+
+	// Substrate's WakeupProbe reads plain /readyz, which is ready while the
+	// runner waits for work.
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/readyz", h.cfg.Port))
+	if err != nil {
+		t.Fatalf("readyz: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("readyz while waiting = %d, want 200", resp.StatusCode)
+	}
+
+	body := fmt.Sprintf(`metadata: {atespace: default, name: pushed, uid: u1}
+spec:
+  workspace: {name: code, path: %q}
+  commands: [sh, -c, 'echo "$PREPARED" > %s']
+---
+metadata: {atespace: default, name: code}
+spec:
+  setup:
+    files: [{path: hello.txt, content: hi}]
+`, h.wsPath, outFile)
+	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerTaskPath, body); code != http.StatusAccepted {
+		t.Fatalf("task push = %d, want 202", code)
+	}
+	if exit := h.waitExit(t); exit.Err != nil {
+		t.Fatalf("pushed command failed: %+v", exit)
+	}
+	if out, _ := os.ReadFile(outFile); strings.TrimSpace(string(out)) != "code" {
+		t.Errorf("command saw PREPARED=%q, want code", out)
+	}
+	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "hello.txt")); string(got) != "hi" {
+		t.Errorf("hello.txt = %q, want the pushed workspace's file", got)
+	}
+	if code := waitWorkspaceCheck(t, h.cfg.Port); code != http.StatusOK {
+		t.Errorf("workspace check = %d, want 200", code)
+	}
+	// ax-server repeats the push on every resume.
+	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerTaskPath, body); code != http.StatusOK {
+		t.Errorf("repeated task push = %d, want 200", code)
+	}
+}
+
+func TestRun_AwaitPushSetsUpPushedWorkspace(t *testing.T) {
+	h := newPushHarness(t)
+	h.start(t)
+	waitHealthy(t, h.cfg.Port)
+
+	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    files: [{path: hello.txt, content: hi}]\n"
+	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerSetupPath, body); code != http.StatusAccepted {
+		t.Fatalf("setup push = %d, want 202", code)
+	}
+	if code := waitWorkspaceCheck(t, h.cfg.Port); code != http.StatusOK {
+		t.Fatalf("workspace check = %d, want 200", code)
+	}
+	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "hello.txt")); string(got) != "hi" {
+		t.Errorf("hello.txt = %q, want the pushed workspace's file", got)
+	}
+}
+
+func TestRun_AwaitPushReportsSetupFailure(t *testing.T) {
+	h := newPushHarness(t)
+	h.start(t)
+	waitHealthy(t, h.cfg.Port)
+
+	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    commands: ['exit 7']\n"
+	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerSetupPath, body); code != http.StatusAccepted {
+		t.Fatalf("setup push = %d, want 202", code)
+	}
+	if code := waitWorkspaceCheck(t, h.cfg.Port); code != http.StatusInternalServerError {
+		t.Fatalf("workspace check = %d, want 500", code)
+	}
+}

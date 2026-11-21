@@ -15,7 +15,6 @@
 package memory_test
 
 import (
-	"bytes"
 	"errors"
 	"math"
 	"slices"
@@ -143,11 +142,11 @@ func TestTaskApplier(t *testing.T) {
 	s := memory.NewStore()
 	key := store.TaskKey{Name: "t-apply"} // empty Atespace normalizes to "default"
 
-	// Missing row: GetTaskRow returns ErrNotFound; Apply nil / DeleteTaskRow are no-ops.
-	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskRow(missing) = %v, want ErrNotFound", err)
+	// Missing row: GetTaskVersion returns ErrNotFound; Apply nil / DeleteTaskVersion are no-ops.
+	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskVersion(missing) = %v, want ErrNotFound", err)
 	}
-	if got, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	if got, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		if current != nil {
 			t.Fatalf("expected nil current on missing row, got %+v", current)
 		}
@@ -155,17 +154,17 @@ func TestTaskApplier(t *testing.T) {
 	}); err != nil || got != nil {
 		t.Fatalf("Apply(missing -> nil) = (%v, %v), want (nil, nil)", got, err)
 	}
-	if got, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow, nil
+	if got, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion, nil
 	}); err != nil || got != nil {
-		t.Fatalf("Apply(missing -> DeleteTaskRow) = (%v, %v), want (nil, nil)", got, err)
+		t.Fatalf("Apply(missing -> DeleteTaskVersion) = (%v, %v), want (nil, nil)", got, err)
 	}
 
 	// Returning a row with nil Task is rejected without mutating storage.
-	if _, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return &store.TaskRow{}, nil
+	if _, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return &store.TaskVersion{}, nil
 	}); err == nil {
-		t.Fatal("expected error when ApplyFunc returns TaskRow with nil Task")
+		t.Fatal("expected error when ApplyFunc returns TaskVersion with nil Task")
 	}
 
 	// Concurrent insert race: exactly one creator sees current == nil.
@@ -177,11 +176,11 @@ func TestTaskApplier(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			_, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 				if current != nil {
 					return nil, errExists
 				}
-				return &store.TaskRow{
+				return &store.TaskVersion{
 					Task: &v1alpha1.Task{
 						Spec: &v1alpha1.TaskSpec{SessionId: "sess-1"},
 						Status: &v1alpha1.TaskStatus{
@@ -194,10 +193,6 @@ func TestTaskApplier(t *testing.T) {
 							},
 						},
 					},
-					ActorUID:        "actor-uid-1",
-					Runnable:        true,
-					RunnerTokenHash: []byte{1, 2, 3},
-					ClaimNonce:      "nonce-1",
 				}, nil
 			})
 			errs <- err
@@ -221,9 +216,9 @@ func TestTaskApplier(t *testing.T) {
 		t.Fatalf("concurrent insert wins=%d conflicts=%d, want 1 and %d", wins, conflicts, racers-1)
 	}
 
-	inserted, err := s.GetTaskRow(ctx, key)
+	inserted, err := s.GetTaskVersion(ctx, key)
 	if err != nil {
-		t.Fatalf("GetTaskRow(inserted): %v", err)
+		t.Fatalf("GetTaskVersion(inserted): %v", err)
 	}
 	if inserted.Generation != 1 || inserted.Task.GetStatus().GetGeneration() != 1 {
 		t.Fatalf("Generation = (%d, %d), want (1, 1)", inserted.Generation, inserted.Task.GetStatus().GetGeneration())
@@ -238,56 +233,49 @@ func TestTaskApplier(t *testing.T) {
 	}
 
 	// Returning current (even if mutated in place) leaves storage unchanged.
-	noopRow, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		current.ActorUID = "mutated-in-place"
+	noopRow, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
+		current.Task.Spec.SessionId = "mutated-in-place"
 		return current, nil
 	})
-	if err != nil || noopRow.ActorUID != "actor-uid-1" || noopRow.Generation != 1 {
-		t.Fatalf("Apply(return current) = (%+v, %v), want unchanged ActorUID=actor-uid-1 Gen=1", noopRow, err)
+	if err != nil || noopRow.Task.GetSpec().GetSessionId() != "sess-1" || noopRow.Generation != 1 {
+		t.Fatalf("Apply(return current) = (%+v, %v), want unchanged SessionId=sess-1 Gen=1", noopRow, err)
 	}
 
-	// Update advances Generation to 2 and persists terminal state + runner fields.
-	updated, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	// Update advances Generation to 2 and persists terminal state.
+	updated, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		next := current.Clone()
-		runID := next.NextRunID()
-		next.ActiveRunID = ""
-		next.Runnable = false
-		next.RunnerTokenConfirmed = true
-		next.ClaimNonce = ""
-		next.LastAckedRunnerSeq = 2
 		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
 			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-			Output: "done " + runID,
+			Output: "done",
 		}
 		return next, nil
 	})
 	if err != nil {
 		t.Fatalf("Apply(update): %v", err)
 	}
-	if updated.Generation != 2 || updated.RunSeq != 1 || !updated.RunnerTokenConfirmed ||
-		!bytes.Equal(updated.RunnerTokenHash, []byte{1, 2, 3}) ||
+	if updated.Generation != 2 ||
 		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		updated.Task.GetStatus().GetOutcome().GetOutput() != "done r-1" {
+		updated.Task.GetStatus().GetOutcome().GetOutput() != "done" {
 		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
 	}
 
-	// Clone of DeleteTaskRow does not match sentinel pointer identity and must not delete.
-	if _, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow.Clone(), nil
+	// Clone of DeleteTaskVersion does not match sentinel pointer identity and must not delete.
+	if _, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion.Clone(), nil
 	}); err == nil {
-		t.Fatal("expected error when returning DeleteTaskRow.Clone()")
+		t.Fatal("expected error when returning DeleteTaskVersion.Clone()")
 	}
 
-	// Returning DeleteTaskRow itself removes the row.
-	deleted, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow, nil
+	// Returning DeleteTaskVersion itself removes the row.
+	deleted, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion, nil
 	})
 	if err != nil || deleted != nil {
-		t.Fatalf("Apply(DeleteTaskRow) = (%v, %v), want (nil, nil)", deleted, err)
+		t.Fatalf("Apply(DeleteTaskVersion) = (%v, %v), want (nil, nil)", deleted, err)
 	}
-	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskRow after delete = %v, want ErrNotFound", err)
+	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskVersion after delete = %v, want ErrNotFound", err)
 	}
 	if _, err := s.GetTask(ctx, v1alpha1.DefaultAtespace, "t-apply"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("GetTask after delete = %v, want ErrNotFound", err)

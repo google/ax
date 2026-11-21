@@ -22,8 +22,8 @@ import (
 	"github.com/google/ax/internal/store"
 )
 
-// GetTaskRow returns a deep copy of the stored row for key, or store.ErrNotFound.
-func (s *MemoryStore) GetTaskRow(ctx context.Context, key store.TaskKey) (*store.TaskRow, error) {
+// GetTaskVersion returns a deep copy of the stored row for key, or store.ErrNotFound.
+func (s *MemoryStore) GetTaskVersion(ctx context.Context, key store.TaskKey) (*store.TaskVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (s *MemoryStore) GetTaskRow(ctx context.Context, key store.TaskKey) (*store
 }
 
 // Apply executes fn atomically under the store mutex and commits the returned mutation.
-func (s *MemoryStore) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskRow, error) {
+func (s *MemoryStore) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (s *MemoryStore) Apply(ctx context.Context, key store.TaskKey, fn store.App
 	// Pass a clone to fn so in-place mutations to current cannot corrupt
 	// s.tasks[mapKey] or leak into the returned row if fn returns nil, current,
 	// or an error.
-	var passedCurrent *store.TaskRow
+	var passedCurrent *store.TaskVersion
 	if stored != nil {
 		passedCurrent = stored.Clone()
 		store.OverlayTaskGeneration(passedCurrent)
@@ -72,7 +72,7 @@ func (s *MemoryStore) Apply(ctx context.Context, key store.TaskKey, fn store.App
 	case err != nil:
 		return nil, err
 
-	case next == store.DeleteTaskRow:
+	case next == store.DeleteTaskVersion:
 		delete(s.tasks, mapKey)
 		return nil, nil
 
@@ -85,7 +85,7 @@ func (s *MemoryStore) Apply(ctx context.Context, key store.TaskKey, fn store.App
 		return ret, nil
 	}
 
-	written, err := store.PrepareTaskRowForApply(next, stored, key)
+	written, err := store.PrepareTaskVersionForApply(next, stored, key)
 	if err != nil {
 		return nil, err
 	}

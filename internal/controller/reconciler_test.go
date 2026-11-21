@@ -17,9 +17,12 @@ package controller_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -517,8 +520,8 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
-	if n := mockSrv.egressPolicyCalls; n == 0 {
-		t.Fatalf("made 0 egress policy calls for a task that binds no gateway, want runner egress rule applied")
+	if n := mockSrv.egressPolicyCalls; n != 0 {
+		t.Fatalf("made %d egress policy calls for a task that binds no gateway, want none", n)
 	}
 
 	gw := &v1alpha1.Gateway{
@@ -532,26 +535,13 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
-	if n := len(mockSrv.createdEgressPolicies); n != 2 {
-		t.Fatalf("created %d egress policies for unbound+bound tasks, want 2", n)
+	if n := len(mockSrv.createdEgressPolicies); n != 1 {
+		t.Fatalf("created %d egress policies for a task that binds a gateway, want 1", n)
 	}
-	req := mockSrv.createdEgressPolicies[1]
+	req := mockSrv.createdEgressPolicies[0]
 	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
-		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 2 || policy.GetRules()[1].GetHttps().GetHostnames()[0] != "a.example.com" {
-		t.Errorf("egress policy request = %v, want runner egress + gateway rule for actor default/bound-task", req)
-	}
-
-	// A recreated task gets a new policy for the same actor name. Its extra
-	// audience differs from the old policy's.
-	mockSrv.createdEgressPolicies = nil
-	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil || len(mockSrv.createdEgressPolicies) != 1 {
-		t.Fatalf("Suspend created %d egress policies, want 1; error %v", len(mockSrv.createdEgressPolicies), err)
-	}
-	audiences := func(r *ateapipb.CreateActorEgressPolicyRequest) []string {
-		return r.GetEgressPolicy().GetRules()[0].GetHttp().GetEffects().GetReplaceHeaders()[0].GetActorJwt().GetAudiences()
-	}
-	if a, b := audiences(req), audiences(mockSrv.createdEgressPolicies[0]); len(a) != 2 || len(b) != 2 || a[1] == b[1] {
-		t.Errorf("runner rule audiences = %v, then %v; want a different extra audience in each policy", a, b)
+		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 1 || policy.GetRules()[0].GetHttps().GetHostnames()[0] != "a.example.com" {
+		t.Errorf("egress policy request = %v, want the gateway's rules as policy \"default\" of actor default/bound-task", req)
 	}
 }
 
@@ -750,6 +740,9 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
+	httpMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
 	httpServer := &http.Server{Handler: httpMux}
 	go httpServer.Serve(httpLis)
 	defer httpServer.Close()
@@ -817,8 +810,8 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
 
-	// A command-only change reuses the same profile template (commands are pulled
-	// per-run from ax-server), while an environment change creates a new one.
+	// A command-only change reuses the same profile template (the task is
+	// pushed to the runner on resume), while an image change creates a new one.
 	task.Spec.Commands = []string{"python3", "agent.py"}
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
@@ -832,6 +825,83 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	if got := len(mockSrv.actorTemplates); got != 2 {
 		t.Errorf("image change left %d templates, want 2", got)
+	}
+}
+
+// Resume reports what the runner does with the pushed task: a rejected push
+// fails the resume, and a setup failure the runner reports marks the workspace
+// SetupFailed.
+func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("ATENET_ROUTER_ADDR", "")
+
+	var pushCode, checkCode atomic.Int32
+	var pushed atomic.Value
+	httpMux := http.NewServeMux()
+	httpMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		pushed.Store(string(b))
+		http.Error(w, "", int(pushCode.Load()))
+	})
+	httpMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "git clone failed", int(checkCode.Load()))
+	})
+	runnerSrv := httptest.NewServer(httpMux)
+	defer runnerSrv.Close()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+	mockSrv := &mockControlServer{workerIP: strings.TrimPrefix(runnerSrv.URL, "http://")}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler.WorkspaceReadyTimeout = 2 * time.Second
+
+	newTask := func(name string) *v1alpha1.Task {
+		return &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: "default", Uid: name + "-uid"},
+			Spec: &v1alpha1.TaskSpec{
+				Profile:   &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"},
+				Workspace: &v1alpha1.WorkspaceRef{Name: "repo"},
+				Commands:  []string{"python3", "agent.py"},
+			},
+		}
+	}
+	ws := &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "repo", Atespace: "default"}, Spec: &v1alpha1.WorkspaceSpec{}}
+
+	// The runner holds another task: Resume fails.
+	pushCode.Store(http.StatusConflict)
+	task := newTask("rejected")
+	if err := reconciler.Resume(ctx, task, ws, nil); err == nil {
+		t.Fatal("Resume succeeded although the runner rejected the task")
+	}
+	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
+	body, _ := pushed.Load().(string)
+	if !strings.Contains(body, "name: rejected") || !strings.Contains(body, "agent.py") || !strings.Contains(body, "---") || !strings.Contains(body, "name: repo") {
+		t.Errorf("pushed body %q lacks the task and its workspace", body)
+	}
+
+	// The runner accepts the task but setup fails.
+	pushCode.Store(http.StatusAccepted)
+	checkCode.Store(http.StatusInternalServerError)
+	task = newTask("setup-fails")
+	if err := reconciler.Resume(ctx, task, ws, nil); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.WorkspaceReasonSetupFailed)
+	if got := conditionMessage(task, "WorkspaceReady"); !strings.Contains(got, "git clone failed") {
+		t.Errorf("WorkspaceReady message = %q, want the runner's reason", got)
 	}
 }
 
@@ -1479,4 +1549,14 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	if got := mockSrv.createdTemplates[2].GetContainers()[0].GetImage(); got != taskImg {
 		t.Errorf("taskOverTplWs image = %q, want %q", got, taskImg)
 	}
+}
+
+// conditionMessage returns the message of the task's condition of type condType.
+func conditionMessage(task *v1alpha1.Task, condType string) string {
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == condType {
+			return c.GetMessage()
+		}
+	}
+	return ""
 }

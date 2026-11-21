@@ -34,26 +34,18 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type testSetupCoordinator struct {
+type testSetupRunner struct {
 	calls atomic.Int32
 	err   error
 	fn    func(ctx context.Context, atespace, setupActor string) error
 }
 
-func (c *testSetupCoordinator) RegisterSetup(context.Context, string, string, string, *v1alpha1.Workspace) error {
-	return nil
-}
-
-func (c *testSetupCoordinator) AwaitSetup(ctx context.Context, atespace, setupActor string) error {
+func (c *testSetupRunner) RunSetup(ctx context.Context, atespace, setupActor, _ string, _ *v1alpha1.Workspace) error {
 	c.calls.Add(1)
 	if c.fn != nil {
 		return c.fn(ctx, atespace, setupActor)
 	}
 	return c.err
-}
-
-func (c *testSetupCoordinator) DeleteSetup(context.Context, string, string) error {
-	return nil
 }
 
 type ctxCheckingWorkspaceStore struct {
@@ -76,20 +68,20 @@ func newWorkspaceTestServer(t *testing.T) *server.Server {
 	return server.NewServer(memory.NewStore(), newTestReconciler(sub))
 }
 
-func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupCoordinator) (*server.Server, *substratetest.Server) {
+func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupRunner) (*server.Server, *substratetest.Server) {
 	srv, sub, _ := newPrewarmWorkspaceTestServerWithManager(t, coord)
 	return srv, sub
 }
 
-func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.SetupCoordinator) (*server.Server, *substratetest.Server, *controller.WorkspaceManager) {
+func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.SetupRunner) (*server.Server, *substratetest.Server, *controller.WorkspaceManager) {
 	t.Helper()
 	sub := substratetest.NewServer(t)
 	st := &ctxCheckingWorkspaceStore{Store: memory.NewStore()}
 	locker := lock.NewMemoryLocker()
 	wsMgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-		Locker:           locker,
-		Store:            st,
-		SetupCoordinator: coord,
+		Locker:      locker,
+		Store:       st,
+		SetupRunner: coord,
 	})
 	srv := server.NewServer(st, newTestReconciler(sub), server.Options{
 		Locker:           locker,
@@ -146,7 +138,7 @@ func TestCreateWorkspace_Immutability(t *testing.T) {
 }
 
 func TestWorkspacePrewarmLifecycle(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
 	ctx := t.Context()
 
@@ -200,7 +192,7 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 		t.Fatalf("Workspace status = %+v, want Ready", created.GetStatus())
 	}
 	if coord.calls.Load() != 1 {
-		t.Fatalf("AwaitSetup calls = %d, want 1", coord.calls.Load())
+		t.Fatalf("RunSetup calls = %d, want 1", coord.calls.Load())
 	}
 
 	tags, err := sub.Client().ListTags(ctx, "default")
@@ -244,7 +236,7 @@ func TestWorkspacePrewarmLifecycle(t *testing.T) {
 }
 
 func TestCreateWorkspace_SetupRequiresImage(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
 
 	_, err := srv.CreateWorkspace(t.Context(), &v1alpha1.CreateWorkspaceRequest{
@@ -262,7 +254,7 @@ func TestCreateWorkspace_SetupRequiresImage(t *testing.T) {
 }
 
 func TestWorkspacePrewarm_FailureBlocksCreateTask(t *testing.T) {
-	coord := &testSetupCoordinator{err: errors.New("git clone exit status 128")}
+	coord := &testSetupRunner{err: errors.New("git clone exit status 128")}
 	srv, _ := newPrewarmWorkspaceTestServer(t, coord)
 	ctx := t.Context()
 
@@ -303,7 +295,7 @@ func TestWorkspacePrewarm_FailureBlocksCreateTask(t *testing.T) {
 }
 
 func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
 	ctx := t.Context()
 
@@ -360,7 +352,7 @@ func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
 
 func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
 	reqCtx, cancel := context.WithCancel(t.Context())
-	coord := &testSetupCoordinator{
+	coord := &testSetupRunner{
 		fn: func(ctx context.Context, _, _ string) error {
 			cancel()
 			<-ctx.Done()
@@ -396,7 +388,7 @@ func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
 }
 
 func TestWorkspacePrewarm_DeleteAndRecreateUsesFreshUIDTag(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
 	ctx := t.Context()
 
@@ -445,7 +437,7 @@ func TestWorkspacePrewarm_DeleteAndRecreateUsesFreshUIDTag(t *testing.T) {
 }
 
 func TestWorkspacePrewarm_IgnoresClientSuppliedUID(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
 	ctx := t.Context()
 
@@ -508,7 +500,7 @@ func TestWorkspacePrewarm_IgnoresClientSuppliedUID(t *testing.T) {
 }
 
 func TestWorkspacePrewarm_SubstrateGRPCCanceledStaysPreparing(t *testing.T) {
-	coord := &testSetupCoordinator{}
+	coord := &testSetupRunner{}
 	srv, sub := newPrewarmWorkspaceTestServer(t, coord)
 	sub.SetErrors(substratetest.Errors{
 		CreateTag: status.Error(codes.Canceled, "context canceled"),
@@ -557,7 +549,7 @@ func TestDeleteWorkspace_CoordinatesWithLazyEnsureSnapshotTag(t *testing.T) {
 	releaseLazySetup := make(chan struct{})
 	var lazyHookArmed atomic.Bool
 
-	coord := &testSetupCoordinator{
+	coord := &testSetupRunner{
 		fn: func(ctx context.Context, _, _ string) error {
 			if lazyHookArmed.Load() {
 				close(inLazySetup)
