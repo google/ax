@@ -29,6 +29,7 @@ Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 - **Allow Customization**: Decouple the built-in workspace bootstrap and coding agent harness so users can configure custom agent runtimes, system instructions, tool policies, and model configurations.
 - **Task Communication and Steering Protocols**: Define protocols for talking to a running `Task`, so users, services, and other tasks can send it messages, receive its output, and steer it mid-run.
+- **Agent Specifications and Protocols**: Introduce an `Agent` specification that declares an agent's harness, instructions, tools, and model, along with the protocols agents use to interoperate with AX and with each other.
 
 
 ## 4. Networking, Identity, Governance & Observability
