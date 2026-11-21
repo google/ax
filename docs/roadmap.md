@@ -10,6 +10,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 | **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, and mount paths. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
 | **`Sandbox` / `SandboxConfig`** | Runtime isolation backends, kernel/syscall constraints, filesystem mounts, and security profiles. |
+| **Network policy** (name open in [#549](https://github.com/google/ax/issues/549)) | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
 
 
 ## 2. Actor Architecture
@@ -20,6 +21,7 @@ Evolve how AX maps tasks onto Agent Substrate actors to improve security boundar
 - **Splitting Task Workspace Setup into a Separate Actor**: Decouple maiden workspace initialization (Git repository cloning and MCP and skill materialization) from the primary task runtime by executing setup in a dedicated setup actor before handing off the prepared workspace state to the task actor.
 - **Minimally Privileged Policies**: Apply strict least-privilege policies tailored independently to the workspace setup actor and the task execution actor—scoping repository/registry credentials and setup egress exclusively to the initialization phase while enforcing minimal runtime permissions, network egress, and capabilities on the task actor.
 - **Idleness Detection and Automatic Suspension for Density**: Continuously monitor actor activity (process execution, I/O, network traffic, and active gRPC/SSH sessions) to detect idle tasks and automatically trigger `SuspendActor` checkpointing, reclaiming worker CPU and memory to maximize cluster density.
+- **Shared Workspaces Across Tasks**: Let multiple tasks start from and share workspace state through warm workspace snapshots and shared volumes, avoiding repeated setup.
 - **Stateful Task Branching**: Enable branching (forking) a running or suspended `Task`—including its checkpointed memory and workspace filesystem state—into multiple parallel tasks to explore speculative execution paths concurrently.
 
 
@@ -34,7 +36,7 @@ Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 Harden perimeter security, enterprise governance, and platform observability for production deployments:
 
-- **Gateways**: Introduce a Gateway used to configure ingress and egress policies for tasks, controlling which traffic can reach task actors and which external destinations they can access.
+- **Network Policy for Tasks**: Introduce a resource to configure ingress and egress policies for tasks, controlling which traffic can reach task actors and which external destinations they can access.
 - **SPIFFE Identity for Tasks**: Issue cryptographic workload identities (SPIFFE IDs / X.509-SVIDs) to every `Task` actor, enabling zero-trust mutual TLS (mTLS) authentication across tasks, MCP servers, and internal services.
 - **Google Platform Requirements for Governance**: Meet baseline Google platform requirements for MCP and skill registry integration, access control, policy enforcement, budget guardrails, and audit compliance.
 - **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner layer without requiring custom instrumentation in user containers.
@@ -44,7 +46,8 @@ Harden perimeter security, enterprise governance, and platform observability for
 
 Make it easy to build on a developer machine:
 
-- **Easy Setup**: Install and run AX locally without having to set up container tooling or a Kubernetes cluster.
+- **Easy Setup**: Install and run AX locally without setting up a Kubernetes cluster yourself.
+- **Local to Remote**: Promote the same `Task`, `Workspace`, and `Model` manifests unchanged from local development to a remote cluster.
 - **Studio**: Provide a local studio experience for authoring, running, inspecting, and debugging tasks.
 
 
