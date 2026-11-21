@@ -46,7 +46,6 @@ Make it easy to build on a developer machine:
 
 - **Easy Setup**: Install and run AX locally without setting up a Kubernetes cluster yourself.
 - **Local to Remote**: Promote the same `Task`, `Workspace`, and `Model` manifests unchanged from local development to a remote cluster.
-- **Studio**: Provide a local studio experience for authoring, running, inspecting, and debugging tasks.
 
 
 ## 6. Prebuilt Runners
