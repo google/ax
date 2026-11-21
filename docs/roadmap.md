@@ -9,7 +9,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 | **`Task`** | Lifecycle phases, status conditions, resource limits, token/timeout budgets, and approval policies. |
 | **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, and mount paths. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
-| **Network policy** | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
+| **`Gateway`** | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
 
 
 ## 2. Actor Architecture
@@ -34,7 +34,7 @@ Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 Harden perimeter security, enterprise governance, and platform observability for production deployments:
 
-- **Network Policy for Tasks**: Introduce a resource to configure ingress and egress policies for tasks, controlling which traffic can reach task actors and which external destinations they can access.
+- **Gateway**: Introduce a `Gateway` resource to configure ingress and egress policies for tasks, controlling which traffic can reach task actors and which external destinations they can access.
 - **SPIFFE Identity for Tasks**: Issue cryptographic workload identities (SPIFFE IDs / X.509-SVIDs) to every `Task` actor, enabling zero-trust mutual TLS (mTLS) authentication across tasks, MCP servers, and internal services.
 - **Google Platform Requirements for Governance**: Meet baseline Google platform requirements for MCP and skill registry integration, access control, policy enforcement, budget guardrails, and audit compliance.
 - **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner layer without requiring custom instrumentation in user containers.
