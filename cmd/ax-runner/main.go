@@ -54,9 +54,6 @@ func main() {
 	} else if task.GetMetadata() != nil {
 		cfg.Task = &task
 	}
-	if cfg.Task == nil && taskFile == "" && os.Getenv("AX_TASK_YAML") == "" {
-		cfg.PullMode = true
-	}
 
 	var ws v1alpha1.Workspace
 	if err := runner.LoadSpec(wsFile, "AX_WORKSPACE_YAML", &ws); err != nil {

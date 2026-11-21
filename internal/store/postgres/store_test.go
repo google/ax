@@ -15,7 +15,6 @@
 package postgres
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -412,10 +411,6 @@ func TestTaskApplier(t *testing.T) {
 							},
 						},
 					},
-					ActorUID:        "actor-uid-1",
-					Runnable:        true,
-					RunnerTokenHash: []byte{1, 2, 3},
-					ClaimNonce:      "nonce-1",
 				}, nil
 			})
 			errs <- err
@@ -448,25 +443,20 @@ func TestTaskApplier(t *testing.T) {
 
 	// Returning current after mutating it in place leaves storage unchanged.
 	noopRow, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		current.ActorUID = "mutated-in-place"
+		current.Task.Spec.SessionId = "mutated-in-place"
 		return current, nil
 	})
-	if err != nil || noopRow.ActorUID != "actor-uid-1" || noopRow.Generation != 1 {
-		t.Fatalf("Apply(return current) = (%+v, %v), want ActorUID=actor-uid-1 Gen=1", noopRow, err)
+	if err != nil || noopRow.Task.GetSpec().GetSessionId() != "sess-1" || noopRow.Generation != 1 {
+		t.Fatalf("Apply(return current) = (%+v, %v), want sessionId=sess-1 Gen=1", noopRow, err)
 	}
 
 	// Update advances Generation to 2 without moving t-apply ahead of t-newer in ListTasks.
 	updated, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
 		next := current.Clone()
-		runID := next.NextRunID()
-		next.Runnable = false
-		next.RunnerTokenConfirmed = true
-		next.ClaimNonce = ""
-		next.LastAckedRunnerSeq = 3
 		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
 			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-			Output: "done " + runID,
+			Output: "done",
 		}
 		return next, nil
 	})
@@ -474,10 +464,8 @@ func TestTaskApplier(t *testing.T) {
 		t.Fatalf("Apply(update): %v", err)
 	}
 	if updated.Generation != 2 || updated.Task.GetStatus().GetGeneration() != 2 ||
-		updated.RunSeq != 1 || !updated.RunnerTokenConfirmed || updated.LastAckedRunnerSeq != 3 ||
-		!bytes.Equal(updated.RunnerTokenHash, []byte{1, 2, 3}) ||
 		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		updated.Task.GetStatus().GetOutcome().GetOutput() != "done r-1" {
+		updated.Task.GetStatus().GetOutcome().GetOutput() != "done" {
 		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
 	}
 
@@ -540,7 +528,7 @@ func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
 			t.Fatalf("Apply current generation = (%d, %d), want (3, 3)", current.Generation, current.Task.GetStatus().GetGeneration())
 		}
 		next := current.Clone()
-		next.Runnable = true
+		next.Task.Spec.Goal = &v1alpha1.Goal{Text: "applied"}
 		return next, nil
 	})
 	if err != nil {
@@ -554,7 +542,7 @@ func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTaskRow after Apply: %v", err)
 	}
-	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || !reloaded.Runnable {
-		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 Runnable=true", reloaded, reloaded.Task.GetStatus())
+	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || reloaded.Task.GetSpec().GetGoal().GetText() != "applied" {
+		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 goal=applied", reloaded, reloaded.Task.GetStatus())
 	}
 }

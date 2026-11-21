@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -26,18 +27,18 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"github.com/google/uuid"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -53,13 +54,6 @@ const (
 	defaultPodIdentityBundleFile = "/run/podidentity.podcert.ate.dev/credential-bundle.pem"
 	defaultRouterServerName      = "atenet-router.ate-system.svc"
 )
-
-// GatewayStore looks up a Gateway resource when lazy workspace snapshot builds
-// resolve Workspace.spec.setup.gateway during task creation. Satisfied by
-// store.Store.
-type GatewayStore interface {
-	GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error)
-}
 
 // TaskReconciler reconciles Task resources by provisioning and orchestrating
 // sandboxed Actors on Agent Substrate.
@@ -79,23 +73,6 @@ type TaskReconciler struct {
 	// part of the template name, so a new digest provisions new templates.
 	// Empty keeps running the runner baked into the task image.
 	RunnerVolumeImage string
-
-	// RunnerEndpoint is the in-cluster host:port of ax-server's :8081 runner
-	// service bound on every task actor's EgressPolicy (defaults to
-	// substrate.DefaultRunnerEndpoint).
-	RunnerEndpoint string
-
-	// RunnerAudience is the OIDC audience bound to Actor JWTs injected for
-	// RunnerEndpoint (defaults to substrate.DefaultRunnerAudience).
-	RunnerAudience string
-
-	// WorkspaceManager, when configured with pre-warming enabled, resolves warm
-	// Workspace snapshot Tags so task actors start from pre-warmed snapshots.
-	WorkspaceManager *WorkspaceManager
-
-	// GatewayStore resolves Workspace.spec.setup.gateway if a task profile
-	// override triggers a lazy Workspace snapshot build during CreateTask.
-	GatewayStore GatewayStore
 }
 
 // NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
@@ -113,8 +90,6 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
-		RunnerEndpoint:          substrate.DefaultRunnerEndpoint,
-		RunnerAudience:          substrate.DefaultRunnerAudience,
 	}
 }
 
@@ -199,40 +174,38 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	actorName := task.Metadata.Name
 
 	// 3. Resolve or provision the ActorTemplate for the task.
-	templateAtespace, templateName, err := ensureProfileTemplate(ctx, r.client, atespace, effective, r.RunnerVolumeImage)
-	if err != nil {
-		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			return fmt.Errorf("ensuring actor template: %w", err)
-		}
-		r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
-		return fmt.Errorf("ensuring actor template: %w", err)
-	}
-
-	// 4. Resolve the warm Workspace snapshot Tag when the bound Workspace has
-	// setup steps or a compute profile and snapshot pre-warming is enabled.
-	// Tasks mounting a Workspace at a non-default path skip the pre-warmed
-	// snapshot so setup runs directly at their target path.
-	wsPath := task.GetSpec().WorkspacePath()
-	usesDefaultWorkspacePath := wsPath == "" || wsPath == v1alpha1.DefaultWorkspacePath
-	var sourceTag string
-	if usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
-		var setupGW *v1alpha1.Gateway
-		if gwName := ws.GetSpec().GetSetup().GetGateway().GetName(); gwName != "" && r.GatewayStore != nil {
-			setupGW, _ = r.GatewayStore.GetGateway(ctx, atespace, gwName)
-		}
-		sourceTag, err = r.WorkspaceManager.EnsureSnapshotTag(ctx, ws, effective, setupGW)
-		if err != nil {
+	var (
+		templateAtespace, templateName string
+		err                            error
+	)
+	if tpl := effective.GetAteTemplate().GetName(); tpl != "" {
+		tplAtespace := ProfileTemplateAtespace(atespace, effective)
+		slog.Info("reconciling task with existing ActorTemplate", "name", task.Metadata.Name, "atespace", atespace, "templateAtespace", tplAtespace, "template", tpl)
+		if _, err := r.client.GetActorTemplate(ctx, tplAtespace, tpl); err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-				return fmt.Errorf("resolving workspace snapshot tag: %w", err)
+				return fmt.Errorf("getting actor template: %w", err)
 			}
-			r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, statusErrorMessage(err), now)
-			return fmt.Errorf("resolving workspace snapshot tag: %w", err)
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
+			return fmt.Errorf("getting actor template: %w", err)
+		}
+		templateAtespace = tplAtespace
+		templateName = tpl
+	} else {
+		image := effective.GetImage()
+		if image == "" {
+			err := errors.New("profile must set image or ateTemplate.name")
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, err.Error(), now)
+			return fmt.Errorf("ensuring actor template: %w", err)
+		}
+		slog.Info("reconciling task", "name", task.Metadata.Name, "atespace", atespace, "image", image)
+		templateAtespace, templateName, err = r.ensureTaskTemplate(ctx, task, ws, atespace, image, effective.GetResources(), now)
+		if err != nil {
+			return err
 		}
 	}
 
-	_, err = r.client.EnsureActorFromTag(ctx, atespace, actorName, templateAtespace, templateName, sourceTag)
+	_, err = r.client.EnsureActor(ctx, atespace, actorName, templateAtespace, templateName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
@@ -249,79 +222,108 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if len(task.Spec.Commands) > 0 && len(task.Status.ResolvedArgv) == 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
-	if usesDefaultWorkspacePath && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
-		msg := "Workspace requires no setup"
-		if sourceTag != "" {
-			msg = fmt.Sprintf("Workspace seeded from snapshot tag %s", sourceTag)
-		}
-		setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, msg, now)
-	}
 	return nil
 }
 
-// IsMemoryFidelityTemplate reports whether the referenced ActorTemplate uses
-// SNAPSHOT_FIDELITY_MEMORY.
-func (r *TaskReconciler) IsMemoryFidelityTemplate(ctx context.Context, defaultAtespace string, ref *v1alpha1.ObjectRef) (bool, error) {
-	if ref.GetName() == "" {
-		return DefaultProfileSnapshotFidelity == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
+func (r *TaskReconciler) ensureTaskTemplate(
+	ctx context.Context,
+	task *v1alpha1.Task,
+	ws *v1alpha1.Workspace,
+	atespace, image string,
+	resSpec *v1alpha1.ResourcesSpec,
+	now time.Time,
+) (string, string, error) {
+	templateName := r.defaultTemplate
+	templateAtespace := r.defaultTemplateAtespace
+	if parts := strings.SplitN(templateName, "/", 2); len(parts) == 2 {
+		templateAtespace = parts[0]
+		templateName = parts[1]
 	}
-	atespace := ref.GetAtespace()
-	if atespace == "" {
-		atespace = defaultAtespace
-	}
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	tmpl, err := r.client.GetActorTemplate(ctx, atespace, ref.GetName())
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return false, nil
+
+	// Prepare container environment variables (task env + specs).
+	extraEnv := make(map[string]string)
+	for _, e := range task.Spec.Env {
+		if e.Name != "" {
+			extraEnv[e.Name] = e.Value
 		}
-		return false, err
 	}
-	return tmpl.GetSnapshotConfig().GetPreferredFidelity() == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
+
+	// Only launch configuration belongs in the template; status and mutable
+	// lifecycle timestamps must not create new golden snapshots.
+	launchTask := proto.Clone(task).(*v1alpha1.Task)
+	launchTask.Status = nil
+	if launchTask.Metadata != nil {
+		launchTask.Metadata.UpdateTime = nil
+		launchTask.Metadata.DeleteTime = nil
+	}
+	if taskYAML, err := yaml.Marshal(launchTask); err == nil {
+		extraEnv["AX_TASK_YAML"] = string(taskYAML)
+	}
+
+	// Inject the bound Workspace spec, if any.
+	if ws != nil {
+		if wsYAML, err := yaml.Marshal(ws); err == nil {
+			extraEnv["AX_WORKSPACE_YAML"] = string(wsYAML)
+		}
+	}
+
+	resources := substrate.ResourceLimits(resSpec)
+
+	if image != "" || len(extraEnv) > 0 {
+		slog.Info("ensuring custom ActorTemplate for task", "image", image)
+		customTemplateName := taskTemplateName(task.Metadata.Name, image, r.RunnerVolumeImage, extraEnv)
+
+		// spec.profile.resources rides along in AX_TASK_YAML / AX_WORKSPACE_YAML, so a
+		// limits change is already part of the template digest and re-provisions the template.
+		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, image, r.RunnerVolumeImage, resources, extraEnv)
+		if err != nil {
+			if substrate.IsTransientError(err) {
+				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+				return "", "", fmt.Errorf("ensuring actor template: %w", err)
+			}
+			// Falling back to the default template would run a different image than
+			// the user asked for, without the limits it asked for, or fail later with
+			// a misleading "actor template not found". Surface the real error on the
+			// task and stop here.
+			r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
+			return "", "", fmt.Errorf("ensuring actor template: %w", err)
+		}
+		if tmpl != nil && tmpl.Metadata != nil {
+			templateAtespace = tmpl.Metadata.Atespace
+			templateName = tmpl.Metadata.Name
+			slog.Info("using custom ActorTemplate for actor", "templateAtespace", templateAtespace, "templateName", templateName)
+		}
+	}
+
+	return templateAtespace, templateName, nil
 }
 
-// bindGateway ensures the task's actor has an EgressPolicy containing the
-// built-in :8081 runner control rule plus any rules from the task's bound
-// Gateway. An actor that already has a policy keeps it unchanged.
+// bindGateway makes sure that the actor of a task that binds a gateway has
+// rules. An actor that has rules keeps them. An actor without rules gets the
+// rules of gw, or bindGateway fails if gw is nil. A failure is recorded the
+// way ensureSubstrateResources records its own.
 func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *v1alpha1.Gateway) error {
 	gwName := task.Spec.GetGateway().GetName()
+	if gwName == "" {
+		return nil
+	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	_, err := r.client.GetActorEgressPolicy(ctx, atespace, actorName)
 	if status.Code(err) == codes.NotFound {
-		// A unique extra audience per policy. Without it, a task recreated under
-		// the same name gets its old actor's JWT, which ax-server refuses.
-		// TODO: Drop it once agent-substrate/substrate#2208 is fixed.
-		rules := []*ateapipb.EgressRule{
-			substrate.RunnerEgressRule(r.RunnerEndpoint, r.RunnerAudience, uuid.NewString()),
-		}
-		if gwName != "" {
-			if gw == nil {
-				err = fmt.Errorf("not available in atespace %q", atespace)
-			} else {
-				rules = append(rules, gw.GetSpec().GetEgress()...)
-				err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, rules)
-			}
+		if gw == nil {
+			err = fmt.Errorf("not available in atespace %q", atespace)
 		} else {
-			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, rules)
+			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress())
 		}
 	}
 	if err != nil {
 		now := time.Now()
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			if gwName != "" {
-				return fmt.Errorf("binding gateway %q: %w", gwName, err)
-			}
-			return fmt.Errorf("binding runner egress policy: %w", err)
-		}
-		if gwName != "" {
-			r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
 			return fmt.Errorf("binding gateway %q: %w", gwName, err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, statusErrorMessage(err), now)
-		return fmt.Errorf("binding runner egress policy: %w", err)
+		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
+		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
 }
@@ -519,6 +521,27 @@ func setCondition(task *v1alpha1.Task, condType, status, reason, message string,
 		Message:    message,
 		UpdateTime: ts,
 	})
+}
+
+// taskTemplateName derives the per-task ActorTemplate name from the task name and a
+// digest of the image, the runner volume image, and container environment, so a
+// spec or runner change yields a new template. An empty runnerVolumeImage leaves
+// the digest as it was before runner volumes existed.
+func taskTemplateName(taskName, image, runnerVolumeImage string, env map[string]string) string {
+	h := sha256.New()
+	h.Write([]byte(image))
+	if runnerVolumeImage != "" {
+		h.Write([]byte("\x00runner=" + runnerVolumeImage + ";"))
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		h.Write([]byte(k + "=" + env[k] + ";"))
+	}
+	return fmt.Sprintf("%s-tmpl-%x", taskName, h.Sum(nil)[:templateDigestBytes])
 }
 
 // taskTemplatePattern matches every ActorTemplate name taskTemplateName can produce

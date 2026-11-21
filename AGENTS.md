@@ -52,7 +52,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-runner
-go test ./...                    # ~25 s, 31 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 29 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:

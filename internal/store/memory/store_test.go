@@ -15,7 +15,6 @@
 package memory_test
 
 import (
-	"bytes"
 	"errors"
 	"math"
 	"slices"
@@ -194,10 +193,6 @@ func TestTaskApplier(t *testing.T) {
 							},
 						},
 					},
-					ActorUID:        "actor-uid-1",
-					Runnable:        true,
-					RunnerTokenHash: []byte{1, 2, 3},
-					ClaimNonce:      "nonce-1",
 				}, nil
 			})
 			errs <- err
@@ -239,36 +234,29 @@ func TestTaskApplier(t *testing.T) {
 
 	// Returning current (even if mutated in place) leaves storage unchanged.
 	noopRow, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		current.ActorUID = "mutated-in-place"
+		current.Task.Spec.SessionId = "mutated-in-place"
 		return current, nil
 	})
-	if err != nil || noopRow.ActorUID != "actor-uid-1" || noopRow.Generation != 1 {
-		t.Fatalf("Apply(return current) = (%+v, %v), want unchanged ActorUID=actor-uid-1 Gen=1", noopRow, err)
+	if err != nil || noopRow.Task.GetSpec().GetSessionId() != "sess-1" || noopRow.Generation != 1 {
+		t.Fatalf("Apply(return current) = (%+v, %v), want unchanged sessionId=sess-1 Gen=1", noopRow, err)
 	}
 
 	// Update advances Generation to 2 and persists terminal state + runner fields.
 	updated, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
 		next := current.Clone()
-		runID := next.NextRunID()
-		next.ActiveRunID = ""
-		next.Runnable = false
-		next.RunnerTokenConfirmed = true
-		next.ClaimNonce = ""
-		next.LastAckedRunnerSeq = 2
 		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
 			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-			Output: "done " + runID,
+			Output: "done",
 		}
 		return next, nil
 	})
 	if err != nil {
 		t.Fatalf("Apply(update): %v", err)
 	}
-	if updated.Generation != 2 || updated.RunSeq != 1 || !updated.RunnerTokenConfirmed ||
-		!bytes.Equal(updated.RunnerTokenHash, []byte{1, 2, 3}) ||
+	if updated.Generation != 2 ||
 		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		updated.Task.GetStatus().GetOutcome().GetOutput() != "done r-1" {
+		updated.Task.GetStatus().GetOutcome().GetOutput() != "done" {
 		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
 	}
 

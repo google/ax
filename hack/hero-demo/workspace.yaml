@@ -22,19 +22,10 @@ metadata:
   name: hero-demo-ws
   atespace: default
 spec:
-  # Same image and limits as task-starter.yaml, so the starter task starts from
-  # this workspace's snapshot.
-  profile:
-    image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
-    resources:
-      limits:
-        cpu: "2"
-        memory: "4Gi"
+  # TODO(@YoyinZyc): Add a spec.profile (image and resources) once workspace
+  # pre-warming is enabled; ax-server rejects spec.profile until then.
   setup:
-    # A task with another profile, such as task-custom.yaml, gets a snapshot of
-    # its own, built by running these commands in its image. A plain image has
-    # no git, so the repository is optional.
     commands:
-      - git init /workspace/app 2>/dev/null || mkdir -p /workspace/app
+      - git init /workspace/app
       - printf "def add(a, b):\n    return a + b\n" > /workspace/app/math_utils.py
       - printf "import unittest\nfrom math_utils import add\n\nclass TestMath(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n" > /workspace/app/test_math.py

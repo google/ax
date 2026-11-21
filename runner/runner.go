@@ -30,7 +30,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"syscall"
@@ -85,24 +84,6 @@ type Config struct {
 	// LauncherPath is the image's launcher, started when the task has a goal
 	// but no spec.commands. Empty means DefaultLauncherPath.
 	LauncherPath string
-	// PullMode enables the pull-based runner loop against ControlURL instead
-	// of the legacy AX_TASK_YAML / Config.Task push mode.
-	PullMode bool
-	// ControlURL is the base URL of ax-server's :8081 runner HTTP service
-	// (defaults to AX_RUNNER_URL or DefaultControlURL).
-	ControlURL string
-	// ActorMetadataDir overrides DefaultActorMetadataDir (/run/ate) in tests.
-	ActorMetadataDir string
-	// StateDir overrides DefaultRunnerStateDir (/var/lib/ax) in tests.
-	StateDir string
-	// HTTPClient overrides the HTTP client used by pull mode in tests.
-	HTTPClient *http.Client
-	// DropPrivileges overrides whether pull mode drops from UID 0 to UID 1000.
-	DropPrivileges *bool
-	// ClaimRetryInitialBackoff and ClaimRetryMaxBackoff bound pull-mode claim
-	// retry backoff (optional; defaults to 200ms and 5s).
-	ClaimRetryInitialBackoff time.Duration
-	ClaimRetryMaxBackoff     time.Duration
 }
 
 // CommandExit describes how the task command finished.
@@ -132,9 +113,6 @@ type CommandExit struct {
 // Run returns an error when workspace setup fails or the runner itself cannot
 // start, for example when the metadata server or the command fails to launch.
 func Run(ctx context.Context, cfg Config) error {
-	if cfg.PullMode || cfg.ControlURL != "" {
-		return runPull(ctx, cfg)
-	}
 	port := cfg.Port
 	if port <= 0 {
 		port = DefaultPort

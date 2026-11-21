@@ -25,8 +25,7 @@ spec:
     # Antigravity starter image published from github.com/agentexecutor/images
     # (v0.0.0-rc.2, pinned by digest; pass STARTER_IMAGE to hack/hero-demo/run.sh
     # to override). Substrate rejects tag-only images when it creates the actor
-    # template. Keep the image and limits identical to workspace.yaml, so the
-    # task starts from the workspace's pre-warmed snapshot.
+    # template.
     image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
     resources:
       limits:

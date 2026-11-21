@@ -28,9 +28,7 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/controller"
-	"github.com/google/ax/internal/runnerhttp"
 	"github.com/google/ax/internal/server"
-	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/internal/telemetry"
@@ -43,7 +41,6 @@ import (
 func main() {
 	var (
 		listenAddr              string
-		runnerAddr              string
 		metricsAddr             string
 		storeURL                string
 		substrateEndpoint       string
@@ -55,13 +52,9 @@ func main() {
 		defaultTemplate         string
 		defaultTemplateAtespace string
 		runnerVolumeImage       string
-		runnerEndpoint          string
-		actorJWTIssuer          string
-		actorJWTAudience        string
 	)
 
 	flag.StringVar(&listenAddr, "addr", ":8080", "HTTP listen address")
-	flag.StringVar(&runnerAddr, "runner-addr", ":8081", "Internal HTTP listen address for pull-based runner assignment/events; empty disables it (env: AX_RUNNER_ADDR)")
 	flag.StringVar(&metricsAddr, "metrics-addr", ":9090", "Listen address for Prometheus /metrics; empty disables it")
 	flag.StringVar(&storeURL, "store", "postgres://ax@localhost:5432/ax?sslmode=disable", "PostgreSQL connection URL (env: AX_STORE). libpq variables such as PGPASSWORD fill in what it leaves out")
 	flag.StringVar(&substrateEndpoint, "substrate-endpoint", "api.ate-system.svc.cluster.local:443", "Agent Substrate Control API endpoint")
@@ -73,16 +66,10 @@ func main() {
 	flag.StringVar(&defaultTemplate, "template", "default-template", "Default Substrate ActorTemplate name")
 	flag.StringVar(&defaultTemplateAtespace, "template-atespace", v1alpha1.DefaultSystemNamespace, "Default Substrate ActorTemplate atespace")
 	flag.StringVar(&runnerVolumeImage, "runner-volume-image", "", "Digest-pinned runner volume image (Dockerfile.runner-volume) to mount read-only into task containers and run the runner from; empty runs the runner baked into the task image (env: AX_RUNNER_VOLUME_IMAGE)")
-	flag.StringVar(&runnerEndpoint, "runner-endpoint", substrate.DefaultRunnerEndpoint, "In-cluster host:port of the :8081 runner service allowed in actor EgressPolicies (env: AX_RUNNER_ENDPOINT)")
-	flag.StringVar(&actorJWTIssuer, "actor-jwt-issuer", "https://idp.ate-system.svc", "Substrate OIDC issuer URL for verifying Actor JWTs on :8081 (env: AX_ACTOR_JWT_ISSUER)")
-	flag.StringVar(&actorJWTAudience, "actor-jwt-audience", substrate.DefaultRunnerAudience, "Expected OIDC audience for Actor JWTs on :8081 (env: AX_ACTOR_JWT_AUDIENCE)")
 	flag.Parse()
 
 	if envAddr := os.Getenv("ADDR"); envAddr != "" {
 		listenAddr = envAddr
-	}
-	if envRunnerAddr := os.Getenv("AX_RUNNER_ADDR"); envRunnerAddr != "" {
-		runnerAddr = envRunnerAddr
 	}
 	// TODO: Reject or warn on passwords embedded in the store URL. They end up
 	// in process args and pod specs; credentials should come from PGPASSWORD,
@@ -92,15 +79,6 @@ func main() {
 	}
 	if envImage := os.Getenv("AX_RUNNER_VOLUME_IMAGE"); envImage != "" {
 		runnerVolumeImage = envImage
-	}
-	if envEndpoint := os.Getenv("AX_RUNNER_ENDPOINT"); envEndpoint != "" {
-		runnerEndpoint = envEndpoint
-	}
-	if envIssuer := os.Getenv("AX_ACTOR_JWT_ISSUER"); envIssuer != "" {
-		actorJWTIssuer = envIssuer
-	}
-	if envAud := os.Getenv("AX_ACTOR_JWT_AUDIENCE"); envAud != "" {
-		actorJWTAudience = envAud
 	}
 
 	logger := slog.New(telemetry.NewLogHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
@@ -156,50 +134,16 @@ func main() {
 	}
 	defer subClient.Close()
 
-	var (
-		runnerSrv        *runnerhttp.Server
-		setupCoordinator controller.SetupCoordinator
-	)
-	if runnerAddr != "" {
-		oidcVerifier, err := runnerhttp.NewOIDCVerifier(runnerhttp.OIDCVerifierConfig{
-			Issuer:      actorJWTIssuer,
-			Audience:    actorJWTAudience,
-			CAFile:      substrateCAFile,
-			InsecureTLS: substrateInsecureTLS,
-		})
-		if err != nil {
-			slog.Error("initializing runner OIDC verifier", "error", err)
-			os.Exit(1)
-		}
-		taskApplier, _ := any(backend).(store.TaskApplier)
-		runnerSrv = runnerhttp.NewServer(runnerhttp.Options{
-			TaskApplier: taskApplier,
-			Store:       backend,
-			Verifier:    oidcVerifier,
-			ActorParker: subClient,
-			Locker:      backend,
-		})
-		setupCoordinator = runnerSrv
-	}
-
 	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
 	reconciler.RunnerVolumeImage = runnerVolumeImage
-	reconciler.RunnerEndpoint = runnerEndpoint
-	reconciler.RunnerAudience = actorJWTAudience
-	reconciler.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
-		Locker:           backend,
-		Store:            backend,
-		SetupCoordinator: setupCoordinator,
-		RunnerImage:      runnerVolumeImage,
-		RunnerEndpoint:   runnerEndpoint,
-		RunnerAudience:   actorJWTAudience,
+		Locker:      backend,
+		Store:       backend,
+		RunnerImage: runnerVolumeImage,
 	})
-	reconciler.WorkspaceManager = workspaces
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
-		TaskApplier:      server.TaskApplierForStore(backend),
 	})
 
 	httpServer := &http.Server{
@@ -219,21 +163,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-
-	var runnerHTTPServer *http.Server
-	if runnerSrv != nil {
-		runnerHTTPServer = &http.Server{
-			Addr:              runnerAddr,
-			Handler:           runnerSrv.Handler(),
-			ReadHeaderTimeout: 10 * time.Second,
-		}
-		go func() {
-			if err := runnerHTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				slog.Error("runner HTTP server failed", "error", err)
-				os.Exit(1)
-			}
-		}()
-	}
 
 	// Metrics get their own listener so the probe and API port stays as it is.
 	var metricsServer *http.Server
@@ -255,9 +184,6 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = httpServer.Shutdown(shutdownCtx)
-	if runnerHTTPServer != nil {
-		_ = runnerHTTPServer.Shutdown(shutdownCtx)
-	}
 	if metricsServer != nil {
 		_ = metricsServer.Shutdown(shutdownCtx)
 	}

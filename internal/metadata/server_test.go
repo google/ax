@@ -98,34 +98,6 @@ func TestMetadataServer(t *testing.T) {
 		t.Fatalf("expected 200 OK after setup, got %d", resp.StatusCode)
 	}
 
-	// Test /readyz?check=workspace gated independently from /readyz
-	srv.SetWorkspaceCheckReady(false)
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz")
-	if err != nil {
-		t.Fatalf("readyz request failed: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK on /readyz when checkReady=false, got %d", resp.StatusCode)
-	}
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz?check=workspace")
-	if err != nil {
-		t.Fatalf("readyz?check=workspace request failed: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 on /readyz?check=workspace when checkReady=false, got %d", resp.StatusCode)
-	}
-	srv.SetWorkspaceCheckReady(true)
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz?check=workspace")
-	if err != nil {
-		t.Fatalf("readyz?check=workspace request failed: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK on /readyz?check=workspace when checkReady=true, got %d", resp.StatusCode)
-	}
-
 	// Test /metadata/v1alpha1/ax/task
 	resp, err = http.Get(srv.MetadataURL() + "/metadata/v1alpha1/ax/task")
 	if err != nil {

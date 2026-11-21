@@ -242,11 +242,11 @@ func TestE2E_GatewayCRUD(t *testing.T) {
 // TestE2E_TaskLifecycleAndSubstrateSync verifies that a Task and its Substrate
 // resources stay in sync across its lifecycle:
 //   - A new Task starts Suspended and is immutable.
-//   - Substrate has a suspended Actor backed by a shared Profile ActorTemplate
-//     (ax-<hash>) with the /readyz:80 wakeup probe and a snapshot config.
+//   - Substrate has a suspended Actor backed by a per-task ActorTemplate
+//     (<task>-tmpl-<hash>) with the /readyz:80 wakeup probe and a snapshot config.
 //   - Resuming moves the Task to Working with WorkspaceReady and Ready
 //     conditions, on the worker Substrate reports.
-//   - Deleting the Task removes the Actor while preserving the shared template.
+//   - Deleting the Task removes the Actor and ActorTemplate.
 func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	ctx := t.Context()
 	ns := defaultAtespace
@@ -278,7 +278,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	}
 	assertContains(t, "duplicate 'ax apply'", out, "already exists and is immutable")
 
-	// 3. Substrate has a suspended Actor using a shared Profile ActorTemplate.
+	// 3. Substrate has a suspended Actor using a per-task ActorTemplate.
 	actor := env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 	actorUID := actor.GetMetadata().GetUid()
 	if got := task.GetStatus().GetActorUid(); actorUID == "" || got != actorUID {
@@ -287,8 +287,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", name),
 		"Actor UID:    "+actorUID+"\n")
 	tmplName := actor.GetActorTemplate().GetName()
-	if !strings.HasPrefix(tmplName, "ax-") {
-		t.Fatalf("actor template = %q, want prefix %q", tmplName, "ax-")
+	if !strings.HasPrefix(tmplName, name+"-tmpl-") {
+		t.Fatalf("actor template = %q, want prefix %q", tmplName, name+"-tmpl-")
 	}
 	tmpl, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName)
 	if err != nil {
@@ -300,8 +300,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if probe := tmpl.GetContainers()[0].GetWakeupProbe().GetHttpGet(); probe.GetPath() != "/readyz" || probe.GetPort() != 80 {
 		t.Fatalf("unexpected WakeupProbe: %+v", tmpl.GetContainers()[0].GetWakeupProbe())
 	}
-	// Verify that the ActorTemplate has a SnapshotConfig set with ROOTFS fidelity.
-	if sc := tmpl.GetSnapshotConfig(); sc == nil || sc.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS {
+	// Verify that the ActorTemplate has a SnapshotConfig set with VOLUMES fidelity.
+	if sc := tmpl.GetSnapshotConfig(); sc == nil || sc.GetPreferredFidelity() != ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
@@ -316,7 +316,7 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 		t.Fatalf("Substrate WorkerPodIps = %v, want non-empty", ips)
 	}
 
-	// 5. Deleting the task removes the AX task and the Actor while preserving the shared ax-* ActorTemplate.
+	// 5. Deleting the task removes the AX task, the Actor, and its ActorTemplate.
 	assertContains(t, "'ax delete task'", env.mustRunAX(t, ns, "delete", "task", name), "deleted")
 	if _, err := env.AXClient.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: name, Atespace: ns}); status.Code(err) != codes.NotFound {
 		t.Fatalf("AX GetTask after delete: got %v, want NotFound", err)
@@ -324,8 +324,8 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 	if _, err := env.SubstrateClient.GetActor(ctx, ns, name); status.Code(err) != codes.NotFound {
 		t.Fatalf("Substrate GetActor after delete: got %v, want NotFound", err)
 	}
-	if _, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName); err != nil {
-		t.Fatalf("Substrate GetActorTemplate(%s) after delete: got %v, want shared template preserved", tmplName, err)
+	if _, err := env.SubstrateClient.GetActorTemplate(ctx, ns, tmplName); status.Code(err) != codes.NotFound {
+		t.Fatalf("Substrate GetActorTemplate(%s) after delete: got %v, want NotFound", tmplName, err)
 	}
 }
 
@@ -360,7 +360,7 @@ spec:
   commands:
   - sh
   - -c
-  - "echo cmd-ran-ok > /workspace/cmd-ran.txt && exec sleep 300"
+  - "echo cmd-ran-ok > /workspace/cmd-ran.txt"
 `
 
 // TestE2E_MetadataServerAndGuestExec verifies the guest environment of a

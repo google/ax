@@ -138,13 +138,6 @@ type WorkspaceManagerOptions struct {
 	// ax-server is redeployed with a new flag/env digest, never mutated
 	// dynamically at runtime).
 	RunnerImage string
-	// RunnerEndpoint is the in-cluster host:port of ax-server's :8081 runner
-	// service bound on every temporary setup actor's EgressPolicy (defaults to
-	// substrate.DefaultRunnerEndpoint).
-	RunnerEndpoint string
-	// RunnerAudience is the OIDC audience requested on Actor JWTs injected for
-	// RunnerEndpoint (defaults to substrate.DefaultRunnerAudience).
-	RunnerAudience string
 	// MaxSetupAttempts bounds how many times buildSnapshotWithSetupActor tries
 	// running a fresh setup actor on non-spec runtime failures (defaults to 2).
 	MaxSetupAttempts int
@@ -159,8 +152,6 @@ type WorkspaceManager struct {
 	store            WorkspaceStore
 	coordinator      SetupCoordinator
 	runnerImage      string
-	runnerEndpoint   string
-	runnerAudience   string
 	maxSetupAttempts int
 }
 
@@ -174,14 +165,6 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
-	runnerEndpoint := opt.RunnerEndpoint
-	if runnerEndpoint == "" {
-		runnerEndpoint = substrate.DefaultRunnerEndpoint
-	}
-	runnerAudience := opt.RunnerAudience
-	if runnerAudience == "" {
-		runnerAudience = substrate.DefaultRunnerAudience
-	}
 	attempts := opt.MaxSetupAttempts
 	if attempts <= 0 {
 		attempts = defaultMaxSetupAttempts
@@ -192,17 +175,14 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 		store:            opt.Store,
 		coordinator:      opt.SetupCoordinator,
 		runnerImage:      opt.RunnerImage,
-		runnerEndpoint:   runnerEndpoint,
-		runnerAudience:   runnerAudience,
 		maxSetupAttempts: attempts,
 	}
 }
 
 // PrewarmEnabled reports whether m has a SetupCoordinator to run setup actors
-// with. cmd/ax-server always provides one (its runner server) unless the runner
-// server is disabled with an empty --runner-addr; without one, Workspaces are
-// stored but never pre-warmed, tasks run spec.setup in their own sandbox, and
-// spec.setup.gateway has no effect.
+// with. cmd/ax-server provides none, so Workspaces are stored but never
+// pre-warmed, tasks run spec.setup in their own sandbox, and ax-server rejects
+// Workspace spec.profile and spec.setup.gateway.
 func (m *WorkspaceManager) PrewarmEnabled() bool {
 	return m != nil && m.coordinator != nil
 }
@@ -463,14 +443,10 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 	if err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorCreationFailed, underlyingErr: err}
 	}
-	egressRules := []*ateapipb.EgressRule{
-		substrate.RunnerEgressRule(m.runnerEndpoint, m.runnerAudience),
-	}
 	if setupGateway != nil {
-		egressRules = append(egressRules, setupGateway.GetSpec().GetEgress()...)
-	}
-	if err := m.client.EnsureActorEgressPolicy(ctx, atespace, actorName, egressRules); err != nil {
-		return &stageError{reason: v1alpha1.ReasonGatewayBindingFailed, nonRetryable: !substrate.IsTransientError(err), underlyingErr: err}
+		if err := m.client.EnsureActorEgressPolicy(ctx, atespace, actorName, setupGateway.GetSpec().GetEgress()); err != nil {
+			return &stageError{reason: v1alpha1.ReasonGatewayBindingFailed, nonRetryable: !substrate.IsTransientError(err), underlyingErr: err}
+		}
 	}
 
 	if err := m.coordinator.RegisterSetup(ctx, atespace, actorName, actor.GetMetadata().GetUid(), ws); err != nil {
