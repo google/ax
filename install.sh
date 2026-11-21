@@ -34,10 +34,9 @@
 set -eu
 
 # Pinned AX Studio release matching this AX version's v1alpha1 gRPC API.
-# TODO(studio): Populate PINNED_STUDIO_VERSION and pinned_studio_sha256() once
-# agentexecutor/studio publishes its first release, and update them together
-# when cutting an AX release (see docs/releasing.md).
-PINNED_STUDIO_VERSION=""
+# Update PINNED_STUDIO_VERSION and pinned_studio_sha256() together when
+# cutting an AX release (see docs/releasing.md).
+PINNED_STUDIO_VERSION="v0.4.0-rc.1"
 
 AX_GITHUB_REPO="${AX_GITHUB_REPO:-google/ax}"
 AX_VERSION="${AX_VERSION:-}"
@@ -53,10 +52,10 @@ AX_SKIP_STUDIO="${AX_SKIP_STUDIO:-0}"
 # Official SHA-256 digests of ax-studio_<os>_<arch>.tar.gz for PINNED_STUDIO_VERSION.
 pinned_studio_sha256() {
     case "${1}/${2}" in
-        linux/amd64)  printf '%s' "" ;;
-        linux/arm64)  printf '%s' "" ;;
-        darwin/amd64) printf '%s' "" ;;
-        darwin/arm64) printf '%s' "" ;;
+        linux/amd64)  printf '%s' "c31a631d856a6bbda101764e7827c9cae22d6cf4b2a11d790b9f6e0fd474614d" ;;
+        linux/arm64)  printf '%s' "211489df6874199f4c116218943216e713cef6c2ba1e697e1721b1821d774eeb" ;;
+        darwin/amd64) printf '%s' "ca2a1a1b6ec4bfdbc88f107a5ce97b0df722c52a04525b69827feddffb4619ad" ;;
+        darwin/arm64) printf '%s' "ddfd33d7342c4f48b137303adc4af24f85e6ff646cbe31e9771143d1b6f7b0fd" ;;
         *)            printf '%s' "" ;;
     esac
 }
@@ -231,9 +230,9 @@ install_main() {
     fi
     echo "Next step — launch AX Studio ('ax studio'), connect to a cluster ('ax ctx'), or start a local sandbox:"
     if [ "$_on_path" -eq 1 ]; then
-        echo "  ax local start --server-image <server-img>"
+        echo "  ax local start"
     else
-        echo "  ${_dest} local start --server-image <server-img>"
+        echo "  ${_dest} local start"
     fi
 }
 

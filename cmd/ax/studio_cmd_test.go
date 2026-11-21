@@ -141,11 +141,14 @@ func TestInstallShStudioPinning(t *testing.T) {
 		}
 
 		installDir := filepath.Join(tmp, "bin")
-		cmd := exec.Command("sh", "-c", `. "$1" && detect_os && detect_arch && resolve_install_dir && install_studio`, "sh", installScript)
+		snippet := `. "$1"
+PINNED_STUDIO_VERSION=""
+AX_STUDIO_VERSION=""
+detect_os && detect_arch && resolve_install_dir && install_studio`
+		cmd := exec.Command("sh", "-c", snippet, "sh", installScript)
 		cmd.Env = append(os.Environ(),
 			"__INSTALL_SH_SOURCED=1",
 			"AX_INSTALL_DIR="+installDir,
-			"AX_STUDIO_VERSION=",
 			"AX_STUDIO_BASE_URL=",
 			"AX_STUDIO_LOCAL_BIN=",
 			"AX_SKIP_STUDIO=0",
@@ -159,6 +162,35 @@ func TestInstallShStudioPinning(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(installDir, "ax-studio")); err == nil {
 			t.Fatal("expected ax-studio not to be installed when unpinned")
+		}
+	})
+
+	t.Run("pins_studio_version_and_digests_consistently", func(t *testing.T) {
+		for _, pair := range [][2]string{
+			{"linux", "amd64"},
+			{"linux", "arm64"},
+			{"darwin", "amd64"},
+			{"darwin", "arm64"},
+		} {
+			cmd := exec.Command("sh", "-c", fmt.Sprintf(`. "$1" && printf '%%s|%%s' "$PINNED_STUDIO_VERSION" "$(pinned_studio_sha256 %s %s)"`, pair[0], pair[1]), "sh", installScript)
+			cmd.Env = append(os.Environ(), "__INSTALL_SH_SOURCED=1")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("querying pinned studio config for %s/%s: %v\n%s", pair[0], pair[1], err, string(out))
+			}
+			parts := strings.SplitN(string(out), "|", 2)
+			if len(parts) != 2 || !strings.HasPrefix(parts[0], "v") {
+				t.Fatalf("expected release tag PINNED_STUDIO_VERSION for %s/%s, got %q", pair[0], pair[1], string(out))
+			}
+			digest := parts[1]
+			if len(digest) != 64 {
+				t.Fatalf("expected 64-char SHA-256 hex digest for %s/%s, got %q", pair[0], pair[1], digest)
+			}
+			for _, ch := range digest {
+				if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+					t.Fatalf("expected lowercase hex SHA-256 for %s/%s, got %q", pair[0], pair[1], digest)
+				}
+			}
 		}
 	})
 

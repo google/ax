@@ -69,45 +69,35 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 
 ## Quick start
 
-### 1. Install the CLI
+### 1. Install AX
 
 ```bash
 curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
+This installs both `ax` and [AX Studio](https://github.com/agentexecutor/studio#readme) (`ax-studio`) into `~/.ax/bin`.
+
 > [!TIP]
-> Prefer a UI? [AX Studio](https://github.com/agentexecutor/studio#readme) is a local web app that sets up AX on your computer and starts tasks for you. It deploys its own AX images, so you can skip steps 2 and 3. Install it as its README describes, then run `ax studio`.
+> Prefer a UI? Run `ax studio` to set up AX on your computer and start tasks from a local web app instead of using the CLI below.
 
-### 2. Build the images
-
-Until release images are published, build and push your own from an ax checkout and pin them by digest:
-
-```bash
-export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
-make images                            # prints the digest of each pushed image
-export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
-```
-
-For `ax local start` you can use a registry on `localhost` instead of a remote one: see [Using Locally Built Images](docs/local_installer.md#using-locally-built-images).
-
-### 3. Install AX
+### 2. Start AX
 
 **Locally**, on a new Kind cluster with Substrate and a WorkerPool:
 
 ```bash
-ax local start --server-image "$AX_SERVER_IMAGE"
+ax local start
 ```
 
 **On an existing cluster** with Kubernetes 1.37+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
-ax install --server-image "$AX_SERVER_IMAGE"
+ax install
 ```
 
 Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
 
-See the [Local Installer guide](docs/local_installer.md) for prerequisites, `ax uninstall`, and more.
+Official release binaries deploy the matching release `ax-server` image by default. Building from source or pushing custom images? See [Build and push images](docs/development.md#build-and-push-images) and the [Local Installer guide](docs/local_installer.md).
 
 ### Run your first task
 
