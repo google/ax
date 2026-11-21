@@ -43,7 +43,7 @@ CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/d
 BUF := go tool -modfile=hack/tools/buf/go.mod buf
 GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
 
-.PHONY: build install images push-runner-volume check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e test-local-install e2e-setup e2e-run e2e-cleanup clean
+.PHONY: build install images push-runner-volume check-image-repo build-claude-code-image push-claude-code-image generate deploy deploy-server deploy-postgres apply-example verify test test-e2e test-local-install build-local-cluster e2e-setup e2e-run e2e-cleanup clean
 
 ## --------------------------------------
 ## Build Targets
@@ -110,11 +110,14 @@ push-runner-volume: check-image-repo
 
 # push_image pushes image $(1) and writes its manifest digest to bin/$(2).digest.
 # podman reports the exact pushed digest via --digestfile; docker records it in
-# the image's RepoDigests after a push.
+# the image's RepoDigests after a push. A registry on localhost or 127.0.0.1
+# (see `make build-local-cluster`) serves plain HTTP: docker allows that by
+# default, podman only with --tls-verify=false.
 define push_image
 	@echo "==> Pushing $(1)..."
 	@if $(CONTAINER_CLI) --version 2>/dev/null | grep -qi podman; then \
-		$(CONTAINER_CLI) push --digestfile bin/$(2).digest $(1); \
+		case "$(1)" in localhost[:/]*|127.0.0.1[:/]*) tls="--tls-verify=false" ;; *) tls="" ;; esac; \
+		$(CONTAINER_CLI) push $$tls --digestfile bin/$(2).digest $(1); \
 	else \
 		$(CONTAINER_CLI) push $(1) && \
 		img="$(1)" && \
@@ -219,6 +222,13 @@ e2e-cleanup:
 # cluster on exit.
 test-local-install:
 	./hack/test-local-install.sh
+
+# Build ax and the AX images from this checkout into a registry on localhost
+# (podman or docker) and start the local cluster from them, or roll the new
+# ax-server out to the running one. Keeps the cluster and the registry; set
+# AX_LOCAL_CLUSTER to use another cluster than ax-local.
+build-local-cluster:
+	CONTAINER_CLI=$(CONTAINER_CLI) ./hack/build-local-cluster.sh
 
 clean:
 	@echo "==> Cleaning build artifacts..."
