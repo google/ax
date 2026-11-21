@@ -28,6 +28,7 @@ Evolve how AX maps tasks onto Agent Substrate actors to improve security boundar
 Make workspace synthesis and in-sandbox agent harnesses dynamic and extensible:
 
 - **Allow Customization**: Decouple the built-in workspace bootstrap and coding agent harness so users can configure custom agent runtimes, system instructions, tool policies, and model configurations.
+- **Task Communication and Steering Protocols**: Define protocols for talking to a running `Task`, so users, services, and other tasks can send it messages, receive its output, and steer it mid-run.
 
 
 ## 4. Networking, Identity, Governance & Observability
