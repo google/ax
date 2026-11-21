@@ -20,7 +20,7 @@ Evolve how AX maps tasks onto Agent Substrate actors to improve security boundar
 - **Minimally Privileged Policies**: Apply strict least-privilege policies tailored independently to the workspace setup actor and the task execution actor—scoping repository/registry credentials and setup egress exclusively to the initialization phase while enforcing minimal runtime permissions, network egress, and capabilities on the task actor.
 - **Idleness Detection and Automatic Suspension for Density**: Continuously monitor actor activity (process execution, I/O, network traffic, and active gRPC/SSH sessions) to detect idle tasks and automatically trigger `SuspendActor` checkpointing, reclaiming worker CPU and memory to maximize cluster density.
 - **Shared Workspaces Across Tasks**: Let multiple tasks start from and share workspace state through warm workspace snapshots and shared volumes, avoiding repeated setup.
-- **Stateful Task Branching**: Enable branching (forking) a running or suspended `Task`—including its checkpointed memory and workspace filesystem state—into multiple parallel tasks to explore speculative execution paths concurrently.
+- **Forking Tasks**: Fork a running or suspended `Task`—including its checkpointed memory and workspace filesystem state—into one or more new tasks, for example to explore speculative execution paths concurrently.
 
 
 ## 3. Agentic Environment
