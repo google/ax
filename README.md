@@ -97,7 +97,7 @@ ax install
 
 Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
 
-Official release binaries deploy the matching release `ax-server` image by default. Building from source or pushing custom images? See [Build and push images](docs/development.md#build-and-push-images) and the [Local Installer guide](docs/local_installer.md).
+Official release binaries deploy the matching release `ax-server` image by default. Prebuilt agent images (such as Antigravity) have no runner baked in, so pass `--runner-volume-image` with the digest from the release notes to run them. Building from source or pushing custom images? See [Build and push images](docs/development.md#build-and-push-images) and the [Local Installer guide](docs/local_installer.md).
 
 ### Run your first task
 
