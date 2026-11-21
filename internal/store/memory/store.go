@@ -39,7 +39,7 @@ func clone[T proto.Message](m T) T {
 // MemoryStore is an in-memory implementation of store.Store and store.TaskApplier for testing and single-node setups.
 type MemoryStore struct {
 	mu         sync.RWMutex
-	tasks      map[string]*store.TaskRow
+	tasks      map[string]*store.TaskVersion
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
 	gateways   map[string]*v1alpha1.Gateway
@@ -53,7 +53,7 @@ var (
 // NewStore creates a new in-memory Store.
 func NewStore() *MemoryStore {
 	return &MemoryStore{
-		tasks:      make(map[string]*store.TaskRow),
+		tasks:      make(map[string]*store.TaskVersion),
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
 		gateways:   make(map[string]*v1alpha1.Gateway),
@@ -128,7 +128,7 @@ func (s *MemoryStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 		cp.Generation = max(cp.Generation, task.Status.GetGeneration(), 1)
 		s.tasks[key] = cp
 	} else {
-		s.tasks[key] = &store.TaskRow{
+		s.tasks[key] = &store.TaskVersion{
 			Task:       clone(task),
 			Generation: max(task.Status.GetGeneration(), 1),
 		}

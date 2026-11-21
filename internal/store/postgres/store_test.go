@@ -15,7 +15,6 @@
 package postgres
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -373,10 +372,10 @@ func TestTaskApplier(t *testing.T) {
 	ctx := t.Context()
 	key := store.TaskKey{Name: "t-apply"} // empty Atespace normalizes to "default"
 
-	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskRow(missing) = %v, want ErrNotFound", err)
+	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskVersion(missing) = %v, want ErrNotFound", err)
 	}
-	if got, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	if got, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		if current != nil {
 			t.Fatalf("expected nil current on missing row, got %+v", current)
 		}
@@ -395,11 +394,11 @@ func TestTaskApplier(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+			_, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 				if current != nil {
 					return nil, errExists
 				}
-				return &store.TaskRow{
+				return &store.TaskVersion{
 					Task: &v1alpha1.Task{
 						Spec: &v1alpha1.TaskSpec{SessionId: "sess-1"},
 						Status: &v1alpha1.TaskStatus{
@@ -412,10 +411,6 @@ func TestTaskApplier(t *testing.T) {
 							},
 						},
 					},
-					ActorUID:        "actor-uid-1",
-					Runnable:        true,
-					RunnerTokenHash: []byte{1, 2, 3},
-					ClaimNonce:      "nonce-1",
 				}, nil
 			})
 			errs <- err
@@ -440,33 +435,28 @@ func TestTaskApplier(t *testing.T) {
 	}
 
 	// Insert a newer task so we can verify Apply updates preserve saved_at ordering.
-	if _, err := s.Apply(ctx, store.TaskKey{Name: "t-newer"}, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return &store.TaskRow{Task: &v1alpha1.Task{}}, nil
+	if _, err := s.Apply(ctx, store.TaskKey{Name: "t-newer"}, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return &store.TaskVersion{Task: &v1alpha1.Task{}}, nil
 	}); err != nil {
 		t.Fatalf("Apply(t-newer): %v", err)
 	}
 
 	// Returning current after mutating it in place leaves storage unchanged.
-	noopRow, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		current.ActorUID = "mutated-in-place"
+	noopRow, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
+		current.Task.Spec.SessionId = "mutated-in-place"
 		return current, nil
 	})
-	if err != nil || noopRow.ActorUID != "actor-uid-1" || noopRow.Generation != 1 {
-		t.Fatalf("Apply(return current) = (%+v, %v), want ActorUID=actor-uid-1 Gen=1", noopRow, err)
+	if err != nil || noopRow.Task.GetSpec().GetSessionId() != "sess-1" || noopRow.Generation != 1 {
+		t.Fatalf("Apply(return current) = (%+v, %v), want SessionId=sess-1 Gen=1", noopRow, err)
 	}
 
 	// Update advances Generation to 2 without moving t-apply ahead of t-newer in ListTasks.
-	updated, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	updated, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		next := current.Clone()
-		runID := next.NextRunID()
-		next.Runnable = false
-		next.RunnerTokenConfirmed = true
-		next.ClaimNonce = ""
-		next.LastAckedRunnerSeq = 3
 		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
 			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
-			Output: "done " + runID,
+			Output: "done",
 		}
 		return next, nil
 	})
@@ -474,10 +464,8 @@ func TestTaskApplier(t *testing.T) {
 		t.Fatalf("Apply(update): %v", err)
 	}
 	if updated.Generation != 2 || updated.Task.GetStatus().GetGeneration() != 2 ||
-		updated.RunSeq != 1 || !updated.RunnerTokenConfirmed || updated.LastAckedRunnerSeq != 3 ||
-		!bytes.Equal(updated.RunnerTokenHash, []byte{1, 2, 3}) ||
 		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		updated.Task.GetStatus().GetOutcome().GetOutput() != "done r-1" {
+		updated.Task.GetStatus().GetOutcome().GetOutput() != "done" {
 		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
 	}
 
@@ -486,20 +474,20 @@ func TestTaskApplier(t *testing.T) {
 		t.Fatalf("ListTasks = %v, %v; want [t-newer, t-apply]", listed, err)
 	}
 
-	// DeleteTaskRow removes the row; Clone() of DeleteTaskRow does not.
-	if _, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow.Clone(), nil
+	// DeleteTaskVersion removes the row; Clone() of DeleteTaskVersion does not.
+	if _, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion.Clone(), nil
 	}); err == nil {
-		t.Fatal("expected error when returning DeleteTaskRow.Clone()")
+		t.Fatal("expected error when returning DeleteTaskVersion.Clone()")
 	}
-	deleted, err := s.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow, nil
+	deleted, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion, nil
 	})
 	if err != nil || deleted != nil {
-		t.Fatalf("Apply(DeleteTaskRow) = (%v, %v), want (nil, nil)", deleted, err)
+		t.Fatalf("Apply(DeleteTaskVersion) = (%v, %v), want (nil, nil)", deleted, err)
 	}
-	if _, err := s.GetTaskRow(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskRow after delete = %v, want ErrNotFound", err)
+	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTaskVersion after delete = %v, want ErrNotFound", err)
 	}
 }
 
@@ -524,15 +512,15 @@ func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
 		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
 
-	got, err := s.GetTaskRow(ctx, key)
+	got, err := s.GetTaskVersion(ctx, key)
 	if err != nil {
-		t.Fatalf("GetTaskRow: %v", err)
+		t.Fatalf("GetTaskVersion: %v", err)
 	}
 	if got.Generation != 3 || got.Task.GetStatus().GetGeneration() != 3 {
-		t.Fatalf("GetTaskRow generation = (%d, %d), want (3, 3)", got.Generation, got.Task.GetStatus().GetGeneration())
+		t.Fatalf("GetTaskVersion generation = (%d, %d), want (3, 3)", got.Generation, got.Task.GetStatus().GetGeneration())
 	}
 
-	applied, err := s.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	applied, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		if current == nil {
 			t.Fatal("expected non-nil current row")
 		}
@@ -540,7 +528,7 @@ func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
 			t.Fatalf("Apply current generation = (%d, %d), want (3, 3)", current.Generation, current.Task.GetStatus().GetGeneration())
 		}
 		next := current.Clone()
-		next.Runnable = true
+		next.Task.Spec = &v1alpha1.TaskSpec{SessionId: "sess-4"}
 		return next, nil
 	})
 	if err != nil {
@@ -550,11 +538,11 @@ func TestTaskApplierLegacyWriteThenApply(t *testing.T) {
 		t.Fatalf("Apply returned generation = (%d, %d), want (4, 4)", applied.Generation, applied.Task.GetStatus().GetGeneration())
 	}
 
-	reloaded, err := s.GetTaskRow(ctx, key)
+	reloaded, err := s.GetTaskVersion(ctx, key)
 	if err != nil {
-		t.Fatalf("GetTaskRow after Apply: %v", err)
+		t.Fatalf("GetTaskVersion after Apply: %v", err)
 	}
-	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || !reloaded.Runnable {
-		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 Runnable=true", reloaded, reloaded.Task.GetStatus())
+	if reloaded.Generation != 4 || reloaded.Task.GetStatus().GetGeneration() != 4 || reloaded.Task.GetSpec().GetSessionId() != "sess-4" {
+		t.Fatalf("reloaded row = (%+v, status=%+v), want Gen=4 SessionId=sess-4", reloaded, reloaded.Task.GetStatus())
 	}
 }

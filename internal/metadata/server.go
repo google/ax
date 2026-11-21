@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,12 +29,14 @@ import (
 	"github.com/agent-substrate/env/guest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 )
 
 // Server is the cloud-style metadata server running inside the task actor container.
 // It runs two listeners. The probe listener on all interfaces serves /healthz and
-// /readyz, multiplexed with the guest gRPC services when debug is enabled. The
+// /readyz, the push endpoints when ServerOptions.AcceptPushes is set, and the
+// guest gRPC services when debug is enabled, all multiplexed on one port. The
 // metadata listener serves the /metadata endpoints on loopback only, so they are
 // reachable from inside the container and nowhere else.
 type Server struct {
@@ -50,9 +53,24 @@ type Server struct {
 	goalText            string
 	workspaceReady      bool
 	workspaceCheckReady bool
-	onReadyz            func()
+	setupFailure        string
+	acceptPushes        bool
+	pushedSetup         *v1alpha1.Workspace
+	pushedTask          *v1alpha1.Task
+	pushes              chan Push
 	assignmentCh        chan struct{}
 	assignmentOnce      sync.Once
+}
+
+// Push is work ax-server pushed to the runner (see v1alpha1.RunnerSetupPath and
+// v1alpha1.RunnerTaskPath).
+type Push struct {
+	// Task is the task to run, or nil when the push asks only for Workspace's
+	// setup to run.
+	Task *v1alpha1.Task
+	// Workspace is the Workspace to set up, or the task's bound Workspace,
+	// which is nil when the task binds none.
+	Workspace *v1alpha1.Workspace
 }
 
 // ServerOptions configures optional settings for the metadata and guest server.
@@ -62,8 +80,10 @@ type ServerOptions struct {
 	// MetadataPort is the loopback port for the /metadata endpoints. Zero picks
 	// a free port; read the result from MetadataURL after Start.
 	MetadataPort int
-	// OnReadyz, when non-nil, is invoked whenever /readyz returns 200 OK.
-	OnReadyz func()
+	// AcceptPushes serves the push endpoints and delivers what they accept on
+	// Pushes. The first setup push and the first task push are accepted;
+	// repeating either is acknowledged again, and different work is refused.
+	AcceptPushes bool
 }
 
 // NewServer creates a new metadata and guest server serving the task and its
@@ -89,7 +109,8 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 		workspace:           ws,
 		goalText:            task.GetSpec().GetGoal().GetText(),
 		workspaceCheckReady: true,
-		onReadyz:            opt.OnReadyz,
+		acceptPushes:        opt.AcceptPushes,
+		pushes:              make(chan Push, 2),
 		assignmentCh:        make(chan struct{}),
 	}
 	if task != nil {
@@ -108,13 +129,19 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux := http.NewServeMux()
 	probeMux.HandleFunc("/healthz", s.handleHealthz)
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
+	if opt.AcceptPushes {
+		probeMux.HandleFunc("POST "+v1alpha1.RunnerSetupPath, s.handleSetupPush)
+		probeMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, s.handleTaskPush)
+	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isGRPC := r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc")
 		s.mu.RLock()
 		grpcSrv := s.grpcServer
 		s.mu.RUnlock()
-		if grpcSrv == nil && isGRPC && s.onReadyz != nil {
+		// A runner waiting for its task enables guest services once the task
+		// arrives, so give a guest call racing the task push a moment.
+		if grpcSrv == nil && isGRPC && s.acceptPushes {
 			timer := time.NewTimer(10 * time.Second)
 			select {
 			case <-s.assignmentCh:
@@ -229,7 +256,7 @@ func (s *Server) UpdateState(task *v1alpha1.Task, ws *v1alpha1.Workspace) {
 }
 
 // UpdateAssignment updates the served Task, Workspace, and goal text together
-// when pull mode dispatches a new run assignment.
+// when the runner starts a pushed task.
 func (s *Server) UpdateAssignment(task *v1alpha1.Task, ws *v1alpha1.Workspace, goalText string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,13 +296,27 @@ func (s *Server) SetWorkspaceReady(ready bool) {
 }
 
 // SetWorkspaceCheckReady updates whether /readyz?check=workspace reports ready.
-// Pull mode enables /readyz immediately for Substrate's WakeupProbe and holds
-// /readyz?check=workspace at 503 until initial assignment claim and workspace
-// setup finish.
+// A runner waiting for a push enables /readyz immediately for Substrate's
+// WakeupProbe and holds /readyz?check=workspace at 503 until the pushed work's
+// workspace setup finishes.
 func (s *Server) SetWorkspaceCheckReady(ready bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.workspaceCheckReady = ready
+}
+
+// SetSetupFailed makes /readyz?check=workspace report that workspace setup
+// failed, with err as the reason.
+func (s *Server) SetSetupFailed(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setupFailure = err.Error()
+}
+
+// Pushes delivers the work the push endpoints accept, at most one setup push
+// and one task push. Only a server with ServerOptions.AcceptPushes gets any.
+func (s *Server) Pushes() <-chan Push {
+	return s.pushes
 }
 
 // IsWorkspaceReady returns whether the workspace setup has completed.
@@ -288,27 +329,110 @@ func (s *Server) IsWorkspaceReady() bool {
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
-	if s.onReadyz != nil {
-		s.onReadyz()
-	}
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	ready := s.workspaceReady
 	checkReady := s.workspaceCheckReady
+	failure := s.setupFailure
 	s.mu.RUnlock()
 
-	if !ready || (r.URL.Query().Get("check") == "workspace" && !checkReady) {
+	checkWorkspace := r.URL.Query().Get("check") == "workspace"
+	if checkWorkspace && failure != "" {
+		http.Error(w, failure, http.StatusInternalServerError)
+		return
+	}
+	if !ready || (checkWorkspace && !checkReady) {
 		http.Error(w, "workspace initializing", http.StatusServiceUnavailable)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
-	if s.onReadyz != nil {
-		s.onReadyz()
+}
+
+// handleSetupPush accepts a Workspace to set up. It replies 202 when it accepts
+// the Workspace, 200 when it already has, and 409 when the runner holds other
+// work.
+func (s *Server) handleSetupPush(w http.ResponseWriter, r *http.Request) {
+	var ws v1alpha1.Workspace
+	if _, err := decodePush(r, &ws); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.pushedTask != nil:
+		http.Error(w, "runner is running a task", http.StatusConflict)
+	case s.pushedSetup != nil && sameObject(s.pushedSetup.GetMetadata(), ws.GetMetadata()):
+		w.WriteHeader(http.StatusOK)
+	case s.pushedSetup != nil:
+		http.Error(w, "runner is setting up another workspace", http.StatusConflict)
+	default:
+		s.pushedSetup = &ws
+		s.pushes <- Push{Workspace: &ws}
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+// handleTaskPush accepts a Task, optionally followed by its bound Workspace. It
+// replies 202 when it accepts the Task, 200 when it already has, and 409 when
+// the runner holds another task.
+func (s *Server) handleTaskPush(w http.ResponseWriter, r *http.Request) {
+	var task v1alpha1.Task
+	var ws v1alpha1.Workspace
+	n, err := decodePush(r, &task, &ws)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	push := Push{Task: &task}
+	if n > 1 {
+		push.Workspace = &ws
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.pushedTask != nil && sameObject(s.pushedTask.GetMetadata(), task.GetMetadata()):
+		w.WriteHeader(http.StatusOK)
+	case s.pushedTask != nil:
+		http.Error(w, "runner is running another task", http.StatusConflict)
+	default:
+		s.pushedTask = &task
+		s.pushes <- push
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+// maxPushBytes caps the size of a push body.
+const maxPushBytes = 4 << 20
+
+// decodePush decodes the YAML documents of a push body into objs in order and
+// returns how many it decoded. The first is required; later ones are optional.
+// Unknown fields are ignored, so an older runner accepts what a newer
+// ax-server sends.
+func decodePush(r *http.Request, objs ...proto.Message) (int, error) {
+	dec := yaml.NewDecoder(io.LimitReader(r.Body, maxPushBytes))
+	for i, obj := range objs {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); err != nil {
+			if errors.Is(err, io.EOF) && i > 0 {
+				return i, nil
+			}
+			return i, fmt.Errorf("decoding push: %w", err)
+		}
+		if err := v1alpha1.UnmarshalYAMLLenient(&doc, obj); err != nil {
+			return i, fmt.Errorf("decoding push: %w", err)
+		}
+	}
+	return len(objs), nil
+}
+
+// sameObject reports whether a and b identify the same object.
+func sameObject(a, b *v1alpha1.ObjectMeta) bool {
+	return a.GetAtespace() == b.GetAtespace() && a.GetName() == b.GetName() && a.GetUid() == b.GetUid()
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {

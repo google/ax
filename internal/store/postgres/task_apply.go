@@ -38,25 +38,24 @@ const (
 	maxApplyInsertAttempts = 2
 )
 
-// GetTaskRow returns the stored row for key without locking it, or store.ErrNotFound.
-func (s *Store) GetTaskRow(ctx context.Context, key store.TaskKey) (*store.TaskRow, error) {
+// GetTaskVersion returns the stored row for key without locking it, or store.ErrNotFound.
+func (s *Store) GetTaskVersion(ctx context.Context, key store.TaskKey) (*store.TaskVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	key = key.Normalized()
 
 	row := s.pool.QueryRow(ctx, `
-		SELECT data, generation, actor_uid, runnable, active_run_id, run_seq,
-		       runner_token_hash, runner_token_confirmed, claim_nonce, last_acked_runner_seq
+		SELECT data, generation
 		FROM tasks
 		WHERE atespace = $1 AND name = $2`,
 		key.Atespace, key.Name)
-	return scanTaskRow(row)
+	return scanTaskVersion(row)
 }
 
 // Apply executes fn inside a transaction holding the row lock for key and
 // commits the resulting insert, update, or deletion.
-func (s *Store) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskRow, error) {
+func (s *Store) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskVersion, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -78,16 +77,15 @@ func (s *Store) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc
 	return nil, errors.New("retrying concurrent task insert failed")
 }
 
-func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.ApplyFunc, allowInsertRetry bool) (*store.TaskRow, bool, error) {
+func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.ApplyFunc, allowInsertRetry bool) (*store.TaskVersion, bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("beginning task apply transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	stored, err := scanTaskRow(tx.QueryRow(ctx, `
-		SELECT data, generation, actor_uid, runnable, active_run_id, run_seq,
-		       runner_token_hash, runner_token_confirmed, claim_nonce, last_acked_runner_seq
+	stored, err := scanTaskVersion(tx.QueryRow(ctx, `
+		SELECT data, generation
 		FROM tasks
 		WHERE atespace = $1 AND name = $2
 		FOR UPDATE`,
@@ -106,7 +104,7 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 
 	// Pass a clone to fn so in-place mutations to current do not leak into
 	// the returned row if fn returns nil or current itself.
-	var passedCurrent *store.TaskRow
+	var passedCurrent *store.TaskVersion
 	if stored != nil {
 		passedCurrent = stored.Clone()
 	}
@@ -116,7 +114,7 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 	case err != nil:
 		return nil, false, err
 
-	case next == store.DeleteTaskRow:
+	case next == store.DeleteTaskVersion:
 		if stored != nil {
 			if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE atespace = $1 AND name = $2`, key.Atespace, key.Name); err != nil {
 				return nil, false, fmt.Errorf("deleting task row: %w", err)
@@ -134,7 +132,7 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 		return stored.Clone(), false, nil
 	}
 
-	written, err := store.PrepareTaskRowForApply(next, stored, key)
+	written, err := store.PrepareTaskVersionForApply(next, stored, key)
 	if err != nil {
 		return nil, false, err
 	}
@@ -142,21 +140,11 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 	if err != nil {
 		return nil, false, fmt.Errorf("marshaling task: %w", err)
 	}
-	var tokenHash []byte
-	if len(written.RunnerTokenHash) > 0 {
-		tokenHash = written.RunnerTokenHash
-	}
-
 	if stored == nil {
 		_, err = tx.Exec(ctx, `
-			INSERT INTO tasks (
-				atespace, name, data, saved_at,
-				generation, actor_uid, runnable, active_run_id, run_seq,
-				runner_token_hash, runner_token_confirmed, claim_nonce, last_acked_runner_seq
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-			key.Atespace, key.Name, string(data), now,
-			written.Generation, written.ActorUID, written.Runnable, written.ActiveRunID, written.RunSeq,
-			tokenHash, written.RunnerTokenConfirmed, written.ClaimNonce, written.LastAckedRunnerSeq,
+			INSERT INTO tasks (atespace, name, data, saved_at, generation)
+			VALUES ($1, $2, $3, $4, $5)`,
+			key.Atespace, key.Name, string(data), now, written.Generation,
 		)
 		if err != nil {
 			if allowInsertRetry && isUniqueViolation(err) {
@@ -166,21 +154,9 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 		}
 	} else {
 		_, err = tx.Exec(ctx, `
-			UPDATE tasks SET
-				data = $3,
-				generation = $4,
-				actor_uid = $5,
-				runnable = $6,
-				active_run_id = $7,
-				run_seq = $8,
-				runner_token_hash = $9,
-				runner_token_confirmed = $10,
-				claim_nonce = $11,
-				last_acked_runner_seq = $12
+			UPDATE tasks SET data = $3, generation = $4
 			WHERE atespace = $1 AND name = $2`,
-			key.Atespace, key.Name, string(data),
-			written.Generation, written.ActorUID, written.Runnable, written.ActiveRunID, written.RunSeq,
-			tokenHash, written.RunnerTokenConfirmed, written.ClaimNonce, written.LastAckedRunnerSeq,
+			key.Atespace, key.Name, string(data), written.Generation,
 		)
 		if err != nil {
 			return nil, false, fmt.Errorf("updating task row: %w", err)
@@ -193,35 +169,16 @@ func (s *Store) applyOnce(ctx context.Context, key store.TaskKey, fn store.Apply
 	return written.Clone(), false, nil
 }
 
-// scanTaskRow scans one row from the tasks table (in the column order selected
-// by GetTaskRow and Apply) into a TaskRow, unmarshals the protojson data
+// scanTaskVersion scans one row from the tasks table (in the column order selected
+// by GetTaskVersion and Apply) into a TaskVersion, unmarshals the protojson data
 // column, and reconciles Generation via max(column, Status.Generation) so
 // legacy SaveTask/UpdateTaskStatus writes are preserved before Apply runs.
-func scanTaskRow(row pgx.Row) (*store.TaskRow, error) {
+func scanTaskVersion(row pgx.Row) (*store.TaskVersion, error) {
 	var (
-		data                 []byte
-		generation           int64
-		actorUID             string
-		runnable             bool
-		activeRunID          string
-		runSeq               int64
-		tokenHash            []byte
-		runnerTokenConfirmed bool
-		claimNonce           string
-		lastAckedRunnerSeq   int64
+		data       []byte
+		generation int64
 	)
-	err := row.Scan(
-		&data,
-		&generation,
-		&actorUID,
-		&runnable,
-		&activeRunID,
-		&runSeq,
-		&tokenHash,
-		&runnerTokenConfirmed,
-		&claimNonce,
-		&lastAckedRunnerSeq,
-	)
+	err := row.Scan(&data, &generation)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -233,23 +190,9 @@ func scanTaskRow(row pgx.Row) (*store.TaskRow, error) {
 	if err := unmarshalOpts.Unmarshal(data, &task); err != nil {
 		return nil, fmt.Errorf("unmarshaling task row: %w", err)
 	}
-	if len(tokenHash) == 0 {
-		tokenHash = nil
-	} else {
-		tokenHash = append([]byte(nil), tokenHash...)
-	}
-
-	out := &store.TaskRow{
-		Task:                 &task,
-		Generation:           max(generation, task.GetStatus().GetGeneration()),
-		ActorUID:             actorUID,
-		Runnable:             runnable,
-		ActiveRunID:          activeRunID,
-		RunSeq:               runSeq,
-		RunnerTokenHash:      tokenHash,
-		RunnerTokenConfirmed: runnerTokenConfirmed,
-		ClaimNonce:           claimNonce,
-		LastAckedRunnerSeq:   lastAckedRunnerSeq,
+	out := &store.TaskVersion{
+		Task:       &task,
+		Generation: max(generation, task.GetStatus().GetGeneration()),
 	}
 	store.OverlayTaskGeneration(out)
 	return out, nil

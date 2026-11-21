@@ -375,6 +375,20 @@ const EgressTrustBundlePath = "/run/ate/egress-trust-bundle/trust-bundle.pem"
 // because the runner writes its own state there.
 const RunnerMountPath = "/opt/ax"
 
+// The runner's endpoints on its probe port (80), where ax-server pushes work
+// after it resumes an actor that started from a shared ActorTemplate.
+// /readyz?check=workspace then reports the outcome: 503 while the work is
+// pending, 200 once the workspace is ready, and 500 with the reason when setup
+// failed.
+const (
+	// RunnerSetupPath takes a Workspace as YAML and runs its spec.setup. It is
+	// how a temporary workspace setup actor is told what to prepare.
+	RunnerSetupPath = "/runner/v1alpha1/setup"
+	// RunnerTaskPath takes a Task as YAML, followed by its bound Workspace as a
+	// second YAML document when it binds one, and runs the task.
+	RunnerTaskPath = "/runner/v1alpha1/task"
+)
+
 // WorkspacePath returns the task command's working directory: the bound
 // workspace's path when set, otherwise DefaultWorkspacePath.
 func (s *TaskSpec) WorkspacePath() string {

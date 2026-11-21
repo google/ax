@@ -20,15 +20,15 @@ import (
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
-// PrepareTaskRowForApply validates and normalizes a non-nil, non-sentinel
-// TaskRow returned from an [ApplyFunc] before storage writes it:
+// PrepareTaskVersionForApply validates and normalizes a non-nil, non-sentinel
+// TaskVersion returned from an [ApplyFunc] before storage writes it:
 //   - clones next so caller-retained pointers cannot mutate stored state;
 //   - defaults ApiVersion and Kind and stamps the normalized key onto Metadata;
 //   - scrubs Task.Status via [StoredStatus] (initializing Task.Status if nil);
 //   - assigns Generation (1 on insert, max(stored.Generation,
 //     stored.Task.Status.Generation)+1 on update) and mirrors it onto
 //     Task.Status.Generation.
-func PrepareTaskRowForApply(next, stored *TaskRow, key TaskKey) (*TaskRow, error) {
+func PrepareTaskVersionForApply(next, stored *TaskVersion, key TaskKey) (*TaskVersion, error) {
 	if next == nil || next.Task == nil {
 		return nil, errors.New("task row returned from ApplyFunc has nil Task")
 	}
@@ -62,8 +62,8 @@ func PrepareTaskRowForApply(next, stored *TaskRow, key TaskKey) (*TaskRow, error
 }
 
 // OverlayTaskGeneration mirrors row.Generation onto row.Task.Status.Generation
-// when loading a TaskRow from storage.
-func OverlayTaskGeneration(row *TaskRow) {
+// when loading a TaskVersion from storage.
+func OverlayTaskGeneration(row *TaskVersion) {
 	if row == nil || row.Task == nil || row.Generation <= 0 {
 		return
 	}

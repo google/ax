@@ -66,12 +66,12 @@ func main() {
 	if err := runner.LoadSpec(taskFile, "AX_TASK_YAML", &task); err != nil {
 		fatal(err)
 	} else if task.GetMetadata() != nil {
-		t, err := withClaudeCommand(&task, cfg.Workspace)
-		if err != nil {
-			fatal(err)
-		}
-		cfg.Task = t
+		cfg.Task = &task
 	}
+	if cfg.Task == nil && taskFile == "" && os.Getenv("AX_TASK_YAML") == "" {
+		cfg.AwaitPush = true
+	}
+	cfg.PrepareTask = withClaudeCommand
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

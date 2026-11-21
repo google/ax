@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -33,11 +34,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"gopkg.in/yaml.v3"
 )
 
-// SetupActorPrefix prefixes temporary Workspace setup actor names so the
-// runner control server routes their claims and events to the workspace setup
-// handler rather than looking up a Task row.
+// SetupActorPrefix prefixes temporary Workspace setup actor names. Task names
+// may not use it, so a setup actor never collides with a task's actor.
 const SetupActorPrefix = apivalidation.SetupActorPrefix
 
 const (
@@ -106,20 +107,46 @@ func needsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
 	return len(s.GetGit()) > 0 || len(s.GetFiles()) > 0 || s.GetSkills() != nil || len(s.GetCommands()) > 0
 }
 
-// SetupCoordinator coordinates Workspace setup execution across ax-server
-// replicas via shared storage:
-//  1. WorkspaceManager calls RegisterSetup after EnsureActor (recording the
-//     expected actorUID and ws) and before ResumeActor, avoiding any boot race
-//     if ax-runner claims its assignment immediately on startup.
-//  2. Inside the sandbox, ax-runner calls POST /runner/v1/assignment:claim
-//     and POST /runner/v1/events (SetupFinished) against any ax-server replica.
-//  3. WorkspaceManager blocks in AwaitSetup until the setup record transitions
-//     to succeeded or failed, and always removes the temporary record via
-//     DeleteSetup on exit.
-type SetupCoordinator interface {
-	RegisterSetup(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error
-	AwaitSetup(ctx context.Context, atespace, setupActor string) error
-	DeleteSetup(ctx context.Context, atespace, setupActor string) error
+// SetupRunner runs a Workspace's spec.setup inside a resumed temporary setup
+// actor and returns once the runner reports it finished. workerAddr is the
+// address ResumeActor returned. A setup failure inside the sandbox is an error.
+type SetupRunner interface {
+	RunSetup(ctx context.Context, atespace, actor, workerAddr string, ws *v1alpha1.Workspace) error
+}
+
+// HTTPSetupRunner is the SetupRunner ax-server uses: it pushes the Workspace to
+// the runner's v1alpha1.RunnerSetupPath on port 80, directly or through
+// atenet-router, and polls /readyz?check=workspace for the outcome.
+type HTTPSetupRunner struct {
+	client *http.Client
+	// AcceptTimeout bounds how long the runner may take to boot and accept the
+	// Workspace. Waiting for setup itself is bounded only by the caller's ctx.
+	AcceptTimeout time.Duration
+	// PollInterval is how often the runner is retried and polled.
+	PollInterval time.Duration
+}
+
+// NewHTTPSetupRunner returns an HTTPSetupRunner with default timeouts.
+func NewHTTPSetupRunner() *HTTPSetupRunner {
+	return &HTTPSetupRunner{
+		client:        newProbeHTTPClient(),
+		AcceptTimeout: 2 * time.Minute,
+		PollInterval:  workspaceReadyPollInterval,
+	}
+}
+
+// RunSetup implements SetupRunner.
+func (h *HTTPSetupRunner) RunSetup(ctx context.Context, atespace, actor, workerAddr string, ws *v1alpha1.Workspace) error {
+	body, err := yaml.Marshal(ws)
+	if err != nil {
+		return fmt.Errorf("encoding workspace: %w", err)
+	}
+	pushCtx, cancel := context.WithTimeout(ctx, h.AcceptTimeout)
+	defer cancel()
+	if err := pushToRunner(pushCtx, h.client, atespace, actor, workerAddr, v1alpha1.RunnerSetupPath, body, h.PollInterval); err != nil {
+		return err
+	}
+	return waitWorkspaceReady(ctx, h.client, atespace, actor, workerAddr, h.PollInterval)
 }
 
 // WorkspaceStore reads the stored Workspace record under a shared Workspace
@@ -131,20 +158,15 @@ type WorkspaceStore interface {
 
 // WorkspaceManagerOptions configures a WorkspaceManager.
 type WorkspaceManagerOptions struct {
-	Locker           lock.Locker
-	Store            WorkspaceStore
-	SetupCoordinator SetupCoordinator
+	Locker lock.Locker
+	Store  WorkspaceStore
+	// SetupRunner runs setup in temporary setup actors. Without one, the
+	// manager does not pre-warm Workspace snapshots.
+	SetupRunner SetupRunner
 	// RunnerImage is a static server-startup setting (changed only when
 	// ax-server is redeployed with a new flag/env digest, never mutated
 	// dynamically at runtime).
 	RunnerImage string
-	// RunnerEndpoint is the in-cluster host:port of ax-server's :8081 runner
-	// service bound on every temporary setup actor's EgressPolicy (defaults to
-	// substrate.DefaultRunnerEndpoint).
-	RunnerEndpoint string
-	// RunnerAudience is the OIDC audience requested on Actor JWTs injected for
-	// RunnerEndpoint (defaults to substrate.DefaultRunnerAudience).
-	RunnerAudience string
 	// MaxSetupAttempts bounds how many times buildSnapshotWithSetupActor tries
 	// running a fresh setup actor on non-spec runtime failures (defaults to 2).
 	MaxSetupAttempts int
@@ -157,10 +179,8 @@ type WorkspaceManager struct {
 	client           *substrate.Client
 	locker           lock.Locker
 	store            WorkspaceStore
-	coordinator      SetupCoordinator
+	setup            SetupRunner
 	runnerImage      string
-	runnerEndpoint   string
-	runnerAudience   string
 	maxSetupAttempts int
 }
 
@@ -174,14 +194,6 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
-	runnerEndpoint := opt.RunnerEndpoint
-	if runnerEndpoint == "" {
-		runnerEndpoint = substrate.DefaultRunnerEndpoint
-	}
-	runnerAudience := opt.RunnerAudience
-	if runnerAudience == "" {
-		runnerAudience = substrate.DefaultRunnerAudience
-	}
 	attempts := opt.MaxSetupAttempts
 	if attempts <= 0 {
 		attempts = defaultMaxSetupAttempts
@@ -190,21 +202,18 @@ func NewWorkspaceManager(client *substrate.Client, opts ...WorkspaceManagerOptio
 		client:           client,
 		locker:           locker,
 		store:            opt.Store,
-		coordinator:      opt.SetupCoordinator,
+		setup:            opt.SetupRunner,
 		runnerImage:      opt.RunnerImage,
-		runnerEndpoint:   runnerEndpoint,
-		runnerAudience:   runnerAudience,
 		maxSetupAttempts: attempts,
 	}
 }
 
-// PrewarmEnabled reports whether m has a SetupCoordinator to run setup actors
-// with. cmd/ax-server always provides one (its runner server) unless the runner
-// server is disabled with an empty --runner-addr; without one, Workspaces are
+// PrewarmEnabled reports whether m has a SetupRunner to run setup actors
+// with. cmd/ax-server always provides an HTTPSetupRunner; without one, Workspaces are
 // stored but never pre-warmed, tasks run spec.setup in their own sandbox, and
 // spec.setup.gateway has no effect.
 func (m *WorkspaceManager) PrewarmEnabled() bool {
-	return m != nil && m.coordinator != nil
+	return m != nil && m.setup != nil
 }
 
 // stageError attaches structured lifecycle metadata to an error returned inside
@@ -438,11 +447,10 @@ func isNonRetryableSetupError(err error) bool {
 
 // buildSnapshotWithSetupActor runs one attempt of the setup actor lifecycle:
 //  1. Create temporary setup actor from the shared Profile ActorTemplate.
-//  2. Bind optional setupGateway egress rules (scoped only to this setup actor).
-//  3. Register the pending setup assignment via RegisterSetup before booting
-//     the sandbox, then ResumeActor and wait via AwaitSetup.
+//  2. Bind setupGateway egress rules, if any (scoped only to this setup actor).
+//  3. ResumeActor and run setup in it through the SetupRunner.
 //  4. Suspend synchronously (waiting for durable snapshot upload) and CreateTag.
-//  5. Always delete the setup record and temporary setup actor on exit.
+//  5. Always delete the temporary setup actor on exit.
 func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *v1alpha1.Workspace, atespace, templateName, tagName string, setupGateway *v1alpha1.Gateway) error {
 	wsName, wsUID := ws.GetMetadata().GetName(), ws.GetMetadata().GetUid()
 	actorName, err := newSetupActorName(wsUID)
@@ -459,35 +467,20 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 		}
 	}()
 
-	actor, err := m.client.EnsureActor(ctx, atespace, actorName, atespace, templateName)
-	if err != nil {
+	if _, err := m.client.EnsureActor(ctx, atespace, actorName, atespace, templateName); err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorCreationFailed, underlyingErr: err}
 	}
-	egressRules := []*ateapipb.EgressRule{
-		substrate.RunnerEgressRule(m.runnerEndpoint, m.runnerAudience),
-	}
 	if setupGateway != nil {
-		egressRules = append(egressRules, setupGateway.GetSpec().GetEgress()...)
-	}
-	if err := m.client.EnsureActorEgressPolicy(ctx, atespace, actorName, egressRules); err != nil {
-		return &stageError{reason: v1alpha1.ReasonGatewayBindingFailed, nonRetryable: !substrate.IsTransientError(err), underlyingErr: err}
-	}
-
-	if err := m.coordinator.RegisterSetup(ctx, atespace, actorName, actor.GetMetadata().GetUid(), ws); err != nil {
-		return &stageError{reason: v1alpha1.WorkspaceReasonSetupFailed, underlyingErr: fmt.Errorf("registering workspace setup: %w", err)}
-	}
-	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if delErr := m.coordinator.DeleteSetup(cleanupCtx, atespace, actorName); delErr != nil {
-			slog.Warn("failed to clean up workspace setup record", "atespace", atespace, "actor", actorName, "error", delErr)
+		if err := m.client.EnsureActorEgressPolicy(ctx, atespace, actorName, setupGateway.GetSpec().GetEgress()); err != nil {
+			return &stageError{reason: v1alpha1.ReasonGatewayBindingFailed, nonRetryable: !substrate.IsTransientError(err), underlyingErr: err}
 		}
-	}()
+	}
 
-	if _, _, err := m.client.ResumeActor(ctx, atespace, actorName); err != nil {
+	_, workerAddr, err := m.client.ResumeActor(ctx, atespace, actorName)
+	if err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorResumeFailed, underlyingErr: err}
 	}
-	if err := m.coordinator.AwaitSetup(ctx, atespace, actorName); err != nil {
+	if err := m.setup.RunSetup(ctx, atespace, actorName, workerAddr, ws); err != nil {
 		return &stageError{reason: v1alpha1.WorkspaceReasonSetupFailed, underlyingErr: fmt.Errorf("running workspace setup: %w", err)}
 	}
 

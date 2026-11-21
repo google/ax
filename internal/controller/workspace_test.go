@@ -32,11 +32,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type fakeSetupCoordinator struct {
-	calls        atomic.Int32
-	active       atomic.Int32
-	registerHook func(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error
-	fn           func(ctx context.Context, atespace, setupActor string) error
+type fakeSetupRunner struct {
+	calls atomic.Int32
+	fn    func(ctx context.Context, atespace, setupActor string) error
 }
 
 // testImage is the image test Workspaces with setup steps run in.
@@ -44,24 +42,11 @@ const testImage = "ghcr.io/org/workspace@sha256:111"
 
 func testProfile() *v1alpha1.Profile { return &v1alpha1.Profile{Image: testImage} }
 
-func (f *fakeSetupCoordinator) RegisterSetup(ctx context.Context, atespace, setupActor, actorUID string, ws *v1alpha1.Workspace) error {
-	f.active.Add(1)
-	if f.registerHook != nil {
-		return f.registerHook(ctx, atespace, setupActor, actorUID, ws)
-	}
-	return nil
-}
-
-func (f *fakeSetupCoordinator) AwaitSetup(ctx context.Context, atespace, setupActor string) error {
+func (f *fakeSetupRunner) RunSetup(ctx context.Context, atespace, setupActor, _ string, _ *v1alpha1.Workspace) error {
 	f.calls.Add(1)
 	if f.fn != nil {
 		return f.fn(ctx, atespace, setupActor)
 	}
-	return nil
-}
-
-func (f *fakeSetupCoordinator) DeleteSetup(context.Context, string, string) error {
-	f.active.Add(-1)
 	return nil
 }
 
@@ -158,9 +143,9 @@ func TestNeedsPrewarmSnapshot(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sub := substratetest.NewServer(t)
-			coord := &fakeSetupCoordinator{}
+			coord := &fakeSetupRunner{}
 			mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-				SetupCoordinator: coord,
+				SetupRunner: coord,
 			})
 			st, err := mgr.Prepare(t.Context(), &v1alpha1.Workspace{
 				Metadata: &v1alpha1.ObjectMeta{Name: "ws", Atespace: "default", Uid: "uid-ws"},
@@ -181,24 +166,18 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	sub := substratetest.NewServer(t)
 
 	var (
-		registeredBeforeResume atomic.Bool
-		sawGatewayPolicy       atomic.Bool
+		ranInResumedActor atomic.Bool
+		sawGatewayPolicy  atomic.Bool
 	)
-	coord := &fakeSetupCoordinator{
-		registerHook: func(ctx context.Context, atespace, setupActor, actorUID string, _ *v1alpha1.Workspace) error {
+	coord := &fakeSetupRunner{
+		fn: func(ctx context.Context, atespace, setupActor string) error {
 			if err := apivalidation.ValidateName(setupActor); err != nil {
 				t.Errorf("invalid setup actor name %q: %v", setupActor, err)
 			}
-			if actorUID == "" {
-				t.Errorf("RegisterSetup(%q) received empty actorUID", setupActor)
-			}
 			actor, err := sub.Client().GetActor(ctx, atespace, setupActor)
-			if err == nil && actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
-				registeredBeforeResume.Store(true)
+			if err == nil && actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING {
+				ranInResumedActor.Store(true)
 			}
-			return nil
-		},
-		fn: func(_ context.Context, atespace, setupActor string) error {
 			if _, ok := sub.EgressPolicy(atespace, setupActor); ok {
 				sawGatewayPolicy.Store(true)
 			}
@@ -206,8 +185,8 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		},
 	}
 	mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-		SetupCoordinator: coord,
-		RunnerImage:      "ghcr.io/org/runner@sha256:222",
+		SetupRunner: coord,
+		RunnerImage: "ghcr.io/org/runner@sha256:222",
 	})
 
 	// 1. MCP-only workspace jumps straight to Ready without running a setup actor.
@@ -248,14 +227,11 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	if err != nil || st.GetPhase() != v1alpha1.WorkspacePhaseReady {
 		t.Fatalf("Prepare(payments) = (%+v, %v), want Ready", st, err)
 	}
-	if !registeredBeforeResume.Load() {
-		t.Error("RegisterSetup was not called before ResumeActor")
+	if !ranInResumedActor.Load() {
+		t.Error("RunSetup was not called after ResumeActor")
 	}
 	if !sawGatewayPolicy.Load() {
-		t.Error("setup actor did not have setupGateway egress policy bound during AwaitSetup")
-	}
-	if got := coord.active.Load(); got != 0 {
-		t.Errorf("active setup records after Prepare = %d, want 0 (DeleteSetup not called)", got)
+		t.Error("setup actor did not have setupGateway egress policy bound during RunSetup")
 	}
 	conds := st.GetConditions()
 	if len(conds) != 2 ||
@@ -264,7 +240,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		t.Fatalf("conditions = %+v, want SetupComplete=True and SnapshotReady=True", conds)
 	}
 	if coord.calls.Load() != 1 {
-		t.Fatalf("AwaitSetup calls = %d, want 1", coord.calls.Load())
+		t.Fatalf("RunSetup calls = %d, want 1", coord.calls.Load())
 	}
 	actors, err := sub.Client().ListActors(ctx, "default")
 	if err != nil || len(actors) != 0 {
@@ -277,7 +253,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		t.Fatalf("EnsureSnapshotTag(warm hit) = (%q, %v)", defaultTag, err)
 	}
 	if coord.calls.Load() != 1 {
-		t.Fatalf("warm hit ran AwaitSetup again: calls = %d", coord.calls.Load())
+		t.Fatalf("warm hit ran RunSetup again: calls = %d", coord.calls.Load())
 	}
 
 	// If an incomplete tag (unset Snapshot or PENDING state) was stranded by an
@@ -329,7 +305,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 		}
 	}
 	if coord.calls.Load() != 4 {
-		t.Fatalf("AwaitSetup calls after 8 concurrent cold misses = %d, want 4", coord.calls.Load())
+		t.Fatalf("RunSetup calls after 8 concurrent cold misses = %d, want 4", coord.calls.Load())
 	}
 
 	// Prepare an unrelated workspace to ensure Delete("uid-payments") leaves its tag intact.
@@ -380,7 +356,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			seenActors []string
 			attempt    atomic.Int32
 		)
-		coord := &fakeSetupCoordinator{
+		coord := &fakeSetupRunner{
 			fn: func(_ context.Context, _, setupActor string) error {
 				mu.Lock()
 				seenActors = append(seenActors, setupActor)
@@ -392,7 +368,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			},
 		}
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: coord,
+			SetupRunner:      coord,
 			MaxSetupAttempts: 2,
 		})
 		st, err := mgr.Prepare(ctx, &v1alpha1.Workspace{
@@ -408,21 +384,18 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		if !strings.HasPrefix(seenActors[0], controller.SetupActorPrefix) {
 			t.Errorf("setup actor name %q missing %s prefix", seenActors[0], controller.SetupActorPrefix)
 		}
-		if got := coord.active.Load(); got != 0 {
-			t.Errorf("active setup records after retries = %d, want 0", got)
-		}
 	})
 
 	t.Run("setup_failure_marks_failed_and_cleans_up_actor", func(t *testing.T) {
 		ctx := t.Context()
 		sub := substratetest.NewServer(t)
-		coord := &fakeSetupCoordinator{
+		coord := &fakeSetupRunner{
 			fn: func(context.Context, string, string) error {
 				return errors.New("npm ERR! code E404")
 			},
 		}
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: coord,
+			SetupRunner:      coord,
 			MaxSetupAttempts: 2,
 		})
 		ws := &v1alpha1.Workspace{
@@ -450,9 +423,9 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		sub.SetErrors(substratetest.Errors{
 			CreateEgressPolicy: status.Error(codes.InvalidArgument, "invalid hostname wildcard"),
 		})
-		coord := &fakeSetupCoordinator{}
+		coord := &fakeSetupRunner{}
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: coord,
+			SetupRunner:      coord,
 			MaxSetupAttempts: 3,
 		})
 		ws := &v1alpha1.Workspace{
@@ -483,7 +456,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		ctx := t.Context()
 		sub := substratetest.NewServer(t)
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: &fakeSetupCoordinator{},
+			SetupRunner: &fakeSetupRunner{},
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "missing-tpl-ws", Atespace: "default", Uid: "uid-missing-tpl"},
@@ -508,7 +481,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			CreateTag: status.Error(codes.InvalidArgument, "tag quota exceeded"),
 		})
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: &fakeSetupCoordinator{},
+			SetupRunner:      &fakeSetupRunner{},
 			MaxSetupAttempts: 1,
 		})
 		ws := &v1alpha1.Workspace{
@@ -535,7 +508,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			CreateAtespace: status.Error(codes.DeadlineExceeded, "control plane timeout"),
 		})
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: &fakeSetupCoordinator{},
+			SetupRunner: &fakeSetupRunner{},
 		})
 		ws := &v1alpha1.Workspace{
 			Metadata: &v1alpha1.ObjectMeta{Name: "transient-ws", Atespace: "default", Uid: "uid-transient"},
@@ -553,9 +526,9 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		sub.SetErrors(substratetest.Errors{
 			CreateTag: status.Error(codes.Canceled, "context canceled"),
 		})
-		coord := &fakeSetupCoordinator{}
+		coord := &fakeSetupRunner{}
 		mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-			SetupCoordinator: coord,
+			SetupRunner:      coord,
 			MaxSetupAttempts: 2,
 		})
 		ws := &v1alpha1.Workspace{
@@ -570,7 +543,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 			t.Fatalf("Prepare(grpc canceled) phase = %q, want Preparing", st.GetPhase())
 		}
 		if coord.calls.Load() != 1 {
-			t.Errorf("AwaitSetup calls = %d, want 1 (should not retry after Canceled)", coord.calls.Load())
+			t.Errorf("RunSetup calls = %d, want 1 (should not retry after Canceled)", coord.calls.Load())
 		}
 	})
 }
@@ -579,12 +552,12 @@ func TestWorkspaceManager_ParallelProfilesUnderSharedLock(t *testing.T) {
 	ctx := t.Context()
 	sub := substratetest.NewServer(t)
 
-	// Barrier inside AwaitSetup: both distinct profiles must enter AwaitSetup
+	// Barrier inside RunSetup: both distinct profiles must enter RunSetup
 	// concurrently. If EnsureSnapshotTag held an exclusive Workspace lock rather
 	// than RLock, the second profile would never reach the barrier.
 	var arrived atomic.Int32
 	bothInSetup := make(chan struct{})
-	coord := &fakeSetupCoordinator{
+	coord := &fakeSetupRunner{
 		fn: func(ctx context.Context, _, _ string) error {
 			if arrived.Add(1) == 2 {
 				close(bothInSetup)
@@ -599,7 +572,7 @@ func TestWorkspaceManager_ParallelProfilesUnderSharedLock(t *testing.T) {
 	}
 
 	mgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
-		SetupCoordinator: coord,
+		SetupRunner: coord,
 	})
 	ws := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "parallel-ws", Atespace: "default", Uid: "uid-parallel"},

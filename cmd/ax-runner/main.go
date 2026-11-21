@@ -16,9 +16,11 @@
 // loads the Task and Workspace specs and hands them to the runner package,
 // which does everything else.
 //
-// AX delivers the Task as YAML in AX_TASK_YAML and the bound Workspace, if
-// any, as YAML in AX_WORKSPACE_YAML. For local runs the specs can be read from
-// files instead with --task-file and --workspace-file.
+// Without a Task, the runner waits for ax-server to push one to its probe port
+// (see v1alpha1.RunnerTaskPath), as it does in every actor AX starts. A Task
+// can instead be given as YAML in AX_TASK_YAML, with the bound Workspace, if
+// any, as YAML in AX_WORKSPACE_YAML, or read from files with --task-file and
+// --workspace-file for local runs.
 package main
 
 import (
@@ -55,7 +57,7 @@ func main() {
 		cfg.Task = &task
 	}
 	if cfg.Task == nil && taskFile == "" && os.Getenv("AX_TASK_YAML") == "" {
-		cfg.PullMode = true
+		cfg.AwaitPush = true
 	}
 
 	var ws v1alpha1.Workspace

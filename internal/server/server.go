@@ -27,7 +27,6 @@ import (
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
-	"github.com/google/ax/internal/lifecycle"
 	"github.com/google/ax/internal/lock"
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/substrate"
@@ -50,10 +49,10 @@ type Options struct {
 	Locker lock.Locker
 	// WorkspaceManager manages Workspace snapshot pre-warming and Tag cleanup.
 	// When omitted, NewServer constructs one backed by reconciler's Substrate
-	// client and Locker; it has no SetupCoordinator, so it does not pre-warm.
+	// client and Locker; it has no SetupRunner, so it does not pre-warm.
 	WorkspaceManager *controller.WorkspaceManager
-	// TaskApplier executes atomic task-row transitions shared with the runner
-	// HTTP handler. When omitted, NewServer adapts s via TaskApplierForStore.
+	// TaskApplier executes atomic task-row transitions. When omitted, NewServer
+	// adapts s via TaskApplierForStore.
 	TaskApplier store.TaskApplier
 }
 
@@ -186,8 +185,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	// Tasks are immutable, so reject fields whose runtime enforcement has not
-	// landed yet (ateTemplate.name requires pull-based runner assignment; retry
-	// requires runner exit events and the retry loop) rather than silently
+	// landed yet (retry requires runner exit events and the retry loop) rather
+	// than silently
 	// storing settings that nothing honors.
 	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
 		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
@@ -296,16 +295,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	task.Status.StatusDetail = nil
 
 	key := store.TaskKey{Atespace: atespace, Name: task.Metadata.Name}
-	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		runSeq := int64(0)
-		if current != nil {
-			runSeq = current.RunSeq
-		}
-		return &store.TaskRow{
-			Task:     proto.Clone(task).(*v1alpha1.Task),
-			Runnable: false,
-			RunSeq:   runSeq,
-		}, nil
+	written, err := s.applier.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return &store.TaskVersion{Task: proto.Clone(task).(*v1alpha1.Task)}, nil
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
@@ -316,7 +307,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := s.reconciler.Suspend(ctx, task, workspace, gateway); err != nil {
 		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
-	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, task.Metadata.Name), false); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task); err != nil {
 		return nil, err
 	}
 
@@ -375,12 +366,11 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 
 	key := store.TaskKey{Atespace: atespace, Name: taskName}
 	deleteTime := timestamppb.Now()
-	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		if current == nil {
 			return nil, store.ErrNotFound
 		}
 		next := current.Clone()
-		next.Runnable = false
 		if next.Task.Metadata == nil {
 			next.Task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: taskName}
 		}
@@ -418,14 +408,14 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	defer unlock()
 
 	key := store.TaskKey{Atespace: atespace, Name: taskName}
-	row, err := s.applier.GetTaskRow(ctx, key)
+	row, err := s.applier.GetTaskVersion(ctx, key)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if lifecycle.IsExecutionTerminal(row.Task) {
+	if isExecutionTerminal(row.Task) {
 		return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, row.Task.GetStatus().GetState())
 	}
 
@@ -433,57 +423,13 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	memoryFidelity, err := s.reconciler.IsMemoryFidelityTemplate(ctx, atespace, task.GetStatus().GetAteTemplate())
-	if err != nil {
-		if substrate.IsTransientError(err) {
-			return nil, status.Errorf(codes.Unavailable, "checking actor template snapshot fidelity: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "checking actor template snapshot fidelity: %v", err)
-	}
-
-	var prevRunnable bool
-	if _, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		if current == nil {
-			return nil, store.ErrNotFound
-		}
-		if lifecycle.IsExecutionTerminal(current.Task) {
-			return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, current.Task.GetStatus().GetState())
-		}
-		prevRunnable = current.Runnable
-		next := current.Clone()
-		next.Runnable = false
-		return next, nil
-	}); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
-		}
-		if _, ok := status.FromError(err); ok {
-			return nil, err
-		}
-		return nil, status.Errorf(codes.Internal, "updating task before suspend: %v", err)
-	}
-
 	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
-		// Roll back Runnable if the actor is still running so a failed suspend
-		// does not strand a live runner; ActiveRunID and runner token state
-		// remain untouched until Suspend succeeds.
-		if actor, getErr := s.substrate.GetActor(ctx, atespace, taskName); getErr == nil &&
-			actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING {
-			_, _ = s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-				if current == nil || lifecycle.IsExecutionTerminal(current.Task) {
-					return current, nil
-				}
-				next := current.Clone()
-				next.Runnable = prevRunnable
-				return next, nil
-			})
-		}
 		if substrate.IsTransientError(err) {
 			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
 	}
-	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, taskName), !memoryFidelity); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task); err != nil {
 		return nil, err
 	}
 
@@ -510,28 +456,18 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	defer unlock()
 
 	key := store.TaskKey{Atespace: atespace, Name: taskName}
-	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		if current == nil {
-			return nil, store.ErrNotFound
-		}
-		if lifecycle.IsExecutionTerminal(current.Task) {
-			return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, current.Task.GetStatus().GetState())
-		}
-		next := current.Clone()
-		next.Runnable = true
-		return next, nil
-	})
+	row, err := s.applier.GetTaskVersion(ctx, key)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
-		if _, ok := status.FromError(err); ok {
-			return nil, err
-		}
-		return nil, status.Errorf(codes.Internal, "marking task runnable: %v", err)
+		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
+	}
+	if isExecutionTerminal(row.Task) {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, row.Task.GetStatus().GetState())
 	}
 
-	task := proto.Clone(written.Task).(*v1alpha1.Task)
+	task := proto.Clone(row.Task).(*v1alpha1.Task)
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
@@ -539,7 +475,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
-	if err := s.finalizeReconciledRow(ctx, task, s.fetchActorUID(ctx, atespace, taskName), false); err != nil {
+	if err := s.finalizeReconciledRow(ctx, task); err != nil {
 		return nil, err
 	}
 
@@ -551,11 +487,9 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 // finalizeReconciledRow commits post-reconcile row state after CreateTask,
 // SuspendTask, or ResumeTask succeeds:
 //   - Clears metadata.delete_time if an earlier DeleteTask failed.
-//   - Records actorUID and resets the runner token/claim nonce if the actor
-//     was recreated with a new UID.
-//   - Preserves any terminal execution state written concurrently by the :8081
-//     runner handler, or otherwise resets status.state to UNSPECIFIED.
-func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task, actorUID string, clearRunState bool) error {
+//   - Preserves any terminal execution state, or otherwise resets
+//     status.state to UNSPECIFIED.
+func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task) error {
 	atespace := task.GetMetadata().GetAtespace()
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
@@ -563,26 +497,13 @@ func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task,
 	taskName := task.GetMetadata().GetName()
 	key := store.TaskKey{Atespace: atespace, Name: taskName}
 
-	written, err := s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
+	written, err := s.applier.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
 		if current == nil {
 			return nil, store.ErrNotFound
 		}
 		next := current.Clone()
 		if next.Task.Metadata != nil {
 			next.Task.Metadata.DeleteTime = nil
-		}
-		if (actorUID != "" && next.ActorUID != actorUID) || clearRunState {
-			if actorUID != "" {
-				next.ActorUID = actorUID
-			}
-			if clearRunState {
-				// Volume-only snapshots discard /var/lib/ax on resume, so clear the
-				// run/token state after suspend succeeds to allow re-minting on resume.
-				next.ActiveRunID = ""
-			}
-			next.RunnerTokenHash = nil
-			next.RunnerTokenConfirmed = false
-			next.ClaimNonce = ""
 		}
 		if next.Task.Status == nil {
 			next.Task.Status = &v1alpha1.TaskStatus{}
@@ -598,7 +519,7 @@ func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task,
 			}
 			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
 		}
-		if !lifecycle.IsExecutionTerminal(current.Task) {
+		if !isExecutionTerminal(current.Task) {
 			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 			next.Task.Status.StatusDetail = nil
 		}
@@ -612,15 +533,6 @@ func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task,
 	return nil
 }
 
-// fetchActorUID returns the live Substrate actor's UID, or "" if unavailable.
-func (s *Server) fetchActorUID(ctx context.Context, atespace, name string) string {
-	actor, err := s.substrate.GetActor(ctx, atespace, name)
-	if err != nil || actor == nil {
-		return ""
-	}
-	return actor.GetMetadata().GetUid()
-}
-
 func cloneConditions(in []*v1alpha1.Condition) []*v1alpha1.Condition {
 	if len(in) == 0 {
 		return nil
@@ -630,6 +542,29 @@ func cloneConditions(in []*v1alpha1.Condition) []*v1alpha1.Condition {
 		out[i] = proto.Clone(c).(*v1alpha1.Condition)
 	}
 	return out
+}
+
+// isExecutionTerminal reports whether task has reached a terminal execution
+// outcome that forbids subsequent SuspendTask or ResumeTask operations.
+//
+// Tasks recorded as FAILED with reason PROVISIONING_FAILED and no execution
+// Outcome failed during control-plane reconciliation (for example, before a
+// bound Gateway existed) and remain eligible for retry via ResumeTask or
+// SuspendTask once the underlying precondition is resolved.
+func isExecutionTerminal(task *v1alpha1.Task) bool {
+	st := task.GetStatus()
+	switch st.GetState() {
+	case v1alpha1.TaskState_TASK_STATE_COMPLETED,
+		v1alpha1.TaskState_TASK_STATE_CANCELLED:
+		return true
+	case v1alpha1.TaskState_TASK_STATE_FAILED:
+		if st.GetOutcome() != nil {
+			return true
+		}
+		return st.GetStatusDetail().GetReason() != v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED
+	default:
+		return false
+	}
 }
 
 // recordFailure stores the status of a task that could not be provisioned or
@@ -649,16 +584,13 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 		}
 	}
 	key := store.TaskKey{Atespace: atespace, Name: name}
-	_, _ = s.applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-		if current == nil || lifecycle.IsExecutionTerminal(current.Task) {
+	_, _ = s.applier.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
+		if current == nil || isExecutionTerminal(current.Task) {
 			return current, nil
 		}
 		next := current.Clone()
 		if next.Task.Status == nil {
 			next.Task.Status = &v1alpha1.TaskStatus{}
-		}
-		if state == v1alpha1.TaskState_TASK_STATE_FAILED {
-			next.Runnable = false
 		}
 		if src := task.GetStatus(); src != nil {
 			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
@@ -738,8 +670,8 @@ func (s *Server) deleteTask(ctx context.Context, task *v1alpha1.Task) error {
 		return status.Errorf(codes.Internal, "cleaning up substrate resources for task %s/%s: %v", atespace, name, err)
 	}
 	key := store.TaskKey{Atespace: atespace, Name: name}
-	if _, err := s.applier.Apply(ctx, key, func(*store.TaskRow, time.Time) (*store.TaskRow, error) {
-		return store.DeleteTaskRow, nil
+	if _, err := s.applier.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
+		return store.DeleteTaskVersion, nil
 	}); err != nil {
 		return status.Errorf(codes.Internal, "deleting task record: %v", err)
 	}
