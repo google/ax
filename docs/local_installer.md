@@ -16,12 +16,12 @@ export PATH="$HOME/.ax/bin:$PATH"
 #    colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs
 
 # 3. Stand up the local Kubernetes + Substrate v1.0.0 + AX stack (or switch to a remote cluster via `ax ctx`)
-#    Note: Until official release images are published, specify --server-image (or export AX_SERVER_IMAGE).
-#    Tasks name their own image in spec.profile.image, pinned by digest.
-export AX_SERVER_IMAGE="<registry>/ax-server:<tag>"
+#    Release binaries default to their matching official ax-server image; source/dev builds require
+#    --server-image (or $AX_SERVER_IMAGE). Tasks name their own image in spec.profile.image, pinned by digest.
 export AX_TASK_IMAGE="<registry>/ax-runner@sha256:<digest>"
-#    Optional: mount the runner from a runner volume image, so task images need no runner baked in.
-# export AX_RUNNER_VOLUME_IMAGE="<registry>/ax-runner-volume:<tag>"
+#    Prebuilt agent images (such as Antigravity) have no runner baked in and need AX_RUNNER_VOLUME_IMAGE
+#    set to the ax-runner-volume digest from the release notes:
+# export AX_RUNNER_VOLUME_IMAGE="<ax-runner-volume-digest-from-release-notes>"
 ax local start
 ax local status
 ```
@@ -102,9 +102,9 @@ export PATH="$PWD/bin:$PATH"
 ax local --help
 ```
 
-### Optional: Install AX Studio
+### Optional: Install AX Studio separately
 
-[AX Studio](https://github.com/agentexecutor/studio#readme) is the local web app for AX (see [Step 2b](#step-2b-or-use-ax-studio-ax-studio)). It is a separate binary, `ax-studio`. If `install.sh` did not install it, build it from source (needs Go 1.27 or later):
+[AX Studio](https://github.com/agentexecutor/studio#readme) is the local web app for AX (see [Step 2b](#step-2b-or-use-ax-studio-ax-studio)). `install.sh` already installs its pinned `ax-studio` binary into `~/.ax/bin` alongside `ax`. If you installed `ax` from source (or want a custom Studio build), install `ax-studio` with Go 1.27 or later:
 
 ```bash
 go install github.com/agentexecutor/studio/cmd/ax-studio@latest
@@ -121,11 +121,10 @@ go install github.com/agentexecutor/studio/cmd/ax-studio@latest
 ## Step 2: Stand Up the Local Stack (`ax local start`)
 
 ```bash
-ax local start \
-  --server-image "$AX_SERVER_IMAGE"
+ax local start
 ```
 
-*(Optional: add `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
+*(Official release binaries default `--server-image` to their matching `ghcr.io/google/ax/ax-server:<version>` tag and resolve its `@sha256` digest automatically. Source and dev builds require `--server-image <ref>` or `$AX_SERVER_IMAGE`. Pass `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-runner` from it. Left unset, tasks run the runner baked into their image; prebuilt agent images (such as Antigravity) have no runner baked in and need `--runner-volume-image` with the digest from the release notes.)*
 
 *(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--runner-volume-image` and each task's `spec.profile.image`.)*
 
@@ -294,11 +293,10 @@ export GKE_CTX="<your-gke-kube-context>"
 ax ctx "$GKE_CTX"
 
 # 2. Resolve @sha256 multi-arch digests, wire Substrate allowlists, and deploy AX
-ax install \
-  --server-image "$AX_SERVER_IMAGE"
+ax install
 ```
 
-*(Pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
+*(Official release binaries default `--server-image`. On development builds or with custom images, pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. Pass `--runner-volume-image <ref>` or set `$AX_RUNNER_VOLUME_IMAGE` for prebuilt agent images with no runner baked in, as in Step 2.)*
 
 #### Expected Behavior
 - Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
@@ -411,8 +409,7 @@ ax ctx ax-local
 kubectl --context ax-local -n ate-system get deploy ate-api-server atenet-router k8s-credential-provider \
   -o custom-columns=NAME:.metadata.name,GEN:.metadata.generation
 
-ax install \
-  --server-image "$AX_SERVER_IMAGE"
+ax install
 
 kubectl --context ax-local -n ate-system get deploy ate-api-server atenet-router k8s-credential-provider \
   -o custom-columns=NAME:.metadata.name,GEN:.metadata.generation
@@ -433,8 +430,7 @@ ax suspend task demo-task
 ax local stop
 ax local status
 
-ax local start \
-  --server-image "$AX_SERVER_IMAGE"
+ax local start
 ax get tasks
 ax resume task demo-task
 ax ssh demo-task -- cat /workspace/durable.txt

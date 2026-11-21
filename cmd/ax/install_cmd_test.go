@@ -26,6 +26,7 @@ import (
 	"github.com/google/ax/internal/install/axdeploy"
 	"github.com/google/ax/internal/install/cluster"
 	"github.com/google/ax/internal/install/executil"
+	"github.com/google/ax/internal/version"
 )
 
 func TestParseLocalArgs(t *testing.T) {
@@ -33,8 +34,8 @@ func TestParseLocalArgs(t *testing.T) {
 	if err != nil || def.subcmd != "start" || def.workers != 1 || def.name != cluster.DefaultName {
 		t.Fatalf("expected default start flags, got %+v, %v", def, err)
 	}
-	if def.serverImage != axdeploy.DefaultServerImage || def.runnerVolumeImage != axdeploy.DefaultRunnerVolumeImage {
-		t.Fatalf("expected default serverImage=%q runnerVolumeImage=%q, got %+v", axdeploy.DefaultServerImage, axdeploy.DefaultRunnerVolumeImage, def)
+	if def.serverImage != "" || def.runnerVolumeImage != "" {
+		t.Fatalf("expected unset flags to stay empty so env overrides apply, got %+v", def)
 	}
 
 	got, err := parseLocalArgs([]string{
@@ -68,8 +69,8 @@ func TestParseInstallArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseInstallArgs defaults: %v", err)
 	}
-	if def.serverImage != axdeploy.DefaultServerImage || def.runnerVolumeImage != axdeploy.DefaultRunnerVolumeImage {
-		t.Fatalf("expected default serverImage=%q runnerVolumeImage=%q, got %+v", axdeploy.DefaultServerImage, axdeploy.DefaultRunnerVolumeImage, def)
+	if def.serverImage != "" || def.runnerVolumeImage != "" {
+		t.Fatalf("expected unset flags to stay empty so env overrides apply, got %+v", def)
 	}
 
 	got, err := parseInstallArgs([]string{
@@ -86,6 +87,40 @@ func TestParseInstallArgs(t *testing.T) {
 
 	if _, err := parseInstallArgs([]string{"unexpected"}); err == nil {
 		t.Fatal("expected error on unexpected positional argument")
+	}
+}
+
+func TestReleaseBuildServerImageDefaultAndUsage(t *testing.T) {
+	if !strings.Contains(localUsage(), "(required, or set $AX_SERVER_IMAGE)") {
+		t.Fatalf("expected dev build usage to mark --server-image required:\n%s", localUsage())
+	}
+
+	origVersion := version.Version
+	version.Version = "v0.4.0-rc.2"
+	t.Cleanup(func() { version.Version = origVersion })
+
+	want := `(default: "ghcr.io/google/ax/ax-server:v0.4.0-rc.2")`
+	if !strings.Contains(localUsage(), want) {
+		t.Fatalf("expected release localUsage to include %q:\n%s", want, localUsage())
+	}
+	if !strings.Contains(installUsage(), want) {
+		t.Fatalf("expected release installUsage to include %q:\n%s", want, installUsage())
+	}
+
+	parsed, err := parseLocalArgs([]string{"start"})
+	if err != nil {
+		t.Fatalf("parseLocalArgs: %v", err)
+	}
+	t.Setenv("AX_SERVER_IMAGE", "ghcr.io/example/ax-server:env")
+	srv, _, err := axdeploy.ResolveImageInputs(parsed.serverImage, parsed.runnerVolumeImage)
+	if err != nil || srv != "ghcr.io/example/ax-server:env" {
+		t.Fatalf("expected $AX_SERVER_IMAGE to beat release default when --server-image omitted, got (%q, %v)", srv, err)
+	}
+
+	t.Setenv("AX_SERVER_IMAGE", "")
+	srv, _, err = axdeploy.ResolveImageInputs(parsed.serverImage, parsed.runnerVolumeImage)
+	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.4.0-rc.2" {
+		t.Fatalf("expected release default image when env and flag unset, got (%q, %v)", srv, err)
 	}
 }
 
