@@ -20,8 +20,8 @@ reconciler or server.
 ```
 client                 Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/studio/ctx/tunnel)
-cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
-cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
+cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly; polls running runners for how their task ended (internal/server/taskstatus.go)
+cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent, reports how it ended (AX_STATUS_FILE, else exit status) on /runner/v1alpha1/status
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template

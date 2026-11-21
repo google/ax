@@ -182,3 +182,32 @@ func TestHTTPSetupRunner_FallsBackToRouter(t *testing.T) {
 		t.Errorf("ate-target-actor = %q, want default/setup-1", got)
 	}
 }
+
+func TestTaskStatus(t *testing.T) {
+	t.Setenv("ATENET_ROUTER_ADDR", "")
+	reply := func(code int, body string) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != v1alpha1.RunnerStatusPath {
+				t.Errorf("request %s %s, want GET %s", r.Method, r.URL.Path, v1alpha1.RunnerStatusPath)
+			}
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv.Listener.Addr().String()
+	}
+	r := controller.NewTaskReconciler(nil, "", "")
+
+	for name, code := range map[string]int{"running": http.StatusNoContent, "old runner": http.StatusNotFound} {
+		if st, err := r.TaskStatus(t.Context(), "default", "t", reply(code, "")); st != nil || err != nil {
+			t.Errorf("%s: TaskStatus = (%+v, %v), want (nil, nil)", name, st, err)
+		}
+	}
+	st, err := r.TaskStatus(t.Context(), "default", "t", reply(http.StatusOK, `{"state":"FAILED","message":"m","exitCode":2,"output":"o"}`))
+	if err != nil || st == nil || *st != (v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Message: "m", ExitCode: 2, Output: "o"}) {
+		t.Errorf("TaskStatus = (%+v, %v), want the FAILED status", st, err)
+	}
+	if _, err := r.TaskStatus(t.Context(), "default", "t", reply(http.StatusInternalServerError, "boom")); err == nil {
+		t.Error("TaskStatus on HTTP 500 succeeded, want an error")
+	}
+}

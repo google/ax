@@ -168,6 +168,10 @@ func main() {
 		}
 	}()
 
+	// Record how tasks end, from AX_STATUS_FILE or their exit status, and
+	// suspend their actors. Runners report it only when asked.
+	go srv.WatchTaskStatus(ctx, server.DefaultTaskStatusInterval)
+
 	// Metrics get their own listener so the probe and API port stays as it is.
 	var metricsServer *http.Server
 	if metricsAddr != "" {

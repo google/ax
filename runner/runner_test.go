@@ -16,6 +16,7 @@ package runner_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -520,5 +521,131 @@ func TestRun_AwaitPushReportsSetupFailure(t *testing.T) {
 	}
 	if code := waitWorkspaceCheck(t, h.cfg.Port); code != http.StatusInternalServerError {
 		t.Fatalf("workspace check = %d, want 500", code)
+	}
+}
+
+// getStatus polls the runner's status endpoint until it reports how the task
+// ended.
+func getStatus(t *testing.T, port int) v1alpha1.RunnerStatus {
+	t.Helper()
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", port, v1alpha1.RunnerStatusPath)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.Get(url)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case http.StatusOK:
+				var st v1alpha1.RunnerStatus
+				if err := json.Unmarshal(body, &st); err != nil {
+					t.Fatalf("decoding %s reply %q: %v", v1alpha1.RunnerStatusPath, body, err)
+				}
+				return st
+			case http.StatusNoContent:
+			default:
+				t.Fatalf("GET %s = %d %q, want 204 or 200", v1alpha1.RunnerStatusPath, resp.StatusCode, body)
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no status reported on %s", v1alpha1.RunnerStatusPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// The runner reports how the task ended: the state the command wrote to
+// AX_STATUS_FILE, or the one its exit status implies, with AX_OUTPUT_FILE (or
+// the end of stdout and stderr) as the output.
+func TestRun_ReportsTaskStatus(t *testing.T) {
+	cases := []struct {
+		name        string
+		script      string
+		wantState   string
+		wantMessage string
+		wantCode    int32
+		wantOutput  string // substring
+	}{
+		{
+			name:      "exit zero completes",
+			script:    `printf 'the answer' > "$AX_OUTPUT_FILE"`,
+			wantState: v1alpha1.RunnerStateCompleted, wantOutput: "the answer",
+		},
+		{
+			name:      "non-zero exit fails",
+			script:    "echo from-stdout; echo from-stderr >&2; exit 3",
+			wantState: v1alpha1.RunnerStateFailed, wantMessage: "exit status 3", wantCode: 3, wantOutput: "from-stderr",
+		},
+		{
+			name:      "status file wins over exit status",
+			script:    `printf '{"state":"FAILED","message":"tests failed: 3 of 120"}' > "$AX_STATUS_FILE"`,
+			wantState: v1alpha1.RunnerStateFailed, wantMessage: "tests failed: 3 of 120",
+		},
+		{
+			name:      "status file can complete a non-zero exit",
+			script:    `printf '{"state":"COMPLETED","message":"partial is fine"}' > "$AX_STATUS_FILE"; exit 1`,
+			wantState: v1alpha1.RunnerStateCompleted, wantMessage: "partial is fine", wantCode: 1,
+		},
+		{
+			name:      "malformed status file fails",
+			script:    `echo done > "$AX_STATUS_FILE"`,
+			wantState: v1alpha1.RunnerStateFailed, wantMessage: "invalid AX_STATUS_FILE",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.task.Spec.Commands = []string{"sh", "-c", tc.script}
+			h.runUntilCommandExits(t)
+			got := getStatus(t, h.cfg.Port)
+			if got.State != tc.wantState || !strings.Contains(got.Message, tc.wantMessage) || got.ExitCode != tc.wantCode || !strings.Contains(got.Output, tc.wantOutput) {
+				t.Errorf("status = %+v, want state %s, message containing %q, exit code %d, output containing %q",
+					got, tc.wantState, tc.wantMessage, tc.wantCode, tc.wantOutput)
+			}
+		})
+	}
+}
+
+// A command that writes no status gets one from its exit status, written to
+// AX_STATUS_FILE. A command that runs again after a resume, because ax-server
+// had not recorded how it ended, does not inherit that status: it is cleared
+// before the command starts, and the new run reports its own.
+func TestRun_StatusOfEarlierRunIsCleared(t *testing.T) {
+	h := newHarness(t)
+	h.task.Spec.Commands = []string{"sh", "-c", "exit 4"}
+	h.runUntilCommandExits(t)
+	if got := getStatus(t, h.cfg.Port); got.State != v1alpha1.RunnerStateFailed || got.ExitCode != 4 {
+		t.Fatalf("first run status = %+v, want FAILED with exit code 4", got)
+	}
+	raw, err := os.ReadFile(filepath.Join(h.wsPath, ".ax", "STATUS"))
+	if err != nil || !strings.Contains(string(raw), `"state":"FAILED"`) {
+		t.Fatalf("AX_STATUS_FILE = %q (%v), want the FAILED status written by the runner", raw, err)
+	}
+	h.cancel()
+	h.waitFinished(t, 5*time.Second)
+
+	again := newHarness(t)
+	again.wsPath, again.task.Spec.Workspace.Path = h.wsPath, h.wsPath
+	again.task.Spec.Commands = []string{"sh", "-c", `test ! -e "$AX_STATUS_FILE"`}
+	again.cfg.RunDir = h.cfg.RunDir
+	again.runUntilCommandExits(t)
+	if got := getStatus(t, again.cfg.Port); got.State != v1alpha1.RunnerStateCompleted || got.ExitCode != 0 {
+		t.Errorf("second run status = %+v, want COMPLETED: the first run's status must be gone when it starts", got)
+	}
+}
+
+// A command that is still running has no status yet.
+func TestRun_NoStatusWhileRunning(t *testing.T) {
+	h := newHarness(t)
+	h.task.Spec.Commands = []string{"sleep", "60"}
+	h.start(t)
+	waitHealthy(t, h.cfg.Port)
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d%s", h.cfg.Port, v1alpha1.RunnerStatusPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("GET %s while the command runs = %d, want 204", v1alpha1.RunnerStatusPath, resp.StatusCode)
 	}
 }

@@ -47,6 +47,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/healthz` | Return `200` as soon as the runner is alive. |
 | `/readyz` | Return `200` once the runner can take a push. Agent Substrate probes this. |
 | `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace, `200` once it has, and `500` with the reason as the body when setup failed. AX polls this to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. |
+| `/runner/v1alpha1/status` | Return `204` until the task's command has exited, then `200` with how the task ended as JSON (see **Report how the task ended**). AX polls this while the task's actor runs. |
 
 **Serve metadata on loopback.** These endpoints are for your command, so serve them on a loopback address (the default runner uses `127.0.0.1:8099`) and pass that base URL as `AX_METADATA_URL`. Don't serve them on port 80.
 
@@ -61,7 +62,21 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 **Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
-**Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
+**Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop.
+
+**Report how the task ended.** Give the command `AX_STATUS_FILE`, a path on the workspace volume (the default runner uses `<workspace>/.ax/STATUS`), and remove any file left there by an earlier run before you start it. The command may write one JSON object to it, ideally by writing a temporary file and renaming it:
+
+```json
+{"state": "FAILED", "message": "tests failed: 3 of 120"}
+```
+
+`state` is `COMPLETED` or `FAILED`; `message` is optional. When the command exits, read the file without following symlinks. If there is none, write one from the exit status: `{"state": "COMPLETED"}` for `0`, otherwise `{"state": "FAILED", "message": "exit status 3", "exitCode": 3}`. Treat a file that is not JSON or names another state as `FAILED`, so a malformed report never reads as success. Then serve `GET /runner/v1alpha1/status` as:
+
+```json
+{"state": "FAILED", "message": "tests failed: 3 of 120", "exitCode": 0, "output": "..."}
+```
+
+where `output` is `AX_OUTPUT_FILE`, or the end of the command's stdout and stderr when it wrote none, capped at 64 KiB. AX records `COMPLETED` and `FAILED` as the task's state and `status.outcome`, and then suspends the actor. A command that never exits leaves the task `Working`.
 
 **Shut down cleanly on `SIGTERM`.** Stop and suspend both deliver `SIGTERM` to PID 1. Forward it to the command's process group, wait a bounded grace period, then `SIGKILL` whatever is left. Flush anything the agent needs to survive a resume before you exit.
 
@@ -185,5 +200,6 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 - Prepares the workspace exactly once across restarts and resumes, at its path
 - Starts `spec.commands` in the workspace with `AX_METADATA_URL` and `spec.env`
 - Keeps running after the command exits
+- Reports how the task ended on `/runner/v1alpha1/status`, from `AX_STATUS_FILE` or the exit status
 - Forwards `SIGTERM` to the command's process group and exits after a grace period
 - Serves guest gRPC services on port 80 only when `spec.debug` is true

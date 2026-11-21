@@ -29,6 +29,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -261,6 +262,11 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 		cmdArgs = launcherCommand(cmp.Or(cfg.LauncherPath, DefaultLauncherPath), wsPath, task, files)
 	}
 	if len(cmdArgs) == 0 {
+		if launched && err == nil && launcherFinished(wsPath, files) {
+			// The launcher finished for this input before a suspend. Report how
+			// it ended again, from the status it left on the workspace volume.
+			metaServer.SetTaskStatus(finishedLauncherStatus(wsPath, drop))
+		}
 		markWorkspaceReady(metaServer, wsPath)
 		<-ctx.Done()
 		return nil
@@ -269,8 +275,11 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 	cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 	cmd.Dir = wsPath
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// The end of the output is the outcome when the command writes no
+	// AX_OUTPUT_FILE.
+	tail := newTailBuffer(MaxOutputBytes)
+	cmd.Stdout = io.MultiWriter(os.Stdout, tail)
+	cmd.Stderr = io.MultiWriter(os.Stderr, tail)
 	cmd.Env = append(commandEnv(task, metadataURL), files.env...)
 	// A dedicated process group lets shutdown signal the command together with
 	// anything it spawned.
@@ -285,6 +294,11 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 		}
 	}
 
+	// A status left by an earlier run, one interrupted by a suspend or a
+	// launcher retried after it failed, is not this run's.
+	if err := os.Remove(statusPath(wsPath)); err != nil && !os.IsNotExist(err) {
+		slog.Warn("failed to remove an earlier task status", "path", statusPath(wsPath), "error", err)
+	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting task command %v: %w", cmdArgs, err)
 	}
@@ -299,7 +313,8 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 		if launched && err == nil {
 			markLauncherDone(wsPath, files)
 		}
-		reportExit(cfg, cmd, err)
+		exit := reportExit(cfg, cmd, err)
+		metaServer.SetTaskStatus(endStatus(wsPath, exit.ExitCode, tail, drop))
 		// Keep the sandbox up and inspectable until told to stop.
 		<-ctx.Done()
 	case <-ctx.Done():
@@ -356,8 +371,9 @@ func stopCommand(cmd *exec.Cmd, exited <-chan error) error {
 	}
 }
 
-// reportExit logs how the command finished and notifies the OnCommandExit hook.
-func reportExit(cfg Config, cmd *exec.Cmd, err error) {
+// reportExit logs how the command finished, notifies the OnCommandExit hook,
+// and returns the exit.
+func reportExit(cfg Config, cmd *exec.Cmd, err error) CommandExit {
 	exit := CommandExit{Pid: cmd.Process.Pid, ExitCode: -1, Err: err}
 	if cmd.ProcessState != nil {
 		exit.ExitCode = cmd.ProcessState.ExitCode()
@@ -370,6 +386,7 @@ func reportExit(cfg Config, cmd *exec.Cmd, err error) {
 	if cfg.OnCommandExit != nil {
 		cfg.OnCommandExit(exit)
 	}
+	return exit
 }
 
 // commandEnv builds the environment for the task command: the runner's own

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Stand-in for a prebuilt agent image's launcher. Instead of running an agent,
+# it answers with the goal and session it was handed, and counts its runs next
+# to the output so tests can tell whether a resume ran it again.
+set -eu
+echo run >> "$(dirname "${AX_OUTPUT_FILE}")/e2e-launcher-runs"
+{
+  printf 'goal=%s\n' "$(cat "${AX_GOAL_FILE}")"
+  printf 'session=%s\n' "$(cat "${AX_SESSION_FILE}")"
+} > "${AX_OUTPUT_FILE}"

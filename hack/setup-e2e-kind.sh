@@ -345,9 +345,13 @@ AX_E2E_TASK_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner:e2e" \
 # built here rather than one baked into their image.
 AX_RUNNER_VOLUME_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-runner-volume:e2e" \
   --build-arg TARGETARCH="${GOARCH}" -f "${REPO_ROOT}/Dockerfile.runner-volume")"
-export AX_SERVER_IMAGE AX_E2E_TASK_IMAGE AX_RUNNER_VOLUME_IMAGE
-printf '  AX_SERVER_IMAGE=%s\n  AX_E2E_TASK_IMAGE=%s\n  AX_RUNNER_VOLUME_IMAGE=%s\n' \
-  "${AX_SERVER_IMAGE}" "${AX_E2E_TASK_IMAGE}" "${AX_RUNNER_VOLUME_IMAGE}"
+# A pure image (no runner inside) with a stand-in launcher, built from the
+# local base image so E2E does not pull a second base image from Docker Hub.
+AX_E2E_LAUNCHER_IMAGE="$(build_and_push "${REGISTRY_ADDR}/ax-e2e-launcher:e2e" \
+  --build-arg BASE_IMAGE="${REGISTRY_ADDR}/ax-runner:base" -f "${E2E_DIR}/launcher/Dockerfile")"
+export AX_SERVER_IMAGE AX_E2E_TASK_IMAGE AX_RUNNER_VOLUME_IMAGE AX_E2E_LAUNCHER_IMAGE
+printf '  AX_SERVER_IMAGE=%s\n  AX_E2E_TASK_IMAGE=%s\n  AX_RUNNER_VOLUME_IMAGE=%s\n  AX_E2E_LAUNCHER_IMAGE=%s\n' \
+  "${AX_SERVER_IMAGE}" "${AX_E2E_TASK_IMAGE}" "${AX_RUNNER_VOLUME_IMAGE}" "${AX_E2E_LAUNCHER_IMAGE}"
 
 # 5. Deploy Postgres and ax-server. Delete existing workloads and Postgres's
 #    volume first so every run starts from an empty database.
@@ -383,6 +387,7 @@ export AX_BIN="${TMP_DIR}/bin/ax"
 export SUBSTRATE_REF="${SUBSTRATE_REF}"
 export SUBSTRATE_COMMIT="${SUBSTRATE_COMMIT}"
 export AX_E2E_TASK_IMAGE="${AX_E2E_TASK_IMAGE}"
+export AX_E2E_LAUNCHER_IMAGE="${AX_E2E_LAUNCHER_IMAGE}"
 EOF
 
 log "Kind E2E environment is ready (configuration written to ${TMP_DIR}/e2e.env)."

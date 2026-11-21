@@ -45,6 +45,8 @@ When a task sets `spec.debug: true`, port 80 also serves the [Agent Substrate gu
 | Variable | Value |
 |---|---|
 | `AX_METADATA_URL` | Base URL of the metadata server, `http://127.0.0.1:8099` by default |
+| `AX_OUTPUT_FILE` | `<workspace>/.ax/output`. Write the agent's answer here; AX reports it as `status.outcome.output` (up to 64 KiB). |
+| `AX_STATUS_FILE` | `<workspace>/.ax/STATUS`. Write `{"state": "COMPLETED" \| "FAILED", "message": "..."}` here to say how the task ended. Without it the exit status decides: `0` is `COMPLETED`, anything else `FAILED`. See [Report how the task ended](runner.md#what-a-runner-must-do). |
 
 ## Outbound TLS and credentials
 

@@ -16,6 +16,7 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,6 +59,7 @@ type Server struct {
 	pushedSetup         *v1alpha1.Workspace
 	pushedTask          *v1alpha1.Task
 	pushes              chan Push
+	taskStatus          *v1alpha1.RunnerStatus
 	assignmentCh        chan struct{}
 	assignmentOnce      sync.Once
 }
@@ -129,6 +131,7 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux := http.NewServeMux()
 	probeMux.HandleFunc("/healthz", s.handleHealthz)
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
+	probeMux.HandleFunc("GET "+v1alpha1.RunnerStatusPath, s.handleStatus)
 	if opt.AcceptPushes {
 		probeMux.HandleFunc("POST "+v1alpha1.RunnerSetupPath, s.handleSetupPush)
 		probeMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, s.handleTaskPush)
@@ -313,6 +316,14 @@ func (s *Server) SetSetupFailed(err error) {
 	s.setupFailure = err.Error()
 }
 
+// SetTaskStatus records how the task ended, which v1alpha1.RunnerStatusPath
+// then reports.
+func (s *Server) SetTaskStatus(st v1alpha1.RunnerStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.taskStatus = &st
+}
+
 // Pushes delivers the work the push endpoints accept, at most one setup push
 // and one task push. Only a server with ServerOptions.AcceptPushes gets any.
 func (s *Server) Pushes() <-chan Push {
@@ -350,6 +361,20 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// handleStatus replies 204 until SetTaskStatus records how the task ended,
+// then 200 with that v1alpha1.RunnerStatus as JSON.
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	st := s.taskStatus
+	s.mu.RUnlock()
+	if st == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
 }
 
 // handleSetupPush accepts a Workspace to set up. It replies 202 when it accepts

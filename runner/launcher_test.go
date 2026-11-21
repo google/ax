@@ -282,3 +282,53 @@ func TestMCPServers(t *testing.T) {
 		t.Errorf("MCPServers = %s, want %s", b, want)
 	}
 }
+
+// A runner resumed after the launcher finished for its goal does not start it
+// again, but reports how it ended, from the status and answer it left on the
+// workspace volume, so ax-server can still record the outcome.
+func TestRun_ReportsFinishedLauncherOnResume(t *testing.T) {
+	cases := []struct {
+		name        string
+		statusFile  string // written by the launcher; "" writes none
+		wantState   string
+		wantMessage string
+	}{
+		{name: "no status file", wantState: v1alpha1.RunnerStateCompleted},
+		{
+			name:       "launcher reported failure",
+			statusFile: `{"state":"FAILED","message":"could not fix the test"}`,
+			wantState:  v1alpha1.RunnerStateFailed, wantMessage: "could not fix the test",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			dir := withLauncher(t, h, "first goal")
+			if tc.statusFile != "" {
+				script := launcherScript + "printf '%s' '" + tc.statusFile + "' > \"$AX_STATUS_FILE\"\n"
+				if err := os.WriteFile(h.cfg.LauncherPath, []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.runUntilCommandExits(t)
+			first := getStatus(t, h.cfg.Port)
+			h.cancel()
+			h.waitFinished(t, 5*time.Second)
+
+			again := newHarness(t)
+			again.wsPath, again.task.Spec.Workspace.Path = h.wsPath, h.wsPath
+			again.cfg.LauncherPath, again.cfg.RunDir = h.cfg.LauncherPath, h.cfg.RunDir
+			again.task.Spec.Goal = &v1alpha1.Goal{Text: "first goal"}
+			again.start(t)
+			got := getStatus(t, again.cfg.Port)
+			if n := runs(t, dir); n != 1 {
+				t.Fatalf("launcher ran %d times, want 1", n)
+			}
+			if got.State != tc.wantState || got.Message != tc.wantMessage || got.State != first.State ||
+				!strings.HasPrefix(got.Output, "first goal") {
+				t.Errorf("status after resume = %+v (first run %+v), want state %s, message %q, the first run's answer",
+					got, first, tc.wantState, tc.wantMessage)
+			}
+		})
+	}
+}

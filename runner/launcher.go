@@ -48,6 +48,12 @@ const (
 	// It is on the workspace volume so it survives suspend, and AX reports it
 	// as status.outcome.output.
 	OutputFileEnv = "AX_OUTPUT_FILE"
+	// StatusFileEnv names the file the command writes to say how the task
+	// ended: one JSON object with "state" (COMPLETED or FAILED) and an
+	// optional "message". It is on the workspace volume
+	// so it survives suspend. A command that writes none gets one from its exit
+	// status. AX reports it as status.state and status.outcome.
+	StatusFileEnv = "AX_STATUS_FILE"
 
 	// DefaultLauncherPath is where the runner looks for the image's launcher
 	// when Config.LauncherPath is empty.
@@ -123,6 +129,7 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 		return launcherFiles{}, fmt.Errorf("creating %s: %w", filepath.Dir(output), err)
 	}
 	out.env = append(out.env, OutputFileEnv+"="+output)
+	out.env = append(out.env, StatusFileEnv+"="+statusPath(wsPath))
 	out.digest = hex.EncodeToString(h.Sum(nil))
 	return out, nil
 }
@@ -167,11 +174,18 @@ func launcherCommand(launcher, wsPath string, task *v1alpha1.Task, files launche
 		slog.Info("no task command and no launcher in the image; serving metadata until stopped", "launcher", launcher)
 		return nil
 	}
-	if done, err := os.ReadFile(doneMarkerPath(wsPath)); err == nil && string(done) == files.digest {
+	if launcherFinished(wsPath, files) {
 		slog.Info("launcher already finished for this goal; not starting it again", "launcher", launcher)
 		return nil
 	}
 	return []string{launcher}
+}
+
+// launcherFinished reports whether the launcher already finished for files'
+// input, as recorded by markLauncherDone on the workspace volume.
+func launcherFinished(wsPath string, files launcherFiles) bool {
+	done, err := os.ReadFile(doneMarkerPath(wsPath))
+	return err == nil && files.digest != "" && string(done) == files.digest
 }
 
 // markLauncherDone records that the launcher finished for files' input.

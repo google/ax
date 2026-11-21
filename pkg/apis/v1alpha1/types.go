@@ -387,7 +387,36 @@ const (
 	// RunnerTaskPath takes a Task as YAML, followed by its bound Workspace as a
 	// second YAML document when it binds one, and runs the task.
 	RunnerTaskPath = "/runner/v1alpha1/task"
+	// RunnerStatusPath reports how the task ended. A GET replies 204 until the
+	// task's command has exited, then 200 with a RunnerStatus as JSON. ax-server
+	// polls it to record the task's state and outcome.
+	RunnerStatusPath = "/runner/v1alpha1/status"
 )
+
+// The states a task's command can end in, written to AX_STATUS_FILE and
+// reported in RunnerStatus.State.
+const (
+	// RunnerStateCompleted means the task succeeded.
+	RunnerStateCompleted = "COMPLETED"
+	// RunnerStateFailed means the task failed.
+	RunnerStateFailed = "FAILED"
+)
+
+// RunnerStatus is how a task ended, as RunnerStatusPath reports it: the state
+// from AX_STATUS_FILE, or, when the command wrote none, the state its exit
+// status implies.
+type RunnerStatus struct {
+	// State is RunnerStateCompleted or RunnerStateFailed.
+	State string `json:"state"`
+	// Message is a short summary for humans. It may be empty.
+	Message string `json:"message,omitempty"`
+	// ExitCode is the command's exit status, or -1 if a signal killed it.
+	ExitCode int32 `json:"exitCode"`
+	// Output is the content of AX_OUTPUT_FILE, or the end of the command's
+	// stdout and stderr when it wrote none, capped at 64 KiB. It becomes the
+	// task's status.outcome.output.
+	Output string `json:"output,omitempty"`
+}
 
 // WorkspacePath returns the task command's working directory: the bound
 // workspace's path when set, otherwise DefaultWorkspacePath.
