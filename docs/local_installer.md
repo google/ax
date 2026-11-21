@@ -19,8 +19,9 @@ export PATH="$HOME/.ax/bin:$PATH"
 #    Release binaries default to their matching official ax-server image; source/dev builds require
 #    --server-image (or $AX_SERVER_IMAGE). Tasks name their own image in spec.profile.image, pinned by digest.
 export AX_TASK_IMAGE="<registry>/ax-runner@sha256:<digest>"
-#    Optional: mount the runner from a runner volume image, so task images need no runner baked in.
-# export AX_RUNNER_VOLUME_IMAGE="<registry>/ax-runner-volume:<tag>"
+#    Prebuilt agent images (such as Antigravity) have no runner baked in and need AX_RUNNER_VOLUME_IMAGE
+#    set to the ax-runner-volume digest from the release notes:
+# export AX_RUNNER_VOLUME_IMAGE="<ax-runner-volume-digest-from-release-notes>"
 ax local start
 ax local status
 ```
@@ -123,7 +124,7 @@ go install github.com/agentexecutor/studio/cmd/ax-studio@latest
 ax local start
 ```
 
-*(Official release binaries default `--server-image` to their matching `ghcr.io/google/ax/ax-server:<version>` tag and resolve its `@sha256` digest automatically. Source and dev builds require `--server-image <ref>` or `$AX_SERVER_IMAGE`. Pass `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, optionally to have `ax-server` mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-runner` from it, so task images need no runner baked in. Left unset, tasks run the runner baked into their image.)*
+*(Official release binaries default `--server-image` to their matching `ghcr.io/google/ax/ax-server:<version>` tag and resolve its `@sha256` digest automatically. Source and dev builds require `--server-image <ref>` or `$AX_SERVER_IMAGE`. Pass `--runner-volume-image <ref>`, or set `$AX_RUNNER_VOLUME_IMAGE`, to mount the runner volume image ([`Dockerfile.runner-volume`](../Dockerfile.runner-volume)) read-only into every task container and run `ax-runner` from it. Left unset, tasks run the runner baked into their image; prebuilt agent images (such as Antigravity) have no runner baked in and need `--runner-volume-image` with the digest from the release notes.)*
 
 *(Images must be public: a local cluster has no registry credentials. Its Kind node pulls `--server-image` anonymously, and Agent Substrate's local profile pulls task images anonymously too, so an image in a private registry fails with `401`/`403` even when `docker pull` works on the host. This covers `--runner-volume-image` and each task's `spec.profile.image`.)*
 
@@ -297,7 +298,7 @@ ax ctx "$GKE_CTX"
 ax install
 ```
 
-*(Official release binaries default `--server-image`. On development builds or with custom images, pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. `--runner-volume-image <ref>` / `$AX_RUNNER_VOLUME_IMAGE` is optional, as in Step 2.)*
+*(Official release binaries default `--server-image`. On development builds or with custom images, pass `--server-image <ref>` or set `$AX_SERVER_IMAGE`. Pass `--runner-volume-image <ref>` or set `$AX_RUNNER_VOLUME_IMAGE` for prebuilt agent images with no runner baked in, as in Step 2.)*
 
 #### Expected Behavior
 - Resolves `@sha256:...` multi-arch OCI digests for `--server-image` and, when set, `--runner-volume-image` (built into `ax`; no `crane` binary is needed).
