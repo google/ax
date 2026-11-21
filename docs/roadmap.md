@@ -10,7 +10,7 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 | **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, and mount paths. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
 | **`Sandbox` / `SandboxConfig`** | Runtime isolation backends, kernel/syscall constraints, filesystem mounts, and security profiles. |
-| **Network policy** (name open in [#549](https://github.com/google/ax/issues/549)) | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
+| **Network policy** | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
 
 
 ## 2. Actor Architecture
