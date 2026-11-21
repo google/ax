@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/ax/internal/install/executil"
 	"github.com/google/ax/internal/tunnel"
+	"github.com/google/ax/internal/version"
 )
 
 func TestEnsureDigestPinnedWithBearerChallenge(t *testing.T) {
@@ -287,6 +288,26 @@ func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
 	_, runner, err = ResolveImageInputs("", " ghcr.io/example/runner-volume:dev ")
 	if err != nil || runner != "ghcr.io/example/runner-volume:dev" {
 		t.Fatalf("expected the flag to override $AX_RUNNER_VOLUME_IMAGE, got (%q, %v)", runner, err)
+	}
+
+	// Release builds default to their matching version tag while honoring env and flags.
+	origVersion := version.Version
+	version.Version = "v0.4.0-rc.2"
+	t.Cleanup(func() { version.Version = origVersion })
+
+	t.Setenv("AX_SERVER_IMAGE", "")
+	srv, _, err = ResolveImageInputs("", "")
+	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.4.0-rc.2" {
+		t.Fatalf("expected release build default image, got (%q, %v)", srv, err)
+	}
+	t.Setenv("AX_SERVER_IMAGE", "ghcr.io/example/ax-server:custom")
+	srv, _, err = ResolveImageInputs("", "")
+	if err != nil || srv != "ghcr.io/example/ax-server:custom" {
+		t.Fatalf("expected $AX_SERVER_IMAGE to override release default, got (%q, %v)", srv, err)
+	}
+	srv, _, err = ResolveImageInputs("ghcr.io/example/ax-server:flag", "")
+	if err != nil || srv != "ghcr.io/example/ax-server:flag" {
+		t.Fatalf("expected explicit flag to override env and release default, got (%q, %v)", srv, err)
 	}
 }
 

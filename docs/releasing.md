@@ -81,10 +81,11 @@ arm64 images. After pushing, it checks that each platform's image holds that
 platform's binary.
 
 The binaries are stamped with the tag through
-`github.com/google/ax/internal/version.Version`. `version.Image("ax-server")`
-returns the image of the binary's own release (`:latest` for a dev build), for
-`ax install` defaults once a release is published (see the `TODO(release)` in
-`internal/install/axdeploy`).
+`github.com/google/ax/internal/version.Version`. Release builds of `ax local`
+and `ax install` default `--server-image` to `version.Image("ax-server")`
+(resolved by digest at install time); unversioned dev builds still require
+`--server-image` or `$AX_SERVER_IMAGE`. `TODO(release)` in
+`internal/install/axdeploy` remains only for `DefaultRunnerVolumeImage`.
 
 GitHub creates a new package as private: after the first release that
 publishes a new package, an owner of the `google` organization must make it

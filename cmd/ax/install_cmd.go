@@ -64,7 +64,7 @@ Flags:
   -o, --output string          Output format of status; "json" also reports the container host
   -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")`,
 		cluster.DefaultName,
-		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
+		formatImageFlagDefault(axdeploy.DefaultServerImage(), "AX_SERVER_IMAGE", true),
 		formatImageFlagDefault(axdeploy.DefaultRunnerVolumeImage, "AX_RUNNER_VOLUME_IMAGE", false),
 	)
 }
@@ -81,7 +81,7 @@ Flags:
   -n, --namespace string       Kubernetes namespace for AX (default: "ax-system")
   --server-image string        ax-server image reference, tag or @sha256 %s
   --runner-volume-image string Runner volume image mounted into tasks; empty runs each image's own runner %s`,
-		formatImageFlagDefault(axdeploy.DefaultServerImage, "AX_SERVER_IMAGE", true),
+		formatImageFlagDefault(axdeploy.DefaultServerImage(), "AX_SERVER_IMAGE", true),
 		formatImageFlagDefault(axdeploy.DefaultRunnerVolumeImage, "AX_RUNNER_VOLUME_IMAGE", false),
 	)
 }
@@ -104,8 +104,10 @@ type imageFlags struct {
 }
 
 func (f *imageFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&f.serverImage, "server-image", axdeploy.DefaultServerImage, "ax-server container image reference (repo:tag or repo@sha256:...)")
-	fs.StringVar(&f.runnerVolumeImage, "runner-volume-image", axdeploy.DefaultRunnerVolumeImage, "runner volume image ax-server mounts into task containers; empty runs the runner baked into each task image (repo:tag or repo@sha256:...)")
+	// Keep CLI flag defaults empty so ResolveImageInputs honors $AX_SERVER_IMAGE
+	// and $AX_RUNNER_VOLUME_IMAGE before falling back to release defaults.
+	fs.StringVar(&f.serverImage, "server-image", "", "ax-server container image reference (repo:tag or repo@sha256:...)")
+	fs.StringVar(&f.runnerVolumeImage, "runner-volume-image", "", "runner volume image ax-server mounts into task containers; empty runs the runner baked into each task image (repo:tag or repo@sha256:...)")
 }
 
 type localFlags struct {

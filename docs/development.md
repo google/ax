@@ -14,6 +14,18 @@ make install               # install the ax CLI into $(go env GOPATH)/bin
 make images                # build and push the ax-server and ax-runner images to $AX_IMAGE_REPO
 ```
 
+### Build and push images
+
+When developing from source (unversioned dev builds require `--server-image` or `$AX_SERVER_IMAGE` instead of using official release defaults), build and push your images and pin them by digest:
+
+```bash
+export AX_IMAGE_REPO=<your-registry>   # e.g. gcr.io/my-project
+make images                            # prints the digest of each pushed image
+export AX_SERVER_IMAGE="$AX_IMAGE_REPO/ax-server@<digest>"
+export AX_TASK_IMAGE="$AX_IMAGE_REPO/ax-runner@<digest>"
+ax local start --server-image "$AX_SERVER_IMAGE"
+```
+
 ## Test
 
 Runs everything, including the mock Substrate gRPC server, in-memory store validation, and API server tests:
