@@ -30,7 +30,7 @@ Tasks that share a profile share one Agent Substrate template, so the container 
 | `POST /runner/v1alpha1/task` | The `Task` as YAML, excluding status, followed by the bound `Workspace` as a second YAML document when the task binds one | Task actors, on every resume |
 | `POST /runner/v1alpha1/setup` | The `Workspace` as YAML | Setup actors, which prepare a workspace snapshot once and are then suspended |
 
-Reply `202` when you accept the work, `200` when you already hold the same object (same atespace, name, and uid; the server repeats the push on every resume), `409` when you hold different work, and `400` when the body cannot be decoded. The server retries anything else until it times out. `spec.commands` reaches the runner only through this push; the runner is responsible for parsing it and starting it.
+Reply `202` when you accept the work, `200` when you already hold the same object (same atespace, name, and uid; the server repeats the push on every resume), `409` when you hold different work, and `400` when the body cannot be decoded. The server retries anything else until it times out, and then fails the resume with a transient error, because a task that was never pushed is not running; `ax resume` repeats the push. `spec.commands` reaches the runner only through this push; the runner is responsible for parsing it and starting it.
 
 The default runner also accepts the task as `AX_TASK_YAML` and `AX_WORKSPACE_YAML` environment variables, or with `--task-file` and `--workspace-file`, which is handy when you run it outside AX. It waits for a push only when it is given no task.
 
@@ -46,7 +46,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 |---|---|
 | `/healthz` | Return `200` as soon as the runner is alive. |
 | `/readyz` | Return `200` once the runner can take a push. Agent Substrate probes this. |
-| `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace, `200` once it has, and `500` with the reason as the body when setup failed. AX polls this to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. |
+| `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace and, for a task, started its command, `200` once it has, and `500` with the reason as the body when setup failed or the command could not be started. AX polls this on every resume to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. A `500` for a task whose workspace was already set up fails the resume. |
 
 **Serve metadata on loopback.** These endpoints are for your command, so serve them on a loopback address (the default runner uses `127.0.0.1:8099`) and pass that base URL as `AX_METADATA_URL`. Don't serve them on port 80.
 

@@ -108,8 +108,9 @@ instead. No mocking library is in `go.mod`.
   to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
   stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
-  its readiness probe (`internal/controller/reconciler.go`), and `ax ssh`
-  connects through `atenet-router`.
+  the task push and the readiness check that follows it
+  (`internal/controller/reconciler.go`), and `ax ssh` connects through
+  `atenet-router`.
 - Egress: an actor without an egress policy has no outbound access. For a
   task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
   asks Substrate whether the actor has a policy. If it has none, `bindGateway`
@@ -127,9 +128,13 @@ instead. No mocking library is in `go.mod`.
   by push: after `ResumeActor`, ax-server POSTs the Task (and its Workspace)
   to `v1alpha1.RunnerTaskPath`, or a Workspace to a setup actor at
   `v1alpha1.RunnerSetupPath`, on port 80, then polls
-  `/readyz?check=workspace` (`internal/controller/actorhttp.go`). It dials the
-  worker IP `ResumeActor` returned and falls back to `atenet-router` with the
-  `ate-target-actor` header. The runner never calls ax-server.
+  `/readyz?check=workspace` (`internal/controller/actorhttp.go`), for a task
+  on every resume. It dials the worker IP `ResumeActor` returned and falls
+  back to `atenet-router` with the `ate-target-actor` header. The runner never
+  calls ax-server. `Resume` fails with a transient error when the runner does
+  not accept the push within `WorkspaceReadyTimeout`, and with
+  `ActorResumeFailed` when the runner refuses the task or reports a failure
+  for a task whose workspace is already set up.
 - `status.actorUid` is read live by `setActorStatus` in
   `internal/server/server.go` and cleared by `storedStatus` before writes.
   It changes when Substrate recreates the actor and is empty when the actor

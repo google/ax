@@ -25,6 +25,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/ax/internal/apivalidation"
@@ -41,7 +42,8 @@ const (
 	// per-task ActorTemplate name.
 	templateDigestBytes = 4
 	// defaultWorkspaceReadyTimeout is how long Resume waits for a freshly
-	// resumed actor to finish workspace setup.
+	// resumed actor's runner to accept the task, finish workspace setup, and
+	// start the task.
 	defaultWorkspaceReadyTimeout = 15 * time.Second
 	workspaceReadyPollInterval   = 500 * time.Millisecond
 
@@ -65,8 +67,10 @@ type TaskReconciler struct {
 	defaultTemplate         string
 	defaultTemplateAtespace string
 
-	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
-	// to report ready before recording it as still initializing.
+	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's runner
+	// to accept the task, set up its workspace, and start it. A runner that
+	// has not accepted the task by then fails the resume; a workspace that is
+	// not ready by then is recorded as still initializing.
 	WorkspaceReadyTimeout time.Duration
 
 	// RunnerVolumeImage, when set, is a digest-pinned runner volume image
@@ -300,10 +304,14 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 
 // Resume runs ensureSubstrateResources and bindGateway, resumes the task's
 // actor, pushes the task to its runner (v1alpha1.RunnerTaskPath), and waits up
-// to WorkspaceReadyTimeout for the task's workspace to be set up, recording the
-// result in the WorkspaceReady condition. A failure to resume the actor, or the
-// runner refusing the task, is recorded the way ensureSubstrateResources
-// records its own; a runner that is not reachable in time is not an error.
+// to WorkspaceReadyTimeout for the runner to set up the task's workspace and
+// start the task, recording the result in the WorkspaceReady condition. A
+// failure to resume the actor, the runner refusing the task, and the runner
+// failing to start a task whose workspace is already set up are recorded the
+// way ensureSubstrateResources records its own. So is a runner that does not
+// accept the task in time, as a transient error (substrate.IsTransientError):
+// the task is not running, and resuming again repeats the push. A runner that
+// accepted the task and is still working when the wait ends is not an error.
 func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
 	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
@@ -330,8 +338,8 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 	// the runner learns which task it runs from this push. A runner restored
 	// from a memory snapshot already holds the task and accepts it again.
 	// Workspace setup happens once per task: after it has completed,
-	// WorkspaceReady stays True across suspend/resume cycles, so readiness is
-	// only polled while it is still initializing.
+	// WorkspaceReady stays True across suspend/resume cycles. The task starts
+	// on every resume, so the runner is polled every time.
 	workspaceReady := conditionTrue(task, v1alpha1.ConditionWorkspaceReady)
 	pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
 	defer cancel()
@@ -349,13 +357,24 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
 		return fmt.Errorf("pushing task to runner: %w", err)
 	case err != nil:
-		slog.Warn("runner did not accept the task in time", "actor", actorName, "error", err)
-		notReadyMsg = fmt.Sprintf("Waiting for the runner at %s to accept the task", workerIP)
-	case !workspaceReady:
+		// The task reaches the runner only through this push, so without it
+		// nothing runs. err wraps the context's error, which makes a timeout
+		// transient: resuming again repeats the push.
+		err = fmt.Errorf("runner at %s did not accept the task within %s: %w", workerIP, r.WorkspaceReadyTimeout, err)
+		r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
+		return err
+	default:
 		err = waitWorkspaceReady(pollCtx, r.httpClient, atespace, actorName, workerIP, workspaceReadyPollInterval)
 		switch {
 		case err == nil:
 			workspaceReady = true
+		case errors.Is(err, errSetupFailed) && workspaceReady:
+			// The workspace was set up on an earlier resume, so what failed
+			// is starting the task: nothing runs in the resumed actor. The
+			// runner's reason is reported without errSetupFailed's text.
+			reason := strings.TrimPrefix(err.Error(), errSetupFailed.Error()+": ")
+			r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, reason, time.Now())
+			return errors.New(reason)
 		case errors.Is(err, errSetupFailed):
 			notReadyMsg = err.Error()
 		default:
