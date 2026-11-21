@@ -9,7 +9,6 @@ Stabilize the `ax.io/v1alpha1` declarative schemas and lifecycle contracts acros
 | **`Task`** | Lifecycle phases, status conditions, resource limits, token/timeout budgets, and approval policies. |
 | **`Workspace`** | Git checkouts, static/registry MCP servers, skill registries, and mount paths. |
 | **`Model`** | Provider bindings, model identifiers, sampling parameters, and credential secret references. |
-| **`Sandbox` / `SandboxConfig`** | Runtime isolation backends, kernel/syscall constraints, filesystem mounts, and security profiles. |
 | **Network policy** | Ingress and egress allow rules for tasks, and how a `Task` binds them. |
 
 
