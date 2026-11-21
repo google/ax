@@ -42,7 +42,15 @@ Harden perimeter security, enterprise governance, and platform observability for
 - **Telemetry and Trajectory Collection**: Automatically collect and export OpenTelemetry metrics, distributed traces, and structured agent trajectories (prompts, model responses, tool calls, process executions, and lifecycle transitions) at the runner layer without requiring custom instrumentation in user containers.
 
 
-## 5. Local Development
+## 5. Sessions and Memory
+
+Let agents carry context across interactions and tasks:
+
+- **Sessions**: Model conversations with a `Task` as sessions that persist its history and state, so users can continue, inspect, and resume a session across suspend and resume.
+- **Memory**: Give agents long-term memory that outlives a single task, with scoped storage and retrieval shared across sessions and tasks.
+
+
+## 6. Local Development
 
 Make it easy to build on a developer machine:
 
@@ -50,7 +58,7 @@ Make it easy to build on a developer machine:
 - **Local to Remote**: Promote the same `Task`, `Workspace`, and `Model` manifests unchanged from local development to a remote cluster.
 
 
-## 6. Prebuilt Runners
+## 7. Prebuilt Runners
 
 Ship ready-to-use runner images so users don't have to build their own to get started:
 
@@ -58,7 +66,7 @@ Ship ready-to-use runner images so users don't have to build their own to get st
 - **Agent Frameworks**: Publish prebuilt runner images for agent frameworks such as ADK.
 
 
-## 7. Documentation
+## 8. Documentation
 
 Expand documentation in `docs/` to cover architecture rationale and extensibility guides:
 
