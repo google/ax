@@ -347,7 +347,7 @@ func TestKindProviderUpWarnsWithoutEgress(t *testing.T) {
 func TestLoopbackRegistries(t *testing.T) {
 	got := loopbackRegistries([]string{
 		"localhost:5001/ax-server@sha256:1111111111111111111111111111111111111111111111111111111111111111",
-		"localhost:5001/ax-task-runner:latest",
+		"localhost:5001/ax-runner:latest",
 		"127.0.0.1:5002/ax-runner-volume",
 		"[::1]:5003/ax-server",
 		"localhost/ax-server",
@@ -398,7 +398,7 @@ func TestKindProviderUpServesLoopbackRegistry(t *testing.T) {
 	if _, err := p.Up(context.Background(), UpOptions{
 		Images: []string{
 			"localhost:5001/ax-server@sha256:1111111111111111111111111111111111111111111111111111111111111111",
-			"ghcr.io/google/ax/ax-task-runner:v1.0.0",
+			"ghcr.io/google/ax/ax-runner:v1.0.0",
 		},
 		LocalRegistry: "my-registry:5050",
 	}); err != nil {
