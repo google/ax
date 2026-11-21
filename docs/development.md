@@ -26,6 +26,8 @@ export AX_TASK_IMAGE="$AX_IMAGE_REPO/ax-runner@<digest>"
 ax local start --server-image "$AX_SERVER_IMAGE"
 ```
 
+For `ax local start`, you can use a registry on `localhost` instead of a remote one: see [Using Locally Built Images](local_installer.md#using-locally-built-images).
+
 ## Test
 
 Runs everything, including the mock Substrate gRPC server, in-memory store validation, and API server tests:
