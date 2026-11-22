@@ -138,8 +138,6 @@ func main() {
 
 Cross-compile it for `linux/amd64` with `CGO_ENABLED=0` and copy it into your image at `/usr/local/bin/ax-runner`.
 
-For a working example, see [`cmd/runners/claude-code-runner`](../cmd/runners/claude-code-runner), which builds a Claude Code invocation from `spec.config` and passes it to `runner.Run` as the command. [Claude Code runner](../examples/claude-code/README.md) documents it.
-
 ### 3. Write a runner from scratch
 
 If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Accept the pushes, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.

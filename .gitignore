@@ -9,5 +9,3 @@ bin/
 /ax-runner
 
 .vscode/
-/claude-code-runner
-ax-claude-code-runner
