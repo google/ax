@@ -1063,24 +1063,24 @@ func TestServer_DeleteTask_ReconcileErrorRetainsTask(t *testing.T) {
 	}
 }
 
-type failDeleteTimeStore struct {
-	store.Store
-	failSetDeleteTime bool
+type failApplyTaskApplier struct {
+	store.TaskApplier
+	failApply bool
 }
 
-func (f *failDeleteTimeStore) SetTaskDeleteTime(ctx context.Context, atespace, name string, dt *timestamppb.Timestamp) error {
-	if f.failSetDeleteTime {
-		return errors.New("simulated store failure")
+func (f *failApplyTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskVersion, error) {
+	if f.failApply {
+		return nil, errors.New("simulated store failure")
 	}
-	return f.Store.SetTaskDeleteTime(ctx, atespace, name, dt)
+	return f.TaskApplier.Apply(ctx, key, fn)
 }
 
 func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 	base := memory.NewStore()
-	st := &failDeleteTimeStore{Store: base}
+	applier := &failApplyTaskApplier{TaskApplier: base}
 	sub := substratetest.NewServer(t)
 	rec := newTestReconciler(sub)
-	srv := server.NewServer(st, rec)
+	srv := server.NewServer(base, rec, server.Options{TaskApplier: applier})
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1093,13 +1093,13 @@ func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	st.failSetDeleteTime = true
+	applier.failApply = true
 	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "task-status-fail"})
 	if err == nil {
-		t.Fatal("expected DeleteTask to fail when SetTaskDeleteTime fails")
+		t.Fatal("expected DeleteTask to fail when persisting delete_time fails")
 	}
 	if sub.DeleteActorCalls() != 0 {
-		t.Errorf("expected no DeleteActor call if SetTaskDeleteTime fails, got %d", sub.DeleteActorCalls())
+		t.Errorf("expected no DeleteActor call if persisting delete_time fails, got %d", sub.DeleteActorCalls())
 	}
 }
 

@@ -122,7 +122,7 @@ func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn stor
 		}
 	} else {
 		if !proto.Equal(current.Task.GetMetadata().GetDeleteTime(), written.Task.GetMetadata().GetDeleteTime()) {
-			if err := a.store.SetTaskDeleteTime(ctx, key.Atespace, key.Name, written.Task.GetMetadata().GetDeleteTime()); err != nil {
+			if err := a.store.SaveTask(ctx, proto.Clone(written.Task).(*v1alpha1.Task)); err != nil {
 				return nil, err
 			}
 		}

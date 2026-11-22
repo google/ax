@@ -19,7 +19,6 @@ import (
 	"errors"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -34,7 +33,6 @@ type Store interface {
 	GetTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error)
 	ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error)
 	UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error
-	SetTaskDeleteTime(ctx context.Context, atespace, name string, deleteTime *timestamppb.Timestamp) error
 	DeleteTask(ctx context.Context, atespace, name string) error
 
 	SaveWorkspace(ctx context.Context, ws *v1alpha1.Workspace) error
