@@ -37,6 +37,7 @@ type fakeRunner struct {
 	pushes    atomic.Int32
 	polls     atomic.Int32
 	body      atomic.Value
+	target    atomic.Value // ate-target-actor header of the setup push
 }
 
 func (f *fakeRunner) start(t *testing.T) string {
@@ -46,6 +47,7 @@ func (f *fakeRunner) start(t *testing.T) string {
 		f.pushes.Add(1)
 		b, _ := io.ReadAll(r.Body)
 		f.body.Store(string(b))
+		f.target.Store(r.Header.Get("ate-target-actor"))
 		if f.pushCode != 0 {
 			http.Error(w, "busy with other work", f.pushCode)
 			return
@@ -86,13 +88,12 @@ func setupWorkspace() *v1alpha1.Workspace {
 }
 
 func TestHTTPSetupRunner_PushesAndWaits(t *testing.T) {
-	t.Setenv("ATENET_ROUTER_ADDR", "")
 	f := &fakeRunner{busyPolls: 2}
-	addr := f.start(t)
+	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", addr, setupWorkspace()); err != nil {
+	if err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace()); err != nil {
 		t.Fatalf("RunSetup: %v", err)
 	}
 	if got := f.pushes.Load(); got != 1 {
@@ -104,29 +105,30 @@ func TestHTTPSetupRunner_PushesAndWaits(t *testing.T) {
 	if body, _ := f.body.Load().(string); !strings.Contains(body, "name: repo") {
 		t.Errorf("pushed body %q does not carry the Workspace", body)
 	}
+	if got, _ := f.target.Load().(string); got != "default/setup-1" {
+		t.Errorf("ate-target-actor = %q, want default/setup-1", got)
+	}
 }
 
 func TestHTTPSetupRunner_SetupFailed(t *testing.T) {
-	t.Setenv("ATENET_ROUTER_ADDR", "")
 	f := &fakeRunner{result: http.StatusInternalServerError, reason: "git clone failed"}
-	addr := f.start(t)
+	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", addr, setupWorkspace())
+	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace())
 	if err == nil || !strings.Contains(err.Error(), "git clone failed") {
 		t.Fatalf("RunSetup error = %v, want the runner's reason", err)
 	}
 }
 
 func TestHTTPSetupRunner_RejectedPushIsNotRetried(t *testing.T) {
-	t.Setenv("ATENET_ROUTER_ADDR", "")
 	f := &fakeRunner{pushCode: http.StatusConflict}
-	addr := f.start(t)
+	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", addr, setupWorkspace())
+	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace())
 	if err == nil || !strings.Contains(err.Error(), "409") {
 		t.Fatalf("RunSetup error = %v, want the 409 rejection", err)
 	}
@@ -138,47 +140,14 @@ func TestHTTPSetupRunner_RejectedPushIsNotRetried(t *testing.T) {
 	}
 }
 
-func TestHTTPSetupRunner_NoAddress(t *testing.T) {
+func TestHTTPSetupRunner_NoRouter(t *testing.T) {
 	t.Setenv("ATENET_ROUTER_ADDR", "")
 	start := time.Now()
-	err := newTestSetupRunner().RunSetup(context.Background(), "default", "setup-1", "", setupWorkspace())
-	if err == nil || !strings.Contains(err.Error(), "no address") {
-		t.Fatalf("RunSetup error = %v, want no address", err)
+	err := newTestSetupRunner().RunSetup(context.Background(), "default", "setup-1", setupWorkspace())
+	if err == nil || !strings.Contains(err.Error(), "ATENET_ROUTER_ADDR is not set") {
+		t.Fatalf("RunSetup error = %v, want ATENET_ROUTER_ADDR is not set", err)
 	}
 	if time.Since(start) > time.Second {
-		t.Errorf("RunSetup took %v; an actor without an address must fail at once", time.Since(start))
-	}
-}
-
-func TestHTTPSetupRunner_FallsBackToRouter(t *testing.T) {
-	var target atomic.Value
-	f := &fakeRunner{}
-	routerAddr := f.start(t)
-	// Wrap the fake runner to record the routing header.
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		target.Store(r.Header.Get("ate-target-actor"))
-		proxy, _ := http.NewRequestWithContext(r.Context(), r.Method, "http://"+routerAddr+r.URL.RequestURI(), r.Body)
-		resp, err := http.DefaultClient.Do(proxy)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
-	})
-	router := httptest.NewServer(mux)
-	defer router.Close()
-	t.Setenv("ATENET_ROUTER_ADDR", router.URL)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// 127.0.0.1:1 refuses connections, so the request goes through the router.
-	if err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", "127.0.0.1:1", setupWorkspace()); err != nil {
-		t.Fatalf("RunSetup: %v", err)
-	}
-	if got, _ := target.Load().(string); got != "default/setup-1" {
-		t.Errorf("ate-target-actor = %q, want default/setup-1", got)
+		t.Errorf("RunSetup took %v; without a router address it must fail at once", time.Since(start))
 	}
 }

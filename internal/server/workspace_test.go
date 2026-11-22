@@ -40,7 +40,7 @@ type testSetupRunner struct {
 	fn    func(ctx context.Context, atespace, setupActor string) error
 }
 
-func (c *testSetupRunner) RunSetup(ctx context.Context, atespace, setupActor, _ string, _ *v1alpha1.Workspace) error {
+func (c *testSetupRunner) RunSetup(ctx context.Context, atespace, setupActor string, _ *v1alpha1.Workspace) error {
 	c.calls.Add(1)
 	if c.fn != nil {
 		return c.fn(ctx, atespace, setupActor)
