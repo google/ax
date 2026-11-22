@@ -42,7 +42,7 @@ const testImage = "ghcr.io/org/workspace@sha256:111"
 
 func testProfile() *v1alpha1.Profile { return &v1alpha1.Profile{Image: testImage} }
 
-func (f *fakeSetupRunner) RunSetup(ctx context.Context, atespace, setupActor, _ string, _ *v1alpha1.Workspace) error {
+func (f *fakeSetupRunner) RunSetup(ctx context.Context, atespace, setupActor string, _ *v1alpha1.Workspace) error {
 	f.calls.Add(1)
 	if f.fn != nil {
 		return f.fn(ctx, atespace, setupActor)

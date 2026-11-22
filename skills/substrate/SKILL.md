@@ -107,10 +107,9 @@ instead. No mocking library is in `go.mod`.
   manifests get the image from `{{taskImage}}` (`$AX_E2E_TASK_IMAGE`, written
   to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
-  stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
-  the task push and the readiness check that follows it
-  (`internal/controller/reconciler.go`), and `ax ssh` connects through
-  `atenet-router`.
+  stores a worker IP: the reconciler uses the IP `ResumeActor` returns only in
+  conditions and logs (`internal/controller/reconciler.go`), and both
+  ax-server and `ax ssh` reach the actor through `atenet-router`.
 - Egress: an actor without an egress policy has no outbound access. For a
   task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
   asks Substrate whether the actor has a policy. If it has none, `bindGateway`
@@ -129,8 +128,8 @@ instead. No mocking library is in `go.mod`.
   to `v1alpha1.RunnerTaskPath`, or a Workspace to a setup actor at
   `v1alpha1.RunnerSetupPath`, on port 80, then polls
   `/readyz?check=workspace` (`internal/controller/actorhttp.go`), for a task
-  on every resume. It dials the worker IP `ResumeActor` returned and falls
-  back to `atenet-router` with the `ate-target-actor` header. The runner never
+  on every resume. The requests go through `atenet-router`, the only way into
+  an actor (`ATENET_ROUTER_ADDR`, `ate-target-actor` header). The runner never
   calls ax-server. `Resume` fails with a transient error when the runner does
   not accept the push within `WorkspaceReadyTimeout`, and with
   `ActorResumeFailed` when the runner refuses the task or reports a failure

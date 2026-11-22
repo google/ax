@@ -108,15 +108,15 @@ func needsPrewarmSnapshot(spec *v1alpha1.WorkspaceSpec) bool {
 }
 
 // SetupRunner runs a Workspace's spec.setup inside a resumed temporary setup
-// actor and returns once the runner reports it finished. workerAddr is the
-// address ResumeActor returned. A setup failure inside the sandbox is an error.
+// actor and returns once the runner reports it finished. A setup failure
+// inside the sandbox is an error.
 type SetupRunner interface {
-	RunSetup(ctx context.Context, atespace, actor, workerAddr string, ws *v1alpha1.Workspace) error
+	RunSetup(ctx context.Context, atespace, actor string, ws *v1alpha1.Workspace) error
 }
 
 // HTTPSetupRunner is the SetupRunner ax-server uses: it pushes the Workspace to
-// the runner's v1alpha1.RunnerSetupPath on port 80, directly or through
-// atenet-router, and polls /readyz?check=workspace for the outcome.
+// the runner's v1alpha1.RunnerSetupPath on port 80 through atenet-router, and
+// polls /readyz?check=workspace for the outcome.
 type HTTPSetupRunner struct {
 	client *http.Client
 	// AcceptTimeout bounds how long the runner may take to boot and accept the
@@ -136,17 +136,17 @@ func NewHTTPSetupRunner() *HTTPSetupRunner {
 }
 
 // RunSetup implements SetupRunner.
-func (h *HTTPSetupRunner) RunSetup(ctx context.Context, atespace, actor, workerAddr string, ws *v1alpha1.Workspace) error {
+func (h *HTTPSetupRunner) RunSetup(ctx context.Context, atespace, actor string, ws *v1alpha1.Workspace) error {
 	body, err := yaml.Marshal(ws)
 	if err != nil {
 		return fmt.Errorf("encoding workspace: %w", err)
 	}
 	pushCtx, cancel := context.WithTimeout(ctx, h.AcceptTimeout)
 	defer cancel()
-	if err := pushToRunner(pushCtx, h.client, atespace, actor, workerAddr, v1alpha1.RunnerSetupPath, body, h.PollInterval); err != nil {
+	if err := pushToRunner(pushCtx, h.client, atespace, actor, v1alpha1.RunnerSetupPath, body, h.PollInterval); err != nil {
 		return err
 	}
-	return waitWorkspaceReady(ctx, h.client, atespace, actor, workerAddr, h.PollInterval)
+	return waitWorkspaceReady(ctx, h.client, atespace, actor, h.PollInterval)
 }
 
 // WorkspaceStore reads the stored Workspace record under a shared Workspace
@@ -476,11 +476,10 @@ func (m *WorkspaceManager) buildSnapshotWithSetupActor(ctx context.Context, ws *
 		}
 	}
 
-	_, workerAddr, err := m.client.ResumeActor(ctx, atespace, actorName)
-	if err != nil {
+	if _, _, err := m.client.ResumeActor(ctx, atespace, actorName); err != nil {
 		return &stageError{reason: v1alpha1.ReasonActorResumeFailed, underlyingErr: err}
 	}
-	if err := m.setup.RunSetup(ctx, atespace, actorName, workerAddr, ws); err != nil {
+	if err := m.setup.RunSetup(ctx, atespace, actorName, ws); err != nil {
 		return &stageError{reason: v1alpha1.WorkspaceReasonSetupFailed, underlyingErr: fmt.Errorf("running workspace setup: %w", err)}
 	}
 

@@ -60,7 +60,6 @@ type Server struct {
 	actors           map[string]*ateapipb.Actor         // by atespace/name
 	egressPolicies   map[string]*ateapipb.EgressPolicy  // by the actor's atespace/name
 	tags             map[string]*ateapipb.Tag           // by atespace/name
-	workerIP         string                             // empty: resumed actors get no worker
 	errs             Errors
 	onDeleteActor    func()
 	deleteActorCalls int
@@ -97,15 +96,6 @@ func NewServer(tb testing.TB) *Server {
 // Client returns a client connected to s.
 func (s *Server) Client() *substrate.Client {
 	return s.client
-}
-
-// SetWorkerIP sets the IP of the worker ResumeActor places actors on. Until it
-// is called, resumed actors have no worker, so a TaskReconciler sends no
-// workspace readiness probe; point it at a local httptest.Server to test one.
-func (s *Server) SetWorkerIP(ip string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.workerIP = ip
 }
 
 // SetErrors replaces the errors calls fail with.
@@ -345,9 +335,6 @@ func (s *Server) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest
 		return nil, err
 	}
 	actor.Status = &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_RUNNING}
-	if s.workerIP != "" {
-		actor.Status.WorkerAssignment = &ateapipb.WorkerAssignment{WorkerPod: "worker-pod-1", WorkerPodIps: []string{s.workerIP}}
-	}
 	return &ateapipb.ResumeActorResponse{Actor: proto.Clone(actor).(*ateapipb.Actor), Resumed: true}, nil
 }
 

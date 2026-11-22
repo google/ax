@@ -57,9 +57,6 @@ var readyRunnerAddr = sync.OnceValue(func() string {
 
 type mockControlServer struct {
 	ateapipb.UnimplementedControlServer
-	// workerIP is where ResumeActor places actors. Empty means
-	// readyRunnerAddr.
-	workerIP         string
 	createdAtespaces []string
 	createdActors    []string
 	resumedActors    []string
@@ -171,10 +168,6 @@ func (m *mockControlServer) ResumeActor(ctx context.Context, req *ateapipb.Resum
 		name = req.Actor.Name
 	}
 	m.resumedActors = append(m.resumedActors, name)
-	wIP := m.workerIP
-	if wIP == "" {
-		wIP = readyRunnerAddr()
-	}
 	return &ateapipb.ResumeActorResponse{
 		Actor: &ateapipb.Actor{
 			Metadata: &ateapipb.ResourceMetadata{Name: name},
@@ -182,7 +175,7 @@ func (m *mockControlServer) ResumeActor(ctx context.Context, req *ateapipb.Resum
 				State: ateapipb.ActorState_ACTOR_STATE_RUNNING,
 				WorkerAssignment: &ateapipb.WorkerAssignment{
 					WorkerPod:    "worker-pod-1",
-					WorkerPodIps: []string{wIP},
+					WorkerPodIps: []string{"10.244.1.42"},
 				},
 			},
 		},
@@ -263,6 +256,7 @@ func (m *mockControlServer) DeleteActorTemplate(ctx context.Context, req *ateapi
 
 func TestTaskReconciler(t *testing.T) {
 	ctx := context.Background()
+	t.Setenv("ATENET_ROUTER_ADDR", readyRunnerAddr())
 
 	// 1. Start in-process mock gRPC Substrate server
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -765,10 +759,9 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	})
 	runnerSrv := httptest.NewServer(httpMux)
 	defer runnerSrv.Close()
-	runnerAddr := strings.TrimPrefix(runnerSrv.URL, "http://")
-	t.Setenv("ATENET_ROUTER_ADDR", "")
+	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
 
-	mockSrv := &mockControlServer{workerIP: runnerAddr}
+	mockSrv := &mockControlServer{}
 	grpcServer := grpc.NewServer()
 	ateapipb.RegisterControlServer(grpcServer, mockSrv)
 	go grpcServer.Serve(lis)
@@ -816,14 +809,14 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 
 	// Case 4: The runner cannot be reached, so the task is never pushed -> the
 	// resume fails with a transient error and WorkspaceReady is left alone.
-	mockSrv.workerIP = "127.0.0.1:1"
+	t.Setenv("ATENET_ROUTER_ADDR", "127.0.0.1:1")
 	err = reconciler.Resume(ctx, task, nil, nil)
 	if err == nil || !substrate.IsTransientError(err) {
 		t.Fatalf("Resume with an unreachable runner = %v, want a transient error", err)
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
-	mockSrv.workerIP = runnerAddr
+	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
 	if got := len(mockSrv.actorTemplates); got != 1 {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
@@ -852,7 +845,6 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 // resume.
 func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("ATENET_ROUTER_ADDR", "")
 
 	var pushCode, checkCode atomic.Int32
 	var pushed atomic.Value
@@ -867,13 +859,14 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	})
 	runnerSrv := httptest.NewServer(httpMux)
 	defer runnerSrv.Close()
+	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}
 	defer lis.Close()
-	mockSrv := &mockControlServer{workerIP: strings.TrimPrefix(runnerSrv.URL, "http://")}
+	mockSrv := &mockControlServer{}
 	grpcServer := grpc.NewServer()
 	ateapipb.RegisterControlServer(grpcServer, mockSrv)
 	go grpcServer.Serve(lis)
@@ -992,8 +985,6 @@ func startPushRunner(t *testing.T) string {
 // resume as if it were running. These cases resume against the real runner, so
 // they also cover what it reports for such a task.
 func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
-	t.Setenv("ATENET_ROUTER_ADDR", "")
-
 	// resume resumes a task with the given command on a fresh runner. A
 	// prewarmed task starts from a workspace snapshot, so its workspace is
 	// ready before its first resume.
@@ -1003,8 +994,9 @@ func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
+		t.Setenv("ATENET_ROUTER_ADDR", startPushRunner(t))
 		grpcServer := grpc.NewServer()
-		ateapipb.RegisterControlServer(grpcServer, &mockControlServer{workerIP: startPushRunner(t)})
+		ateapipb.RegisterControlServer(grpcServer, &mockControlServer{})
 		go grpcServer.Serve(lis)
 		t.Cleanup(grpcServer.Stop)
 		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))

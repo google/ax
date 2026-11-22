@@ -346,12 +346,12 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 	var notReadyMsg string
 	body, err := taskPushBody(task, ws)
 	if err == nil {
-		err = pushToRunner(pollCtx, r.httpClient, atespace, actorName, workerIP, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
+		err = pushToRunner(pollCtx, r.httpClient, atespace, actorName, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
 	}
 	switch {
-	case errors.Is(err, errNoAddress):
+	case errors.Is(err, errNoRouter):
 		slog.Warn("cannot push the task to the runner", "actor", actorName, "error", err)
-		notReadyMsg = "Waiting for the actor to get an address"
+		notReadyMsg = err.Error()
 	case err != nil && pollCtx.Err() == nil:
 		// The runner refused the task, so it never runs it.
 		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
@@ -364,7 +364,7 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 		r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
 		return err
 	default:
-		err = waitWorkspaceReady(pollCtx, r.httpClient, atespace, actorName, workerIP, workspaceReadyPollInterval)
+		err = waitWorkspaceReady(pollCtx, r.httpClient, atespace, actorName, workspaceReadyPollInterval)
 		switch {
 		case err == nil:
 			workspaceReady = true

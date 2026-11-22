@@ -1104,16 +1104,15 @@ func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 }
 
 func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
-	// The actor's worker reports its workspace as ready, so the running task is Ready.
+	// The task's runner reports its workspace as ready, so the running task is Ready.
 	readySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer readySrv.Close()
+	t.Setenv("ATENET_ROUTER_ADDR", readySrv.URL)
 
 	st := memory.NewStore()
-	workerIP := readySrv.Listener.Addr().String()
 	sub := substratetest.NewServer(t)
-	sub.SetWorkerIP(workerIP)
 	rec := newTestReconciler(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
