@@ -16,7 +16,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -37,15 +36,9 @@ func (k TaskKey) Normalized() TaskKey {
 	return k
 }
 
-// TaskRow holds the persisted Task resource together with the row revision and
-// pull-based runner control columns stored alongside it in the tasks table.
-//
-// Note on sequence counters:
-//   - RunSeq is a task-lifetime monotonic ID allocator ("r-1", "r-2", ...) that
-//     NEVER resets across retries or cold restores.
-//   - LastAckedRunnerSeq tracks the runner's per-execution event counter and
-//     RESETS to 0 whenever a new command run starts.
-type TaskRow struct {
+// TaskVersion holds the persisted Task resource together with the row revision
+// stored alongside it in the tasks table.
+type TaskVersion struct {
 	// Task is the persisted AX Task resource. Stored via [StoredStatus] so
 	// status.state persists only AX-owned states (QUEUED, COMPLETED, FAILED,
 	// CANCELLED), while live actor states (WORKING, SUSPENDED, SUSPENDING) and
@@ -56,54 +49,10 @@ type TaskRow struct {
 	// Generation is the monotonic row revision (+1 per committed Apply write;
 	// never resets), mirrored onto Task.Status.Generation.
 	Generation int64
-
-	// ActorUID is the Substrate Actor.metadata.uid recorded when the task's
-	// actor is created, binding runner requests (via the Actor JWT actorUID
-	// claim) to the expected actor incarnation.
-	ActorUID string
-
-	// Runnable records whether ax-server currently authorizes ax-runner to
-	// execute the task's command (false when newly created suspended, after
-	// SuspendTask, or once terminal; true after ResumeTask). This allows
-	// ClaimAssignment to return ASSIGNMENT_MODE_IDLE when a paused actor is
-	// woken externally (e.g. via ax ssh) while keeping Task.Status.State
-	// live-derived from Substrate.
-	Runnable bool
-
-	// ActiveRunID is the server-issued run ID ("r-1", "r-2", ...) currently
-	// executing on ax-runner. Empty before the first run claim and once
-	// terminal. Used to fence sequenced runner events.
-	ActiveRunID string
-
-	// RunSeq is the task-lifetime monotonic counter incremented by NextRunID to
-	// mint unique ActiveRunID values ("r-1", "r-2", ...). Never resets.
-	RunSeq int64
-
-	// RunnerTokenHash is the SHA-256 digest of the per-actor runner token
-	// minted on initial assignment claim (stored outside Task protojson so it is
-	// never exposed by GetTask or ListTasks).
-	RunnerTokenHash []byte
-
-	// RunnerTokenConfirmed becomes true once the runner proves possession of
-	// the minted token on a subsequent claim or sequenced event. While false,
-	// retrying the initial claim with the matching ClaimNonce may re-mint the
-	// token after a lost HTTP response.
-	RunnerTokenConfirmed bool
-
-	// ClaimNonce records the per-wakeup nonce from the initial token-minting
-	// claim while RunnerTokenConfirmed is false, making lost-response claim
-	// retries idempotent. Cleared once RunnerTokenConfirmed becomes true.
-	ClaimNonce string
-
-	// LastAckedRunnerSeq is the highest 1-based runner event sequence number
-	// applied in the current ActiveRunID execution. Events at or below
-	// LastAckedRunnerSeq are ignored as duplicates. Resets to 0 whenever a new
-	// run assignment is issued; preserved across resume and idle assignments.
-	LastAckedRunnerSeq int64
 }
 
 // Clone returns a deep copy of r safe to mutate inside an ApplyFunc.
-func (r *TaskRow) Clone() *TaskRow {
+func (r *TaskVersion) Clone() *TaskVersion {
 	if r == nil {
 		return nil
 	}
@@ -111,22 +60,7 @@ func (r *TaskRow) Clone() *TaskRow {
 	if r.Task != nil {
 		out.Task = proto.Clone(r.Task).(*v1alpha1.Task)
 	}
-	if len(r.RunnerTokenHash) > 0 {
-		out.RunnerTokenHash = append([]byte(nil), r.RunnerTokenHash...)
-	} else {
-		out.RunnerTokenHash = nil
-	}
 	return &out
-}
-
-// NextRunID increments RunSeq and returns a monotonic run ID ("r-1", ...).
-// It returns "" if r is nil.
-func (r *TaskRow) NextRunID() string {
-	if r == nil {
-		return ""
-	}
-	r.RunSeq++
-	return fmt.Sprintf("r-%d", r.RunSeq)
 }
 
 // StoredStatus returns the part of a task's status that AX owns and stores. The
@@ -155,23 +89,23 @@ func StoredStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	return out
 }
 
-// DeleteTaskRow is a sentinel value that an [ApplyFunc] returns to delete a
+// DeleteTaskVersion is a sentinel value that an [ApplyFunc] returns to delete a
 // task row.
 //
 // Because row deletion is irreversible, Apply never infers it from nil.
-// Returning nil leaves the row unchanged, whereas returning DeleteTaskRow
+// Returning nil leaves the row unchanged, whereas returning DeleteTaskVersion
 // deletes the row. This prevents an early no-op return (return nil, nil) from
 // accidentally destroying a task.
 //
 // Apply recognizes the sentinel by pointer identity, so callers must return
 // the variable itself:
 //
-//	return store.DeleteTaskRow, nil
+//	return store.DeleteTaskVersion, nil
 //
-// Passing a copy or clone instead of DeleteTaskRow itself will not match the
-// sentinel; Apply will treat it as an ordinary TaskRow, reject its nil Task
+// Passing a copy or clone instead of DeleteTaskVersion itself will not match the
+// sentinel; Apply will treat it as an ordinary TaskVersion, reject its nil Task
 // field, and return an error without modifying storage.
-var DeleteTaskRow = &TaskRow{}
+var DeleteTaskVersion = &TaskVersion{}
 
 // ApplyFunc computes an atomic state transition for a single task row.
 //
@@ -185,7 +119,7 @@ var DeleteTaskRow = &TaskRow{}
 //	-------------------   --------------------------   --------------------------
 //	nil                   no change                    no change
 //	current (as passed)   (not possible)               no change
-//	DeleteTaskRow         no change                    row is deleted
+//	DeleteTaskVersion         no change                    row is deleted
 //	any other row         inserted at Generation 1     updated at Generation + 1
 //
 // If ApplyFunc returns a non-nil error, Apply aborts the write and returns that
@@ -196,7 +130,7 @@ var DeleteTaskRow = &TaskRow{}
 //   - Treat current as read-only. To modify the row, call
 //     next := current.Clone(), edit next, and return next. Returning current
 //     itself always leaves storage unchanged, even if current was mutated in place.
-//   - To delete the row, return [DeleteTaskRow]. Returning nil never deletes.
+//   - To delete the row, return [DeleteTaskVersion]. Returning nil never deletes.
 //   - Any non-sentinel row returned for writing must have a non-nil Task field;
 //     otherwise Apply returns an error without modifying storage.
 //   - Do not perform network I/O, as the row lock is held until ApplyFunc returns.
@@ -213,15 +147,15 @@ var DeleteTaskRow = &TaskRow{}
 //     mirrors Generation onto Task.Status.Generation;
 //   - preserves the task's saved_at position in ListTasks on updates (unlike
 //     SaveTask, which moves updated tasks to the front).
-type ApplyFunc func(current *TaskRow, now time.Time) (*TaskRow, error)
+type ApplyFunc func(current *TaskVersion, now time.Time) (*TaskVersion, error)
 
-// TaskApplier is the transactional write interface for task rows shared by
-// ax-server's gRPC (:8080) and pull-based runner (:8081) handlers.
+// TaskApplier is the transactional write interface for task rows used by
+// ax-server's gRPC handlers.
 //
 // Perform any external reads or Agent Substrate RPCs outside Apply, and run
 // only pure in-memory transitions inside ApplyFunc:
 //
-//	written, err := applier.Apply(ctx, key, func(current *store.TaskRow, now time.Time) (*store.TaskRow, error) {
+//	written, err := applier.Apply(ctx, key, func(current *store.TaskVersion, now time.Time) (*store.TaskVersion, error) {
 //		if current == nil {
 //			return nil, store.ErrNotFound
 //		}
@@ -239,12 +173,12 @@ type TaskApplier interface {
 	//   - when fn leaves an existing row unchanged, it returns the stored row
 	//     without any in-place edits fn may have made to current;
 	//   - when no row exists after commit (either because fn returned
-	//     [DeleteTaskRow] or because the row was missing and fn returned nil),
+	//     [DeleteTaskVersion] or because the row was missing and fn returned nil),
 	//     it returns (nil, nil);
 	//   - when fn returns a non-nil error, it leaves storage unchanged and
 	//     returns (nil, err).
-	Apply(ctx context.Context, key TaskKey, fn ApplyFunc) (*TaskRow, error)
-	// GetTaskRow returns the row for key without locking it, or [ErrNotFound]
+	Apply(ctx context.Context, key TaskKey, fn ApplyFunc) (*TaskVersion, error)
+	// GetTaskVersion returns the row for key without locking it, or [ErrNotFound]
 	// if no such task exists.
-	GetTaskRow(ctx context.Context, key TaskKey) (*TaskRow, error)
+	GetTaskVersion(ctx context.Context, key TaskKey) (*TaskVersion, error)
 }

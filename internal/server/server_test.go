@@ -624,8 +624,8 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 				t.Fatalf("stored task: %v", getErr)
 			}
 			policy, _ := sub.EgressPolicy(atespace, "task")
-			if rules := policy.GetRules(); len(rules) != 2 || rules[1].GetHttps().GetEffects().GetReplaceHeaders()[0].GetCredentialUri() != credentialURI {
-				t.Errorf("actor's rules = %v, want runner egress + the gateway's", rules)
+			if rules := policy.GetRules(); len(rules) != 1 || rules[0].GetHttps().GetEffects().GetReplaceHeaders()[0].GetCredentialUri() != credentialURI {
+				t.Errorf("actor's rules = %v, want the gateway's", rules)
 			}
 			// The credential URI must not be passed into the sandbox.
 			ref := actor.GetActorTemplate()
@@ -664,10 +664,10 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	hostname := func() string {
 		t.Helper()
 		policy, ok := sub.EgressPolicy("default", "task")
-		if !ok || len(policy.GetRules()) < 2 {
+		if !ok {
 			return ""
 		}
-		return policy.GetRules()[1].GetHttps().GetHostnames()[0]
+		return policy.GetRules()[0].GetHttps().GetHostnames()[0]
 	}
 	suspend := &v1alpha1.SuspendTaskRequest{Name: "task"}
 	resume := &v1alpha1.ResumeTaskRequest{Name: "task"}
@@ -831,8 +831,8 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 			if err := tc.next(ctx, srv); err != nil {
 				t.Fatalf("%s: %v", tc.name, err)
 			}
-			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 2 {
-				t.Errorf("actor's rules after %s = %v, want runner egress + the gateway's", tc.name, policy.GetRules())
+			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 1 {
+				t.Errorf("actor's rules after %s = %v, want the gateway's", tc.name, policy.GetRules())
 			}
 		})
 	}
@@ -1787,228 +1787,4 @@ func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
 	if uid := got.GetStatus().GetActorUid(); uid != "" {
 		t.Errorf("UID after actor deletion = %q, want empty", uid)
 	}
-}
-
-func TestServer_LifecycleSuspendResume(t *testing.T) {
-	st := memory.NewStore()
-	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
-	applier := server.TaskApplierForStore(st)
-	srv := server.NewServer(st, rec, server.Options{TaskApplier: applier})
-
-	t.Run("create_records_actor_uid_and_suspend_clears_active_run_on_rootfs", func(t *testing.T) {
-		ctx := t.Context()
-		created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "rootfs-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		}})
-		if err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		key := store.TaskKey{Atespace: "default", Name: "rootfs-task"}
-		row, err := applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow: %v", err)
-		}
-		if row.ActorUID == "" || row.ActorUID != created.GetStatus().GetActorUid() {
-			t.Errorf("row.ActorUID = %q, want %q", row.ActorUID, created.GetStatus().GetActorUid())
-		}
-		if row.Runnable {
-			t.Error("row.Runnable = true after CreateTask, want false")
-		}
-
-		// ResumeTask sets Runnable=true before resuming the actor.
-		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); err != nil {
-			t.Fatalf("ResumeTask: %v", err)
-		}
-		// Simulate an active run and confirmed runner token.
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.ActiveRunID = "r-1"
-			next.RunnerTokenHash = []byte("hash")
-			next.RunnerTokenConfirmed = true
-			next.ClaimNonce = "nonce-1"
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply active run: %v", err)
-		}
-
-		// If SuspendActor fails while the actor is still running, Runnable and ActiveRunID roll back.
-		sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Unavailable, "busy")})
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.Unavailable {
-			t.Fatalf("SuspendTask error = %v, want Unavailable", err)
-		}
-		row, err = applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow after failed suspend: %v", err)
-		}
-		if !row.Runnable || row.ActiveRunID != "r-1" || !row.RunnerTokenConfirmed {
-			t.Errorf("after failed suspend: Runnable=%v ActiveRunID=%q Confirmed=%v, want true / r-1 / true", row.Runnable, row.ActiveRunID, row.RunnerTokenConfirmed)
-		}
-
-		// Successful SuspendTask clears Runnable, ActiveRunID, and token state on ROOTFS (ax-*) templates.
-		sub.SetErrors(substratetest.Errors{})
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); err != nil {
-			t.Fatalf("SuspendTask: %v", err)
-		}
-		row, err = applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow after suspend: %v", err)
-		}
-		if row.Runnable || row.ActiveRunID != "" || row.RunnerTokenHash != nil || row.RunnerTokenConfirmed || row.ClaimNonce != "" {
-			t.Errorf("after suspend: got %+v, want Runnable=false, ActiveRunID='', and cleared token state", row)
-		}
-
-		// Simulate a prior actor UID with confirmed runner token state; ResumeTask
-		// must reset token state when Substrate reports a different actor UID.
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.ActorUID = "old-actor-uid"
-			next.RunnerTokenHash = []byte("hash")
-			next.RunnerTokenConfirmed = true
-			next.ClaimNonce = "nonce-1"
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply old ActorUID: %v", err)
-		}
-		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); err != nil {
-			t.Fatalf("ResumeTask after actor UID change: %v", err)
-		}
-		row, err = applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow after recreate: %v", err)
-		}
-		if row.RunnerTokenHash != nil || row.RunnerTokenConfirmed || row.ClaimNonce != "" {
-			t.Errorf("token state not reset on actor UID change: %+v", row)
-		}
-
-		// Terminal tasks reject SuspendTask and ResumeTask with FailedPrecondition.
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply COMPLETED: %v", err)
-		}
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.FailedPrecondition {
-			t.Errorf("SuspendTask on COMPLETED = %v, want FailedPrecondition", err)
-		}
-		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "rootfs-task"}); status.Code(err) != codes.FailedPrecondition {
-			t.Errorf("ResumeTask on COMPLETED = %v, want FailedPrecondition", err)
-		}
-	})
-
-	t.Run("suspend_preserves_active_run_on_memory_fidelity_template", func(t *testing.T) {
-		ctx := t.Context()
-		if _, err := rec.Client().EnsureActorTemplate(ctx, &ateapipb.ActorTemplate{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "mem-tpl"},
-			SnapshotConfig: &ateapipb.SnapshotConfig{
-				PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
-			},
-		}); err != nil {
-			t.Fatalf("EnsureActorTemplate: %v", err)
-		}
-		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "mem-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "mem-tpl"}}},
-		}}); err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		key := store.TaskKey{Atespace: "default", Name: "mem-task"}
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.Runnable = true
-			next.ActiveRunID = "r-7"
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply active run: %v", err)
-		}
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "mem-task"}); err != nil {
-			t.Fatalf("SuspendTask: %v", err)
-		}
-		row, err := applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow: %v", err)
-		}
-		if row.Runnable || row.ActiveRunID != "r-7" {
-			t.Errorf("after MEMORY suspend: Runnable=%v ActiveRunID=%q, want false / r-7", row.Runnable, row.ActiveRunID)
-		}
-	})
-
-	t.Run("suspend_checks_memory_fidelity_on_ax_prefixed_user_template", func(t *testing.T) {
-		ctx := t.Context()
-		if _, err := rec.Client().EnsureActorTemplate(ctx, &ateapipb.ActorTemplate{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "ax-user-mem"},
-			SnapshotConfig: &ateapipb.SnapshotConfig{
-				PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
-			},
-		}); err != nil {
-			t.Fatalf("EnsureActorTemplate: %v", err)
-		}
-		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "ax-prefixed-mem-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "ax-user-mem"}}},
-		}}); err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		key := store.TaskKey{Atespace: "default", Name: "ax-prefixed-mem-task"}
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.Runnable = true
-			next.ActiveRunID = "r-8"
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply active run: %v", err)
-		}
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "ax-prefixed-mem-task"}); err != nil {
-			t.Fatalf("SuspendTask: %v", err)
-		}
-		row, err := applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow: %v", err)
-		}
-		if row.Runnable || row.ActiveRunID != "r-8" {
-			t.Errorf("after ax-prefixed MEMORY suspend: Runnable=%v ActiveRunID=%q, want false / r-8", row.Runnable, row.ActiveRunID)
-		}
-	})
-
-	t.Run("suspend_failure_preserves_active_run_and_token", func(t *testing.T) {
-		ctx := t.Context()
-		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "suspend-fail-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		}}); err != nil {
-			t.Fatalf("CreateTask: %v", err)
-		}
-		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "suspend-fail-task"}); err != nil {
-			t.Fatalf("ResumeTask: %v", err)
-		}
-		key := store.TaskKey{Atespace: "default", Name: "suspend-fail-task"}
-		if _, err := applier.Apply(ctx, key, func(current *store.TaskRow, _ time.Time) (*store.TaskRow, error) {
-			next := current.Clone()
-			next.ActiveRunID = "r-9"
-			next.RunnerTokenHash = []byte("hash-9")
-			next.RunnerTokenConfirmed = true
-			next.ClaimNonce = "nonce-9"
-			return next, nil
-		}); err != nil {
-			t.Fatalf("Apply active run: %v", err)
-		}
-
-		sub.SetErrors(substratetest.Errors{
-			SuspendActor: status.Error(codes.Unavailable, "transient suspend failure"),
-		})
-		defer sub.SetErrors(substratetest.Errors{})
-
-		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "suspend-fail-task"}); status.Code(err) != codes.Unavailable {
-			t.Fatalf("SuspendTask = %v, want Unavailable", err)
-		}
-		row, err := applier.GetTaskRow(ctx, key)
-		if err != nil {
-			t.Fatalf("GetTaskRow: %v", err)
-		}
-		if !row.Runnable || row.ActiveRunID != "r-9" || string(row.RunnerTokenHash) != "hash-9" || !row.RunnerTokenConfirmed || row.ClaimNonce != "nonce-9" {
-			t.Errorf("failed SuspendTask corrupted run/token state: %+v", row)
-		}
-	})
 }

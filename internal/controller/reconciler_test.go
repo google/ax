@@ -17,15 +17,23 @@ package controller_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/ax/internal/controller"
 	"github.com/google/ax/internal/substrate"
+	"github.com/google/ax/internal/workspace"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"github.com/google/ax/runner"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -34,8 +42,23 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// readyRunnerAddr is the address of a runner, shared by the tests, that
+// accepts every push and passes every readiness check.
+var readyRunnerAddr = sync.OnceValue(func() string {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	return strings.TrimPrefix(httptest.NewServer(mux).URL, "http://")
+})
+
 type mockControlServer struct {
 	ateapipb.UnimplementedControlServer
+	// workerIP is where ResumeActor places actors. Empty means
+	// readyRunnerAddr.
 	workerIP         string
 	createdAtespaces []string
 	createdActors    []string
@@ -148,9 +171,9 @@ func (m *mockControlServer) ResumeActor(ctx context.Context, req *ateapipb.Resum
 		name = req.Actor.Name
 	}
 	m.resumedActors = append(m.resumedActors, name)
-	wIP := "10.244.1.42"
-	if m.workerIP != "" {
-		wIP = m.workerIP
+	wIP := m.workerIP
+	if wIP == "" {
+		wIP = readyRunnerAddr()
 	}
 	return &ateapipb.ResumeActorResponse{
 		Actor: &ateapipb.Actor{
@@ -296,8 +319,8 @@ func TestTaskReconciler(t *testing.T) {
 	if got := task.GetStatus().GetAteTemplate(); !strings.HasPrefix(got.GetName(), "ax-") || got.GetAtespace() != "default" {
 		t.Errorf("AteTemplate = %v, want {Name: ax-*, Atespace: default}", got)
 	}
-	// The mock's worker does not answer the readiness check.
-	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
+	// The mock's runner accepts the task and reports it ready.
+	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
 	// Verify mock was called
 	if len(mockSrv.createdAtespaces) != 1 || mockSrv.createdAtespaces[0] != "default" {
@@ -517,8 +540,8 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
-	if n := mockSrv.egressPolicyCalls; n == 0 {
-		t.Fatalf("made 0 egress policy calls for a task that binds no gateway, want runner egress rule applied")
+	if n := mockSrv.egressPolicyCalls; n != 0 {
+		t.Fatalf("made %d egress policy calls for a task that binds no gateway, want none", n)
 	}
 
 	gw := &v1alpha1.Gateway{
@@ -532,26 +555,13 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
-	if n := len(mockSrv.createdEgressPolicies); n != 2 {
-		t.Fatalf("created %d egress policies for unbound+bound tasks, want 2", n)
+	if n := len(mockSrv.createdEgressPolicies); n != 1 {
+		t.Fatalf("created %d egress policies for a task that binds a gateway, want 1", n)
 	}
-	req := mockSrv.createdEgressPolicies[1]
+	req := mockSrv.createdEgressPolicies[0]
 	if actor, policy := req.GetActor(), req.GetEgressPolicy(); actor.GetAtespace() != "default" || actor.GetName() != "bound-task" ||
-		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 2 || policy.GetRules()[1].GetHttps().GetHostnames()[0] != "a.example.com" {
-		t.Errorf("egress policy request = %v, want runner egress + gateway rule for actor default/bound-task", req)
-	}
-
-	// A recreated task gets a new policy for the same actor name. Its extra
-	// audience differs from the old policy's.
-	mockSrv.createdEgressPolicies = nil
-	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil || len(mockSrv.createdEgressPolicies) != 1 {
-		t.Fatalf("Suspend created %d egress policies, want 1; error %v", len(mockSrv.createdEgressPolicies), err)
-	}
-	audiences := func(r *ateapipb.CreateActorEgressPolicyRequest) []string {
-		return r.GetEgressPolicy().GetRules()[0].GetHttp().GetEffects().GetReplaceHeaders()[0].GetActorJwt().GetAudiences()
-	}
-	if a, b := audiences(req), audiences(mockSrv.createdEgressPolicies[0]); len(a) != 2 || len(b) != 2 || a[1] == b[1] {
-		t.Errorf("runner rule audiences = %v, then %v; want a different extra audience in each policy", a, b)
+		policy.GetMetadata().GetName() != "default" || len(policy.GetRules()) != 1 || policy.GetRules()[0].GetHttps().GetHostnames()[0] != "a.example.com" {
+		t.Errorf("egress policy request = %v, want the gateway's rules as policy \"default\" of actor default/bound-task", req)
 	}
 }
 
@@ -738,30 +748,27 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	defer lis.Close()
 
-	// 2. Mock Worker readyz HTTP server
-	httpLis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to listen http: %v", err)
-	}
-	defer httpLis.Close()
-
+	// 2. A runner that accepts the task but is still setting up its workspace
+	// until workspaceDone is set.
+	var workspaceDone atomic.Bool
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if !workspaceDone.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	httpServer := &http.Server{Handler: httpMux}
-	go httpServer.Serve(httpLis)
-	defer httpServer.Close()
+	httpMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	runnerSrv := httptest.NewServer(httpMux)
+	defer runnerSrv.Close()
+	runnerAddr := strings.TrimPrefix(runnerSrv.URL, "http://")
+	t.Setenv("ATENET_ROUTER_ADDR", "")
 
-	workerHost, workerPortStr, _ := net.SplitHostPort(httpLis.Addr().String())
-	// In our mock, the worker IP returned by ResumeActor will have our mock ready server listening.
-	// But our reconciler connects to port 9999 by default: fmt.Sprintf("http://%s:9999/readyz", workerIP).
-	// If workerIP includes a port or is a host, let's verify how it handles it.
-	_ = workerHost
-	_ = workerPortStr
-
-	mockSrv := &mockControlServer{}
+	mockSrv := &mockControlServer{workerIP: runnerAddr}
 	grpcServer := grpc.NewServer()
 	ateapipb.RegisterControlServer(grpcServer, mockSrv)
 	go grpcServer.Serve(lis)
@@ -786,14 +793,15 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 		Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}},
 	}
 
-	// Case 1: Worker not responding on readyz -> WorkspaceReady=False.
+	// Case 1: The runner took the task but its workspace is not set up within
+	// the timeout -> the resume succeeds with WorkspaceReady=False.
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
 
 	// Case 2: Worker readyz endpoint succeeds -> WorkspaceReady=True.
-	mockSrv.workerIP = httpLis.Addr().String()
+	workspaceDone.Store(true)
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with ready worker failed: %v", err)
 	}
@@ -806,19 +814,22 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
-	// Case 4: Resuming with the worker unreachable -> the reconciler trusts the recorded
-	// WorkspaceReady instead of re-polling.
+	// Case 4: The runner cannot be reached, so the task is never pushed -> the
+	// resume fails with a transient error and WorkspaceReady is left alone.
 	mockSrv.workerIP = "127.0.0.1:1"
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
-		t.Fatalf("Resume after suspend failed: %v", err)
+	err = reconciler.Resume(ctx, task, nil, nil)
+	if err == nil || !substrate.IsTransientError(err) {
+		t.Fatalf("Resume with an unreachable runner = %v, want a transient error", err)
 	}
+	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
+	mockSrv.workerIP = runnerAddr
 	if got := len(mockSrv.actorTemplates); got != 1 {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
 
-	// A command-only change reuses the same profile template (commands are pulled
-	// per-run from ax-server), while an environment change creates a new one.
+	// A command-only change reuses the same profile template (the task is
+	// pushed to the runner on resume), while an image change creates a new one.
 	task.Spec.Commands = []string{"python3", "agent.py"}
 	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
@@ -833,6 +844,236 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	if got := len(mockSrv.actorTemplates); got != 2 {
 		t.Errorf("image change left %d templates, want 2", got)
 	}
+}
+
+// Resume reports what the runner does with the pushed task: a rejected push
+// fails the resume, a setup failure the runner reports marks the workspace
+// SetupFailed, and a failure it reports once the workspace is set up fails the
+// resume.
+func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("ATENET_ROUTER_ADDR", "")
+
+	var pushCode, checkCode atomic.Int32
+	var pushed atomic.Value
+	httpMux := http.NewServeMux()
+	httpMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		pushed.Store(string(b))
+		http.Error(w, "", int(pushCode.Load()))
+	})
+	httpMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "git clone failed", int(checkCode.Load()))
+	})
+	runnerSrv := httptest.NewServer(httpMux)
+	defer runnerSrv.Close()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+	mockSrv := &mockControlServer{workerIP: strings.TrimPrefix(runnerSrv.URL, "http://")}
+	grpcServer := grpc.NewServer()
+	ateapipb.RegisterControlServer(grpcServer, mockSrv)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to create substrate client: %v", err)
+	}
+	defer client.Close()
+	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	reconciler.WorkspaceReadyTimeout = 2 * time.Second
+
+	newTask := func(name string) *v1alpha1.Task {
+		return &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: "default", Uid: name + "-uid"},
+			Spec: &v1alpha1.TaskSpec{
+				Profile:   &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"},
+				Workspace: &v1alpha1.WorkspaceRef{Name: "repo"},
+				Commands:  []string{"python3", "agent.py"},
+			},
+		}
+	}
+	ws := &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "repo", Atespace: "default"}, Spec: &v1alpha1.WorkspaceSpec{}}
+
+	// The runner holds another task: Resume fails.
+	pushCode.Store(http.StatusConflict)
+	task := newTask("rejected")
+	if err := reconciler.Resume(ctx, task, ws, nil); err == nil {
+		t.Fatal("Resume succeeded although the runner rejected the task")
+	}
+	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
+	body, _ := pushed.Load().(string)
+	if !strings.Contains(body, "name: rejected") || !strings.Contains(body, "agent.py") || !strings.Contains(body, "---") || !strings.Contains(body, "name: repo") {
+		t.Errorf("pushed body %q lacks the task and its workspace", body)
+	}
+
+	// The runner accepts the task but setup fails.
+	pushCode.Store(http.StatusAccepted)
+	checkCode.Store(http.StatusInternalServerError)
+	task = newTask("setup-fails")
+	if err := reconciler.Resume(ctx, task, ws, nil); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.WorkspaceReasonSetupFailed)
+	if got := conditionMessage(task, "WorkspaceReady"); !strings.Contains(got, "git clone failed") {
+		t.Errorf("WorkspaceReady message = %q, want the runner's reason", got)
+	}
+
+	// The task starts, is suspended, and cannot be started on the next
+	// resume: the workspace is ready, so the resume fails.
+	checkCode.Store(http.StatusOK)
+	task = newTask("restart-fails")
+	if err := reconciler.Resume(ctx, task, ws, nil); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
+	checkCode.Store(http.StatusInternalServerError)
+	err = reconciler.Resume(ctx, task, ws, nil)
+	if err == nil || !strings.Contains(err.Error(), "git clone failed") {
+		t.Fatalf("Resume = %v, want the runner's reason for not starting the task", err)
+	}
+	if substrate.IsTransientError(err) {
+		t.Errorf("Resume error %v is transient; a task that cannot start does not start on a retry", err)
+	}
+	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
+	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
+}
+
+// startPushRunner runs the real runner, waiting for a push, with its state
+// under a temp dir, and returns the address of its probe port.
+func startPushRunner(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	origAXDir, origWSPath := workspace.AXDir, runner.DefaultWorkspacePath
+	workspace.AXDir, runner.DefaultWorkspacePath = filepath.Join(dir, "ax"), filepath.Join(dir, "workspace")
+	t.Cleanup(func() { workspace.AXDir, runner.DefaultWorkspacePath = origAXDir, origWSPath })
+
+	freePort := func() int {
+		lis, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("finding a free port: %v", err)
+		}
+		defer lis.Close()
+		return lis.Addr().(*net.TCPAddr).Port
+	}
+	port, noDrop := freePort(), false
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(ctx, runner.Config{
+			Port:           port,
+			MetadataPort:   freePort(),
+			RunDir:         filepath.Join(dir, "run"),
+			AwaitPush:      true,
+			DropPrivileges: &noDrop,
+		})
+	}()
+	// Registered after the cleanup above, so the runner has stopped before
+	// the directories it uses are restored.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("runner.Run: %v", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Error("runner did not stop")
+		}
+	})
+	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
+}
+
+// A task whose command cannot be started (a typo in spec.commands) must not
+// resume as if it were running. These cases resume against the real runner, so
+// they also cover what it reports for such a task.
+func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
+	t.Setenv("ATENET_ROUTER_ADDR", "")
+
+	// resume resumes a task with the given command on a fresh runner. A
+	// prewarmed task starts from a workspace snapshot, so its workspace is
+	// ready before its first resume.
+	resume := func(t *testing.T, commands []string, prewarmed bool) (*v1alpha1.Task, error) {
+		t.Helper()
+		lis, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+		grpcServer := grpc.NewServer()
+		ateapipb.RegisterControlServer(grpcServer, &mockControlServer{workerIP: startPushRunner(t)})
+		go grpcServer.Serve(lis)
+		t.Cleanup(grpcServer.Stop)
+		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("failed to create substrate client: %v", err)
+		}
+		t.Cleanup(func() { client.Close() })
+		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+		reconciler.WorkspaceReadyTimeout = 10 * time.Second
+
+		task := &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "task", Atespace: "default", Uid: "task-uid"},
+			Spec: &v1alpha1.TaskSpec{
+				Profile:  &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"},
+				Commands: commands,
+			},
+		}
+		if prewarmed {
+			task.Status = &v1alpha1.TaskStatus{Conditions: []*v1alpha1.Condition{
+				{Type: v1alpha1.ConditionWorkspaceReady, Status: "True", Reason: v1alpha1.ReasonSetupComplete},
+			}}
+		}
+		return task, reconciler.Resume(context.Background(), task, nil, nil)
+	}
+	typo := []string{"ax-no-such-command", "agent.py"}
+
+	t.Run("a command that starts resumes", func(t *testing.T) {
+		task, err := resume(t, []string{"sleep", "30"}, true)
+		if err != nil {
+			t.Fatalf("Resume failed: %v", err)
+		}
+		assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
+	})
+
+	t.Run("a typo fails the resume of a task whose workspace is ready", func(t *testing.T) {
+		task, err := resume(t, typo, true)
+		if err == nil {
+			t.Fatal("Resume succeeded although the task's command cannot be started")
+		}
+		if !strings.Contains(err.Error(), "ax-no-such-command") {
+			t.Errorf("Resume error = %v, want it to name the command", err)
+		}
+		// The workspace is ready, so the error must not blame its setup.
+		if strings.Contains(err.Error(), "workspace setup failed") {
+			t.Errorf("Resume error = %v, want no mention of workspace setup", err)
+		}
+		if substrate.IsTransientError(err) {
+			t.Errorf("Resume error %v is transient; the command does not start on a retry", err)
+		}
+		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
+		if got := conditionMessage(task, "Ready"); !strings.Contains(got, "ax-no-such-command") || strings.Contains(got, "workspace setup failed") {
+			t.Errorf("Ready message = %q, want it to name the command and not workspace setup", got)
+		}
+	})
+
+	// Before the workspace is known to be ready, the one check the runner
+	// serves cannot tell a failed setup from a command that did not start, so
+	// the resume returns and the task is reported as not ready, with the
+	// runner's reason.
+	t.Run("a typo on the first resume leaves the task not ready", func(t *testing.T) {
+		task, err := resume(t, typo, false)
+		if err != nil {
+			t.Fatalf("Resume failed: %v", err)
+		}
+		assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.WorkspaceReasonSetupFailed)
+		if got := conditionMessage(task, "WorkspaceReady"); !strings.Contains(got, "ax-no-such-command") {
+			t.Errorf("WorkspaceReady message = %q, want it to name the command", got)
+		}
+	})
 }
 
 func TestTaskReconciler_ResourceLimits(t *testing.T) {
@@ -1479,4 +1720,14 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	if got := mockSrv.createdTemplates[2].GetContainers()[0].GetImage(); got != taskImg {
 		t.Errorf("taskOverTplWs image = %q, want %q", got, taskImg)
 	}
+}
+
+// conditionMessage returns the message of the task's condition of type condType.
+func conditionMessage(task *v1alpha1.Task, condType string) string {
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == condType {
+			return c.GetMessage()
+		}
+	}
+	return ""
 }

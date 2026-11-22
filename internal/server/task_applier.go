@@ -34,17 +34,17 @@ func TaskApplierForStore(s store.Store) store.TaskApplier {
 	}
 	return &storeTaskApplier{
 		store: s,
-		rows:  make(map[store.TaskKey]*store.TaskRow),
+		rows:  make(map[store.TaskKey]*store.TaskVersion),
 	}
 }
 
 type storeTaskApplier struct {
 	store store.Store
 	mu    sync.Mutex
-	rows  map[store.TaskKey]*store.TaskRow
+	rows  map[store.TaskKey]*store.TaskVersion
 }
 
-func (a *storeTaskApplier) GetTaskRow(ctx context.Context, key store.TaskKey) (*store.TaskRow, error) {
+func (a *storeTaskApplier) GetTaskVersion(ctx context.Context, key store.TaskKey) (*store.TaskVersion, error) {
 	key = key.Normalized()
 	task, err := a.store.GetTask(ctx, key.Atespace, key.Name)
 	if err != nil {
@@ -59,13 +59,13 @@ func (a *storeTaskApplier) GetTaskRow(ctx context.Context, key store.TaskKey) (*
 		out.Task = proto.Clone(task).(*v1alpha1.Task)
 		return out, nil
 	}
-	return &store.TaskRow{
+	return &store.TaskVersion{
 		Task:       proto.Clone(task).(*v1alpha1.Task),
 		Generation: task.GetStatus().GetGeneration(),
 	}, nil
 }
 
-func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskRow, error) {
+func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskVersion, error) {
 	key = key.Normalized()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -75,7 +75,7 @@ func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn stor
 		return nil, err
 	}
 
-	var before *store.TaskRow
+	var before *store.TaskVersion
 	if current != nil {
 		before = current.Clone()
 	}
@@ -87,7 +87,7 @@ func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn stor
 	if next == nil || next == current {
 		return before, nil
 	}
-	if next == store.DeleteTaskRow {
+	if next == store.DeleteTaskVersion {
 		if current == nil {
 			return nil, nil
 		}
@@ -98,7 +98,7 @@ func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn stor
 		return nil, nil
 	}
 	if next.Task == nil {
-		return nil, fmt.Errorf("apply returned TaskRow with nil Task for %s/%s", key.Atespace, key.Name)
+		return nil, fmt.Errorf("apply returned TaskVersion with nil Task for %s/%s", key.Atespace, key.Name)
 	}
 
 	written := next.Clone()
@@ -134,7 +134,7 @@ func (a *storeTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn stor
 	return written, nil
 }
 
-func (a *storeTaskApplier) loadRowLocked(ctx context.Context, key store.TaskKey) (*store.TaskRow, error) {
+func (a *storeTaskApplier) loadRowLocked(ctx context.Context, key store.TaskKey) (*store.TaskVersion, error) {
 	task, err := a.store.GetTask(ctx, key.Atespace, key.Name)
 	if errors.Is(err, store.ErrNotFound) {
 		delete(a.rows, key)
@@ -149,7 +149,7 @@ func (a *storeTaskApplier) loadRowLocked(ctx context.Context, key store.TaskKey)
 		out.Task = proto.Clone(task).(*v1alpha1.Task)
 		return out, nil
 	}
-	return &store.TaskRow{
+	return &store.TaskVersion{
 		Task:       proto.Clone(task).(*v1alpha1.Task),
 		Generation: task.GetStatus().GetGeneration(),
 	}, nil

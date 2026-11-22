@@ -142,6 +142,8 @@ export AX_TASK_IMAGE="localhost:5001/ax-runner@$(cat bin/ax-runner.digest)"   # 
 ax local start --server-image "$AX_SERVER_IMAGE"
 ```
 
+From a checkout, `make build-local-cluster` ([`hack/build-local-cluster.sh`](../hack/build-local-cluster.sh)) does all of this in one step. It uses podman or docker (`CONTAINER_CLI`), builds the images for the architecture of your machine instead of `make images`' default `amd64`, starts the `kind-registry` container if it is not running, and prints the `AX_TASK_IMAGE` to use. Run it again after a change: on a running cluster it only rolls out the new `ax-server`. `make images` skips TLS verification when podman pushes to a registry on `localhost` or `127.0.0.1`, which serves plain HTTP.
+
 For each image reference on `localhost` or a loopback address, `ax local start` connects that container to the network of the cluster and makes the Kind node pull the image from it. `ax` does not choose the name `kind-registry` and the port `5000`: Agent Substrate's local profile pulls task images on `localhost` from `kind-registry:5000`, and `ax local start` reads that address from the profile, so that the images of pods come from the same registry. If the container is not running, `ax local start` stops before it creates the cluster and prints the command that starts it.
 
 ### Expected Behavior (~2–3 minutes on cold start)

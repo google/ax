@@ -14,16 +14,27 @@ The control plane does not run `spec.commands` as the container entrypoint. It a
 |---|---|
 | Container image | `spec.profile.image`, or the default `ax-runner` image when unset |
 | Container command | `/usr/local/bin/ax-runner`, always |
-| `AX_TASK_YAML` | The `Task` launch configuration as YAML, excluding status |
-| `AX_WORKSPACE_YAML` | The bound `Workspace` resource as YAML; unset when the task binds none |
 | `spec.env` entries | Each one set directly in the container environment |
 | Volume | A durable directory mounted at `/workspace` |
 | CA bundle | `/run/ate/egress-trust-bundle/trust-bundle.pem`: the CA certificates to trust for outbound TLS, including the egress gateway's |
 | Readiness probe | `GET /readyz` on port 80 |
 
-Two consequences follow from that table. Your image must contain an executable at `/usr/local/bin/ax-runner`, even if it is a symlink or a shell wrapper around something else. And `spec.commands` reaches the runner only through `AX_TASK_YAML`; the runner is responsible for parsing it and starting it.
+Your image must contain an executable at `/usr/local/bin/ax-runner`, even if it is a symlink or a shell wrapper around something else.
 
-**Runner-specific settings** belong in `spec.config`, a free-form object that AX passes through unchanged inside `AX_TASK_YAML` (and the task metadata endpoint). The runner owns its schema; the control plane only checks that it is an object of at most 16 KiB and that the whole encoded task fits in 31 KiB. Decode `AX_TASK_YAML` leniently (the Go package offers `v1alpha1.UnmarshalYAMLLenient`) so the runner keeps working when a newer control plane adds fields. See [Runner configuration](manifests.md#runner-configuration).
+## How the task reaches the runner
+
+Tasks that share a profile share one Agent Substrate template, so the container starts without knowing which task it runs. Once the actor is running, the AX server pushes the work to port 80:
+
+| Request | Body | Sent to |
+|---|---|---|
+| `POST /runner/v1alpha1/task` | The `Task` as YAML, excluding status, followed by the bound `Workspace` as a second YAML document when the task binds one | Task actors, on every resume |
+| `POST /runner/v1alpha1/setup` | The `Workspace` as YAML | Setup actors, which prepare a workspace snapshot once and are then suspended |
+
+Reply `202` when you accept the work, `200` when you already hold the same object (same atespace, name, and uid; the server repeats the push on every resume), `409` when you hold different work, and `400` when the body cannot be decoded. The server retries anything else until it times out, and then fails the resume with a transient error, because a task that was never pushed is not running; `ax resume` repeats the push. `spec.commands` reaches the runner only through this push; the runner is responsible for parsing it and starting it.
+
+The default runner also accepts the task as `AX_TASK_YAML` and `AX_WORKSPACE_YAML` environment variables, or with `--task-file` and `--workspace-file`, which is handy when you run it outside AX. It waits for a push only when it is given no task.
+
+**Runner-specific settings** belong in `spec.config`, a free-form object that AX passes through unchanged inside the pushed task (and the task metadata endpoint). The runner owns its schema; the control plane only checks that it is an object of at most 16 KiB and that the whole encoded task fits in 31 KiB. Decode the task leniently (the Go package offers `v1alpha1.UnmarshalYAMLLenient`) so the runner keeps working when a newer control plane adds fields. See [Runner configuration](manifests.md#runner-configuration).
 
 The `/workspace` volume is what survives suspend and resume. Agent Substrate snapshots it when a task is suspended and restores it into a fresh container when the task is resumed, so the runner will see the same files but a new process tree.
 
@@ -34,7 +45,8 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | Path | Behavior |
 |---|---|
 | `/healthz` | Return `200` as soon as the runner is alive. |
-| `/readyz` | Return `503` until the workspace is prepared, then `200`. AX polls this to set the task's `WorkspaceReady` condition, which `ax describe` shows. |
+| `/readyz` | Return `200` once the runner can take a push. Agent Substrate probes this. |
+| `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace and, for a task, started its command, `200` once it has, and `500` with the reason as the body when setup failed or the command could not be started. AX polls this on every resume to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. A `500` for a task whose workspace was already set up fails the resume. |
 
 **Serve metadata on loopback.** These endpoints are for your command, so serve them on a loopback address (the default runner uses `127.0.0.1:8099`) and pass that base URL as `AX_METADATA_URL`. Don't serve them on port 80.
 
@@ -102,28 +114,16 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/ax/runner"
-	"gopkg.in/yaml.v3"
 )
 
 func main() {
-	var task v1alpha1.Task
-	_ = yaml.Unmarshal([]byte(os.Getenv("AX_TASK_YAML")), &task)
-
-	// AX_WORKSPACE_YAML is unset when the task binds no workspace.
-	var ws *v1alpha1.Workspace
-	if raw := os.Getenv("AX_WORKSPACE_YAML"); raw != "" {
-		ws = &v1alpha1.Workspace{}
-		_ = yaml.Unmarshal([]byte(raw), ws)
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// AwaitPush serves port 80 and waits for the AX server to push the task.
 	err := runner.Run(ctx, runner.Config{
-		Task:      &task,
-		Workspace: ws,
+		AwaitPush: true,
 		OnCommandExit: func(exit runner.CommandExit) {
 			slog.Info("agent finished", "exitCode", exit.ExitCode)
 			// Upload artifacts, notify a webhook, and so on.
@@ -142,7 +142,7 @@ For a working example, see [`cmd/runners/claude-code-runner`](../cmd/runners/cla
 
 ### 3. Write a runner from scratch
 
-If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Read `AX_TASK_YAML` and `AX_WORKSPACE_YAML`, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.
+If the default lifecycle does not fit, for example because your agent framework already supervises processes or you want a different workspace layout, write your own in any language. Accept the pushes, satisfy the contract in the previous section, and install the result at `/usr/local/bin/ax-runner`. The `ax.io/v1alpha1` schema is defined in the `.proto` files in `pkg/apis/v1alpha1/`, and [Manifests](manifests.md) walks through every field.
 
 ### Ship it
 

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -32,8 +31,6 @@ import (
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"github.com/google/uuid"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -45,7 +42,8 @@ const (
 	// per-task ActorTemplate name.
 	templateDigestBytes = 4
 	// defaultWorkspaceReadyTimeout is how long Resume waits for a freshly
-	// resumed actor to finish workspace setup.
+	// resumed actor's runner to accept the task, finish workspace setup, and
+	// start the task.
 	defaultWorkspaceReadyTimeout = 15 * time.Second
 	workspaceReadyPollInterval   = 500 * time.Millisecond
 
@@ -69,8 +67,10 @@ type TaskReconciler struct {
 	defaultTemplate         string
 	defaultTemplateAtespace string
 
-	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's workspace
-	// to report ready before recording it as still initializing.
+	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's runner
+	// to accept the task, set up its workspace, and start it. A runner that
+	// has not accepted the task by then fails the resume; a workspace that is
+	// not ready by then is recorded as still initializing.
 	WorkspaceReadyTimeout time.Duration
 
 	// RunnerVolumeImage, when set, is a digest-pinned runner volume image
@@ -79,15 +79,6 @@ type TaskReconciler struct {
 	// part of the template name, so a new digest provisions new templates.
 	// Empty keeps running the runner baked into the task image.
 	RunnerVolumeImage string
-
-	// RunnerEndpoint is the in-cluster host:port of ax-server's :8081 runner
-	// service bound on every task actor's EgressPolicy (defaults to
-	// substrate.DefaultRunnerEndpoint).
-	RunnerEndpoint string
-
-	// RunnerAudience is the OIDC audience bound to Actor JWTs injected for
-	// RunnerEndpoint (defaults to substrate.DefaultRunnerAudience).
-	RunnerAudience string
 
 	// WorkspaceManager, when configured with pre-warming enabled, resolves warm
 	// Workspace snapshot Tags so task actors start from pre-warmed snapshots.
@@ -113,8 +104,6 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 		defaultTemplate:         defaultTemplate,
 		defaultTemplateAtespace: defaultTemplateAtespace,
 		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
-		RunnerEndpoint:          substrate.DefaultRunnerEndpoint,
-		RunnerAudience:          substrate.DefaultRunnerAudience,
 	}
 }
 
@@ -259,69 +248,31 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	return nil
 }
 
-// IsMemoryFidelityTemplate reports whether the referenced ActorTemplate uses
-// SNAPSHOT_FIDELITY_MEMORY.
-func (r *TaskReconciler) IsMemoryFidelityTemplate(ctx context.Context, defaultAtespace string, ref *v1alpha1.ObjectRef) (bool, error) {
-	if ref.GetName() == "" {
-		return DefaultProfileSnapshotFidelity == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
-	}
-	atespace := ref.GetAtespace()
-	if atespace == "" {
-		atespace = defaultAtespace
-	}
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	tmpl, err := r.client.GetActorTemplate(ctx, atespace, ref.GetName())
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return false, nil
-		}
-		return false, err
-	}
-	return tmpl.GetSnapshotConfig().GetPreferredFidelity() == ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, nil
-}
-
-// bindGateway ensures the task's actor has an EgressPolicy containing the
-// built-in :8081 runner control rule plus any rules from the task's bound
-// Gateway. An actor that already has a policy keeps it unchanged.
+// bindGateway ensures the task's actor has an EgressPolicy with the rules of
+// the task's bound Gateway. A task without a Gateway gets no policy, and an
+// actor that already has a policy keeps it unchanged.
 func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *v1alpha1.Gateway) error {
 	gwName := task.Spec.GetGateway().GetName()
+	if gwName == "" {
+		return nil
+	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	_, err := r.client.GetActorEgressPolicy(ctx, atespace, actorName)
 	if status.Code(err) == codes.NotFound {
-		// A unique extra audience per policy. Without it, a task recreated under
-		// the same name gets its old actor's JWT, which ax-server refuses.
-		// TODO: Drop it once agent-substrate/substrate#2208 is fixed.
-		rules := []*ateapipb.EgressRule{
-			substrate.RunnerEgressRule(r.RunnerEndpoint, r.RunnerAudience, uuid.NewString()),
-		}
-		if gwName != "" {
-			if gw == nil {
-				err = fmt.Errorf("not available in atespace %q", atespace)
-			} else {
-				rules = append(rules, gw.GetSpec().GetEgress()...)
-				err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, rules)
-			}
+		if gw == nil {
+			err = fmt.Errorf("not available in atespace %q", atespace)
 		} else {
-			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, rules)
+			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress())
 		}
 	}
 	if err != nil {
 		now := time.Now()
 		if substrate.IsTransientError(err) {
 			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
-			if gwName != "" {
-				return fmt.Errorf("binding gateway %q: %w", gwName, err)
-			}
-			return fmt.Errorf("binding runner egress policy: %w", err)
-		}
-		if gwName != "" {
-			r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
 			return fmt.Errorf("binding gateway %q: %w", gwName, err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, statusErrorMessage(err), now)
-		return fmt.Errorf("binding runner egress policy: %w", err)
+		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
+		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
 }
@@ -352,9 +303,15 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 }
 
 // Resume runs ensureSubstrateResources and bindGateway, resumes the task's
-// actor, and waits up to WorkspaceReadyTimeout for the task's workspace to be
-// set up, recording the result in the WorkspaceReady condition. A failure to
-// resume the actor is recorded the way ensureSubstrateResources records its own.
+// actor, pushes the task to its runner (v1alpha1.RunnerTaskPath), and waits up
+// to WorkspaceReadyTimeout for the runner to set up the task's workspace and
+// start the task, recording the result in the WorkspaceReady condition. A
+// failure to resume the actor, the runner refusing the task, and the runner
+// failing to start a task whose workspace is already set up are recorded the
+// way ensureSubstrateResources records its own. So is a runner that does not
+// accept the task in time, as a transient error (substrate.IsTransientError):
+// the task is not running, and resuming again repeats the push. A runner that
+// accepted the task and is still working when the wait ends is not an error.
 func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
 	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
@@ -377,84 +334,63 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 		return fmt.Errorf("resuming actor: %w", err)
 	}
 
-	// Check if workspace setup inside the actor has completed.
-	host := workerIP
-	port := "80"
-	if h, p, err := net.SplitHostPort(workerIP); err == nil {
-		host = h
-		port = p
-	}
-	readyURL := fmt.Sprintf("http://%s/readyz?check=workspace", net.JoinHostPort(host, port))
-	// Workspace setup happens once per task. After it has completed, WorkspaceReady stays
-	// True across suspend/resume cycles, so only poll while it is still initializing.
+	// The actor runs from a template shared by every task with its profile, so
+	// the runner learns which task it runs from this push. A runner restored
+	// from a memory snapshot already holds the task and accepts it again.
+	// Workspace setup happens once per task: after it has completed,
+	// WorkspaceReady stays True across suspend/resume cycles. The task starts
+	// on every resume, so the runner is polled every time.
 	workspaceReady := conditionTrue(task, v1alpha1.ConditionWorkspaceReady)
-	if workerIP != "" && !workspaceReady {
-		// Poll briefly for workspace setup completion.
-		pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
-		defer cancel()
-
-		ticker := time.NewTicker(workspaceReadyPollInterval)
-		defer ticker.Stop()
-
-		checkReady := func() bool {
-			// 1. Direct readyz check
-			req, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, readyURL, nil)
-			if resp, err := r.httpClient.Do(req); err == nil {
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return true
-				}
-			}
-
-			// 2. Router-based readyz check (in-cluster via atenet-router)
-			if routerAddr := os.Getenv("ATENET_ROUTER_ADDR"); routerAddr != "" {
-				routerURL := routerAddr
-				if !strings.HasPrefix(routerURL, "http://") && !strings.HasPrefix(routerURL, "https://") {
-					if strings.HasSuffix(routerURL, ":443") {
-						routerURL = "https://" + routerURL
-					} else {
-						routerURL = "http://" + routerURL
-					}
-				}
-				routerURL = strings.TrimRight(routerURL, "/") + "/readyz?check=workspace"
-				rReq, _ := http.NewRequestWithContext(pollCtx, http.MethodGet, routerURL, nil)
-				if rReq != nil {
-					rReq.Header.Set("ate-target-actor", fmt.Sprintf("%s/%s", atespace, actorName))
-					if resp, err := r.httpClient.Do(rReq); err == nil {
-						_ = resp.Body.Close()
-						if resp.StatusCode == http.StatusOK {
-							return true
-						}
-					}
-				}
-			}
-			return false
-		}
-
-		// Initial check
-		workspaceReady = checkReady()
-
-		for !workspaceReady {
-			select {
-			case <-pollCtx.Done():
-				goto DonePolling
-			case <-ticker.C:
-				if checkReady() {
-					workspaceReady = true
-					goto DonePolling
-				}
-			}
+	pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
+	defer cancel()
+	var notReadyMsg string
+	body, err := taskPushBody(task, ws)
+	if err == nil {
+		err = pushToRunner(pollCtx, r.httpClient, atespace, actorName, workerIP, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
+	}
+	switch {
+	case errors.Is(err, errNoAddress):
+		slog.Warn("cannot push the task to the runner", "actor", actorName, "error", err)
+		notReadyMsg = "Waiting for the actor to get an address"
+	case err != nil && pollCtx.Err() == nil:
+		// The runner refused the task, so it never runs it.
+		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
+		return fmt.Errorf("pushing task to runner: %w", err)
+	case err != nil:
+		// The task reaches the runner only through this push, so without it
+		// nothing runs. err wraps the context's error, which makes a timeout
+		// transient: resuming again repeats the push.
+		err = fmt.Errorf("runner at %s did not accept the task within %s: %w", workerIP, r.WorkspaceReadyTimeout, err)
+		r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
+		return err
+	default:
+		err = waitWorkspaceReady(pollCtx, r.httpClient, atespace, actorName, workerIP, workspaceReadyPollInterval)
+		switch {
+		case err == nil:
+			workspaceReady = true
+		case errors.Is(err, errSetupFailed) && workspaceReady:
+			// The workspace was set up on an earlier resume, so what failed
+			// is starting the task: nothing runs in the resumed actor. The
+			// runner's reason is reported without errSetupFailed's text.
+			reason := strings.TrimPrefix(err.Error(), errSetupFailed.Error()+": ")
+			r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, reason, time.Now())
+			return errors.New(reason)
+		case errors.Is(err, errSetupFailed):
+			notReadyMsg = err.Error()
+		default:
+			notReadyMsg = fmt.Sprintf("Workspace is initializing at %s", workerIP)
 		}
 	}
-DonePolling:
 
 	// The server derives Ready from the actor's state and WorkspaceReady.
-	if workspaceReady {
-		if !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
-			setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
-		}
-	} else {
-		setCondition(task, v1alpha1.ConditionWorkspaceReady, "False", v1alpha1.ReasonInitializing, fmt.Sprintf("Workspace is initializing at %s", workerIP), time.Now())
+	switch {
+	case conditionTrue(task, v1alpha1.ConditionWorkspaceReady):
+	case workspaceReady:
+		setCondition(task, v1alpha1.ConditionWorkspaceReady, "True", v1alpha1.ReasonSetupComplete, fmt.Sprintf("Workspace setup completed at %s", workerIP), time.Now())
+	case errors.Is(err, errSetupFailed):
+		setCondition(task, v1alpha1.ConditionWorkspaceReady, "False", v1alpha1.WorkspaceReasonSetupFailed, notReadyMsg, time.Now())
+	default:
+		setCondition(task, v1alpha1.ConditionWorkspaceReady, "False", v1alpha1.ReasonInitializing, notReadyMsg, time.Now())
 	}
 
 	slog.Info("task successfully resumed",

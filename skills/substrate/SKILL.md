@@ -60,7 +60,7 @@ All Control API traffic goes through this package. It encapsulates:
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
-| pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which blocks both from `:8080`/`:9090` and allows only `app: atenet-egress` (in `ate-system`) to reach `:8081` (`ax-server-runner`) |
+| pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
 | `kind-registry:5000`, the registry container that serves the images of a loopback registry (`localhost:5001/...`) to an `ax local` cluster | Only atelet's `--localhost-registry-replacement` in `internal/install/substrate/manifests/05-ate-system.yaml` (generated; actor images). `LocalRegistryEndpoint` (`internal/install/substrate/bootstrap.go`) reads it from there, and `cmd/ax/install_cmd.go` passes it as `cluster.UpOptions.LocalRegistry` to the Kind provider (`internal/install/cluster/registry.go`), which writes the containerd mirror for pod images such as ax-server. No Go file names the registry; `docs/local_installer.md` does |
 
@@ -108,29 +108,33 @@ instead. No mocking library is in `go.mod`.
   to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
   stores a worker IP: the reconciler uses the IP `ResumeActor` returns only for
-  its readiness probe (`internal/controller/reconciler.go`), and `ax ssh`
-  connects through `atenet-router`.
-- Egress: an actor without an egress policy has no outbound access. For
-  every task, `bindGateway` (`internal/controller/reconciler.go`) asks
-  Substrate whether the actor has a policy. If it has none, `bindGateway`
-  creates its one policy (named `default`): the runner rule
-  (`substrate.RunnerEgressRule`), then the rules of the Gateway the task
-  binds, if any. An actor that has a policy keeps it, so the rules are copied
-  once and never updated; Substrate deletes the policy with the actor.
-  `bindGateway` runs after the actor is suspended (`CreateTask`,
+  the task push and the readiness check that follows it
+  (`internal/controller/reconciler.go`), and `ax ssh` connects through
+  `atenet-router`.
+- Egress: an actor without an egress policy has no outbound access. For a
+  task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
+  asks Substrate whether the actor has a policy. If it has none, `bindGateway`
+  creates its one policy (named `default`) from the Gateway's rules. An actor
+  that has a policy keeps it, so the rules are copied once and never updated;
+  Substrate deletes the policy with the actor. A task without a Gateway gets
+  no policy. `bindGateway` runs after the actor is suspended (`CreateTask`,
   `SuspendTask`) and before it is resumed (`ResumeTask`). Substrate validates
   the rules when they are copied. `bindGateway` fails with reason
   `GatewayBindingFailed` when Substrate refuses them, or when the actor has no
   policy and the Gateway cannot be loaded. `SuspendTask` and `ResumeTask` do
   not fail on the Gateway themselves (`fetchGateway` in
   `internal/server/server.go`), so a suspend always reaches `SuspendActor`.
-- Substrate's egress gateway reuses an Actor JWT by actor name and audiences
-  (agent-substrate/substrate#2208), and ax-server's runner endpoint refuses a
-  JWT of another actor UID (`internal/runnerhttp/server.go`). So `bindGateway`
-  adds an extra audience, unique to the policy, to the runner rule: a task
-  recreated under the same name then gets a JWT for its new actor. Its first
-  calls can still fail for about 10 seconds, until the gateway reads the new
-  policy.
+- Actors come from shared profile templates, so the runner learns its work
+  by push: after `ResumeActor`, ax-server POSTs the Task (and its Workspace)
+  to `v1alpha1.RunnerTaskPath`, or a Workspace to a setup actor at
+  `v1alpha1.RunnerSetupPath`, on port 80, then polls
+  `/readyz?check=workspace` (`internal/controller/actorhttp.go`), for a task
+  on every resume. It dials the worker IP `ResumeActor` returned and falls
+  back to `atenet-router` with the `ate-target-actor` header. The runner never
+  calls ax-server. `Resume` fails with a transient error when the runner does
+  not accept the push within `WorkspaceReadyTimeout`, and with
+  `ActorResumeFailed` when the runner refuses the task or reports a failure
+  for a task whose workspace is already set up.
 - `status.actorUid` is read live by `setActorStatus` in
   `internal/server/server.go` and cleared by `storedStatus` before writes.
   It changes when Substrate recreates the actor and is empty when the actor

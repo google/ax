@@ -16,6 +16,7 @@ package metadata_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -272,5 +273,96 @@ func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 	}
 	if !checked {
 		t.Log("no non-loopback IPv4 address found; skipped the external address check")
+	}
+}
+
+func TestMetadataServer_Pushes(t *testing.T) {
+	srv := metadata.NewServer(0, nil, nil, metadata.ServerOptions{AcceptPushes: true})
+	if err := srv.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer srv.Stop(context.Background())
+	base := "http://" + srv.ProbeAddr()
+
+	post := func(path, body string) int {
+		t.Helper()
+		resp, err := http.Post(base+path, "application/yaml", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	recv := func() metadata.Push {
+		t.Helper()
+		select {
+		case p := <-srv.Pushes():
+			return p
+		case <-time.After(5 * time.Second):
+			t.Fatal("no push delivered")
+			return metadata.Push{}
+		}
+	}
+
+	wsYAML := "metadata: {atespace: default, name: ws1, uid: w1}\nspec: {}\n"
+	if code := post(v1alpha1.RunnerSetupPath, "{not yaml"); code != http.StatusBadRequest {
+		t.Fatalf("bad setup body: got %d, want 400", code)
+	}
+	if code := post(v1alpha1.RunnerSetupPath, wsYAML); code != http.StatusAccepted {
+		t.Fatalf("setup push: got %d, want 202", code)
+	}
+	if p := recv(); p.Task != nil || p.Workspace.GetMetadata().GetName() != "ws1" {
+		t.Fatalf("setup push delivered %+v", p)
+	}
+	if code := post(v1alpha1.RunnerSetupPath, wsYAML); code != http.StatusOK {
+		t.Fatalf("repeated setup push: got %d, want 200", code)
+	}
+	if code := post(v1alpha1.RunnerSetupPath, strings.Replace(wsYAML, "ws1", "ws2", 1)); code != http.StatusConflict {
+		t.Fatalf("other setup push: got %d, want 409", code)
+	}
+
+	taskYAML := "metadata: {atespace: default, name: t1, uid: u1}\nspec: {futureField: 1}\n---\n" + wsYAML
+	if code := post(v1alpha1.RunnerTaskPath, taskYAML); code != http.StatusAccepted {
+		t.Fatalf("task push: got %d, want 202", code)
+	}
+	if p := recv(); p.Task.GetMetadata().GetName() != "t1" || p.Workspace.GetMetadata().GetName() != "ws1" {
+		t.Fatalf("task push delivered %+v", p)
+	}
+	if code := post(v1alpha1.RunnerTaskPath, taskYAML); code != http.StatusOK {
+		t.Fatalf("repeated task push: got %d, want 200", code)
+	}
+	if code := post(v1alpha1.RunnerTaskPath, strings.Replace(taskYAML, "uid: u1", "uid: u2", 1)); code != http.StatusConflict {
+		t.Fatalf("task push of another uid: got %d, want 409", code)
+	}
+	if code := post(v1alpha1.RunnerSetupPath, wsYAML); code != http.StatusConflict {
+		t.Fatalf("setup push while running a task: got %d, want 409", code)
+	}
+
+	srv.SetWorkspaceReady(true)
+	srv.SetSetupFailed(errors.New("git clone failed"))
+	resp, err := http.Get(base + "/readyz?check=workspace")
+	if err != nil {
+		t.Fatalf("readyz: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "git clone failed") {
+		t.Fatalf("readyz?check=workspace after failure = %d %q, want 500 with the reason", resp.StatusCode, body)
+	}
+}
+
+func TestMetadataServer_PushesOffByDefault(t *testing.T) {
+	srv := metadata.NewServer(0, nil, nil)
+	if err := srv.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer srv.Stop(context.Background())
+	resp, err := http.Post("http://"+srv.ProbeAddr()+v1alpha1.RunnerTaskPath, "application/yaml", strings.NewReader("metadata: {name: t1}\n"))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
+		t.Fatalf("task push without AcceptPushes: got %d, want it refused", resp.StatusCode)
 	}
 }
