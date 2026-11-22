@@ -817,11 +817,6 @@ func setReady(task *v1alpha1.Task, condStatus, reason, message string) {
 	})
 }
 
-// storedStatus returns the part of a task's status that AX owns and stores.
-func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
-	return store.StoredStatus(st)
-}
-
 // fetchWorkspace loads the Workspace the task binds, or nil when the task
 // binds none or the Workspace does not exist.
 func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Workspace {

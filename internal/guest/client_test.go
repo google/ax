@@ -50,7 +50,7 @@ func startGuest(t *testing.T) *guest.Client {
 		cleanup()
 	})
 
-	client, err := guest.Dial(lis.Addr().String())
+	client, err := guest.Dial(lis.Addr().String(), "")
 	if err != nil {
 		t.Fatalf("dialing guest: %v", err)
 	}

@@ -37,7 +37,6 @@ import (
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -272,7 +271,7 @@ func TestTaskReconciler(t *testing.T) {
 	defer grpcServer.Stop()
 
 	// 2. Initialize Substrate client
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -344,7 +343,7 @@ func TestTaskReconciler_MissingImage(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -385,7 +384,7 @@ func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
 		ateapipb.RegisterControlServer(grpcServer, mockSrv)
 		go grpcServer.Serve(lis)
 		t.Cleanup(grpcServer.Stop)
-		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 		if err != nil {
 			t.Fatalf("failed to create substrate client: %v", err)
 		}
@@ -456,7 +455,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -509,7 +508,7 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -576,7 +575,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -630,7 +629,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -704,7 +703,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -767,7 +766,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -872,7 +871,7 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -999,7 +998,7 @@ func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
 		ateapipb.RegisterControlServer(grpcServer, &mockControlServer{})
 		go grpcServer.Serve(lis)
 		t.Cleanup(grpcServer.Stop)
-		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 		if err != nil {
 			t.Fatalf("failed to create substrate client: %v", err)
 		}
@@ -1083,7 +1082,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1184,7 +1183,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		grpcServer := grpc.NewServer()
 		ateapipb.RegisterControlServer(grpcServer, mockSrv)
 		go grpcServer.Serve(lis)
-		client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 		if err != nil {
 			t.Fatalf("failed to create substrate client: %v", err)
 		}
@@ -1294,7 +1293,7 @@ func TestDelete_RemovesActorAndTemplates(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1356,7 +1355,7 @@ func TestDelete_BlocksUntilActorDeleted(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1397,7 +1396,7 @@ func TestDelete_ActorDeletionTimeout(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1427,7 +1426,7 @@ func TestEnsureActor_RevertsCrashedActor(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1460,7 +1459,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1542,7 +1541,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
@@ -1608,7 +1607,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	go grpcServer.Serve(lis)
 	defer grpcServer.Stop()
 
-	client, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}

@@ -1173,7 +1173,7 @@ func dialGuest(targetActor, kubeContext, axNamespace string) (*guest.Client, fun
 	// 1. Connect directly to ATENET_ROUTER_ADDR when set (e.g. in-cluster).
 	if routerAddr := os.Getenv("ATENET_ROUTER_ADDR"); routerAddr != "" {
 		addr := strings.TrimPrefix(strings.TrimPrefix(routerAddr, "http://"), "https://")
-		client, err := guest.DialTarget(addr, targetActor)
+		client, err := guest.Dial(addr, targetActor)
 		if err != nil {
 			return nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", addr, err)
 		}
@@ -1197,7 +1197,7 @@ func dialGuest(targetActor, kubeContext, axNamespace string) (*guest.Client, fun
 		return nil, nil, fmt.Errorf("establishing port-forward to atenet-router: %w (%v)", err, setupErr)
 	}
 	routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-	client, err = guest.DialTarget(routerEndpoint, targetActor)
+	client, err = guest.Dial(routerEndpoint, targetActor)
 	if err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)
@@ -1215,7 +1215,7 @@ func dialRouterTLS(targetActor, kubeContext, axNamespace string) (client *guest.
 		return nil, nil, fmt.Errorf("port 443 forward error: %w", err), nil
 	}
 	routerEndpoint := fmt.Sprintf("127.0.0.1:%d", localPort)
-	client, err = guest.DialTargetTLS(routerEndpoint, targetActor, tlsCfg)
+	client, err = guest.DialTLS(routerEndpoint, targetActor, tlsCfg)
 	if err != nil {
 		cleanup()
 		return nil, nil, nil, fmt.Errorf("connecting to guest via atenet-router at %s: %w", routerEndpoint, err)

@@ -39,21 +39,16 @@ type Client struct {
 	filesystem ateenvv1alpha.FileSystemServiceClient
 }
 
-// Dial connects to the guest daemon at the specified target (e.g., "127.0.0.1:80").
-func Dial(target string) (*Client, error) {
-	return DialTarget(target, "")
-}
-
-// DialTarget connects to the guest daemon at the specified target, optionally injecting
+// Dial connects to the guest daemon at the specified target, optionally injecting
 // the 'ate-target-actor' metadata header on all calls (required when routing via atenet-router).
-func DialTarget(target string, targetActor string) (*Client, error) {
-	return DialTargetTLS(target, targetActor, nil)
+func Dial(target string, targetActor string) (*Client, error) {
+	return DialTLS(target, targetActor, nil)
 }
 
-// DialTargetTLS connects to the guest daemon at the specified target using TLS when
+// DialTLS connects to the guest daemon at the specified target using TLS when
 // tlsConfig is non-nil (or plaintext otherwise), optionally injecting the
 // 'ate-target-actor' metadata header on all calls.
-func DialTargetTLS(target string, targetActor string, tlsConfig *tls.Config) (*Client, error) {
+func DialTLS(target string, targetActor string, tlsConfig *tls.Config) (*Client, error) {
 	target = strings.TrimPrefix(target, "http://")
 	target = strings.TrimPrefix(target, "https://")
 
