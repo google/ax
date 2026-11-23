@@ -634,6 +634,22 @@ spec:
     name: {{.Gateway}}
 `
 
+const gatewayEgressWorkspaceManifest = `apiVersion: ax.io/v1alpha1
+kind: Workspace
+metadata:
+  name: {{.Workspace}}
+  atespace: {{.Atespace}}
+spec:
+  profile:
+    image: {{taskImage}}
+  setup:
+    gateway:
+      name: {{.Gateway}}
+    commands:
+    # A request can fail with 503 right after the setup starts.
+    - "curl -sf -m 30 --retry 5 {{.URL}}"
+`
+
 // TestE2E_GatewayEgress verifies that a Gateway decides what a task can reach.
 // The allowed host is an echo server, which answers with the request headers
 // it received.
@@ -643,6 +659,7 @@ spec:
 //   - A host without a rule is unreachable.
 //   - ax-server is unreachable even though a rule names it.
 //   - A task without a Gateway reaches nothing.
+//   - A workspace set up through the Gateway reaches the echo server.
 //   - Editing or deleting the Gateway does not affect a task that already
 //     runs with it.
 func TestE2E_GatewayEgress(t *testing.T) {
@@ -652,7 +669,9 @@ func TestE2E_GatewayEgress(t *testing.T) {
 	unlabeled := uniqueName("gw-egress-plain")
 	bound := uniqueName("task-egress")
 	unbound := uniqueName("task-noegress")
+	ws := uniqueName("ws-egress")
 	env.deleteOnCleanup(t, ns, "gateway", gw)
+	env.deleteOnCleanup(t, ns, "workspace", ws)
 	env.deleteOnCleanup(t, ns, "task", bound)
 	env.deleteOnCleanup(t, ns, "task", unbound)
 
@@ -741,7 +760,13 @@ func TestE2E_GatewayEgress(t *testing.T) {
 		t.Fatalf("GET %s from a task without a gateway = %q, want %q", echoURL, got, want)
 	}
 
-	// 6. Editing and then deleting the Gateway does not affect the task,
+	// 6. A workspace is set up through the Gateway. `ax apply` fails unless
+	// its setup command reaches the echo server.
+	env.apply(t, ns, renderYAML(t, gatewayEgressWorkspaceManifest, map[string]string{
+		"Workspace": ws, "Gateway": gw, "Atespace": ns, "URL": echoURL,
+	}))
+
+	// 7. Editing and then deleting the Gateway does not affect the task,
 	// across a suspend and resume. The edited Gateway no longer allows the
 	// echo server.
 	env.apply(t, ns, renderYAML(t, gatewayCRUDManifest, map[string]string{"Name": gw, "Atespace": ns, "Host": noRuleHost}))
