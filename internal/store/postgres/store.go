@@ -59,9 +59,8 @@ type Store struct {
 }
 
 var (
-	_ store.Store       = (*Store)(nil)
-	_ store.TaskApplier = (*Store)(nil)
-	_ lock.Locker       = (*Store)(nil)
+	_ store.Store = (*Store)(nil)
+	_ lock.Locker = (*Store)(nil)
 )
 
 // Open connects to the database at connURL and creates any missing tables.
@@ -218,9 +217,6 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
-	}
-	if task.Status.State == v1alpha1.TaskState_TASK_STATE_UNSPECIFIED && task.Metadata.GetDeleteTime() == nil {
-		task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
 	}
 	return s.save(ctx, tasksTable, task.Metadata, task)
 }

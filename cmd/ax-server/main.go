@@ -147,7 +147,6 @@ func main() {
 	srv := server.NewServer(backend, reconciler, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
-		TaskApplier:      server.TaskApplierForStore(backend),
 	})
 
 	httpServer := &http.Server{
