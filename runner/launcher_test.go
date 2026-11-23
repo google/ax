@@ -27,7 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// launcherScript is a stand-in for an image's ax-harness: it copies every
+// launcherScript is a stand-in for an image's ax-launcher: it copies every
 // launcher contract file into the output file, one per line, and counts its
 // runs in runs.
 const launcherScript = `#!/bin/sh
@@ -45,7 +45,7 @@ echo run >> "$(dirname "$0")/runs"
 func withLauncher(t *testing.T, h *harness, goal string) string {
 	t.Helper()
 	dir := t.TempDir()
-	launcher := filepath.Join(dir, "ax-harness")
+	launcher := filepath.Join(dir, "ax-launcher")
 	if err := os.WriteFile(launcher, []byte(launcherScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
