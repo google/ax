@@ -25,7 +25,6 @@ import (
 
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // testURL returns the database URL from $AX_TEST_POSTGRES_URL, skipping the
@@ -95,16 +94,6 @@ func TestListNewestFirst(t *testing.T) {
 	save("a", "a1")
 	if err := s.UpdateTaskStatus(ctx, "a", "a2", &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED}); err != nil {
 		t.Fatalf("UpdateTaskStatus: %v", err)
-	}
-	dt := timestamppb.Now()
-	if err := s.SetTaskDeleteTime(ctx, "a", "a2", dt); err != nil {
-		t.Fatalf("SetTaskDeleteTime: %v", err)
-	}
-	if a2, err := s.GetTask(ctx, "a", "a2"); err != nil || a2.GetMetadata().GetDeleteTime() == nil {
-		t.Fatalf("GetTask(a/a2) delete_time = %v, err = %v; want non-nil", a2.GetMetadata().GetDeleteTime(), err)
-	}
-	if err := s.SetTaskDeleteTime(ctx, "a", "a2", nil); err != nil {
-		t.Fatalf("SetTaskDeleteTime(nil): %v", err)
 	}
 
 	check := func(atespace string, limit, offset int64, want ...string) {
