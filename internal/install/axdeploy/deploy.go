@@ -52,7 +52,7 @@ const (
 	//
 	// The setting is cluster-wide: in every AX-managed task template the
 	// mounted runner replaces the one in the image. An image that relies on
-	// its own runner needs a launcher at /usr/local/bin/ax-harness before it
+	// its own runner needs a launcher at /usr/local/bin/ax-launcher before it
 	// works with a runner volume (#620).
 	//
 	// TODO(release): Populate with "ghcr.io/google/ax/ax-runner-volume:<tag>@sha256:<digest>"

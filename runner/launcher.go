@@ -51,7 +51,10 @@ const (
 
 	// DefaultLauncherPath is where the runner looks for the image's launcher
 	// when Config.LauncherPath is empty.
-	DefaultLauncherPath = "/usr/local/bin/ax-harness"
+	DefaultLauncherPath = "/usr/local/bin/ax-launcher"
+	// deprecatedLauncherPath is the former DefaultLauncherPath, which the
+	// runner still accepts from images built before the rename.
+	deprecatedLauncherPath = "/usr/local/bin/ax-harness"
 	// DefaultRunDir is where the goal, config, MCP and session files are
 	// written when Config.RunDir is empty. It is rewritten on every start, so
 	// a sandbox restored from a snapshot never sees a stale goal.
@@ -162,6 +165,13 @@ func launcherCommand(launcher, wsPath string, task *v1alpha1.Task, files launche
 	if task.GetSpec().GetGoal().GetText() == "" {
 		slog.Info("no task command or goal; serving metadata until stopped")
 		return nil
+	}
+	// TODO: Drop the deprecated path once images ship ax-launcher.
+	if _, err := os.Stat(launcher); err != nil && launcher == DefaultLauncherPath {
+		if _, err := os.Stat(deprecatedLauncherPath); err == nil {
+			slog.Warn("the image's launcher is at a deprecated path; move it", "launcher", deprecatedLauncherPath, "to", launcher)
+			launcher = deprecatedLauncherPath
+		}
 	}
 	if _, err := os.Stat(launcher); err != nil {
 		slog.Info("no task command and no launcher in the image; serving metadata until stopped", "launcher", launcher)
