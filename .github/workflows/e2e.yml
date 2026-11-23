@@ -28,7 +28,6 @@ on:
     - 'skills/**'
     - '.agents/**'
     - '.claude/**'
-    - '.gemini/**'
     - 'LICENSE'
     - '.github/CODEOWNERS'
     - '.github/rulesets/**'

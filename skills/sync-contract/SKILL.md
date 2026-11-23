@@ -49,8 +49,9 @@ For each document you opened:
 Run this one-liner whenever `AGENTS.md` or `skills/` was touched:
 
 ```bash
-# Verify symlinks and that every skills/<name>/SKILL.md is indexed in AGENTS.md
-test -L CLAUDE.md && test -L GEMINI.md && \
+# Verify AGENTS.md is the only agent contract and that every
+# skills/<name>/SKILL.md is indexed in AGENTS.md
+test ! -e CLAUDE.md && test ! -e GEMINI.md || echo "EXTRA: CLAUDE.md or GEMINI.md"
 for d in skills/*/; do
   s=$(basename "$d")
   test -f "$d/SKILL.md" && grep -q "\`/$s\`" AGENTS.md || echo "MISSING: $s"

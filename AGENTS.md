@@ -1,7 +1,7 @@
 # AX — Agent contract
 
-The one contract for every coding agent in this repository. `CLAUDE.md` and
-`GEMINI.md` are symlinks to this file.
+The one contract for every coding agent in this repository. There are no
+per-agent copies such as `CLAUDE.md` or `GEMINI.md`.
 
 This file holds only what every task needs: layout, the CI gate, hard rules,
 and an index of skills. Procedures, background, and troubleshooting live in
@@ -43,7 +43,7 @@ install.sh             One-line CLI installer (`releases/latest/download/install
 hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
 hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
 docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote / ax studio
-skills/                Developer skills (SKILL.md format). .agents/skills, .claude/skills, and .gemini/skills symlink here.
+skills/                Developer skills (SKILL.md format). .agents/skills and .claude/skills symlink here.
 ```
 
 ## Build / test (verified; this is what CI runs)
@@ -120,7 +120,7 @@ location is where to look. How-to lives in the skills.
 Conventions: one directory per skill, `skills/<name>/SKILL.md`, frontmatter
 `name` + `description` (one sentence what, one sentence when — it is routing
 text, not documentation; long bodies split into `references/`). Agent-local
-roots (`.agents/`, `.claude/`, `.gemini/`) only symlink to `skills/`; never put
+roots (`.agents/`, `.claude/`) only symlink to `skills/`; never put
 skill source there. Adding a skill means adding a row above.
 
 ## Definition of done
