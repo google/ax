@@ -233,8 +233,9 @@ ax --context=dev-cluster get tasks
 
 ## AX and Agent Substrate
 
-[Agent Substrate](https://github.com/agent-substrate/substrate) is the compute runtime layer AX relies on. It schedules actors onto workers, isolates them, and suspends, resumes and snapshots them. It also handles their networking, egress policies and credential injection. Agent Substrate is a low-opinion system in terms of agentic abstractions.
+[Agent Substrate](https://github.com/agent-substrate/substrate) is the compute runtime layer AX relies on. It schedules actors onto workers, isolates them, and suspends, resumes and snapshots them. It also handles their networking, egress policies and credential injection.
 
+Agent Substrate is a low-opinion system in terms of agentic abstractions.
 Besides task execution, AX and Agent Substrate are orthogonal to each other.
 
 AX is aiming to grow into an agentic platform that covers session management, memory, multi-task coordination, input steering, registries, models, and trajectory collection. We are building it at Google as our portable agentic platform, one that runs the same way inside Google, on customer clusters, and on-prem.
