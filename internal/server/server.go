@@ -292,7 +292,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	// The task is Queued until its actor exists.
 	task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
-	task.Status.StatusDetail = nil
 
 	key := store.TaskKey{Atespace: atespace, Name: task.Metadata.Name}
 	written, err := s.applier.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
@@ -521,7 +520,6 @@ func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task)
 		}
 		if !isExecutionTerminal(current.Task) {
 			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-			next.Task.Status.StatusDetail = nil
 		}
 		return next, nil
 	})
@@ -547,10 +545,9 @@ func cloneConditions(in []*v1alpha1.Condition) []*v1alpha1.Condition {
 // isExecutionTerminal reports whether task has reached a terminal execution
 // outcome that forbids subsequent SuspendTask or ResumeTask operations.
 //
-// Tasks recorded as FAILED with reason PROVISIONING_FAILED and no execution
-// Outcome failed during control-plane reconciliation (for example, before a
-// bound Gateway existed) and remain eligible for retry via ResumeTask or
-// SuspendTask once the underlying precondition is resolved.
+// Only recordFailure stores FAILED without an execution Outcome (when
+// provisioning or resuming failed); those tasks remain eligible for retry via
+// ResumeTask or SuspendTask once the underlying precondition is resolved.
 func isExecutionTerminal(task *v1alpha1.Task) bool {
 	st := task.GetStatus()
 	switch st.GetState() {
@@ -558,10 +555,7 @@ func isExecutionTerminal(task *v1alpha1.Task) bool {
 		v1alpha1.TaskState_TASK_STATE_CANCELLED:
 		return true
 	case v1alpha1.TaskState_TASK_STATE_FAILED:
-		if st.GetOutcome() != nil {
-			return true
-		}
-		return st.GetStatusDetail().GetReason() != v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED
+		return st.GetOutcome() != nil
 	default:
 		return false
 	}
@@ -574,14 +568,8 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
 	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_FAILED
-	var detail *v1alpha1.TaskStatusDetail
 	if substrate.IsTransientError(err) {
 		code, state = codes.Unavailable, v1alpha1.TaskState_TASK_STATE_QUEUED
-	} else {
-		detail = &v1alpha1.TaskStatusDetail{
-			Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED,
-			Detail: err.Error(),
-		}
 	}
 	key := store.TaskKey{Atespace: atespace, Name: name}
 	_, _ = s.applier.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
@@ -596,7 +584,6 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
 		}
 		next.Task.Status.State = state
-		next.Task.Status.StatusDetail = detail
 		return next, nil
 	})
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
@@ -753,12 +740,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			if message == "" {
 				message = "Actor is " + strings.ToLower(strings.TrimPrefix(actorState.String(), "ACTOR_STATE_"))
 			}
-			if actorState == ateapipb.ActorState_ACTOR_STATE_CRASHED && st.StatusDetail == nil {
-				st.StatusDetail = &v1alpha1.TaskStatusDetail{
-					Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED,
-					Detail: message,
-				}
-			}
 			setReady(task, "False", readyReason, message)
 		}
 	}
@@ -776,7 +757,7 @@ func actorTaskState(state ateapipb.ActorState) (v1alpha1.TaskState, string) {
 	case ateapipb.ActorState_ACTOR_STATE_SUSPENDED:
 		return v1alpha1.TaskState_TASK_STATE_SUSPENDED, v1alpha1.ReasonSuspended
 	case ateapipb.ActorState_ACTOR_STATE_CRASHED:
-		return v1alpha1.TaskState_TASK_STATE_FAILED, v1alpha1.ReasonFailed
+		return v1alpha1.TaskState_TASK_STATE_FAILED, v1alpha1.ReasonSandboxCrashed
 	case ateapipb.ActorState_ACTOR_STATE_DELETING:
 		return v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, v1alpha1.ReasonTerminating
 	default:

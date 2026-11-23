@@ -231,7 +231,6 @@ func TestTaskApplier(t *testing.T) {
 		next := current.Clone()
 		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
-			Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
 			Output: "done",
 		}
 		return next, nil

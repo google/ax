@@ -308,10 +308,10 @@ func TestRunPromote(t *testing.T) {
 		suspended string
 	}{
 		{
-			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, StatusDetail: &v1alpha1.TaskStatusDetail{Reason: v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED}},
+			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED},
 			suspended: "task.ax.io/demo suspended on the source\n",
 		},
-		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED, Outcome: &v1alpha1.TaskOutcome{Result: v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED}}},
+		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED, Outcome: &v1alpha1.TaskOutcome{ExitCode: 0}}},
 	} {
 		if err := source.store.UpdateTaskStatus(t.Context(), "dev", "demo", tt.status); err != nil {
 			t.Fatal(err)

@@ -127,31 +127,12 @@ enum TaskState {
   TASK_STATE_SUSPENDING = 9;
 }
 
-enum TaskResult {
-  TASK_RESULT_UNSPECIFIED = 0;
-  TASK_RESULT_SUCCEEDED = 1;
-  TASK_RESULT_FAILED = 2;
-  TASK_RESULT_CANCELLED = 3;
-}
-
 message TaskOutcome {
-  TaskResult result = 1;
-  google.rpc.Status status = 2;
-  int32 exit_code = 3;
+  google.rpc.Status status = 1;
+  int32 exit_code = 2;
   // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
   // automatic stdout/stderr tail fallback (capped at 64 KiB).
-  string output = 4;
-}
-
-enum TaskStatusReason {
-  TASK_STATUS_REASON_UNSPECIFIED = 0;
-  TASK_STATUS_REASON_PROVISIONING_FAILED = 1;
-  TASK_STATUS_REASON_SANDBOX_CRASHED = 2;
-}
-
-message TaskStatusDetail {
-  TaskStatusReason reason = 1;
-  string detail = 2;
+  string output = 3;
 }
 
 message TaskStatus {
@@ -162,19 +143,18 @@ message TaskStatus {
   ObjectRef ate_template = 3;
   repeated Condition conditions = 4;
   TaskState state = 5;
-  TaskStatusDetail status_detail = 6;
-  TaskOutcome outcome = 7;
+  TaskOutcome outcome = 6;
   // 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
   // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
   // retry (non-zero command exit, sandbox crash, or lost runner).
-  int32 attempt = 8;
+  int32 attempt = 7;
   // Monotonic task revision.
-  int64 generation = 9;
+  int64 generation = 8;
   // Effective command argv executed by each run: spec.commands if set,
   // otherwise the image's ENTRYPOINT + CMD.
-  repeated string resolved_argv = 10;
+  repeated string resolved_argv = 9;
   // Summary of the previous attempt's failure, provided as context on retry.
-  string previous_failure = 11;
+  string previous_failure = 10;
 }
 
 // --- RPC Request & Response Messages ---

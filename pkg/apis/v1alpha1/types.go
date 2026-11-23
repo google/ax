@@ -86,12 +86,12 @@ const (
 	ReasonActorResumeFailed = "ActorResumeFailed"
 
 	// Actor lifecycle reasons reported on Ready when the actor is not running.
-	ReasonResuming    = "Resuming"
-	ReasonSuspending  = "Suspending"
-	ReasonSuspended   = "Suspended"
-	ReasonFailed      = "Failed"
-	ReasonTerminating = "Terminating"
-	ReasonUnknown     = "Unknown"
+	ReasonResuming       = "Resuming"
+	ReasonSuspending     = "Suspending"
+	ReasonSuspended      = "Suspended"
+	ReasonSandboxCrashed = "SandboxCrashed"
+	ReasonTerminating    = "Terminating"
+	ReasonUnknown        = "Unknown"
 
 	// ReasonSetupComplete: WorkspaceReady is True.
 	ReasonSetupComplete = "SetupComplete"
