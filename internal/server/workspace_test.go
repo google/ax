@@ -65,7 +65,7 @@ var prewarmProfile = &v1alpha1.Profile{Image: "ghcr.io/org/agent@sha256:abc"}
 func newWorkspaceTestServer(t *testing.T) *server.Server {
 	t.Helper()
 	sub := substratetest.NewServer(t)
-	return server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	return server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 }
 
 func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupRunner) (*server.Server, *substratetest.Server) {
@@ -83,7 +83,7 @@ func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.Set
 		Store:       st,
 		SetupRunner: coord,
 	})
-	srv := server.NewServer(st, newTestReconciler(sub), server.Options{
+	srv := server.NewServer(st, newTestTaskManager(sub), server.Options{
 		Locker:           locker,
 		WorkspaceManager: wsMgr,
 	})

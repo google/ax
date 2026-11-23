@@ -81,7 +81,7 @@ func TestRunPromote(t *testing.T) {
 	t.Setenv("AX_HOME", t.TempDir())
 	start := func(kubeContext, namespace string) cluster {
 		c := cluster{sub: substratetest.NewServer(t), store: memory.NewStore()}
-		c.srv = server.NewServer(c.store, newTestReconciler(c.sub))
+		c.srv = server.NewServer(c.store, newTestTaskManager(c.sub))
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)

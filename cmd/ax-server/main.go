@@ -134,17 +134,17 @@ func main() {
 	}
 	defer subClient.Close()
 
-	reconciler := controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
-	reconciler.RunnerVolumeImage = runnerVolumeImage
-	reconciler.GatewayStore = backend
+	manager := controller.NewTaskManager(subClient, defaultTemplate, defaultTemplateAtespace)
+	manager.RunnerVolumeImage = runnerVolumeImage
+	manager.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:      backend,
 		Store:       backend,
 		SetupRunner: controller.NewHTTPSetupRunner(),
 		RunnerImage: runnerVolumeImage,
 	})
-	reconciler.WorkspaceManager = workspaces
-	srv := server.NewServer(backend, reconciler, server.Options{
+	manager.WorkspaceManager = workspaces
+	srv := server.NewServer(backend, manager, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
 	})

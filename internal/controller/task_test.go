@@ -253,7 +253,7 @@ func (m *mockControlServer) DeleteActorTemplate(ctx context.Context, req *ateapi
 	return &ateapipb.ActorTemplate{Metadata: &ateapipb.ResourceMetadata{Name: name}}, nil
 }
 
-func TestTaskReconciler(t *testing.T) {
+func TestTaskManager(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ATENET_ROUTER_ADDR", readyRunnerAddr())
 
@@ -278,8 +278,8 @@ func TestTaskReconciler(t *testing.T) {
 	defer client.Close()
 
 	// 3. Resume the task
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -297,7 +297,7 @@ func TestTaskReconciler(t *testing.T) {
 		Status: &v1alpha1.TaskStatus{Actor: "not-the-task"},
 	}
 
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 
@@ -327,10 +327,10 @@ func TestTaskReconciler(t *testing.T) {
 	}
 }
 
-// TestTaskReconciler_MissingImage verifies that a task whose profile names no
+// TestTaskManager_MissingImage verifies that a task whose profile names no
 // image or ateTemplate fails with TemplateCreationFailed instead of creating a
 // template.
-func TestTaskReconciler_MissingImage(t *testing.T) {
+func TestTaskManager_MissingImage(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
@@ -349,8 +349,8 @@ func TestTaskReconciler_MissingImage(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -358,7 +358,7 @@ func TestTaskReconciler_MissingImage(t *testing.T) {
 		Metadata:   &v1alpha1.ObjectMeta{Name: "no-image", Atespace: "default"},
 		Spec:       &v1alpha1.TaskSpec{},
 	}
-	if err := reconciler.Resume(context.Background(), task, nil, nil); err == nil {
+	if err := manager.Resume(context.Background(), task, nil, nil); err == nil {
 		t.Fatal("Resume succeeded, want an error for a task without an image")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
@@ -367,11 +367,11 @@ func TestTaskReconciler_MissingImage(t *testing.T) {
 	}
 }
 
-// TestTaskReconciler_RunnerVolumeImage verifies that a configured runner volume
+// TestTaskManager_RunnerVolumeImage verifies that a configured runner volume
 // image is mounted into the task's template and run from there, that the
 // runner digest is part of the template name, and that leaving it unset keeps
 // today's template (and its name) unchanged.
-func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
+func TestTaskManager_RunnerVolumeImage(t *testing.T) {
 	resume := func(t *testing.T, runner string) *ateapipb.ActorTemplate {
 		t.Helper()
 		lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -390,16 +390,16 @@ func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
 		}
 		t.Cleanup(func() { client.Close() })
 
-		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
-		reconciler.RunnerVolumeImage = runner
+		manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+		manager.WorkspaceReadyTimeout = 200 * time.Millisecond
+		manager.RunnerVolumeImage = runner
 		task := &v1alpha1.Task{
 			ApiVersion: v1alpha1.APIVersion,
 			Kind:       v1alpha1.KindTask,
 			Metadata:   &v1alpha1.ObjectMeta{Name: "pure", Atespace: "default"},
 			Spec:       &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/agent@sha256:a"}},
 		}
-		if err := reconciler.Resume(context.Background(), task, nil, nil); err != nil {
+		if err := manager.Resume(context.Background(), task, nil, nil); err != nil {
 			t.Fatalf("Resume failed: %v", err)
 		}
 		if len(mockSrv.createdTemplates) != 1 {
@@ -440,7 +440,7 @@ func TestTaskReconciler_RunnerVolumeImage(t *testing.T) {
 	}
 }
 
-func TestTaskReconciler_Suspend(t *testing.T) {
+func TestTaskManager_Suspend(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -461,8 +461,8 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -476,7 +476,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 		},
 	}
 
-	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 
@@ -493,7 +493,7 @@ func TestTaskReconciler_Suspend(t *testing.T) {
 
 // The actor of a task that binds a gateway gets that gateway's rules. A task
 // that binds none still gets a policy, for the runner rule.
-func TestTaskReconciler_GatewayRules(t *testing.T) {
+func TestTaskManager_GatewayRules(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -514,8 +514,8 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	newTask := func(name string) *v1alpha1.Task {
 		return &v1alpha1.Task{
@@ -527,10 +527,10 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	}
 
 	unbound := newTask("unbound-task")
-	if err := reconciler.Suspend(ctx, unbound, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
-	if err := reconciler.Resume(ctx, unbound, nil, nil); err != nil {
+	if err := manager.Resume(ctx, unbound, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	if n := mockSrv.egressPolicyCalls; n != 0 {
@@ -545,7 +545,7 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	}
 	bound := newTask("bound-task")
 	bound.Spec.Gateway = &v1alpha1.GatewayRef{Name: "gw"}
-	if err := reconciler.Suspend(ctx, bound, nil, gw); err != nil {
+	if err := manager.Suspend(ctx, bound, nil, gw); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	if n := len(mockSrv.createdEgressPolicies); n != 1 {
@@ -558,7 +558,7 @@ func TestTaskReconciler_GatewayRules(t *testing.T) {
 	}
 }
 
-func TestTaskReconciler_SuspendError(t *testing.T) {
+func TestTaskManager_SuspendError(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -581,7 +581,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
+	manager := controller.NewTaskManager(client, "test-template", "ax-system")
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -599,7 +599,7 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 	before := proto.Clone(task.Status).(*v1alpha1.TaskStatus)
 
-	if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected Suspend to return an error when SuspendActor fails")
 	}
 	if !proto.Equal(task.Status, before) {
@@ -607,11 +607,11 @@ func TestTaskReconciler_SuspendError(t *testing.T) {
 	}
 }
 
-// TestTaskReconciler_TemplateCreationFailed covers google/ax#366: when Substrate
+// TestTaskManager_TemplateCreationFailed covers google/ax#366: when Substrate
 // rejects the per-task ActorTemplate (for example because the image is referenced
 // by tag rather than digest), the task must report that error directly instead of
 // silently falling back to the default template.
-func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
+func TestTaskManager_TemplateCreationFailed(t *testing.T) {
 	ctx := t.Context()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -635,8 +635,8 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -651,7 +651,7 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 		},
 	}
 
-	err = reconciler.Resume(ctx, task, nil, nil)
+	err = manager.Resume(ctx, task, nil, nil)
 	if err == nil {
 		t.Fatal("expected Resume to fail when the ActorTemplate cannot be created")
 	}
@@ -680,11 +680,11 @@ func TestTaskReconciler_TemplateCreationFailed(t *testing.T) {
 	}
 }
 
-// TestTaskReconciler_TemplateCreationTransient checks that a transient Substrate
+// TestTaskManager_TemplateCreationTransient checks that a transient Substrate
 // error during ActorTemplate creation (for example Unavailable after retries are
 // exhausted) is recorded as SubstrateUnavailable rather than TemplateCreationFailed.
 // The server keeps a task that failed this way Pending for a retry.
-func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
+func TestTaskManager_TemplateCreationTransient(t *testing.T) {
 	ctx := t.Context()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -709,8 +709,8 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -722,7 +722,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 		Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/my-org/my-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"}},
 	}
 
-	if err := reconciler.Resume(ctx, task, nil, nil); err == nil {
+	if err := manager.Resume(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected Resume to return an error on transient template failure")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -731,7 +731,7 @@ func TestTaskReconciler_TemplateCreationTransient(t *testing.T) {
 	}
 }
 
-func TestTaskReconciler_WorkspaceReady(t *testing.T) {
+func TestTaskManager_WorkspaceReady(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Mock Substrate Control Server
@@ -772,8 +772,8 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -787,21 +787,21 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 
 	// Case 1: The runner took the task but its workspace is not set up within
 	// the timeout -> the resume succeeds with WorkspaceReady=False.
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.ReasonInitializing)
 
 	// Case 2: Worker readyz endpoint succeeds -> WorkspaceReady=True.
 	workspaceDone.Store(true)
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with ready worker failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 
 	// Case 3: Suspending the task -> the workspace was already initialized, so
 	// WorkspaceReady stays True.
-	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
@@ -809,7 +809,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// Case 4: The runner cannot be reached, so the task is never pushed -> the
 	// resume fails with a transient error and WorkspaceReady is left alone.
 	t.Setenv("ATENET_ROUTER_ADDR", "127.0.0.1:1")
-	err = reconciler.Resume(ctx, task, nil, nil)
+	err = manager.Resume(ctx, task, nil, nil)
 	if err == nil || !substrate.IsTransientError(err) {
 		t.Fatalf("Resume with an unreachable runner = %v, want a transient error", err)
 	}
@@ -823,14 +823,14 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 	// A command-only change reuses the same profile template (the task is
 	// pushed to the runner on resume), while an image change creates a new one.
 	task.Spec.Commands = []string{"python3", "agent.py"}
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed command failed: %v", err)
 	}
 	if got := len(mockSrv.actorTemplates); got != 1 {
 		t.Errorf("command change left %d templates, want 1", got)
 	}
 	task.Spec.Profile = &v1alpha1.Profile{Image: "example.com/other:v2"}
-	if err := reconciler.Resume(ctx, task, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Resume with changed image failed: %v", err)
 	}
 	if got := len(mockSrv.actorTemplates); got != 2 {
@@ -842,7 +842,7 @@ func TestTaskReconciler_WorkspaceReady(t *testing.T) {
 // fails the resume, a setup failure the runner reports marks the workspace
 // SetupFailed, and a failure it reports once the workspace is set up fails the
 // resume.
-func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
+func TestTaskManager_ResumeTaskPush(t *testing.T) {
 	ctx := context.Background()
 
 	var pushCode, checkCode atomic.Int32
@@ -876,8 +876,8 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
 	defer client.Close()
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 2 * time.Second
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 2 * time.Second
 
 	newTask := func(name string) *v1alpha1.Task {
 		return &v1alpha1.Task{
@@ -894,7 +894,7 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	// The runner holds another task: Resume fails.
 	pushCode.Store(http.StatusConflict)
 	task := newTask("rejected")
-	if err := reconciler.Resume(ctx, task, ws, nil); err == nil {
+	if err := manager.Resume(ctx, task, ws, nil); err == nil {
 		t.Fatal("Resume succeeded although the runner rejected the task")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
@@ -907,7 +907,7 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	pushCode.Store(http.StatusAccepted)
 	checkCode.Store(http.StatusInternalServerError)
 	task = newTask("setup-fails")
-	if err := reconciler.Resume(ctx, task, ws, nil); err != nil {
+	if err := manager.Resume(ctx, task, ws, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "False", v1alpha1.WorkspaceReasonSetupFailed)
@@ -919,12 +919,12 @@ func TestTaskReconciler_ResumeTaskPush(t *testing.T) {
 	// resume: the workspace is ready, so the resume fails.
 	checkCode.Store(http.StatusOK)
 	task = newTask("restart-fails")
-	if err := reconciler.Resume(ctx, task, ws, nil); err != nil {
+	if err := manager.Resume(ctx, task, ws, nil); err != nil {
 		t.Fatalf("Resume failed: %v", err)
 	}
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 	checkCode.Store(http.StatusInternalServerError)
-	err = reconciler.Resume(ctx, task, ws, nil)
+	err = manager.Resume(ctx, task, ws, nil)
 	if err == nil || !strings.Contains(err.Error(), "git clone failed") {
 		t.Fatalf("Resume = %v, want the runner's reason for not starting the task", err)
 	}
@@ -983,7 +983,7 @@ func startPushRunner(t *testing.T) string {
 // A task whose command cannot be started (a typo in spec.commands) must not
 // resume as if it were running. These cases resume against the real runner, so
 // they also cover what it reports for such a task.
-func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
+func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 	// resume resumes a task with the given command on a fresh runner. A
 	// prewarmed task starts from a workspace snapshot, so its workspace is
 	// ready before its first resume.
@@ -1003,8 +1003,8 @@ func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
 			t.Fatalf("failed to create substrate client: %v", err)
 		}
 		t.Cleanup(func() { client.Close() })
-		reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-		reconciler.WorkspaceReadyTimeout = 10 * time.Second
+		manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+		manager.WorkspaceReadyTimeout = 10 * time.Second
 
 		task := &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "task", Atespace: "default", Uid: "task-uid"},
@@ -1018,7 +1018,7 @@ func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
 				{Type: v1alpha1.ConditionWorkspaceReady, Status: "True", Reason: v1alpha1.ReasonSetupComplete},
 			}}
 		}
-		return task, reconciler.Resume(context.Background(), task, nil, nil)
+		return task, manager.Resume(context.Background(), task, nil, nil)
 	}
 	typo := []string{"ax-no-such-command", "agent.py"}
 
@@ -1067,7 +1067,7 @@ func TestTaskReconciler_ResumeCommandCannotStart(t *testing.T) {
 	})
 }
 
-func TestTaskReconciler_ResourceLimits(t *testing.T) {
+func TestTaskManager_ResourceLimits(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1088,8 +1088,8 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -1108,7 +1108,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		},
 	}
 
-	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 1 {
@@ -1125,7 +1125,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 	// Raising a limit is a launch configuration change and must provision a new
 	// template, under a new name, carrying the new value.
 	task.Spec.Profile.Resources.Limits.Memory = "8Gi"
-	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend with changed limits failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 2 {
@@ -1147,7 +1147,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 		Metadata:   &v1alpha1.ObjectMeta{Name: "plain-task", Atespace: "default"},
 		Spec:       &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := reconciler.Suspend(ctx, plain, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, plain, nil, nil); err != nil {
 		t.Fatalf("Suspend of task without limits failed: %v", err)
 	}
 	wantDefault := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
@@ -1162,7 +1162,7 @@ func TestTaskReconciler_ResourceLimits(t *testing.T) {
 // A task that asks for limits must never run without them: invalid limits and a
 // Substrate rejection of the template both fail the reconcile instead of falling
 // back to the default template. Without limits the fallback contract is unchanged.
-func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
+func TestTaskManager_ResourceLimitsFailurePaths(t *testing.T) {
 	ctx := context.Background()
 
 	newTask := func(name string, resources *v1alpha1.ResourcesSpec) *v1alpha1.Task {
@@ -1175,7 +1175,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			},
 		}
 	}
-	setup := func(t *testing.T, mockSrv *mockControlServer) *controller.TaskReconciler {
+	setup := func(t *testing.T, mockSrv *mockControlServer) *controller.TaskManager {
 		lis, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatalf("failed to listen: %v", err)
@@ -1192,14 +1192,14 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			grpcServer.Stop()
 			lis.Close()
 		})
-		reconciler := controller.NewTaskReconciler(client, "test-template", "ax-system")
-		reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
-		return reconciler
+		manager := controller.NewTaskManager(client, "test-template", "ax-system")
+		manager.WorkspaceReadyTimeout = 200 * time.Millisecond
+		return manager
 	}
 
 	t.Run("invalid limits fail before provisioning", func(t *testing.T) {
 		mockSrv := &mockControlServer{}
-		reconciler := setup(t, mockSrv)
+		manager := setup(t, mockSrv)
 
 		for _, reqs := range []*v1alpha1.ResourcesSpec{
 			{Limits: &v1alpha1.ResourceList{Cpu: "two"}},
@@ -1208,7 +1208,7 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 			{Limits: &v1alpha1.ResourceList{Memory: "-4Gi"}},
 		} {
 			task := newTask("bad-limits", reqs)
-			if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
+			if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 				t.Errorf("Suspend(%v) succeeded, want error", reqs)
 			}
 			assertCondition(t, task, "Ready", "False", v1alpha1.ReasonInvalidResources)
@@ -1223,12 +1223,12 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		mockSrv := &mockControlServer{
 			createTemplateErr: status.Error(codes.InvalidArgument, "actor_template.resources.limits[0].quantity: Invalid value"),
 		}
-		reconciler := setup(t, mockSrv)
+		manager := setup(t, mockSrv)
 
 		task := newTask("rejected-limits", &v1alpha1.ResourcesSpec{
 			Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
 		})
-		if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
+		if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 			t.Fatal("Suspend succeeded although the template with limits was rejected")
 		}
 		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
@@ -1241,10 +1241,10 @@ func TestTaskReconciler_ResourceLimitsFailurePaths(t *testing.T) {
 		mockSrv := &mockControlServer{
 			createTemplateErr: status.Error(codes.InvalidArgument, "image must be pinned by digest"),
 		}
-		reconciler := setup(t, mockSrv)
+		manager := setup(t, mockSrv)
 
 		task := newTask("no-limits", nil)
-		if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
+		if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 			t.Fatal("Suspend succeeded although the template was rejected")
 		}
 		// Falling back would run a different image than the task asked for, so the
@@ -1299,10 +1299,10 @@ func TestDelete_RemovesActorAndTemplates(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
-	if err := reconciler.Delete(ctx, "default", "job"); err != nil {
+	if err := manager.Delete(ctx, "default", "job"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
@@ -1361,9 +1361,9 @@ func TestDelete_BlocksUntilActorDeleted(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
 
-	if err := reconciler.Delete(ctx, "default", "slow-delete-task"); err != nil {
+	if err := manager.Delete(ctx, "default", "slow-delete-task"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
@@ -1402,9 +1402,9 @@ func TestDelete_ActorDeletionTimeout(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
 
-	err = reconciler.Delete(ctx, "default", "stuck-task")
+	err = manager.Delete(ctx, "default", "stuck-task")
 	if err == nil {
 		t.Fatal("expected error due to timeout, got nil")
 	}
@@ -1444,7 +1444,7 @@ func TestEnsureActor_RevertsCrashedActor(t *testing.T) {
 	}
 }
 
-func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
+func TestTaskManager_TransientSubstrateUnavailable(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1465,8 +1465,8 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	// 1. A transient error during EnsureAtespace is recorded with Reason="SubstrateUnavailable".
 	mockSrv.createAtespaceErr = status.Error(codes.DeadlineExceeded, "substrate control plane timed out")
@@ -1474,7 +1474,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-atespace"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := reconciler.Suspend(ctx, task, nil, nil); err == nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureAtespace fails, got nil")
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -1486,7 +1486,7 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-actor"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := reconciler.Suspend(ctx, task2, nil, nil); err == nil {
+	if err := manager.Suspend(ctx, task2, nil, nil); err == nil {
 		t.Fatal("expected error from Suspend when EnsureActor fails, got nil")
 	}
 	assertCondition(t, task2, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
@@ -1499,14 +1499,14 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-resume"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := reconciler.Resume(ctx, task3, nil, nil); err == nil {
+	if err := manager.Resume(ctx, task3, nil, nil); err == nil {
 		t.Fatal("expected error from Resume when ResumeActor fails, got nil")
 	}
 	assertCondition(t, task3, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 
 	// Recovery on retry:
 	mockSrv.resumeActorErr = nil
-	if err := reconciler.Resume(ctx, task3, nil, nil); err != nil {
+	if err := manager.Resume(ctx, task3, nil, nil); err != nil {
 		t.Fatalf("expected Resume to succeed after Substrate recovers, got %v", err)
 	}
 	if len(mockSrv.resumedActors) != 1 || mockSrv.resumedActors[0] != "transient-resume" {
@@ -1519,14 +1519,14 @@ func TestTaskReconciler_TransientSubstrateUnavailable(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "permanent-actor-err"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := reconciler.Suspend(ctx, task4, nil, nil); err == nil {
+	if err := manager.Suspend(ctx, task4, nil, nil); err == nil {
 		t.Fatal("expected error on InvalidArgument, got nil")
 	}
 	assertCondition(t, task4, "Ready", "False", v1alpha1.ReasonActorCreationFailed)
 	mockSrv.createActorErr = nil
 }
 
-func TestTaskReconciler_ATETemplate(t *testing.T) {
+func TestTaskManager_ATETemplate(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1547,14 +1547,14 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	}
 	defer client.Close()
 
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "tpl-task", Atespace: "default"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "custom-base"}}},
 	}
-	if err := reconciler.Suspend(ctx, task, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, task, nil, nil); err != nil {
 		t.Fatalf("Suspend failed: %v", err)
 	}
 	if got := task.GetStatus().GetAteTemplate(); got.GetName() != "custom-base" || got.GetAtespace() != "default" {
@@ -1563,7 +1563,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	if len(mockSrv.createdTemplates) != 0 {
 		t.Errorf("expected no per-task template created, got %d", len(mockSrv.createdTemplates))
 	}
-	if err := reconciler.DeleteTask(ctx, task); err != nil {
+	if err := manager.DeleteTask(ctx, task); err != nil {
 		t.Fatalf("DeleteTask failed: %v", err)
 	}
 	if !mockSrv.actorTemplates["custom-base"] {
@@ -1577,7 +1577,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "cross-tpl-task", Atespace: "default"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{AteTemplate: &v1alpha1.ObjectRef{Name: "custom-base", Atespace: "shared"}}},
 	}
-	if err := reconciler.Suspend(ctx, crossTask, nil, nil); err != nil {
+	if err := manager.Suspend(ctx, crossTask, nil, nil); err != nil {
 		t.Fatalf("Suspend with ateTemplate.atespace failed: %v", err)
 	}
 	wantRef := &ateapipb.ObjectRef{Atespace: "shared", Name: "custom-base"}
@@ -1592,7 +1592,7 @@ func TestTaskReconciler_ATETemplate(t *testing.T) {
 	}
 }
 
-func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
+func TestTaskManager_WorkspaceProfilePrecedence(t *testing.T) {
 	ctx := context.Background()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -1614,8 +1614,8 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 	defer client.Close()
 
 	const taskImg = "ghcr.io/task/image@sha256:1111"
-	reconciler := controller.NewTaskReconciler(client, "test-template", v1alpha1.DefaultSystemNamespace)
-	reconciler.WorkspaceReadyTimeout = 50 * time.Millisecond
+	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	ws := &v1alpha1.Workspace{
 		Metadata: &v1alpha1.ObjectMeta{Name: "warm-ws", Atespace: "default"},
@@ -1634,7 +1634,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 		Metadata: &v1alpha1.ObjectMeta{Name: "inherited-task", Atespace: "default"},
 		Spec:     &v1alpha1.TaskSpec{Workspace: &v1alpha1.WorkspaceRef{Name: "warm-ws"}},
 	}
-	if err := reconciler.Suspend(ctx, inheritedTask, ws, nil); err != nil {
+	if err := manager.Suspend(ctx, inheritedTask, ws, nil); err != nil {
 		t.Fatalf("Suspend(inheritedTask) failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 1 {
@@ -1666,7 +1666,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 			},
 		},
 	}
-	if err := reconciler.Suspend(ctx, resourcesOnlyTask, ws, nil); err != nil {
+	if err := manager.Suspend(ctx, resourcesOnlyTask, ws, nil); err != nil {
 		t.Fatalf("Suspend(resourcesOnlyTask) failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 2 {
@@ -1702,7 +1702,7 @@ func TestTaskReconciler_WorkspaceProfilePrecedence(t *testing.T) {
 			},
 		},
 	}
-	if err := reconciler.Suspend(ctx, taskOverTplWs, wsWithTpl, nil); err != nil {
+	if err := manager.Suspend(ctx, taskOverTplWs, wsWithTpl, nil); err != nil {
 		t.Fatalf("Suspend(taskOverTplWs) failed: %v", err)
 	}
 	if len(mockSrv.createdTemplates) != 3 {

@@ -59,9 +59,10 @@ type GatewayStore interface {
 	GetGateway(ctx context.Context, atespace, name string) (*v1alpha1.Gateway, error)
 }
 
-// TaskReconciler reconciles Task resources by provisioning and orchestrating
-// sandboxed Actors on Agent Substrate.
-type TaskReconciler struct {
+// TaskManager provisions, suspends, resumes, and deletes the sandboxed Actors
+// that run Tasks on Agent Substrate. ax-server calls it directly; it runs no
+// reconcile loop.
+type TaskManager struct {
 	client                  *substrate.Client
 	httpClient              *http.Client
 	defaultTemplate         string
@@ -89,16 +90,16 @@ type TaskReconciler struct {
 	GatewayStore GatewayStore
 }
 
-// NewTaskReconciler creates a new TaskReconciler. Empty defaults fall back to
+// NewTaskManager creates a new TaskManager. Empty defaults fall back to
 // "default-template" and v1alpha1.DefaultSystemNamespace respectively.
-func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskReconciler {
+func NewTaskManager(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskManager {
 	if defaultTemplate == "" {
 		defaultTemplate = "default-template"
 	}
 	if defaultTemplateAtespace == "" {
 		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
 	}
-	return &TaskReconciler{
+	return &TaskManager{
 		client:                  client,
 		httpClient:              newProbeHTTPClient(),
 		defaultTemplate:         defaultTemplate,
@@ -107,9 +108,9 @@ func NewTaskReconciler(client *substrate.Client, defaultTemplate, defaultTemplat
 	}
 }
 
-// Client returns the Substrate client used by the reconciler.
-func (r *TaskReconciler) Client() *substrate.Client {
-	return r.client
+// Client returns the Substrate client used by the TaskManager.
+func (m *TaskManager) Client() *substrate.Client {
+	return m.client
 }
 
 func newProbeHTTPClient() *http.Client {
@@ -143,7 +144,7 @@ func newProbeHTTPClient() *http.Client {
 // what AX stores in the task's status: the resolved template name, resolved
 // argv, and on failure the reason in a False Ready condition. The caller sets
 // the state, and the server reads the rest of the status from the actor.
-func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
+func (m *TaskManager) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -168,18 +169,18 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	// well as at apply time: a task must never run without limits it asked for.
 	if effective.GetAteTemplate().GetName() == "" {
 		if err := apivalidation.ValidateResources(effective.GetResources()); err != nil {
-			r.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 			return fmt.Errorf("validating resources: %w", err)
 		}
 	}
 
 	// 1. Ensure the Atespace exists in Substrate.
-	if err := r.client.EnsureAtespace(ctx, atespace); err != nil {
+	if err := m.client.EnsureAtespace(ctx, atespace); err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("ensuring atespace: %w", err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
+		m.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
 		return fmt.Errorf("ensuring atespace: %w", err)
 	}
 
@@ -188,13 +189,13 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	actorName := task.Metadata.Name
 
 	// 3. Resolve or provision the ActorTemplate for the task.
-	templateAtespace, templateName, err := ensureProfileTemplate(ctx, r.client, atespace, effective, r.RunnerVolumeImage)
+	templateAtespace, templateName, err := ensureProfileTemplate(ctx, m.client, atespace, effective, m.RunnerVolumeImage)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("ensuring actor template: %w", err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
+		m.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 		return fmt.Errorf("ensuring actor template: %w", err)
 	}
 
@@ -205,29 +206,29 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	wsPath := task.GetSpec().WorkspacePath()
 	usesDefaultWorkspacePath := wsPath == "" || wsPath == v1alpha1.DefaultWorkspacePath
 	var sourceTag string
-	if usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() {
+	if usesDefaultWorkspacePath && ws != nil && needsPrewarmSnapshot(ws.GetSpec()) && m.WorkspaceManager != nil && m.WorkspaceManager.PrewarmEnabled() {
 		var setupGW *v1alpha1.Gateway
-		if gwName := ws.GetSpec().GetSetup().GetGateway().GetName(); gwName != "" && r.GatewayStore != nil {
-			setupGW, _ = r.GatewayStore.GetGateway(ctx, atespace, gwName)
+		if gwName := ws.GetSpec().GetSetup().GetGateway().GetName(); gwName != "" && m.GatewayStore != nil {
+			setupGW, _ = m.GatewayStore.GetGateway(ctx, atespace, gwName)
 		}
-		sourceTag, err = r.WorkspaceManager.EnsureSnapshotTag(ctx, ws, effective, setupGW)
+		sourceTag, err = m.WorkspaceManager.EnsureSnapshotTag(ctx, ws, effective, setupGW)
 		if err != nil {
 			if substrate.IsTransientError(err) {
-				r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+				m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 				return fmt.Errorf("resolving workspace snapshot tag: %w", err)
 			}
-			r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, statusErrorMessage(err), now)
+			m.setNotReady(task, v1alpha1.ReasonActorCreationFailed, statusErrorMessage(err), now)
 			return fmt.Errorf("resolving workspace snapshot tag: %w", err)
 		}
 	}
 
-	_, err = r.client.EnsureActorFromTag(ctx, atespace, actorName, templateAtespace, templateName, sourceTag)
+	_, err = m.client.EnsureActorFromTag(ctx, atespace, actorName, templateAtespace, templateName, sourceTag)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("ensuring actor: %w", err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
+		m.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
 		return fmt.Errorf("ensuring actor: %w", err)
 	}
 
@@ -238,7 +239,7 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 	if len(task.Spec.Commands) > 0 && len(task.Status.ResolvedArgv) == 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
-	if usesDefaultWorkspacePath && r.WorkspaceManager != nil && r.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
+	if usesDefaultWorkspacePath && m.WorkspaceManager != nil && m.WorkspaceManager.PrewarmEnabled() && !conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
 		msg := "Workspace requires no setup"
 		if sourceTag != "" {
 			msg = fmt.Sprintf("Workspace seeded from snapshot tag %s", sourceTag)
@@ -251,27 +252,27 @@ func (r *TaskReconciler) ensureSubstrateResources(ctx context.Context, task *v1a
 // bindGateway ensures the task's actor has an EgressPolicy with the rules of
 // the task's bound Gateway. A task without a Gateway gets no policy, and an
 // actor that already has a policy keeps it unchanged.
-func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *v1alpha1.Gateway) error {
+func (m *TaskManager) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *v1alpha1.Gateway) error {
 	gwName := task.Spec.GetGateway().GetName()
 	if gwName == "" {
 		return nil
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
-	_, err := r.client.GetActorEgressPolicy(ctx, atespace, actorName)
+	_, err := m.client.GetActorEgressPolicy(ctx, atespace, actorName)
 	if status.Code(err) == codes.NotFound {
 		if gw == nil {
 			err = fmt.Errorf("not available in atespace %q", atespace)
 		} else {
-			err = r.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress())
+			err = m.client.EnsureActorEgressPolicy(ctx, atespace, actorName, gw.GetSpec().GetEgress())
 		}
 	}
 	if err != nil {
 		now := time.Now()
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("binding gateway %q: %w", gwName, err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
+		m.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
 		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
@@ -280,21 +281,21 @@ func (r *TaskReconciler) bindGateway(ctx context.Context, task *v1alpha1.Task, g
 // Suspend runs ensureSubstrateResources, suspends the task's actor, and then
 // runs bindGateway, so the actor is suspended even when bindGateway fails. A
 // failure to suspend the actor is returned without changing the task's status.
-func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
+func (m *TaskManager) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
 	var prevStatus *v1alpha1.TaskStatus
 	if task.GetStatus() != nil {
 		prevStatus = proto.Clone(task.Status).(*v1alpha1.TaskStatus)
 	}
-	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
+	if err := m.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
 	slog.Info("suspending actor on Substrate", "actor", actorName)
-	if err := r.client.SuspendActor(ctx, atespace, actorName); err != nil {
+	if err := m.client.SuspendActor(ctx, atespace, actorName); err != nil {
 		task.Status = prevStatus
 		return fmt.Errorf("suspending actor: %w", err)
 	}
-	if err := r.bindGateway(ctx, task, gw); err != nil {
+	if err := m.bindGateway(ctx, task, gw); err != nil {
 		task.Status.AteTemplate = prevStatus.GetAteTemplate()
 		return err
 	}
@@ -312,11 +313,11 @@ func (r *TaskReconciler) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v
 // accept the task in time, as a transient error (substrate.IsTransientError):
 // the task is not running, and resuming again repeats the push. A runner that
 // accepted the task and is still working when the wait ends is not an error.
-func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
-	if err := r.ensureSubstrateResources(ctx, task, ws); err != nil {
+func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
+	if err := m.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
 	}
-	if err := r.bindGateway(ctx, task, gw); err != nil {
+	if err := m.bindGateway(ctx, task, gw); err != nil {
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
@@ -324,13 +325,13 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 
 	// Resume the Actor to activate container execution.
 	slog.Info("resuming actor on Substrate worker", "actor", actorName)
-	_, workerIP, err := r.client.ResumeActor(ctx, atespace, actorName)
+	_, workerIP, err := m.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
 		if substrate.IsTransientError(err) {
-			r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
+			m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), now)
 			return fmt.Errorf("resuming actor: %w", err)
 		}
-		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
+		m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
 		return fmt.Errorf("resuming actor: %w", err)
 	}
 
@@ -341,12 +342,12 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 	// WorkspaceReady stays True across suspend/resume cycles. The task starts
 	// on every resume, so the runner is polled every time.
 	workspaceReady := conditionTrue(task, v1alpha1.ConditionWorkspaceReady)
-	pollCtx, cancel := context.WithTimeout(ctx, r.WorkspaceReadyTimeout)
+	pollCtx, cancel := context.WithTimeout(ctx, m.WorkspaceReadyTimeout)
 	defer cancel()
 	var notReadyMsg string
 	body, err := taskPushBody(task, ws)
 	if err == nil {
-		err = pushToRunner(pollCtx, r.httpClient, atespace, actorName, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
+		err = pushToRunner(pollCtx, m.httpClient, atespace, actorName, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
 	}
 	switch {
 	case errors.Is(err, errNoRouter):
@@ -354,17 +355,17 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 		notReadyMsg = err.Error()
 	case err != nil && pollCtx.Err() == nil:
 		// The runner refused the task, so it never runs it.
-		r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
+		m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
 		return fmt.Errorf("pushing task to runner: %w", err)
 	case err != nil:
 		// The task reaches the runner only through this push, so without it
 		// nothing runs. err wraps the context's error, which makes a timeout
 		// transient: resuming again repeats the push.
-		err = fmt.Errorf("runner at %s did not accept the task within %s: %w", workerIP, r.WorkspaceReadyTimeout, err)
-		r.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
+		err = fmt.Errorf("runner at %s did not accept the task within %s: %w", workerIP, m.WorkspaceReadyTimeout, err)
+		m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
 		return err
 	default:
-		err = waitWorkspaceReady(pollCtx, r.httpClient, atespace, actorName, workspaceReadyPollInterval)
+		err = waitWorkspaceReady(pollCtx, m.httpClient, atespace, actorName, workspaceReadyPollInterval)
 		switch {
 		case err == nil:
 			workspaceReady = true
@@ -373,7 +374,7 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 			// is starting the task: nothing runs in the resumed actor. The
 			// runner's reason is reported without errSetupFailed's text.
 			reason := strings.TrimPrefix(err.Error(), errSetupFailed.Error()+": ")
-			r.setNotReady(task, v1alpha1.ReasonActorResumeFailed, reason, time.Now())
+			m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, reason, time.Now())
 			return errors.New(reason)
 		case errors.Is(err, errSetupFailed):
 			notReadyMsg = err.Error()
@@ -405,7 +406,7 @@ func (r *TaskReconciler) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1
 
 // setNotReady marks the task's Ready condition False. WorkspaceReady is left untouched:
 // workspace setup is a one-time step whose result outlives actor failures and suspends.
-func (r *TaskReconciler) setNotReady(task *v1alpha1.Task, reason, message string, t time.Time) {
+func (m *TaskManager) setNotReady(task *v1alpha1.Task, reason, message string, t time.Time) {
 	setCondition(task, v1alpha1.ConditionReady, "False", reason, message, t)
 }
 
@@ -465,14 +466,14 @@ func taskTemplatePattern(taskName string) *regexp.Regexp {
 
 // Delete cleans up Substrate resources when a Task is deleted: the actor,
 // which shares the task's name, then every per-task ActorTemplate provisioned for the task.
-func (r *TaskReconciler) Delete(ctx context.Context, atespace, taskName string) error {
-	return r.delete(ctx, atespace, taskName, false)
+func (m *TaskManager) Delete(ctx context.Context, atespace, taskName string) error {
+	return m.delete(ctx, atespace, taskName, false)
 }
 
 // DeleteTask cleans up Substrate resources for task. If the task runs directly
 // from a user-supplied ActorTemplate (rather than a per-task template), template
 // cleanup is skipped.
-func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) error {
+func (m *TaskManager) DeleteTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task == nil {
 		return nil
 	}
@@ -484,21 +485,21 @@ func (r *TaskReconciler) DeleteTask(ctx context.Context, task *v1alpha1.Task) er
 	tpl := task.GetStatus().GetAteTemplate().GetName()
 	skipTemplates := task.GetSpec().GetProfile().GetAteTemplate().GetName() != "" ||
 		(tpl != "" && !taskTemplatePattern(taskName).MatchString(tpl))
-	return r.delete(ctx, atespace, taskName, skipTemplates)
+	return m.delete(ctx, atespace, taskName, skipTemplates)
 }
 
-func (r *TaskReconciler) delete(ctx context.Context, atespace, taskName string, skipTemplates bool) error {
+func (m *TaskManager) delete(ctx context.Context, atespace, taskName string, skipTemplates bool) error {
 	if atespace == "" {
 		atespace = v1alpha1.DefaultAtespace
 	}
 	slog.Info("deleting Substrate actor for task", "atespace", atespace, "task", taskName)
-	if err := r.client.DeleteActor(ctx, atespace, taskName); err != nil {
+	if err := m.client.DeleteActor(ctx, atespace, taskName); err != nil {
 		return err
 	}
 	if skipTemplates {
 		return nil
 	}
-	if err := r.deleteTaskTemplates(ctx, atespace, taskName); err != nil {
+	if err := m.deleteTaskTemplates(ctx, atespace, taskName); err != nil {
 		slog.Warn("could not clean up actor templates for task", "task", taskName, "error", err)
 	}
 	return nil
@@ -508,8 +509,8 @@ func (r *TaskReconciler) delete(ctx context.Context, atespace, taskName string, 
 // accumulate across spec revisions, so this matches by name pattern rather than
 // recomputing a single digest. If an actor deletion is still finishing in Substrate,
 // template deletion may briefly return Aborted, so we retry with backoff.
-func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, taskName string) error {
-	templates, err := r.client.ListActorTemplates(ctx, atespace)
+func (m *TaskManager) deleteTaskTemplates(ctx context.Context, atespace, taskName string) error {
+	templates, err := m.client.ListActorTemplates(ctx, atespace)
 	if err != nil {
 		return err
 	}
@@ -524,7 +525,7 @@ func (r *TaskReconciler) deleteTaskTemplates(ctx context.Context, atespace, task
 		var delErr error
 	Retry:
 		for attempt := 0; attempt < 5; attempt++ {
-			delErr = r.client.DeleteActorTemplate(ctx, atespace, name)
+			delErr = m.client.DeleteActorTemplate(ctx, atespace, name)
 			if delErr == nil || status.Code(delErr) == codes.NotFound {
 				delErr = nil
 				break

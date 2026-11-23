@@ -9,7 +9,7 @@ description: >
 
 AX schedules every `Task` as a sandboxed **actor** on
 [Agent Substrate](https://github.com/agent-substrate/substrate). AX owns the
-declarative layer (Task/Workspace/Model, reconciler, CLI); Substrate owns
+declarative layer (Task/Workspace/Model, task manager, CLI); Substrate owns
 isolation, checkpoint/restore, worker placement and in-cluster routing.
 Facts below were verified against `main` on 2026-11-06 — re-check `go.mod`
 and `hack/setup-e2e-kind.sh` if they look stale.
@@ -35,7 +35,7 @@ All Control API traffic goes through this package. It encapsulates:
   token with audience `api.ate-system.svc`, see `deploy/ax-server.yaml`), CA
   from `SUBSTRATE_CA_FILE`.
 - **Retry** — `IsTransientError` (`Unavailable`, `DeadlineExceeded`, `Aborted`) + `callWithRetry` (`retryOnCodes`).
-- **Helpers** the reconcilers rely on — `EnsureAtespace`, `EnsureActorTemplate`,
+- **Helpers** the task and workspace managers rely on — `EnsureAtespace`, `EnsureActorTemplate`,
   `EnsureActorTemplateWithImage`, `BuildActorTemplate`, `EnsureActor`,
   `EnsureActorFromTag`, `GetActorEgressPolicy`, `EnsureActorEgressPolicy`,
   `CreateTag`, `GetTag`, `ListTags`, `DeleteTag`, `SuspendActor`,
@@ -48,7 +48,7 @@ All Control API traffic goes through this package. It encapsulates:
   wrapped in `callWithRetry` (`codes.Unavailable` plus optional codes such as `codes.Aborted`).
 - Each method has a table-driven case in `client_test.go` (`mockControlClient`).
 - Callers in `internal/controller` exercise it through `mockControlServer`
-  (`reconciler_test.go`) or `internal/substrate/substratetest` (`workspace_test.go`);
+  (`task_test.go`) or `internal/substrate/substratetest` (`workspace_test.go`);
   `internal/server` and `cmd/ax` tests also use `internal/substrate/substratetest`
   (section 4).
 
@@ -57,7 +57,7 @@ All Control API traffic goes through this package. It encapsulates:
 | Value | Occurrences |
 |---|---|
 | `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (`NewClientWithOptions`: default target, TLS `ServerName`, authority), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
-| `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
+| `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/task.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
 | `opentelemetry-collector.otel-system.svc:4317` (the collector Substrate's kind overlay deploys, `manifests/ate-install/kind/ate-otel-config.yaml` in Substrate) | `test/e2e/manifests/ax-server.yaml` (`ax-otel-config` ConfigMap). An unreachable address does not fail E2E; ax-server only logs OTLP export errors |
@@ -83,9 +83,9 @@ ateapipb.RegisterControlServer(grpcServer, mockSrv)
 // serve on a listener, point substrate.NewClientWithOptions at it (Plaintext: true)
 ```
 
-Canonical examples: `internal/controller/reconciler_test.go` (reconciler state
+Canonical examples: `internal/controller/task_test.go` (task lifecycle state
 transitions; the largest test file in the repo). `internal/server/server_test.go`
-and `cmd/ax/main_test.go` run a real `TaskReconciler` against
+and `cmd/ax/main_test.go` run a real `TaskManager` against
 `internal/substrate/substratetest`, an in-memory fake of the same API (atespaces,
 actor templates, actors, and tags).
 `internal/substrate/client_test.go` uses a client-side `mockControlClient`
@@ -106,11 +106,11 @@ instead. No mocking library is in `go.mod`.
   manifests get the image from `{{taskImage}}` (`$AX_E2E_TASK_IMAGE`, written
   to `.tmp/e2e.env` by `hack/setup-e2e-kind.sh`).
 - After `ResumeActor` the actor may be on a different worker, so AX never
-  stores a worker IP: the reconciler uses the IP `ResumeActor` returns only in
-  conditions and logs (`internal/controller/reconciler.go`), and both
+  stores a worker IP: the task manager uses the IP `ResumeActor` returns only in
+  conditions and logs (`internal/controller/task.go`), and both
   ax-server and `ax ssh` reach the actor through `atenet-router`.
 - Egress: an actor without an egress policy has no outbound access. For a
-  task that binds a Gateway, `bindGateway` (`internal/controller/reconciler.go`)
+  task that binds a Gateway, `bindGateway` (`internal/controller/task.go`)
   asks Substrate whether the actor has a policy. If it has none, `bindGateway`
   creates its one policy (named `default`) from the Gateway's rules. An actor
   that has a policy keeps it, so the rules are copied once and never updated;
@@ -151,7 +151,7 @@ instead. No mocking library is in `go.mod`.
   name (`runner/env.go`). It sets no API key variable, because tools choose a
   provider by which key is set: a task sets its own placeholders in
   `spec.env`. A Gateway's spec is never passed into the sandbox.
-- Readiness: Substrate and the reconciler probe the runner on port 80
+- Readiness: Substrate and the task manager probe the runner on port 80
   (`/healthz`, `/readyz?check=workspace`, served by `internal/metadata`);
   `/readyz` is 503 until all workspaces are materialized (`docs/sandbox.md`).
 - Workspace snapshot tags: `SuspendActor` defaults to asynchronous snapshot
