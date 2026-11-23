@@ -1322,8 +1322,11 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED {
 		t.Errorf("stored state = %v, want FAILED", stored.GetStatus().GetState())
 	}
-	if stored.GetStatus().GetStatusDetail().GetReason() != v1alpha1.TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED {
-		t.Errorf("StatusDetail = %v, want PROVISIONING_FAILED", stored.GetStatus().GetStatusDetail())
+	if !strings.Contains(stored.GetStatus().GetStatusDetail().GetDetail(), "substrate suspend actor failure") {
+		t.Errorf("StatusDetail = %v, want detail containing suspend error message", stored.GetStatus().GetStatusDetail())
+	}
+	if ready := readyCondition(stored); ready.GetStatus() != "False" || ready.GetReason() != v1alpha1.ReasonProvisioningFailed || !strings.Contains(ready.GetMessage(), "substrate suspend actor failure") {
+		t.Errorf("Ready = %v, want False/%s with suspend error message", ready, v1alpha1.ReasonProvisioningFailed)
 	}
 
 	// Because task already exists in store, attempting to create it again must fail with FailedPrecondition
@@ -1603,8 +1606,8 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SuspendTask: %v", err)
 	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
-		t.Errorf("state after SuspendTask = %v, want SUSPENDED", task.GetStatus().GetState())
+	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED || task.GetStatus().GetStatusDetail() != nil {
+		t.Errorf("state/detail after SuspendTask = %v/%v, want SUSPENDED/nil", task.GetStatus().GetState(), task.GetStatus().GetStatusDetail())
 	}
 
 	createFailed("task-resume")
@@ -1612,8 +1615,66 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResumeTask: %v", err)
 	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("state after ResumeTask = %v, want WORKING", task.GetStatus().GetState())
+	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING || task.GetStatus().GetStatusDetail() != nil {
+		t.Errorf("state/detail after ResumeTask = %v/%v, want WORKING/nil", task.GetStatus().GetState(), task.GetStatus().GetStatusDetail())
+	}
+}
+
+func TestServer_TerminalTaskRejectsSuspendAndResume(t *testing.T) {
+	st := memory.NewStore()
+	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	ctx := context.Background()
+
+	cases := []struct {
+		name   string
+		status *v1alpha1.TaskStatus
+	}{
+		{name: "completed", status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED}},
+		{name: "cancelled", status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_CANCELLED}},
+		{name: "failed-without-condition", status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED}},
+		{
+			name: "failed-sandbox-crashed",
+			status: &v1alpha1.TaskStatus{
+				State: v1alpha1.TaskState_TASK_STATE_FAILED,
+				Conditions: []*v1alpha1.Condition{{
+					Type:   v1alpha1.ConditionReady,
+					Status: "False",
+					Reason: v1alpha1.ReasonSandboxCrashed,
+				}},
+			},
+		},
+		{
+			name: "failed-with-outcome",
+			status: &v1alpha1.TaskStatus{
+				State:   v1alpha1.TaskState_TASK_STATE_FAILED,
+				Outcome: &v1alpha1.TaskOutcome{ExitCode: 1},
+				Conditions: []*v1alpha1.Condition{{
+					Type:   v1alpha1.ConditionReady,
+					Status: "False",
+					Reason: v1alpha1.ReasonProvisioningFailed,
+				}},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: tc.name},
+				Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+			}}); err != nil {
+				t.Fatalf("CreateTask: %v", err)
+			}
+			if err := st.UpdateTaskStatus(ctx, "default", tc.name, tc.status); err != nil {
+				t.Fatalf("UpdateTaskStatus: %v", err)
+			}
+			if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: tc.name}); status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("SuspendTask(%s) = %v, want FailedPrecondition", tc.name, err)
+			}
+			if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: tc.name}); status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("ResumeTask(%s) = %v, want FailedPrecondition", tc.name, err)
+			}
+		})
 	}
 }
 

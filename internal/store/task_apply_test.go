@@ -60,7 +60,6 @@ func TestTaskVersionCloneIdentifiersAndStoredStatus(t *testing.T) {
 		Actor:    "fix-bug",
 		ActorUid: "uid-1",
 		Outcome: &v1alpha1.TaskOutcome{
-			Result:   v1alpha1.TaskResult_TASK_RESULT_SUCCEEDED,
 			ExitCode: 0,
 			Output:   "all tests passed",
 		},

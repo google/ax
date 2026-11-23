@@ -127,31 +127,16 @@ enum TaskState {
   TASK_STATE_SUSPENDING = 9;
 }
 
-enum TaskResult {
-  TASK_RESULT_UNSPECIFIED = 0;
-  TASK_RESULT_SUCCEEDED = 1;
-  TASK_RESULT_FAILED = 2;
-  TASK_RESULT_CANCELLED = 3;
-}
-
 message TaskOutcome {
-  TaskResult result = 1;
-  google.rpc.Status status = 2;
-  int32 exit_code = 3;
+  google.rpc.Status status = 1;
+  int32 exit_code = 2;
   // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
   // automatic stdout/stderr tail fallback (capped at 64 KiB).
-  string output = 4;
-}
-
-enum TaskStatusReason {
-  TASK_STATUS_REASON_UNSPECIFIED = 0;
-  TASK_STATUS_REASON_PROVISIONING_FAILED = 1;
-  TASK_STATUS_REASON_SANDBOX_CRASHED = 2;
+  string output = 3;
 }
 
 message TaskStatusDetail {
-  TaskStatusReason reason = 1;
-  string detail = 2;
+  string detail = 1;
 }
 
 message TaskStatus {

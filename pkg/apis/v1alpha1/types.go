@@ -84,14 +84,17 @@ const (
 	ReasonGatewayBindingFailed = "GatewayBindingFailed"
 	// ReasonActorResumeFailed: Ready is False; the actor could not be resumed.
 	ReasonActorResumeFailed = "ActorResumeFailed"
+	// ReasonProvisioningFailed: Ready is False; provisioning or resuming the
+	// task failed without a more specific condition reason.
+	ReasonProvisioningFailed = "ProvisioningFailed"
 
 	// Actor lifecycle reasons reported on Ready when the actor is not running.
-	ReasonResuming    = "Resuming"
-	ReasonSuspending  = "Suspending"
-	ReasonSuspended   = "Suspended"
-	ReasonFailed      = "Failed"
-	ReasonTerminating = "Terminating"
-	ReasonUnknown     = "Unknown"
+	ReasonResuming       = "Resuming"
+	ReasonSuspending     = "Suspending"
+	ReasonSuspended      = "Suspended"
+	ReasonSandboxCrashed = "SandboxCrashed"
+	ReasonTerminating    = "Terminating"
+	ReasonUnknown        = "Unknown"
 
 	// ReasonSetupComplete: WorkspaceReady is True.
 	ReasonSetupComplete = "SetupComplete"

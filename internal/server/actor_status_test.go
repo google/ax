@@ -61,7 +61,7 @@ func TestSetActorStatus(t *testing.T) {
 		{storedTask("running", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, workspaceReady), testActor("running", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_WORKING, "running", "True", v1alpha1.ReasonTaskRunning},
 		{storedTask("setting-up", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("setting-up", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_WORKING, "setting-up", "False", v1alpha1.ReasonWorkspaceInitializing},
 		{storedTask("suspended", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, workspaceReady), testActor("suspended", ateapipb.ActorState_ACTOR_STATE_SUSPENDED), v1alpha1.TaskState_TASK_STATE_SUSPENDED, "suspended", "False", v1alpha1.ReasonSuspended},
-		{storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), crashed, v1alpha1.TaskState_TASK_STATE_FAILED, "crashed", "False", v1alpha1.ReasonFailed},
+		{storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), crashed, v1alpha1.TaskState_TASK_STATE_FAILED, "crashed", "False", v1alpha1.ReasonSandboxCrashed},
 		{storedTask("reverting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("reverting", ateapipb.ActorState_ACTOR_STATE_REVERTING), v1alpha1.TaskState_TASK_STATE_QUEUED, "reverting", "False", v1alpha1.ReasonResuming},
 		{storedTask("suspending", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("suspending", ateapipb.ActorState_ACTOR_STATE_SUSPENDING), v1alpha1.TaskState_TASK_STATE_SUSPENDING, "suspending", "False", v1alpha1.ReasonSuspending},
 		{storedTask("deleting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("deleting", ateapipb.ActorState_ACTOR_STATE_DELETING), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "deleting", "False", v1alpha1.ReasonTerminating},
@@ -91,11 +91,18 @@ func TestSetActorStatus(t *testing.T) {
 	t.Run("crash message and status detail", func(t *testing.T) {
 		task := storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED)
 		setActorStatus(task, crashed, nil)
-		if msg := readyCondition(task).GetMessage(); msg != "OOMKilled" {
-			t.Errorf("Ready message = %q, want the actor's crash message", msg)
+		c := readyCondition(task)
+		if c.GetStatus() != "False" || c.GetReason() != v1alpha1.ReasonSandboxCrashed || c.GetMessage() != "OOMKilled" {
+			t.Errorf("Ready = %v, want False/%s with message OOMKilled", c, v1alpha1.ReasonSandboxCrashed)
 		}
-		if detail := task.GetStatus().GetStatusDetail(); detail.GetReason() != v1alpha1.TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED || detail.GetDetail() != "OOMKilled" {
-			t.Errorf("StatusDetail = %v, want SANDBOX_CRASHED/OOMKilled", detail)
+		if detail := task.GetStatus().GetStatusDetail(); detail.GetDetail() != "OOMKilled" {
+			t.Errorf("StatusDetail = %v, want detail OOMKilled", detail)
+		}
+		// Recomputing from a non-crashed actor clears StatusDetail.
+		task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+		setActorStatus(task, testActor("crashed", ateapipb.ActorState_ACTOR_STATE_RUNNING), nil)
+		if got := task.GetStatus().GetStatusDetail(); got != nil {
+			t.Errorf("StatusDetail after recovery = %v, want nil", got)
 		}
 	})
 

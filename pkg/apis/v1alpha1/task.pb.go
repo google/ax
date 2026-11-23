@@ -108,107 +108,6 @@ func (TaskState) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{0}
 }
 
-type TaskResult int32
-
-const (
-	TaskResult_TASK_RESULT_UNSPECIFIED TaskResult = 0
-	TaskResult_TASK_RESULT_SUCCEEDED   TaskResult = 1
-	TaskResult_TASK_RESULT_FAILED      TaskResult = 2
-	TaskResult_TASK_RESULT_CANCELLED   TaskResult = 3
-)
-
-// Enum value maps for TaskResult.
-var (
-	TaskResult_name = map[int32]string{
-		0: "TASK_RESULT_UNSPECIFIED",
-		1: "TASK_RESULT_SUCCEEDED",
-		2: "TASK_RESULT_FAILED",
-		3: "TASK_RESULT_CANCELLED",
-	}
-	TaskResult_value = map[string]int32{
-		"TASK_RESULT_UNSPECIFIED": 0,
-		"TASK_RESULT_SUCCEEDED":   1,
-		"TASK_RESULT_FAILED":      2,
-		"TASK_RESULT_CANCELLED":   3,
-	}
-)
-
-func (x TaskResult) Enum() *TaskResult {
-	p := new(TaskResult)
-	*p = x
-	return p
-}
-
-func (x TaskResult) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TaskResult) Descriptor() protoreflect.EnumDescriptor {
-	return file_pkg_apis_v1alpha1_task_proto_enumTypes[1].Descriptor()
-}
-
-func (TaskResult) Type() protoreflect.EnumType {
-	return &file_pkg_apis_v1alpha1_task_proto_enumTypes[1]
-}
-
-func (x TaskResult) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TaskResult.Descriptor instead.
-func (TaskResult) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{1}
-}
-
-type TaskStatusReason int32
-
-const (
-	TaskStatusReason_TASK_STATUS_REASON_UNSPECIFIED         TaskStatusReason = 0
-	TaskStatusReason_TASK_STATUS_REASON_PROVISIONING_FAILED TaskStatusReason = 1
-	TaskStatusReason_TASK_STATUS_REASON_SANDBOX_CRASHED     TaskStatusReason = 2
-)
-
-// Enum value maps for TaskStatusReason.
-var (
-	TaskStatusReason_name = map[int32]string{
-		0: "TASK_STATUS_REASON_UNSPECIFIED",
-		1: "TASK_STATUS_REASON_PROVISIONING_FAILED",
-		2: "TASK_STATUS_REASON_SANDBOX_CRASHED",
-	}
-	TaskStatusReason_value = map[string]int32{
-		"TASK_STATUS_REASON_UNSPECIFIED":         0,
-		"TASK_STATUS_REASON_PROVISIONING_FAILED": 1,
-		"TASK_STATUS_REASON_SANDBOX_CRASHED":     2,
-	}
-)
-
-func (x TaskStatusReason) Enum() *TaskStatusReason {
-	p := new(TaskStatusReason)
-	*p = x
-	return p
-}
-
-func (x TaskStatusReason) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (TaskStatusReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_pkg_apis_v1alpha1_task_proto_enumTypes[2].Descriptor()
-}
-
-func (TaskStatusReason) Type() protoreflect.EnumType {
-	return &file_pkg_apis_v1alpha1_task_proto_enumTypes[2]
-}
-
-func (x TaskStatusReason) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use TaskStatusReason.Descriptor instead.
-func (TaskStatusReason) EnumDescriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{2}
-}
-
 type Task struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
@@ -610,12 +509,11 @@ func (x *Goal) GetText() string {
 
 type TaskOutcome struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
-	Result   TaskResult             `protobuf:"varint,1,opt,name=result,proto3,enum=ax.v1alpha1.TaskResult" json:"result,omitempty"`
-	Status   *status.Status         `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	ExitCode int32                  `protobuf:"varint,3,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	Status   *status.Status         `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	ExitCode int32                  `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
 	// Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
 	// automatic stdout/stderr tail fallback (capped at 64 KiB).
-	Output        string `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
+	Output        string `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -650,13 +548,6 @@ func (*TaskOutcome) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *TaskOutcome) GetResult() TaskResult {
-	if x != nil {
-		return x.Result
-	}
-	return TaskResult_TASK_RESULT_UNSPECIFIED
-}
-
 func (x *TaskOutcome) GetStatus() *status.Status {
 	if x != nil {
 		return x.Status
@@ -680,8 +571,7 @@ func (x *TaskOutcome) GetOutput() string {
 
 type TaskStatusDetail struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reason        TaskStatusReason       `protobuf:"varint,1,opt,name=reason,proto3,enum=ax.v1alpha1.TaskStatusReason" json:"reason,omitempty"`
-	Detail        string                 `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
+	Detail        string                 `protobuf:"bytes,1,opt,name=detail,proto3" json:"detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -714,13 +604,6 @@ func (x *TaskStatusDetail) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TaskStatusDetail.ProtoReflect.Descriptor instead.
 func (*TaskStatusDetail) Descriptor() ([]byte, []int) {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *TaskStatusDetail) GetReason() TaskStatusReason {
-	if x != nil {
-		return x.Reason
-	}
-	return TaskStatusReason_TASK_STATUS_REASON_UNSPECIFIED
 }
 
 func (x *TaskStatusDetail) GetDetail() string {
@@ -1269,15 +1152,13 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"maxBackoff\x12-\n" +
 	"\x12backoff_multiplier\x18\x04 \x01(\x01R\x11backoffMultiplier\"\x1a\n" +
 	"\x04Goal\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\x9f\x01\n" +
-	"\vTaskOutcome\x12/\n" +
-	"\x06result\x18\x01 \x01(\x0e2\x17.ax.v1alpha1.TaskResultR\x06result\x12*\n" +
-	"\x06status\x18\x02 \x01(\v2\x12.google.rpc.StatusR\x06status\x12\x1b\n" +
-	"\texit_code\x18\x03 \x01(\x05R\bexitCode\x12\x16\n" +
-	"\x06output\x18\x04 \x01(\tR\x06output\"a\n" +
-	"\x10TaskStatusDetail\x125\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x1d.ax.v1alpha1.TaskStatusReasonR\x06reason\x12\x16\n" +
-	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xe2\x03\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"n\n" +
+	"\vTaskOutcome\x12*\n" +
+	"\x06status\x18\x01 \x01(\v2\x12.google.rpc.StatusR\x06status\x12\x1b\n" +
+	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x16\n" +
+	"\x06output\x18\x03 \x01(\tR\x06output\"*\n" +
+	"\x10TaskStatusDetail\x12\x16\n" +
+	"\x06detail\x18\x01 \x01(\tR\x06detail\"\xe2\x03\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
@@ -1328,17 +1209,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x14TASK_STATE_CANCELLED\x10\x06\x12\x15\n" +
 	"\x11TASK_STATE_QUEUED\x10\a\x12\x18\n" +
 	"\x14TASK_STATE_SUSPENDED\x10\b\x12\x19\n" +
-	"\x15TASK_STATE_SUSPENDING\x10\t*w\n" +
-	"\n" +
-	"TaskResult\x12\x1b\n" +
-	"\x17TASK_RESULT_UNSPECIFIED\x10\x00\x12\x19\n" +
-	"\x15TASK_RESULT_SUCCEEDED\x10\x01\x12\x16\n" +
-	"\x12TASK_RESULT_FAILED\x10\x02\x12\x19\n" +
-	"\x15TASK_RESULT_CANCELLED\x10\x03*\x8a\x01\n" +
-	"\x10TaskStatusReason\x12\"\n" +
-	"\x1eTASK_STATUS_REASON_UNSPECIFIED\x10\x00\x12*\n" +
-	"&TASK_STATUS_REASON_PROVISIONING_FAILED\x10\x01\x12&\n" +
-	"\"TASK_STATUS_REASON_SANDBOX_CRASHED\x10\x02B(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x15TASK_STATE_SUSPENDING\x10\tB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_task_proto_rawDescOnce sync.Once
@@ -1352,65 +1223,61 @@ func file_pkg_apis_v1alpha1_task_proto_rawDescGZIP() []byte {
 	return file_pkg_apis_v1alpha1_task_proto_rawDescData
 }
 
-var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
 	(TaskState)(0),              // 0: ax.v1alpha1.TaskState
-	(TaskResult)(0),             // 1: ax.v1alpha1.TaskResult
-	(TaskStatusReason)(0),       // 2: ax.v1alpha1.TaskStatusReason
-	(*Task)(nil),                // 3: ax.v1alpha1.Task
-	(*TaskSpec)(nil),            // 4: ax.v1alpha1.TaskSpec
-	(*EnvVar)(nil),              // 5: ax.v1alpha1.EnvVar
-	(*RetryConfig)(nil),         // 6: ax.v1alpha1.RetryConfig
-	(*Goal)(nil),                // 7: ax.v1alpha1.Goal
-	(*TaskOutcome)(nil),         // 8: ax.v1alpha1.TaskOutcome
-	(*TaskStatusDetail)(nil),    // 9: ax.v1alpha1.TaskStatusDetail
-	(*TaskStatus)(nil),          // 10: ax.v1alpha1.TaskStatus
-	(*GetTaskRequest)(nil),      // 11: ax.v1alpha1.GetTaskRequest
-	(*ListTasksRequest)(nil),    // 12: ax.v1alpha1.ListTasksRequest
-	(*ListTasksResponse)(nil),   // 13: ax.v1alpha1.ListTasksResponse
-	(*CreateTaskRequest)(nil),   // 14: ax.v1alpha1.CreateTaskRequest
-	(*DeleteTaskRequest)(nil),   // 15: ax.v1alpha1.DeleteTaskRequest
-	(*SuspendTaskRequest)(nil),  // 16: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),   // 17: ax.v1alpha1.ResumeTaskRequest
-	(*ObjectMeta)(nil),          // 18: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),             // 19: ax.v1alpha1.Profile
-	(*WorkspaceRef)(nil),        // 20: ax.v1alpha1.WorkspaceRef
-	(*structpb.Struct)(nil),     // 21: google.protobuf.Struct
-	(*GatewayRef)(nil),          // 22: ax.v1alpha1.GatewayRef
-	(*durationpb.Duration)(nil), // 23: google.protobuf.Duration
-	(*status.Status)(nil),       // 24: google.rpc.Status
-	(*ObjectRef)(nil),           // 25: ax.v1alpha1.ObjectRef
-	(*Condition)(nil),           // 26: ax.v1alpha1.Condition
+	(*Task)(nil),                // 1: ax.v1alpha1.Task
+	(*TaskSpec)(nil),            // 2: ax.v1alpha1.TaskSpec
+	(*EnvVar)(nil),              // 3: ax.v1alpha1.EnvVar
+	(*RetryConfig)(nil),         // 4: ax.v1alpha1.RetryConfig
+	(*Goal)(nil),                // 5: ax.v1alpha1.Goal
+	(*TaskOutcome)(nil),         // 6: ax.v1alpha1.TaskOutcome
+	(*TaskStatusDetail)(nil),    // 7: ax.v1alpha1.TaskStatusDetail
+	(*TaskStatus)(nil),          // 8: ax.v1alpha1.TaskStatus
+	(*GetTaskRequest)(nil),      // 9: ax.v1alpha1.GetTaskRequest
+	(*ListTasksRequest)(nil),    // 10: ax.v1alpha1.ListTasksRequest
+	(*ListTasksResponse)(nil),   // 11: ax.v1alpha1.ListTasksResponse
+	(*CreateTaskRequest)(nil),   // 12: ax.v1alpha1.CreateTaskRequest
+	(*DeleteTaskRequest)(nil),   // 13: ax.v1alpha1.DeleteTaskRequest
+	(*SuspendTaskRequest)(nil),  // 14: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),   // 15: ax.v1alpha1.ResumeTaskRequest
+	(*ObjectMeta)(nil),          // 16: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),             // 17: ax.v1alpha1.Profile
+	(*WorkspaceRef)(nil),        // 18: ax.v1alpha1.WorkspaceRef
+	(*structpb.Struct)(nil),     // 19: google.protobuf.Struct
+	(*GatewayRef)(nil),          // 20: ax.v1alpha1.GatewayRef
+	(*durationpb.Duration)(nil), // 21: google.protobuf.Duration
+	(*status.Status)(nil),       // 22: google.rpc.Status
+	(*ObjectRef)(nil),           // 23: ax.v1alpha1.ObjectRef
+	(*Condition)(nil),           // 24: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
-	18, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
-	4,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
-	10, // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	19, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
-	5,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	20, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
-	21, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
-	7,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
-	6,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
-	22, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
-	23, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
-	23, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
-	1,  // 12: ax.v1alpha1.TaskOutcome.result:type_name -> ax.v1alpha1.TaskResult
-	24, // 13: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
-	2,  // 14: ax.v1alpha1.TaskStatusDetail.reason:type_name -> ax.v1alpha1.TaskStatusReason
-	25, // 15: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
-	26, // 16: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	0,  // 17: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
-	9,  // 18: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
-	8,  // 19: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
-	3,  // 20: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	3,  // 21: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	16, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	2,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
+	8,  // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
+	17, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
+	3,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
+	18, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
+	19, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
+	5,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
+	4,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
+	20, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	21, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
+	21, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
+	22, // 12: ax.v1alpha1.TaskOutcome.status:type_name -> google.rpc.Status
+	23, // 13: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
+	24, // 14: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	0,  // 15: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
+	7,  // 16: ax.v1alpha1.TaskStatus.status_detail:type_name -> ax.v1alpha1.TaskStatusDetail
+	6,  // 17: ax.v1alpha1.TaskStatus.outcome:type_name -> ax.v1alpha1.TaskOutcome
+	1,  // 18: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	1,  // 19: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }
@@ -1426,7 +1293,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_task_proto_rawDesc), len(file_pkg_apis_v1alpha1_task_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      1,
 			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,

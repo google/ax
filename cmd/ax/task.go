@@ -54,8 +54,8 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 		fmt.Fprintf(out, "UID:          %s\n", uid)
 	}
 	fmt.Fprintf(out, "State:        %s\n", v1alpha1.FormatTaskState(task))
-	if detail := st.GetStatusDetail(); detail != nil && (detail.GetReason() != v1alpha1.TaskStatusReason_TASK_STATUS_REASON_UNSPECIFIED || detail.GetDetail() != "") {
-		fmt.Fprintf(out, "Detail:       %s (%s)\n", detail.GetReason(), detail.GetDetail())
+	if detail := st.GetStatusDetail().GetDetail(); detail != "" {
+		fmt.Fprintf(out, "Detail:       %s\n", detail)
 	}
 	fmt.Fprintf(out, "Actor:        %s\n", st.GetActor())
 	actorUID := st.GetActorUid()
@@ -102,7 +102,7 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 	}
 
 	if outcome := st.GetOutcome(); outcome != nil {
-		fmt.Fprintf(out, "Outcome:      %s (exitCode=%d)\n", outcome.GetResult(), outcome.GetExitCode())
+		fmt.Fprintf(out, "Exit Code:    %d\n", outcome.GetExitCode())
 		if output := outcome.GetOutput(); output != "" {
 			fmt.Fprintln(out, "Output:")
 			for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
