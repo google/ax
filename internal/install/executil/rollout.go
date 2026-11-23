@@ -17,6 +17,7 @@ package executil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -31,6 +32,14 @@ const rolloutPollSlice = 15 * time.Second
 // rolloutTimedOutMessage is what `kubectl rollout status --timeout` prints
 // when the rollout did not finish in time.
 const rolloutTimedOutMessage = "timed out waiting for the condition"
+
+// restartHint introduces, in the timeout error of WaitRollout, the command
+// that restarts a workload whose container runs but is not ready.
+const restartHint = "to restart it, run: "
+
+// runningNotReady is how the pod status describes a container that runs but
+// fails its readiness probe. Kubernetes does not restart such a container.
+const runningNotReady = "running but not ready"
 
 // RolloutOptions names the workload WaitRollout waits for.
 type RolloutOptions struct {
@@ -50,11 +59,12 @@ type RolloutOptions struct {
 //
 // `kubectl rollout status` reports only "timed out waiting for the
 // condition", while the reason (an image that cannot be pulled, a container
-// that crashes, a pod that cannot be scheduled) is in the status of the pods.
-// WaitRollout reads that status every rolloutPollSlice. It prints it to Out
-// when it changes, and puts the last one in the error when the wait times
-// out. The status is what Kubernetes reports, word for word: WaitRollout does
-// not interpret it, and it never ends the wait early.
+// that crashes or never becomes ready, a pod that cannot be scheduled) is in
+// the status of the pods. WaitRollout reads that status every
+// rolloutPollSlice. It prints it to Out when it changes, and puts the last
+// one in the error when the wait times out. When a container runs but is not
+// ready, the error also names the command that restarts the workload.
+// WaitRollout never ends the wait early.
 func WaitRollout(ctx context.Context, r Runner, opts RolloutOptions) error {
 	return waitRollout(ctx, r, opts, rolloutPollSlice)
 }
@@ -100,7 +110,12 @@ func waitRollout(ctx context.Context, r Runner, opts RolloutOptions, slice time.
 			if status == "" {
 				return fail(err)
 			}
-			return fail(fmt.Errorf("timed out after %s: %s", opts.Timeout, status))
+			msg := fmt.Sprintf("timed out after %s: %s", opts.Timeout, status)
+			if strings.Contains(status, runningNotReady) {
+				restart := append([]string{opts.Kubectl}, kubectlArgs(opts, "rollout", "restart", opts.Target)...)
+				msg += "; " + restartHint + strings.Join(restart, " ")
+			}
+			return fail(errors.New(msg))
 		}
 	}
 }
@@ -152,21 +167,26 @@ func rolloutPodStatus(ctx context.Context, r Runner, opts RolloutOptions, select
 
 // describeWaitingPods lists, from the JSON of a pod list, each pod that is
 // not scheduled and each container that is in the waiting state, with the
-// reason and message Kubernetes gives for it.
+// reason and message Kubernetes gives for it, and each container that runs
+// but is not ready. It leaves out the unready containers of a pod that is
+// being deleted, and of init containers.
 func describeWaitingPods(podListJSON []byte) string {
 	type containerStatus struct {
 		Name  string `json:"name"`
+		Ready bool   `json:"ready"`
 		State struct {
 			Waiting *struct {
 				Reason  string `json:"reason"`
 				Message string `json:"message"`
 			} `json:"waiting"`
+			Running *struct{} `json:"running"`
 		} `json:"state"`
 	}
 	var list struct {
 		Items []struct {
 			Metadata struct {
-				Name string `json:"name"`
+				Name              string  `json:"name"`
+				DeletionTimestamp *string `json:"deletionTimestamp"`
 			} `json:"metadata"`
 			Status struct {
 				Conditions []struct {
@@ -200,6 +220,14 @@ func describeWaitingPods(podListJSON []byte) string {
 		for _, c := range statuses {
 			if w := c.State.Waiting; w != nil {
 				lines = append(lines, withMessage(fmt.Sprintf("pod %s, container %s: %s", pod.Metadata.Name, c.Name, w.Reason), w.Message))
+			}
+		}
+		if pod.Metadata.DeletionTimestamp != nil {
+			continue
+		}
+		for _, c := range pod.Status.ContainerStatuses {
+			if c.State.Running != nil && !c.Ready {
+				lines = append(lines, fmt.Sprintf("pod %s, container %s: %s", pod.Metadata.Name, c.Name, runningNotReady))
 			}
 		}
 	}
