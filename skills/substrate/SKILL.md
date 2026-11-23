@@ -39,8 +39,7 @@ All Control API traffic goes through this package. It encapsulates:
   `EnsureActorTemplateWithImage`, `BuildActorTemplate`, `EnsureActor`,
   `EnsureActorFromTag`, `GetActorEgressPolicy`, `EnsureActorEgressPolicy`,
   `CreateTag`, `GetTag`, `ListTags`, `DeleteTag`, `SuspendActor`,
-  `SuspendActorAndWaitForSnapshot`, `ResumeActor`, `DeleteActor`, `WorkerIP`,
-  `ResourceLimits`.
+  `SuspendActorAndWaitForSnapshot`, `ResumeActor`, `DeleteActor`, `WorkerIP`.
 
 ### Where a new Control API call lives today
 
@@ -57,7 +56,7 @@ All Control API traffic goes through this package. It encapsulates:
 
 | Value | Occurrences |
 |---|---|
-| `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (3×), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
+| `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (`NewClientWithOptions`: default target, TLS `ServerName`, authority), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/reconciler.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
@@ -81,7 +80,7 @@ type mockControlServer struct {
 }
 grpcServer := grpc.NewServer()
 ateapipb.RegisterControlServer(grpcServer, mockSrv)
-// serve on a listener, point substrate.NewClient at it
+// serve on a listener, point substrate.NewClientWithOptions at it (Plaintext: true)
 ```
 
 Canonical examples: `internal/controller/reconciler_test.go` (reconciler state
@@ -135,7 +134,7 @@ instead. No mocking library is in `go.mod`.
   `ActorResumeFailed` when the runner refuses the task or reports a failure
   for a task whose workspace is already set up.
 - `status.actorUid` is read live by `setActorStatus` in
-  `internal/server/server.go` and cleared by `storedStatus` before writes.
+  `internal/server/server.go` and cleared by `store.StoredStatus` before writes.
   It changes when Substrate recreates the actor and is empty when the actor
   is missing or cannot be read. `ax describe task` shows it as `Actor UID`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`

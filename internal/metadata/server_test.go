@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metadata_test
+package metadata
 
 import (
 	"context"
@@ -25,7 +25,6 @@ import (
 	"time"
 
 	ateenvv1alpha "github.com/agent-substrate/env/proto/ateenv/v1alpha"
-	"github.com/google/ax/internal/metadata"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -60,7 +59,7 @@ func TestMetadataServer(t *testing.T) {
 		Spec: &v1alpha1.WorkspaceSpec{},
 	}
 
-	srv := metadata.NewServer(0, task, ws)
+	srv := NewServer(0, task, ws)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
@@ -70,7 +69,7 @@ func TestMetadataServer(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Test /healthz
-	resp, err := http.Get("http://" + srv.ProbeAddr() + "/healthz")
+	resp, err := http.Get("http://" + srv.probeAddr + "/healthz")
 	if err != nil {
 		t.Fatalf("healthz request failed: %v", err)
 	}
@@ -79,7 +78,7 @@ func TestMetadataServer(t *testing.T) {
 	}
 
 	// Test /readyz before workspace ready
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz")
+	resp, err = http.Get("http://" + srv.probeAddr + "/readyz")
 	if err != nil {
 		t.Fatalf("readyz request failed: %v", err)
 	}
@@ -91,7 +90,7 @@ func TestMetadataServer(t *testing.T) {
 	srv.SetWorkspaceReady(true)
 
 	// Test /readyz after workspace ready
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz")
+	resp, err = http.Get("http://" + srv.probeAddr + "/readyz")
 	if err != nil {
 		t.Fatalf("readyz request failed: %v", err)
 	}
@@ -101,7 +100,7 @@ func TestMetadataServer(t *testing.T) {
 
 	// Test /readyz?check=workspace gated independently from /readyz
 	srv.SetWorkspaceCheckReady(false)
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz")
+	resp, err = http.Get("http://" + srv.probeAddr + "/readyz")
 	if err != nil {
 		t.Fatalf("readyz request failed: %v", err)
 	}
@@ -109,7 +108,7 @@ func TestMetadataServer(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK on /readyz when checkReady=false, got %d", resp.StatusCode)
 	}
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz?check=workspace")
+	resp, err = http.Get("http://" + srv.probeAddr + "/readyz?check=workspace")
 	if err != nil {
 		t.Fatalf("readyz?check=workspace request failed: %v", err)
 	}
@@ -118,7 +117,7 @@ func TestMetadataServer(t *testing.T) {
 		t.Fatalf("expected 503 on /readyz?check=workspace when checkReady=false, got %d", resp.StatusCode)
 	}
 	srv.SetWorkspaceCheckReady(true)
-	resp, err = http.Get("http://" + srv.ProbeAddr() + "/readyz?check=workspace")
+	resp, err = http.Get("http://" + srv.probeAddr + "/readyz?check=workspace")
 	if err != nil {
 		t.Fatalf("readyz?check=workspace request failed: %v", err)
 	}
@@ -159,7 +158,7 @@ func TestMetadataServer(t *testing.T) {
 	}
 
 	// Test multiplexed gRPC ProcessService on the same port
-	grpcConn, err := grpc.NewClient(srv.ProbeAddr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcConn, err := grpc.NewClient(srv.probeAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dialing gRPC: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestMetadataServer_GuestServicesRequireDebug(t *testing.T) {
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/test/img"}},
 	}
 
-	srv := metadata.NewServer(0, task, nil)
+	srv := NewServer(0, task, nil)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
@@ -204,7 +203,7 @@ func TestMetadataServer_GuestServicesRequireDebug(t *testing.T) {
 	}
 
 	// Guest gRPC is not served.
-	grpcConn, err := grpc.NewClient(srv.ProbeAddr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcConn, err := grpc.NewClient(srv.probeAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("failed to create grpc client: %v", err)
 	}
@@ -226,7 +225,7 @@ func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/test/img"}},
 	}
 
-	srv := metadata.NewServer(0, task, nil)
+	srv := NewServer(0, task, nil)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
@@ -243,7 +242,7 @@ func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 
 	// The metadata endpoints are not served on the probe port.
 	for _, path := range []string{"/metadata/v1alpha1/ax/task", "/metadata/v1alpha1/ax/workspace"} {
-		resp, err := http.Get("http://" + srv.ProbeAddr() + path)
+		resp, err := http.Get("http://" + srv.probeAddr + path)
 		if err != nil {
 			t.Fatalf("request to probe port failed: %v", err)
 		}
@@ -277,12 +276,12 @@ func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 }
 
 func TestMetadataServer_Pushes(t *testing.T) {
-	srv := metadata.NewServer(0, nil, nil, metadata.ServerOptions{AcceptPushes: true})
+	srv := NewServer(0, nil, nil, ServerOptions{AcceptPushes: true})
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
 	defer srv.Stop(context.Background())
-	base := "http://" + srv.ProbeAddr()
+	base := "http://" + srv.probeAddr
 
 	post := func(path, body string) int {
 		t.Helper()
@@ -293,14 +292,14 @@ func TestMetadataServer_Pushes(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	recv := func() metadata.Push {
+	recv := func() Push {
 		t.Helper()
 		select {
 		case p := <-srv.Pushes():
 			return p
 		case <-time.After(5 * time.Second):
 			t.Fatal("no push delivered")
-			return metadata.Push{}
+			return Push{}
 		}
 	}
 
@@ -352,12 +351,12 @@ func TestMetadataServer_Pushes(t *testing.T) {
 }
 
 func TestMetadataServer_PushesOffByDefault(t *testing.T) {
-	srv := metadata.NewServer(0, nil, nil)
+	srv := NewServer(0, nil, nil)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
 	defer srv.Stop(context.Background())
-	resp, err := http.Post("http://"+srv.ProbeAddr()+v1alpha1.RunnerTaskPath, "application/yaml", strings.NewReader("metadata: {name: t1}\n"))
+	resp, err := http.Post("http://"+srv.probeAddr+v1alpha1.RunnerTaskPath, "application/yaml", strings.NewReader("metadata: {name: t1}\n"))
 	if err != nil {
 		t.Fatalf("POST: %v", err)
 	}

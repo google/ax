@@ -625,46 +625,6 @@ func TestIsTransientError(t *testing.T) {
 	}
 }
 
-func TestResourceLimits(t *testing.T) {
-	tests := []struct {
-		name string
-		reqs *v1alpha1.ResourcesSpec
-		want *ateapipb.ResourceRequirements
-	}{
-		{name: "nil"},
-		{name: "empty", reqs: &v1alpha1.ResourcesSpec{}},
-		{name: "empty limits", reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{}}},
-		{
-			name: "cpu limit",
-			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Cpu: "2"}},
-			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{CpuMillicores: 2000, MemoryBytes: DefaultMemoryBytes}},
-		},
-		{
-			name: "memory limit",
-			reqs: &v1alpha1.ResourcesSpec{Limits: &v1alpha1.ResourceList{Memory: "4Gi"}},
-			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{CpuMillicores: DefaultCPUMillicores, MemoryBytes: 4 << 30}},
-		},
-		{
-			name: "cpu and memory limits",
-			reqs: &v1alpha1.ResourcesSpec{
-				Limits: &v1alpha1.ResourceList{Cpu: "2", Memory: "4Gi"},
-			},
-			want: &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
-				CpuMillicores: 2000,
-				MemoryBytes:   4 << 30,
-			}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ResourceLimits(tt.reqs)
-			if !proto.Equal(got, tt.want) {
-				t.Fatalf("ResourceLimits() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestBuildActorTemplate_Resources(t *testing.T) {
 	limits := &ateapipb.ResourceRequirements{Limits: &ateapipb.Resources{
 		CpuMillicores: 2000,

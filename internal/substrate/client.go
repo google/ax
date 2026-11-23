@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/google/ax/internal/resources"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
@@ -152,26 +151,6 @@ func NewClientWithOptions(opts ClientOptions, extraDialOpts ...grpc.DialOption) 
 		conn:    conn,
 		control: ateapipb.NewControlClient(conn),
 	}, nil
-}
-
-// NewClient establishes a connection to the Substrate Control API server.
-func NewClient(target string, opts ...grpc.DialOption) (*Client, error) {
-	if len(opts) > 0 {
-		if target == "" {
-			target = "api.ate-system.svc.cluster.local:443"
-		}
-		conn, err := grpc.NewClient(target, opts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Substrate control service at %s: %w", target, err)
-		}
-		return &Client{
-			conn:    conn,
-			control: ateapipb.NewControlClient(conn),
-		}, nil
-	}
-
-	// Auto-configure options when no explicit dial options given
-	return NewClientWithOptions(ClientOptions{Target: target})
 }
 
 // Close closes the gRPC connection.
@@ -312,34 +291,6 @@ const (
 	// ActorTemplate when a Task omits spec.resources.limits.memory.
 	DefaultMemoryBytes int64 = 512 << 20
 )
-
-// ResourceLimits translates a Task's resource limits into the Substrate
-// ActorTemplate resources block. Substrate sizes a sandbox by limits alone. It
-// returns nil when no limit is set so the template uses the default sandbox
-// limits.
-func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.ResourceRequirements {
-	limits := reqs.GetLimits()
-	cpuStr := limits.GetCpu()
-	memStr := limits.GetMemory()
-	if cpuStr == "" && memStr == "" {
-		return nil
-	}
-	out := &ateapipb.Resources{
-		CpuMillicores: DefaultCPUMillicores,
-		MemoryBytes:   DefaultMemoryBytes,
-	}
-	if cpuStr != "" {
-		if cpu, err := resources.ParseCPUMillicores(cpuStr); err == nil {
-			out.CpuMillicores = cpu
-		}
-	}
-	if memStr != "" {
-		if mem, err := resources.ParseMemoryBytes(memStr); err == nil {
-			out.MemoryBytes = mem
-		}
-	}
-	return &ateapipb.ResourceRequirements{Limits: out}
-}
 
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
 // A nil resources applies DefaultCPUMillicores and DefaultMemoryBytes.

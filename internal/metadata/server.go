@@ -89,7 +89,7 @@ type ServerOptions struct {
 // NewServer creates a new metadata and guest server serving the task and its
 // bound workspace, which may be nil. port is the probe and guest port; the
 // metadata endpoints use ServerOptions.MetadataPort on loopback. A zero port
-// picks a free one; read the result from ProbeAddr or MetadataURL after Start.
+// picks a free one.
 func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...ServerOptions) *Server {
 	var opt ServerOptions
 	if len(opts) > 0 {
@@ -183,12 +183,6 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	}
 
 	return s
-}
-
-// ProbeAddr is the address the probe and guest listener is bound to. It is
-// empty until Start succeeds.
-func (s *Server) ProbeAddr() string {
-	return s.probeAddr
 }
 
 // MetadataURL is the base URL of the metadata endpoints, as handed to the task
@@ -317,13 +311,6 @@ func (s *Server) SetSetupFailed(err error) {
 // and one task push. Only a server with ServerOptions.AcceptPushes gets any.
 func (s *Server) Pushes() <-chan Push {
 	return s.pushes
-}
-
-// IsWorkspaceReady returns whether the workspace setup has completed.
-func (s *Server) IsWorkspaceReady() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.workspaceReady
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

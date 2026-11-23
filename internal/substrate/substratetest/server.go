@@ -26,7 +26,6 @@ import (
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -84,7 +83,7 @@ func NewServer(tb testing.TB) *Server {
 	ateapipb.RegisterControlServer(grpcServer, s)
 	go func() { _ = grpcServer.Serve(lis) }()
 	tb.Cleanup(grpcServer.Stop)
-	c, err := substrate.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	c, err := substrate.NewClientWithOptions(substrate.ClientOptions{Target: lis.Addr().String(), Plaintext: true})
 	if err != nil {
 		tb.Fatalf("substrate client: %v", err)
 	}
