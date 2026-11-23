@@ -40,6 +40,7 @@ type Errors struct {
 	SuspendActor       error
 	ResumeActor        error
 	DeleteActor        error
+	GetActor           error
 	CreateTag          error
 	DeleteTag          error
 }
@@ -61,6 +62,7 @@ type Server struct {
 	tags             map[string]*ateapipb.Tag           // by atespace/name
 	errs             Errors
 	onDeleteActor    func()
+	onGetActor       func()
 	deleteActorCalls int
 	deleteTagCalls   int
 }
@@ -109,6 +111,13 @@ func (s *Server) SetOnDeleteActor(fn func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.onDeleteActor = fn
+}
+
+// SetOnGetActor makes fn run at the start of every GetActor call.
+func (s *Server) SetOnGetActor(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onGetActor = fn
 }
 
 // SetActor stores a copy of actor, replacing any actor of the same name, as
@@ -412,7 +421,17 @@ func (s *Server) CreateActorEgressPolicy(_ context.Context, req *ateapipb.Create
 
 func (s *Server) GetActor(_ context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error) {
 	s.mu.Lock()
+	onGet, getErr := s.onGetActor, s.errs.GetActor
+	s.mu.Unlock()
+	if onGet != nil {
+		onGet()
+	}
+
+	s.mu.Lock()
 	defer s.mu.Unlock()
+	if getErr != nil {
+		return nil, getErr
+	}
 	actor, err := s.lookupActor(req.GetActor())
 	if err != nil {
 		return nil, err
