@@ -19,8 +19,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
 // caBundleEnv are the variables through which common tools find their CA
@@ -61,13 +59,13 @@ func linkGitAskpass(dir string) string {
 	return link
 }
 
-// setDefaultEnv sets the variables the runner provides to every task, except
-// those the task's spec.env sets:
+// setDefaultEnv sets the variables the runner provides to every task and
+// workspace setup. A task's spec.env is applied later and overrides them:
 //   - the CA variables, pointed at caBundle if that file exists, so that TLS
 //     intercepted on its way out of the sandbox verifies;
 //   - GIT_ASKPASS, pointed at askpass unless that is empty, and
 //     GIT_TERMINAL_PROMPT, so that git never waits for someone to type.
-func setDefaultEnv(task *v1alpha1.Task, caBundle, askpass string) {
+func setDefaultEnv(caBundle, askpass string) {
 	env := map[string]string{"GIT_TERMINAL_PROMPT": "0"}
 	if askpass != "" {
 		env["GIT_ASKPASS"] = askpass
@@ -76,9 +74,6 @@ func setDefaultEnv(task *v1alpha1.Task, caBundle, askpass string) {
 		for _, name := range caBundleEnv {
 			env[name] = caBundle
 		}
-	}
-	for _, e := range task.GetSpec().GetEnv() {
-		delete(env, e.GetName())
 	}
 	for name, value := range env {
 		_ = os.Setenv(name, value)

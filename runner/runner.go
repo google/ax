@@ -139,6 +139,8 @@ func Run(ctx context.Context, cfg Config) error {
 	if metadataPort <= 0 {
 		metadataPort = DefaultMetadataPort
 	}
+	// Set before any work is taken: a workspace can be set up without a task.
+	setDefaultEnv(cmp.Or(cfg.CABundle, v1alpha1.EgressTrustBundlePath), linkGitAskpass(workspace.AXDir))
 	if cfg.AwaitPush {
 		return runPushed(ctx, cfg, port, metadataPort)
 	}
@@ -242,7 +244,6 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 	for _, e := range task.GetSpec().GetEnv() {
 		_ = os.Setenv(e.GetName(), e.GetValue())
 	}
-	setDefaultEnv(task, cmp.Or(cfg.CABundle, v1alpha1.EgressTrustBundlePath), linkGitAskpass(workspace.AXDir))
 
 	if err := setupWorkspace(ctx, ws, wsPath, drop); err != nil {
 		return fmt.Errorf("setting up workspace %q: %w", task.GetSpec().GetWorkspace().GetName(), err)
