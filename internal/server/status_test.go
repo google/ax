@@ -22,7 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
@@ -33,26 +32,25 @@ func TestStoredStatus(t *testing.T) {
 		ActorUid:    "uid-1",
 		AteTemplate: &v1alpha1.ObjectRef{Name: "task-tmpl-01234567", Atespace: "default"},
 		Attempt:     1,
-		Generation:  2,
 		Conditions:  []*v1alpha1.Condition{{Type: "Ready"}, {Type: "WorkspaceReady"}},
 	}
-	got := store.StoredStatus(in)
+	got := storedStatus(in)
 	if got.State != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || got.Actor != "" || got.ActorUid != "" || got.GetAteTemplate().GetName() != "task-tmpl-01234567" || got.GetAteTemplate().GetAtespace() != "default" {
-		t.Errorf("store.StoredStatus = %v, want actor/actorUid/state stripped and AteTemplate kept", got)
+		t.Errorf("storedStatus = %v, want actor/actorUid/state stripped and AteTemplate kept", got)
 	}
 	if len(got.Conditions) != 1 || got.Conditions[0].Type != "WorkspaceReady" {
 		t.Errorf("conditions = %v, want only WorkspaceReady", got.Conditions)
 	}
 	if in.Actor != "actor" || in.ActorUid != "uid-1" || len(in.Conditions) != 2 {
-		t.Errorf("store.StoredStatus modified its input: %v", in)
+		t.Errorf("storedStatus modified its input: %v", in)
 	}
 
 	in = &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, Conditions: []*v1alpha1.Condition{{Type: "Ready"}}}
-	if got := store.StoredStatus(in); got.State != v1alpha1.TaskState_TASK_STATE_FAILED || len(got.Conditions) != 1 {
-		t.Errorf("store.StoredStatus(%v) = %v, want AX state and its conditions kept", in, got)
+	if got := storedStatus(in); got.State != v1alpha1.TaskState_TASK_STATE_FAILED || len(got.Conditions) != 1 {
+		t.Errorf("storedStatus(%v) = %v, want AX state and its conditions kept", in, got)
 	}
-	if got := store.StoredStatus(nil); got == nil {
-		t.Error("store.StoredStatus(nil) = nil, want empty status")
+	if got := storedStatus(nil); got == nil {
+		t.Error("storedStatus(nil) = nil, want empty status")
 	}
 	for _, state := range []v1alpha1.TaskState{
 		v1alpha1.TaskState_TASK_STATE_QUEUED,
@@ -60,7 +58,7 @@ func TestStoredStatus(t *testing.T) {
 		v1alpha1.TaskState_TASK_STATE_COMPLETED,
 	} {
 		t.Run(state.String(), func(t *testing.T) {
-			if got := store.StoredStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {
+			if got := storedStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {
 				t.Errorf("stored actor UID = %q, want empty", got.ActorUid)
 			}
 		})

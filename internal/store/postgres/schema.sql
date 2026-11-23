@@ -1,6 +1,7 @@
 -- Resources are stored as protojson documents. Only the columns needed to
 -- address and order them are broken out, so adding fields to the API does not
--- require a schema change. saved_at changes on every Save but not on status
+-- require a schema change. saved_at changes on every Save of a workspace,
+-- gateway, or model, but only when a task is first saved, and never on status
 -- updates; lists are ordered by it, newest first.
 
 CREATE TABLE IF NOT EXISTS tasks (

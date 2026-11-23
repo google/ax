@@ -148,8 +148,6 @@ message TaskStatus {
   // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
   // retry (non-zero command exit, sandbox crash, or lost runner).
   int32 attempt = 7;
-  // Monotonic task revision.
-  int64 generation = 8;
   // Effective command argv executed by each run: spec.commands if set,
   // otherwise the image's ENTRYPOINT + CMD.
   repeated string resolved_argv = 9;

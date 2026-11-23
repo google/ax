@@ -86,7 +86,6 @@ func fullTask() *v1alpha1.Task {
 				Name:     "ax-3f9c1a2b5d7e9f01",
 				Atespace: "shared",
 			},
-			Generation:      3,
 			ResolvedArgv:    []string{"sh", "-c", "true"},
 			PreviousFailure: "exit status 1",
 		},

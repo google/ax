@@ -74,8 +74,9 @@ func TestCreateSchemaConcurrent(t *testing.T) {
 }
 
 // TestListNewestFirst checks that lists are ordered by most recent save, as
-// they were with Redis: re-saving a resource moves it to the front, and a
-// status update does not.
+// they were with Redis: re-saving a workspace, gateway, or model moves it to
+// the front. Tasks are immutable, so re-saving one (to set or clear
+// delete_time) keeps its position, as does a status update.
 func TestListNewestFirst(t *testing.T) {
 	s := openTest(t, Options{})
 	ctx := context.Background()
@@ -109,10 +110,10 @@ func TestListNewestFirst(t *testing.T) {
 			t.Errorf("ListTasks(%q, %d, %d) = %v, want %v", atespace, limit, offset, got, want)
 		}
 	}
-	check("a", 10, 0, "a/a1", "a/a3", "a/a2")
-	check("*", 10, 0, "a/a1", "b/b1", "a/a3", "a/a2")
-	check("*", 2, 2, "a/a3", "a/a2")
-	check("a", 1, 1, "a/a3")
+	check("a", 10, 0, "a/a3", "a/a2", "a/a1")
+	check("*", 10, 0, "b/b1", "a/a3", "a/a2", "a/a1")
+	check("*", 2, 2, "a/a2", "a/a1")
+	check("a", 1, 1, "a/a2")
 
 	for _, w := range []string{"w1", "w2"} {
 		if err := s.SaveWorkspace(ctx, &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: w}}); err != nil {
@@ -124,6 +125,12 @@ func TestListNewestFirst(t *testing.T) {
 	}
 	if page, err := s.ListWorkspaces(ctx, "*", 1, 1); err != nil || len(page) != 1 || page[0].GetMetadata().GetName() != "w1" {
 		t.Errorf("ListWorkspaces(limit=1, offset=1) = %v, %v; want [w1]", page, err)
+	}
+	if err := s.SaveWorkspace(ctx, &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "w1"}}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	if list, err := s.ListWorkspaces(ctx, "*", 50, 0); err != nil || len(list) != 2 || list[0].GetMetadata().GetName() != "w1" {
+		t.Errorf("ListWorkspaces after re-saving w1 = %v, %v; want w1 first", list, err)
 	}
 	for _, g := range []string{"g1", "g2"} {
 		if err := s.SaveGateway(ctx, &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: g}}); err != nil {

@@ -276,7 +276,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Status.Attempt == 0 {
 		task.Status.Attempt = 1
 	}
-	task.Status.Generation++
 	if len(task.Spec.Commands) > 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
@@ -361,10 +360,6 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 		task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: taskName}
 	}
 	task.Metadata.DeleteTime = timestamppb.Now()
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.Generation++
 	if err := s.saveTask(ctx, task); err != nil {
 		return nil, status.Errorf(codes.Internal, "updating task delete_time: %v", err)
 	}
@@ -472,8 +467,8 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
 //     state from its live Substrate actor rather than keeping a stored Queued
 //     or Failed state.
-//   - Increments status.generation and persists the updated task or status,
-//     returning a gRPC Internal status error if the store write fails.
+//   - Persists the updated task or status, returning a gRPC Internal status
+//     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
 	atespace := task.GetMetadata().GetAtespace()
 	if atespace == "" {
@@ -484,8 +479,7 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-	task.Status.Generation++
-	task.Status = store.StoredStatus(task.Status)
+	task.Status = storedStatus(task.Status)
 	if task.GetMetadata().GetDeleteTime() != nil {
 		task.Metadata.DeleteTime = nil
 		if err := s.saveTask(ctx, task); err != nil {
@@ -532,7 +526,6 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.State = state
-	task.Status.Generation++
 	_ = s.updateTask(ctx, atespace, name, task.Status)
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
 }
@@ -590,14 +583,39 @@ func (s *Server) listTasks(ctx context.Context, atespace string, limit, offset i
 // saveTask stores task without its Substrate-owned status. task is not modified.
 func (s *Server) saveTask(ctx context.Context, task *v1alpha1.Task) error {
 	stored := proto.Clone(task).(*v1alpha1.Task)
-	stored.Status = store.StoredStatus(task.Status)
+	stored.Status = storedStatus(task.Status)
 	return s.store.SaveTask(ctx, stored)
 }
 
 // updateTask stores a task's status without its Substrate-owned parts. st is
 // not modified.
 func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1alpha1.TaskStatus) error {
-	return s.store.UpdateTaskStatus(ctx, atespace, name, store.StoredStatus(st))
+	return s.store.UpdateTaskStatus(ctx, atespace, name, storedStatus(st))
+}
+
+// storedStatus returns the part of a task's status that AX owns and stores. The
+// actor name, actor UID, and (for states outside [v1alpha1.IsAXTaskState]) the
+// state and Ready condition that follow from the actor's live state on Agent
+// Substrate are dropped. st is not modified; a nil st returns an empty non-nil
+// TaskStatus.
+func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
+	out := &v1alpha1.TaskStatus{}
+	if st != nil {
+		out = proto.Clone(st).(*v1alpha1.TaskStatus)
+	}
+	out.Actor = ""
+	out.ActorUid = ""
+	if !v1alpha1.IsAXTaskState(out.State) {
+		out.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+		conds := out.Conditions[:0]
+		for _, c := range out.Conditions {
+			if c.GetType() != v1alpha1.ConditionReady {
+				conds = append(conds, c)
+			}
+		}
+		out.Conditions = conds
+	}
+	return out
 }
 
 // deleteTask removes a task's actor and templates from Substrate, then its
