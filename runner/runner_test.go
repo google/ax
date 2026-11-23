@@ -493,11 +493,21 @@ spec:
 }
 
 func TestRun_AwaitPushSetsUpPushedWorkspace(t *testing.T) {
+	for _, name := range []string{
+		"SSL_CERT_FILE", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO",
+		"GIT_ASKPASS", "GIT_TERMINAL_PROMPT",
+	} {
+		t.Setenv(name, "") // restores the variable when the test ends
+	}
 	h := newPushHarness(t)
+	h.cfg.CABundle = filepath.Join(t.TempDir(), "trust-bundle.pem")
+	if err := os.WriteFile(h.cfg.CABundle, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
 	h.start(t)
 	waitHealthy(t, h.cfg.Port)
 
-	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    files: [{path: hello.txt, content: hi}]\n"
+	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    files: [{path: hello.txt, content: hi}]\n    commands: ['echo \"$GIT_SSL_CAINFO|$GIT_ASKPASS\" > env.txt']\n"
 	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerSetupPath, body); code != http.StatusAccepted {
 		t.Fatalf("setup push = %d, want 202", code)
 	}
@@ -506,6 +516,11 @@ func TestRun_AwaitPushSetsUpPushedWorkspace(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "hello.txt")); string(got) != "hi" {
 		t.Errorf("hello.txt = %q, want the pushed workspace's file", got)
+	}
+	// Setup gets the same default environment as a task.
+	want := h.cfg.CABundle + "|" + filepath.Join(workspace.AXDir, "git-askpass")
+	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "env.txt")); strings.TrimSpace(string(got)) != want {
+		t.Errorf("setup's environment = %q, want %q", strings.TrimSpace(string(got)), want)
 	}
 }
 
