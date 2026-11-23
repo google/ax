@@ -55,6 +55,7 @@ func TestStoredStatus(t *testing.T) {
 	for _, state := range []v1alpha1.TaskState{
 		v1alpha1.TaskState_TASK_STATE_QUEUED,
 		v1alpha1.TaskState_TASK_STATE_FAILED,
+		v1alpha1.TaskState_TASK_STATE_COMPLETED,
 	} {
 		t.Run(state.String(), func(t *testing.T) {
 			if got := storedStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {
