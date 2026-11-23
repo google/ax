@@ -13,7 +13,7 @@ Declarative, Kubernetes-shaped orchestrator for sandboxed agent tasks on
 [Agent Substrate](https://github.com/agent-substrate/substrate). Four
 primitives — `Task`, `Workspace`, `Model`, `Gateway` (`ax.io/v1alpha1`) — and a
 `kubectl`-like CLI. `DESIGN.md` explains why; read it before touching the
-reconciler or server.
+task manager or server.
 
 ## Layout
 
@@ -24,7 +24,7 @@ cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes an
 cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
-internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; reconciler_test.go is the test template
+internal/controller    TaskManager + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; task_test.go is the test template
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
@@ -87,7 +87,7 @@ location is where to look. How-to lives in the skills.
 - Guest services (`ax ssh`) are served only when `spec.debug` is true
   (`internal/metadata/server.go`, `cmd/ax/main.go`).
 - Unit tests run against in-process fakes: `mockControlServer`
-  (`internal/controller/reconciler_test.go`) and `internal/substrate/substratetest`
+  (`internal/controller/task_test.go`) and `internal/substrate/substratetest`
   (`internal/server/server_test.go`, `cmd/ax/main_test.go`).
 - `go.mod` has no `replace` directive; E2E installs Substrate at the `go.mod`
   version (`hack/setup-e2e-kind.sh`).

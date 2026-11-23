@@ -45,7 +45,7 @@ func TestHandlerTracesRPCs(t *testing.T) {
 	// install a no-op provider instead.
 	t.Cleanup(func() { otel.SetTracerProvider(noop.NewTracerProvider()) })
 
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(substratetest.NewServer(t)))
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

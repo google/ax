@@ -452,7 +452,7 @@ func (c *Client) EnsureActorTemplate(ctx context.Context, tmpl *ateapipb.ActorTe
 // MountRunnerVolume), resource limits (nil for default limits), and optional
 // environment variables.
 //
-// TODO: Remove once TaskReconciler migrates from per-task templates to shared
+// TODO: Remove once TaskManager migrates from per-task templates to shared
 // Profile ActorTemplates via EnsureActorTemplate.
 func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image, runnerVolumeImage string, resources *ateapipb.ResourceRequirements, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	envMap := make(map[string]string)

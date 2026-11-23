@@ -44,7 +44,7 @@ import (
 
 func TestServerHealthzHTTP(t *testing.T) {
 	memStore := memory.NewStore()
-	srv := server.NewServer(memStore, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memStore, newTestTaskManager(substratetest.NewServer(t)))
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -68,7 +68,7 @@ func TestServerHealthzHTTP(t *testing.T) {
 
 func TestServerGRPC(t *testing.T) {
 	memStore := memory.NewStore()
-	srv := server.NewServer(memStore, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memStore, newTestTaskManager(substratetest.NewServer(t)))
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -281,7 +281,7 @@ func TestServerGRPC(t *testing.T) {
 // checks the page size and page token rules, which the kinds share, on models.
 func TestServer_ListPagination(t *testing.T) {
 	st := memory.NewStore()
-	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	for _, name := range []string{"a", "b", "c", "d"} {
@@ -382,7 +382,7 @@ func resourceNames[T interface{ GetMetadata() *v1alpha1.ObjectMeta }](resources 
 // labels. The server rejects them up front instead of failing during Substrate
 // actor creation.
 func TestCreate_RejectsInvalidNames(t *testing.T) {
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	for _, meta := range []*v1alpha1.ObjectMeta{
@@ -427,7 +427,7 @@ func TestCreate_RejectsInvalidNames(t *testing.T) {
 }
 
 func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -503,7 +503,7 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 				}
 			}
 			sub := substratetest.NewServer(t)
-			rec := newTestReconciler(sub)
+			rec := newTestTaskManager(sub)
 			srv := server.NewServer(st, rec)
 
 			task := &v1alpha1.Task{
@@ -594,7 +594,7 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 				}
 			}
 			sub := substratetest.NewServer(t)
-			rec := newTestReconciler(sub)
+			rec := newTestTaskManager(sub)
 			srv := server.NewServer(st, rec)
 
 			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -649,7 +649,7 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(mem, newTestReconciler(sub))
+	srv := server.NewServer(mem, newTestTaskManager(sub))
 	saveGateway := func(hostname string) {
 		t.Helper()
 		if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
@@ -750,7 +750,7 @@ func TestServer_SuspendTask_RunningTaskWithoutGatewayRules(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(mem, newTestReconciler(sub))
+	srv := server.NewServer(mem, newTestTaskManager(sub))
 	if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
 		Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
 		Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
@@ -801,7 +801,7 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 			ctx := context.Background()
 			mem := memory.NewStore()
 			sub := substratetest.NewServer(t)
-			srv := server.NewServer(mem, newTestReconciler(sub))
+			srv := server.NewServer(mem, newTestTaskManager(sub))
 			if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
 				Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
 				Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
@@ -852,14 +852,14 @@ func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveGateway: %v", err)
 	}
-	if _, err := server.NewServer(mem, newTestReconciler(sub)).CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+	if _, err := server.NewServer(mem, newTestTaskManager(sub)).CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
 	}}); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	srv := server.NewServer(&failGetGatewayStore{Store: mem, err: errors.New("store unavailable")}, newTestReconciler(sub))
+	srv := server.NewServer(&failGetGatewayStore{Store: mem, err: errors.New("store unavailable")}, newTestTaskManager(sub))
 	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"}); err != nil {
 		t.Errorf("ResumeTask: %v", err)
 	}
@@ -871,7 +871,7 @@ func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
 // CreateGateway makes a new gateway and UpdateGateway replaces an existing
 // one; neither does the other's work.
 func TestServer_CreateAndUpdateGateway(t *testing.T) {
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 	// Every request carries timestamps, as a manifest copied from
 	// `ax get gateway` does. The server keeps its own.
@@ -917,9 +917,9 @@ func TestServer_CreateAndUpdateGateway(t *testing.T) {
 	}
 }
 
-func TestServer_DirectReconcilerLifecycle(t *testing.T) {
+func TestServer_DirectTaskManagerLifecycle(t *testing.T) {
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	ctx := context.Background()
 
 	// 1. CreateTask creates the task's actor, suspended
@@ -999,7 +999,7 @@ func TestServer_DeleteTask_BlocksAndSetsDeleteTime(t *testing.T) {
 			observedDeleteTimeDuringDelete = true
 		}
 	})
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1031,7 +1031,7 @@ func TestServer_DeleteTask_BlocksAndSetsDeleteTime(t *testing.T) {
 func TestServer_DeleteTask_ReconcileErrorRetainsTask(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1078,7 +1078,7 @@ func (f *failSaveTaskStore) SaveTask(ctx context.Context, task *v1alpha1.Task) e
 func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 	st := &failSaveTaskStore{Store: memory.NewStore()}
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1105,7 +1105,7 @@ func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 func TestServer_ResumeAfterFailedDeleteClearsDeleteTime(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(st, newTestReconciler(sub))
+	srv := server.NewServer(st, newTestTaskManager(sub))
 	ctx := context.Background()
 
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1162,7 +1162,7 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1200,7 +1200,7 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 
 func TestServer_SuspendTask_SuccessUpdatesStoredState(t *testing.T) {
 	st := memory.NewStore()
-	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
@@ -1243,9 +1243,9 @@ func assertNoActorState(t *testing.T, stored *v1alpha1.Task) {
 	}
 }
 
-// newTestReconciler returns a TaskReconciler that runs tasks on sub.
-func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
-	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
+// newTestTaskManager returns a TaskManager that runs tasks on sub.
+func newTestTaskManager(sub *substratetest.Server) *controller.TaskManager {
+	return controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
 }
 
 // readyCondition returns the task's Ready condition, or nil.
@@ -1261,7 +1261,7 @@ func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
 func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1322,7 +1322,7 @@ func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 
 func TestServer_CreateTask_InitialStateSuspended(t *testing.T) {
 	st := memory.NewStore()
-	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	task, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1349,7 +1349,7 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1392,7 +1392,7 @@ func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
 	// Provisioning fails so that the task reads back as CreateTask stored it; a
 	// successful CreateTask clears deleteTime on its own.
 	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	ctx := context.Background()
 
 	copied := timestamppb.New(time.Unix(1, 0))
@@ -1427,7 +1427,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	sub.SetErrors(substratetest.Errors{CreateAtespace: status.Error(codes.DeadlineExceeded, "substrate control plane timed out")})
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1570,7 +1570,7 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 		t.Run(actorState.String(), func(t *testing.T) {
 			st := memory.NewStore()
 			sub := substratetest.NewServer(t)
-			rec := newTestReconciler(sub)
+			rec := newTestTaskManager(sub)
 			srv := server.NewServer(st, rec)
 			ctx := context.Background()
 
@@ -1620,7 +1620,7 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 // clears it, so the state is read from the actor again.
 func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	ctx := context.Background()
 
 	// createFailed creates a task whose actor exists but could not be
@@ -1665,7 +1665,7 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 
 func TestServer_TerminalTaskRejectsSuspendAndResume(t *testing.T) {
 	st := memory.NewStore()
-	srv := server.NewServer(st, newTestReconciler(substratetest.NewServer(t)))
+	srv := server.NewServer(st, newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	cases := []struct {
@@ -1707,7 +1707,7 @@ func TestServer_TerminalTaskRejectsSuspendAndResume(t *testing.T) {
 func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
@@ -1811,7 +1811,7 @@ func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
 func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
-	rec := newTestReconciler(sub)
+	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := t.Context()
 	// Even a client-supplied UID must not enter storage.

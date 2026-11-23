@@ -47,7 +47,7 @@ type Options struct {
 	// ax-server replicas; it defaults to an in-process lock.MemoryLocker.
 	Locker lock.Locker
 	// WorkspaceManager manages Workspace snapshot pre-warming and Tag cleanup.
-	// When omitted, NewServer constructs one backed by reconciler's Substrate
+	// When omitted, NewServer constructs one backed by taskManager's Substrate
 	// client and Locker; it has no SetupRunner, so it does not pre-warm.
 	WorkspaceManager *controller.WorkspaceManager
 }
@@ -55,20 +55,20 @@ type Options struct {
 // Server provides the gRPC API for AX.
 type Server struct {
 	v1alpha1.UnimplementedAXServer
-	store      store.Store
-	locker     lock.Locker
-	reconciler *controller.TaskReconciler
-	workspaces *controller.WorkspaceManager
-	// substrate is the reconciler's client. It is read for the parts of a
+	store       store.Store
+	locker      lock.Locker
+	taskManager *controller.TaskManager
+	workspaces  *controller.WorkspaceManager
+	// substrate is the taskManager's client. It is read for the parts of a
 	// task's status owned by its actor, which the store never holds.
 	substrate  *substrate.Client
 	grpcServer *grpc.Server
 }
 
 // NewServer creates a new AX API server.
-func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Options) *Server {
-	if reconciler == nil || reconciler.Client() == nil {
-		panic("server: NewServer requires a non-nil TaskReconciler with a Substrate client")
+func NewServer(s store.Store, taskManager *controller.TaskManager, opts ...Options) *Server {
+	if taskManager == nil || taskManager.Client() == nil {
+		panic("server: NewServer requires a non-nil TaskManager with a Substrate client")
 	}
 	var opt Options
 	if len(opts) > 0 {
@@ -80,18 +80,18 @@ func NewServer(s store.Store, reconciler *controller.TaskReconciler, opts ...Opt
 	}
 	workspaces := opt.WorkspaceManager
 	if workspaces == nil {
-		workspaces = controller.NewWorkspaceManager(reconciler.Client(), controller.WorkspaceManagerOptions{
+		workspaces = controller.NewWorkspaceManager(taskManager.Client(), controller.WorkspaceManagerOptions{
 			Locker: locker,
 			Store:  s,
 		})
 	}
 
 	srv := &Server{
-		store:      s,
-		locker:     locker,
-		reconciler: reconciler,
-		workspaces: workspaces,
-		substrate:  reconciler.Client(),
+		store:       s,
+		locker:      locker,
+		taskManager: taskManager,
+		workspaces:  workspaces,
+		substrate:   taskManager.Client(),
 	}
 	srv.grpcServer = grpc.NewServer(grpc.StatsHandler(telemetry.ServerStatsHandler(func() map[string]grpc.ServiceInfo {
 		return srv.grpcServer.GetServiceInfo()
@@ -287,7 +287,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 
 	// New tasks start suspended.
-	if err := s.reconciler.Suspend(ctx, task, workspace, gateway); err != nil {
+	if err := s.taskManager.Suspend(ctx, task, workspace, gateway); err != nil {
 		return nil, s.recordFailure(ctx, task, "provisioning", err)
 	}
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
@@ -401,7 +401,7 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	if err := s.reconciler.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
+	if err := s.taskManager.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		if substrate.IsTransientError(err) {
 			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
@@ -448,7 +448,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 
-	if err := s.reconciler.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
+	if err := s.taskManager.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
@@ -623,7 +623,7 @@ func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 func (s *Server) deleteTask(ctx context.Context, task *v1alpha1.Task) error {
 	atespace := task.GetMetadata().GetAtespace()
 	name := task.GetMetadata().GetName()
-	if err := s.reconciler.DeleteTask(ctx, task); err != nil {
+	if err := s.taskManager.DeleteTask(ctx, task); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return status.Error(codes.Canceled, err.Error())
 		}

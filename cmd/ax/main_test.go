@@ -65,7 +65,7 @@ func TestApplyAtespace(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+				srv := server.NewServer(s, newTestTaskManager(substratetest.NewServer(t))).GRPCServer()
 				t.Cleanup(srv.Stop)
 				go func() { _ = srv.Serve(listener) }()
 
@@ -169,7 +169,7 @@ func TestRunApplyEmptyDocuments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+			srv := server.NewServer(s, newTestTaskManager(substratetest.NewServer(t))).GRPCServer()
 			t.Cleanup(srv.Stop)
 			go func() { _ = srv.Serve(listener) }()
 
@@ -238,7 +238,7 @@ func TestRunGetResourceAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+	srv := server.NewServer(s, newTestTaskManager(substratetest.NewServer(t))).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -348,7 +348,7 @@ func TestRunGetListsEveryPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := server.NewServer(s, newTestReconciler(substratetest.NewServer(t))).GRPCServer()
+	srv := server.NewServer(s, newTestTaskManager(substratetest.NewServer(t))).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -380,9 +380,9 @@ func TestRunGetListsEveryPage(t *testing.T) {
 	}
 }
 
-// newTestReconciler returns a TaskReconciler that runs tasks on sub.
-func newTestReconciler(sub *substratetest.Server) *controller.TaskReconciler {
-	return controller.NewTaskReconciler(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
+// newTestTaskManager returns a TaskManager that runs tasks on sub.
+func newTestTaskManager(sub *substratetest.Server) *controller.TaskManager {
+	return controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
 }
 
 func TestRunDeleteTask(t *testing.T) {
@@ -402,7 +402,7 @@ func TestRunDeleteTask(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 		close(deleted)
 	})
-	srv := server.NewServer(s, newTestReconciler(sub)).GRPCServer()
+	srv := server.NewServer(s, newTestTaskManager(sub)).GRPCServer()
 	t.Cleanup(srv.Stop)
 	go func() { _ = srv.Serve(listener) }()
 
@@ -630,7 +630,7 @@ func TestParseGlobalArgsNamespacePrecedence(t *testing.T) {
 
 func TestRunDescribeShowsLiveActorUID(t *testing.T) {
 	sub := substratetest.NewServer(t)
-	srv := server.NewServer(memory.NewStore(), newTestReconciler(sub))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	if _, err := srv.CreateTask(t.Context(), &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "identity"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
