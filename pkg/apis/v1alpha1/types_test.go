@@ -76,9 +76,6 @@ func fullTask() *v1alpha1.Task {
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
 			State: v1alpha1.TaskState_TASK_STATE_WORKING,
-			StatusDetail: &v1alpha1.TaskStatusDetail{
-				Detail: "OOMKilled",
-			},
 			Outcome: &v1alpha1.TaskOutcome{
 				Status:   &rpcstatus.Status{Code: 0, Message: "done"},
 				ExitCode: 0,
@@ -125,7 +122,6 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"maxBackoff: 300s",
 		"backoffMultiplier: 2",
 		"state: TASK_STATE_WORKING",
-		"detail: OOMKilled",
 		"output: all checks passed",
 		"actorUid: actor-uid-1",
 		"ateTemplate:",
@@ -153,7 +149,7 @@ func TestTask_RejectsRemovedAndDeferredFields(t *testing.T) {
 		{name: "status_phase_removed", src: "kind: Task\nstatus:\n  phase: Running\n", wantErr: "phase"},
 		{name: "status_id_removed", src: "kind: Task\nstatus:\n  id: t-1\n", wantErr: "id"},
 		{name: "status_worker_ip_removed", src: "kind: Task\nstatus:\n  workerIP: 10.0.0.1\n", wantErr: "workerIP"},
-		{name: "status_status_detail_reason_removed", src: "kind: Task\nstatus:\n  statusDetail:\n    reason: TASK_STATUS_REASON_SANDBOX_CRASHED\n", wantErr: "reason"},
+		{name: "status_status_detail_removed", src: "kind: Task\nstatus:\n  statusDetail:\n    detail: OOMKilled\n", wantErr: "statusDetail"},
 		{name: "status_outcome_result_removed", src: "kind: Task\nstatus:\n  outcome:\n    result: TASK_RESULT_SUCCEEDED\n", wantErr: "result"},
 		{name: "status_parent_tag_deferred", src: "kind: Task\nstatus:\n  parentTag: tag-1\n", wantErr: "parentTag"},
 		{name: "status_init_start_time_deferred", src: "kind: Task\nstatus:\n  initStartTime: 2026-09-19T12:00:00Z\n", wantErr: "initStartTime"},

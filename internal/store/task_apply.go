@@ -65,9 +65,9 @@ func (r *TaskVersion) Clone() *TaskVersion {
 
 // StoredStatus returns the part of a task's status that AX owns and stores. The
 // actor name, actor UID, and (for states outside [v1alpha1.IsAXTaskState]) the
-// state, status detail, and Ready condition that follow from the actor's live
-// state on Agent Substrate are dropped. st is not modified; a nil st returns an
-// empty non-nil TaskStatus.
+// state and Ready condition that follow from the actor's live state on Agent
+// Substrate are dropped. st is not modified; a nil st returns an empty non-nil
+// TaskStatus.
 func StoredStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	out := &v1alpha1.TaskStatus{}
 	if st != nil {
@@ -77,7 +77,6 @@ func StoredStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	out.ActorUid = ""
 	if !v1alpha1.IsAXTaskState(out.State) {
 		out.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-		out.StatusDetail = nil
 		conds := out.Conditions[:0]
 		for _, c := range out.Conditions {
 			if c.GetType() != v1alpha1.ConditionReady {

@@ -54,9 +54,6 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 		fmt.Fprintf(out, "UID:          %s\n", uid)
 	}
 	fmt.Fprintf(out, "State:        %s\n", v1alpha1.FormatTaskState(task))
-	if detail := st.GetStatusDetail().GetDetail(); detail != "" {
-		fmt.Fprintf(out, "Detail:       %s\n", detail)
-	}
 	fmt.Fprintf(out, "Actor:        %s\n", st.GetActor())
 	actorUID := st.GetActorUid()
 	if actorUID == "" {

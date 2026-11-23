@@ -308,14 +308,7 @@ func TestRunPromote(t *testing.T) {
 		suspended string
 	}{
 		{
-			status: &v1alpha1.TaskStatus{
-				State: v1alpha1.TaskState_TASK_STATE_FAILED,
-				Conditions: []*v1alpha1.Condition{{
-					Type:   v1alpha1.ConditionReady,
-					Status: "False",
-					Reason: v1alpha1.ReasonProvisioningFailed,
-				}},
-			},
+			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED},
 			suspended: "task.ax.io/demo suspended on the source\n",
 		},
 		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED, Outcome: &v1alpha1.TaskOutcome{ExitCode: 0}}},

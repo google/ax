@@ -292,7 +292,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	// The task is Queued until its actor exists.
 	task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
-	task.Status.StatusDetail = nil
 
 	key := store.TaskKey{Atespace: atespace, Name: task.Metadata.Name}
 	written, err := s.applier.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
@@ -521,7 +520,6 @@ func (s *Server) finalizeReconciledRow(ctx context.Context, task *v1alpha1.Task)
 		}
 		if !isExecutionTerminal(current.Task) {
 			next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-			next.Task.Status.StatusDetail = nil
 		}
 		return next, nil
 	})
@@ -544,29 +542,11 @@ func cloneConditions(in []*v1alpha1.Condition) []*v1alpha1.Condition {
 	return out
 }
 
-// isReconcileFailureReason reports whether reason describes a control-plane
-// provisioning or resume failure recorded on the Ready condition.
-func isReconcileFailureReason(reason string) bool {
-	switch reason {
-	case v1alpha1.ReasonProvisioningFailed,
-		v1alpha1.ReasonInvalidResources,
-		v1alpha1.ReasonAtespaceCreationFailed,
-		v1alpha1.ReasonTemplateCreationFailed,
-		v1alpha1.ReasonActorCreationFailed,
-		v1alpha1.ReasonGatewayBindingFailed,
-		v1alpha1.ReasonActorResumeFailed:
-		return true
-	default:
-		return false
-	}
-}
-
 // isExecutionTerminal reports whether task has reached a terminal execution
 // outcome that forbids subsequent SuspendTask or ResumeTask operations.
 //
-// Tasks recorded as FAILED with a control-plane reconciliation failure reason
-// on the Ready condition (for example, GatewayBindingFailed or
-// ProvisioningFailed) and no execution Outcome remain eligible for retry via
+// Only recordFailure stores FAILED without an execution Outcome (when
+// provisioning or resuming failed); those tasks remain eligible for retry via
 // ResumeTask or SuspendTask once the underlying precondition is resolved.
 func isExecutionTerminal(task *v1alpha1.Task) bool {
 	st := task.GetStatus()
@@ -575,11 +555,7 @@ func isExecutionTerminal(task *v1alpha1.Task) bool {
 		v1alpha1.TaskState_TASK_STATE_CANCELLED:
 		return true
 	case v1alpha1.TaskState_TASK_STATE_FAILED:
-		if st.GetOutcome() != nil {
-			return true
-		}
-		ready := findCondition(task, v1alpha1.ConditionReady)
-		return ready == nil || ready.GetStatus() != "False" || !isReconcileFailureReason(ready.GetReason())
+		return st.GetOutcome() != nil
 	default:
 		return false
 	}
@@ -592,22 +568,8 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
 	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_FAILED
-	var detail *v1alpha1.TaskStatusDetail
 	if substrate.IsTransientError(err) {
 		code, state = codes.Unavailable, v1alpha1.TaskState_TASK_STATE_QUEUED
-	} else {
-		detail = &v1alpha1.TaskStatusDetail{Detail: err.Error()}
-	}
-	// Ensure Ready records the failure when the reconciler did not set a more
-	// specific reason (for example, when SuspendActor fails during CreateTask
-	// and reconciler.Suspend restores prevStatus).
-	ready := findCondition(task, v1alpha1.ConditionReady)
-	if state == v1alpha1.TaskState_TASK_STATE_QUEUED {
-		if ready == nil || ready.GetStatus() != "False" || ready.GetReason() != v1alpha1.ReasonSubstrateUnavailable {
-			setReady(task, "False", v1alpha1.ReasonSubstrateUnavailable, err.Error())
-		}
-	} else if ready == nil || ready.GetStatus() != "False" || !isReconcileFailureReason(ready.GetReason()) {
-		setReady(task, "False", v1alpha1.ReasonProvisioningFailed, err.Error())
 	}
 	key := store.TaskKey{Atespace: atespace, Name: name}
 	_, _ = s.applier.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
@@ -622,7 +584,6 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 			next.Task.Status.Conditions = cloneConditions(src.GetConditions())
 		}
 		next.Task.Status.State = state
-		next.Task.Status.StatusDetail = detail
 		return next, nil
 	})
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
@@ -736,7 +697,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		}
 		if !v1alpha1.IsAXTaskState(st.State) {
 			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-			st.StatusDetail = nil
 			setReady(task, "Unknown", v1alpha1.ReasonSubstrateUnavailable, err.Error())
 		}
 	case actor == nil:
@@ -747,10 +707,8 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		// A task that finished provisioning always has an actor, so a missing one
 		// was removed outside AX.
 		if !v1alpha1.IsAXTaskState(st.State) {
-			const msg = "The task's actor no longer exists on Substrate"
 			st.State = v1alpha1.TaskState_TASK_STATE_FAILED
-			st.StatusDetail = &v1alpha1.TaskStatusDetail{Detail: msg}
-			setReady(task, "False", v1alpha1.ReasonActorNotFound, msg)
+			setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
 		}
 	default:
 		st.Actor = actor.GetMetadata().GetName()
@@ -758,7 +716,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		if terminating {
 			if !v1alpha1.IsAXTaskState(st.State) {
 				st.State, _ = actorTaskState(actor.GetStatus().GetState())
-				st.StatusDetail = nil
 			}
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
 			return
@@ -769,7 +726,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		actorState := actor.GetStatus().GetState()
 		taskState, readyReason := actorTaskState(actorState)
 		st.State = taskState
-		st.StatusDetail = nil
 		switch readyReason {
 		case v1alpha1.ReasonTaskRunning:
 			if conditionTrue(task, v1alpha1.ConditionWorkspaceReady) {
@@ -783,9 +739,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			message := actor.GetStatus().GetCrash().GetMessage()
 			if message == "" {
 				message = "Actor is " + strings.ToLower(strings.TrimPrefix(actorState.String(), "ACTOR_STATE_"))
-			}
-			if actorState == ateapipb.ActorState_ACTOR_STATE_CRASHED {
-				st.StatusDetail = &v1alpha1.TaskStatusDetail{Detail: message}
 			}
 			setReady(task, "False", readyReason, message)
 		}
@@ -812,29 +765,20 @@ func actorTaskState(state ateapipb.ActorState) (v1alpha1.TaskState, string) {
 	}
 }
 
-// findCondition returns the task's condition of the given type, or nil if none
-// is present.
-func findCondition(task *v1alpha1.Task, condType string) *v1alpha1.Condition {
-	for _, c := range task.GetStatus().GetConditions() {
-		if c.GetType() == condType {
-			return c
-		}
-	}
-	return nil
-}
-
 // conditionTrue reports whether the task has the given condition with status
 // True.
 func conditionTrue(task *v1alpha1.Task, condType string) bool {
-	return findCondition(task, condType).GetStatus() == "True"
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == condType {
+			return c.GetStatus() == "True"
+		}
+	}
+	return false
 }
 
 // setReady sets the task's Ready condition. Its update time changes only when
 // the condition does, so that repeated reads report a stable timestamp.
 func setReady(task *v1alpha1.Task, condStatus, reason, message string) {
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
 	for _, c := range task.Status.Conditions {
 		if c.GetType() != v1alpha1.ConditionReady {
 			continue

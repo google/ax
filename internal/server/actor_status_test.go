@@ -88,21 +88,12 @@ func TestSetActorStatus(t *testing.T) {
 		})
 	}
 
-	t.Run("crash message and status detail", func(t *testing.T) {
+	t.Run("crash message on ready condition", func(t *testing.T) {
 		task := storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED)
 		setActorStatus(task, crashed, nil)
 		c := readyCondition(task)
 		if c.GetStatus() != "False" || c.GetReason() != v1alpha1.ReasonSandboxCrashed || c.GetMessage() != "OOMKilled" {
 			t.Errorf("Ready = %v, want False/%s with message OOMKilled", c, v1alpha1.ReasonSandboxCrashed)
-		}
-		if detail := task.GetStatus().GetStatusDetail(); detail.GetDetail() != "OOMKilled" {
-			t.Errorf("StatusDetail = %v, want detail OOMKilled", detail)
-		}
-		// Recomputing from a non-crashed actor clears StatusDetail.
-		task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-		setActorStatus(task, testActor("crashed", ateapipb.ActorState_ACTOR_STATE_RUNNING), nil)
-		if got := task.GetStatus().GetStatusDetail(); got != nil {
-			t.Errorf("StatusDetail after recovery = %v, want nil", got)
 		}
 	})
 
