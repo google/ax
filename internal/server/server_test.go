@@ -1063,24 +1063,23 @@ func TestServer_DeleteTask_ReconcileErrorRetainsTask(t *testing.T) {
 	}
 }
 
-type failApplyTaskApplier struct {
-	store.TaskApplier
-	failApply bool
+type failSaveTaskStore struct {
+	store.Store
+	failSave bool
 }
 
-func (f *failApplyTaskApplier) Apply(ctx context.Context, key store.TaskKey, fn store.ApplyFunc) (*store.TaskVersion, error) {
-	if f.failApply {
-		return nil, errors.New("simulated store failure")
+func (f *failSaveTaskStore) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
+	if f.failSave {
+		return errors.New("simulated store failure")
 	}
-	return f.TaskApplier.Apply(ctx, key, fn)
+	return f.Store.SaveTask(ctx, task)
 }
 
 func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
-	base := memory.NewStore()
-	applier := &failApplyTaskApplier{TaskApplier: base}
+	st := &failSaveTaskStore{Store: memory.NewStore()}
 	sub := substratetest.NewServer(t)
 	rec := newTestReconciler(sub)
-	srv := server.NewServer(base, rec, server.Options{TaskApplier: applier})
+	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1093,13 +1092,63 @@ func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	applier.failApply = true
+	st.failSave = true
 	_, err = srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "task-status-fail"})
 	if err == nil {
 		t.Fatal("expected DeleteTask to fail when persisting delete_time fails")
 	}
 	if sub.DeleteActorCalls() != 0 {
 		t.Errorf("expected no DeleteActor call if persisting delete_time fails, got %d", sub.DeleteActorCalls())
+	}
+}
+
+func TestServer_ResumeAfterFailedDeleteClearsDeleteTime(t *testing.T) {
+	st := memory.NewStore()
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(st, newTestReconciler(sub))
+	ctx := context.Background()
+
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+		Task: &v1alpha1.Task{
+			Metadata: &v1alpha1.ObjectMeta{Name: "task-cancel-del"},
+			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+		},
+	}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	sub.SetErrors(substratetest.Errors{DeleteActor: status.Error(codes.Internal, "substrate failure")})
+	if _, err := srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "task-cancel-del"}); err == nil {
+		t.Fatal("expected DeleteTask to fail")
+	}
+	sub.SetErrors(substratetest.Errors{})
+
+	resumed, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task-cancel-del"})
+	if err != nil {
+		t.Fatalf("ResumeTask: %v", err)
+	}
+	if resumed.GetMetadata().GetDeleteTime() != nil {
+		t.Errorf("expected metadata.delete_time cleared, got %v", resumed.GetMetadata().GetDeleteTime())
+	}
+	if resumed.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
+		t.Errorf("resumed state = %v, want WORKING", resumed.GetStatus().GetState())
+	}
+
+	stored, err := st.GetTask(ctx, "default", "task-cancel-del")
+	if err != nil {
+		t.Fatalf("store.GetTask: %v", err)
+	}
+	if stored.GetMetadata().GetDeleteTime() != nil {
+		t.Errorf("stored delete_time = %v, want nil", stored.GetMetadata().GetDeleteTime())
+	}
+	assertNoActorState(t, stored)
+
+	got, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-cancel-del"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
+		t.Errorf("GetTask state = %v, want WORKING", got.GetStatus().GetState())
 	}
 }
 

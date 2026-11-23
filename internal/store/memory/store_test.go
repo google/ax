@@ -18,9 +18,7 @@ import (
 	"errors"
 	"math"
 	"slices"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/internal/store/memory"
@@ -122,146 +120,40 @@ func TestUpdateWorkspaceStatus(t *testing.T) {
 	}
 }
 
-func TestTaskApplier(t *testing.T) {
+func TestSaveAndUpdateTask(t *testing.T) {
 	ctx := t.Context()
 	s := memory.NewStore()
-	key := store.TaskKey{Name: "t-apply"} // empty Atespace normalizes to "default"
 
-	// Missing row: GetTaskVersion returns ErrNotFound; Apply nil / DeleteTaskVersion are no-ops.
-	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskVersion(missing) = %v, want ErrNotFound", err)
-	}
-	if got, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
-		if current != nil {
-			t.Fatalf("expected nil current on missing row, got %+v", current)
-		}
-		return nil, nil
-	}); err != nil || got != nil {
-		t.Fatalf("Apply(missing -> nil) = (%v, %v), want (nil, nil)", got, err)
-	}
-	if got, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
-		return store.DeleteTaskVersion, nil
-	}); err != nil || got != nil {
-		t.Fatalf("Apply(missing -> DeleteTaskVersion) = (%v, %v), want (nil, nil)", got, err)
+	if err := s.UpdateTaskStatus(ctx, "default", "missing", &v1alpha1.TaskStatus{}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("UpdateTaskStatus(missing) = %v, want ErrNotFound", err)
 	}
 
-	// Returning a row with nil Task is rejected without mutating storage.
-	if _, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
-		return &store.TaskVersion{}, nil
-	}); err == nil {
-		t.Fatal("expected error when ApplyFunc returns TaskVersion with nil Task")
+	// SaveTask preserves TASK_STATE_UNSPECIFIED rather than coercing to QUEUED.
+	if err := s.SaveTask(ctx, &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "t1", Atespace: "default"},
+	}); err != nil {
+		t.Fatalf("SaveTask: %v", err)
 	}
-
-	// Concurrent insert race: exactly one creator sees current == nil.
-	errExists := errors.New("already exists")
-	const racers = 8
-	var wg sync.WaitGroup
-	errs := make(chan error, racers)
-	for range racers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
-				if current != nil {
-					return nil, errExists
-				}
-				return &store.TaskVersion{
-					Task: &v1alpha1.Task{
-						Spec: &v1alpha1.TaskSpec{SessionId: "sess-1"},
-						Status: &v1alpha1.TaskStatus{
-							State:    v1alpha1.TaskState_TASK_STATE_WORKING,
-							Actor:    "live-actor",
-							ActorUid: "live-uid",
-							Conditions: []*v1alpha1.Condition{
-								{Type: v1alpha1.ConditionReady, Status: "True"},
-								{Type: v1alpha1.ConditionWorkspaceReady, Status: "True"},
-							},
-						},
-					},
-				}, nil
-			})
-			errs <- err
-		}()
-	}
-	wg.Wait()
-	close(errs)
-
-	var wins, conflicts int
-	for err := range errs {
-		switch {
-		case err == nil:
-			wins++
-		case errors.Is(err, errExists):
-			conflicts++
-		default:
-			t.Fatalf("unexpected concurrent Apply error: %v", err)
-		}
-	}
-	if wins != 1 || conflicts != racers-1 {
-		t.Fatalf("concurrent insert wins=%d conflicts=%d, want 1 and %d", wins, conflicts, racers-1)
-	}
-
-	inserted, err := s.GetTaskVersion(ctx, key)
+	got, err := s.GetTask(ctx, "default", "t1")
 	if err != nil {
-		t.Fatalf("GetTaskVersion(inserted): %v", err)
+		t.Fatalf("GetTask: %v", err)
 	}
-	if inserted.Generation != 1 || inserted.Task.GetStatus().GetGeneration() != 1 {
-		t.Fatalf("Generation = (%d, %d), want (1, 1)", inserted.Generation, inserted.Task.GetStatus().GetGeneration())
-	}
-	if inserted.Task.GetMetadata().GetAtespace() != v1alpha1.DefaultAtespace || inserted.Task.GetMetadata().GetName() != "t-apply" {
-		t.Fatalf("Metadata = %+v, want default/t-apply", inserted.Task.GetMetadata())
-	}
-	if inserted.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED ||
-		inserted.Task.GetStatus().GetActor() != "" || inserted.Task.GetStatus().GetActorUid() != "" ||
-		len(inserted.Task.GetStatus().GetConditions()) != 1 {
-		t.Fatalf("StoredStatus did not scrub live fields on insert: %+v", inserted.Task.GetStatus())
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
+		t.Fatalf("stored state = %v, want UNSPECIFIED", got.GetStatus().GetState())
 	}
 
-	// Returning current (even if mutated in place) leaves storage unchanged.
-	noopRow, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
-		current.Task.Spec.SessionId = "mutated-in-place"
-		return current, nil
-	})
-	if err != nil || noopRow.Task.GetSpec().GetSessionId() != "sess-1" || noopRow.Generation != 1 {
-		t.Fatalf("Apply(return current) = (%+v, %v), want unchanged SessionId=sess-1 Gen=1", noopRow, err)
+	st := &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED}
+	if err := s.UpdateTaskStatus(ctx, "default", "t1", st); err != nil {
+		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
+	// Mutating caller's status after update must not mutate stored task.
+	st.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
 
-	// Update advances Generation to 2 and persists terminal state.
-	updated, err := s.Apply(ctx, key, func(current *store.TaskVersion, _ time.Time) (*store.TaskVersion, error) {
-		next := current.Clone()
-		next.Task.Status.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
-		next.Task.Status.Outcome = &v1alpha1.TaskOutcome{
-			Output: "done",
-		}
-		return next, nil
-	})
+	got, err = s.GetTask(ctx, "default", "t1")
 	if err != nil {
-		t.Fatalf("Apply(update): %v", err)
+		t.Fatalf("GetTask after update: %v", err)
 	}
-	if updated.Generation != 2 ||
-		updated.Task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_COMPLETED ||
-		updated.Task.GetStatus().GetOutcome().GetOutput() != "done" {
-		t.Fatalf("updated row = %+v, status = %+v", updated, updated.Task.GetStatus())
-	}
-
-	// Clone of DeleteTaskVersion does not match sentinel pointer identity and must not delete.
-	if _, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
-		return store.DeleteTaskVersion.Clone(), nil
-	}); err == nil {
-		t.Fatal("expected error when returning DeleteTaskVersion.Clone()")
-	}
-
-	// Returning DeleteTaskVersion itself removes the row.
-	deleted, err := s.Apply(ctx, key, func(*store.TaskVersion, time.Time) (*store.TaskVersion, error) {
-		return store.DeleteTaskVersion, nil
-	})
-	if err != nil || deleted != nil {
-		t.Fatalf("Apply(DeleteTaskVersion) = (%v, %v), want (nil, nil)", deleted, err)
-	}
-	if _, err := s.GetTaskVersion(ctx, key); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTaskVersion after delete = %v, want ErrNotFound", err)
-	}
-	if _, err := s.GetTask(ctx, v1alpha1.DefaultAtespace, "t-apply"); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetTask after delete = %v, want ErrNotFound", err)
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED {
+		t.Fatalf("stored state after update = %v, want FAILED", got.GetStatus().GetState())
 	}
 }

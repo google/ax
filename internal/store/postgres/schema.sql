@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     saved_at timestamptz NOT NULL,
     PRIMARY KEY (atespace, name)
 );
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS generation bigint NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS tasks_saved_at_idx ON tasks (saved_at DESC, atespace, name);
 CREATE INDEX IF NOT EXISTS tasks_atespace_saved_at_idx ON tasks (atespace, saved_at DESC, name);
 
