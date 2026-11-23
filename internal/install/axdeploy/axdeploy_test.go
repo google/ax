@@ -292,14 +292,35 @@ func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
 
 	// Release builds default to their matching version tag while honoring env and flags.
 	origVersion := version.Version
+	origDigest := version.ServerImageDigest
 	version.Version = "v0.4.0-rc.2"
-	t.Cleanup(func() { version.Version = origVersion })
+	version.ServerImageDigest = ""
+	t.Cleanup(func() {
+		version.Version = origVersion
+		version.ServerImageDigest = origDigest
+	})
 
 	t.Setenv("AX_SERVER_IMAGE", "")
+	t.Setenv("AX_RUNNER_VOLUME_IMAGE", "")
 	srv, _, err = ResolveImageInputs("", "")
 	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.4.0-rc.2" {
-		t.Fatalf("expected release build default image, got (%q, %v)", srv, err)
+		t.Fatalf("expected tag-only fallback when ServerImageDigest is unset, got (%q, %v)", srv, err)
 	}
+
+	// When stamped with ServerImageDigest by the release workflow, release builds
+	// default to the digest-pinned reference directly (no runtime tag lookup).
+	const stampedDigest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	version.ServerImageDigest = stampedDigest
+	wantPinned := "ghcr.io/google/ax/ax-server:v0.4.0-rc.2@" + stampedDigest
+	srv, _, err = ResolveImageInputs("", "")
+	if err != nil || srv != wantPinned {
+		t.Fatalf("expected digest-pinned release default image, got (%q, %v), want %q", srv, err, wantPinned)
+	}
+	pinned, _, err := resolveImages(context.Background(), InstallOptions{})
+	if err != nil || pinned != wantPinned {
+		t.Fatalf("expected resolveImages to keep stamped digest without network lookup, got (%q, %v)", pinned, err)
+	}
+
 	t.Setenv("AX_SERVER_IMAGE", "ghcr.io/example/ax-server:custom")
 	srv, _, err = ResolveImageInputs("", "")
 	if err != nil || srv != "ghcr.io/example/ax-server:custom" {
@@ -308,6 +329,13 @@ func TestResolveImageInputsGateAndEnvFallback(t *testing.T) {
 	srv, _, err = ResolveImageInputs("ghcr.io/example/ax-server:flag", "")
 	if err != nil || srv != "ghcr.io/example/ax-server:flag" {
 		t.Fatalf("expected explicit flag to override env and release default, got (%q, %v)", srv, err)
+	}
+
+	// Stamping ServerImageDigest alone on a dev build must not bypass the dev gate.
+	version.Version = "dev"
+	t.Setenv("AX_SERVER_IMAGE", "")
+	if _, _, err := ResolveImageInputs("", ""); err == nil {
+		t.Fatal("expected dev build to stay gated even if ServerImageDigest is set")
 	}
 }
 

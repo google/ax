@@ -38,13 +38,18 @@ import (
 // DefaultServerImage returns the ax-server container image used when
 // --server-image and $AX_SERVER_IMAGE are unset. Official release binaries
 // (version.IsRelease) default to the matching ghcr.io/google/ax/ax-server:<tag>
-// image (resolved to @sha256 by EnsureDigestPinned); unversioned dev builds
+// image, pinned with @<version.ServerImageDigest> when stamped at release time
+// (otherwise resolved to @sha256 by EnsureDigestPinned). Unversioned dev builds
 // return "" so they fail fast unless --server-image or $AX_SERVER_IMAGE is set.
 func DefaultServerImage() string {
-	if version.IsRelease() {
-		return version.Image("ax-server")
+	if !version.IsRelease() {
+		return ""
 	}
-	return ""
+	ref := version.Image("ax-server")
+	if d := strings.TrimSpace(version.ServerImageDigest); d != "" {
+		return ref + "@" + d
+	}
+	return ref
 }
 
 const (

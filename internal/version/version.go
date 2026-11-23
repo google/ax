@@ -32,6 +32,12 @@ const ImageRepo = "ghcr.io/google/ax"
 // (hack/release/lib.sh); any other build reports "dev".
 var Version = "dev"
 
+// ServerImageDigest is the sha256 digest (for example "sha256:...") of the
+// ax-server image matching Version. Release builds set it alongside Version via
+// -ldflags "-X github.com/google/ax/internal/version.ServerImageDigest=..."
+// (hack/release/build-binaries.sh). Empty on local/dev or tag-only builds.
+var ServerImageDigest = ""
+
 var releaseVersion = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
 
 // IsRelease reports whether Version is a release version

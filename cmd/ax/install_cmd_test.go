@@ -96,8 +96,13 @@ func TestReleaseBuildServerImageDefaultAndUsage(t *testing.T) {
 	}
 
 	origVersion := version.Version
+	origDigest := version.ServerImageDigest
 	version.Version = "v0.4.0-rc.2"
-	t.Cleanup(func() { version.Version = origVersion })
+	version.ServerImageDigest = ""
+	t.Cleanup(func() {
+		version.Version = origVersion
+		version.ServerImageDigest = origDigest
+	})
 
 	want := `(default: "ghcr.io/google/ax/ax-server:v0.4.0-rc.2")`
 	if !strings.Contains(localUsage(), want) {
@@ -105,6 +110,16 @@ func TestReleaseBuildServerImageDefaultAndUsage(t *testing.T) {
 	}
 	if !strings.Contains(installUsage(), want) {
 		t.Fatalf("expected release installUsage to include %q:\n%s", want, installUsage())
+	}
+
+	const stampedDigest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	version.ServerImageDigest = stampedDigest
+	wantPinned := `(default: "ghcr.io/google/ax/ax-server:v0.4.0-rc.2@` + stampedDigest + `")`
+	if !strings.Contains(localUsage(), wantPinned) {
+		t.Fatalf("expected digest-pinned localUsage to include %q:\n%s", wantPinned, localUsage())
+	}
+	if !strings.Contains(installUsage(), wantPinned) {
+		t.Fatalf("expected digest-pinned installUsage to include %q:\n%s", wantPinned, installUsage())
 	}
 
 	parsed, err := parseLocalArgs([]string{"start"})
@@ -119,8 +134,8 @@ func TestReleaseBuildServerImageDefaultAndUsage(t *testing.T) {
 
 	t.Setenv("AX_SERVER_IMAGE", "")
 	srv, _, err = axdeploy.ResolveImageInputs(parsed.serverImage, parsed.runnerVolumeImage)
-	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.4.0-rc.2" {
-		t.Fatalf("expected release default image when env and flag unset, got (%q, %v)", srv, err)
+	if err != nil || srv != "ghcr.io/google/ax/ax-server:v0.4.0-rc.2@"+stampedDigest {
+		t.Fatalf("expected digest-pinned release default image when env and flag unset, got (%q, %v)", srv, err)
 	}
 }
 

@@ -213,6 +213,8 @@ jobs:
         cache: false
 
     - name: Build ax CLI
+      env:
+        AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
       run: hack/release/build-binaries.sh "${TAG}" bin/release
 
     - name: Render install manifests
