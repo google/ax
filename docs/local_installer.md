@@ -259,7 +259,7 @@ ax ssh demo-task -- sh -c 'uname -a && echo "ENV=$GREETING"'
 ```
 
 #### Expected Behavior
-- `ax resume` starts the gVisor sandbox and prints `task.ax.io/demo-task resumed` (`ax get tasks` now reports `STATE: Working`).
+- `ax resume` starts the gVisor sandbox and prints `task.ax.io/demo-task resumed` (`ax get tasks` now reports `STATE: Running`).
 - `ax ssh` mints an ephemeral client mTLS certificate via Kubernetes `PodCertificateRequest` (cached per cluster fingerprint under `~/.ax/router-tls/`), connects through `atenet-router:443`, and prints:
   ```text
   Linux ... gvisor ...

@@ -110,7 +110,7 @@ func TestE2E_Promote(t *testing.T) {
 	assertContains(t, "'ax promote --replace'", promote("--replace"),
 		"gateway.ax.io/"+gw+" reused", "workspace.ax.io/"+ws+" unchanged", "task.ax.io/"+task+" replaced")
 	replaced := remote.getTask(t, ns, task)
-	assertState(t, replaced, v1alpha1.TaskState_TASK_STATE_WORKING)
+	assertState(t, replaced, v1alpha1.TaskState_TASK_STATE_RUNNING)
 	if replaced.GetMetadata().GetUid() == promoted.GetMetadata().GetUid() {
 		t.Fatalf("task after --replace still has UID %q", promoted.GetMetadata().GetUid())
 	}

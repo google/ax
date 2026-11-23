@@ -16,6 +16,7 @@ package server
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -27,6 +28,25 @@ func testActor(name string, state ateapipb.ActorState) *ateapipb.Actor {
 	return &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: name},
 		Status:   &ateapipb.ActorStatus{State: state},
+	}
+}
+
+// TestActorTaskStateMirrorsActorState checks that every Substrate ActorState
+// maps to the TaskState with the same name and number below 200, and that AX's
+// own TaskStates start at 200.
+func TestActorTaskStateMirrorsActorState(t *testing.T) {
+	for num, name := range ateapipb.ActorState_name {
+		actorState := ateapipb.ActorState(num)
+		got, _ := actorTaskState(actorState)
+		wantName := "TASK_STATE_" + strings.TrimPrefix(name, "ACTOR_STATE_")
+		if num >= 200 || int32(got) != num || got.String() != wantName {
+			t.Errorf("actorTaskState(%v) = %v (%d), want %s (%d < 200)", actorState, got, got, wantName, num)
+		}
+	}
+	for _, state := range []v1alpha1.TaskState{v1alpha1.TaskState_TASK_STATE_QUEUED, v1alpha1.TaskState_TASK_STATE_FAILED, v1alpha1.TaskState_TASK_STATE_COMPLETED} {
+		if state < 200 {
+			t.Errorf("AX-only %v has number %d, want >= 200", state, state)
+		}
 	}
 }
 
@@ -58,13 +78,13 @@ func TestSetActorStatus(t *testing.T) {
 		wantActor                  string
 		wantReady, wantReadyReason string
 	}{
-		{storedTask("running", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, workspaceReady), testActor("running", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_WORKING, "running", "True", v1alpha1.ReasonTaskRunning},
-		{storedTask("setting-up", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("setting-up", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_WORKING, "setting-up", "False", v1alpha1.ReasonWorkspaceInitializing},
+		{storedTask("running", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, workspaceReady), testActor("running", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_RUNNING, "running", "True", v1alpha1.ReasonTaskRunning},
+		{storedTask("setting-up", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("setting-up", ateapipb.ActorState_ACTOR_STATE_RUNNING), v1alpha1.TaskState_TASK_STATE_RUNNING, "setting-up", "False", v1alpha1.ReasonWorkspaceInitializing},
 		{storedTask("suspended", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, workspaceReady), testActor("suspended", ateapipb.ActorState_ACTOR_STATE_SUSPENDED), v1alpha1.TaskState_TASK_STATE_SUSPENDED, "suspended", "False", v1alpha1.ReasonSuspended},
-		{storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), crashed, v1alpha1.TaskState_TASK_STATE_FAILED, "crashed", "False", v1alpha1.ReasonSandboxCrashed},
-		{storedTask("reverting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("reverting", ateapipb.ActorState_ACTOR_STATE_REVERTING), v1alpha1.TaskState_TASK_STATE_QUEUED, "reverting", "False", v1alpha1.ReasonResuming},
+		{storedTask("crashed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), crashed, v1alpha1.TaskState_TASK_STATE_CRASHED, "crashed", "False", v1alpha1.ReasonSandboxCrashed},
+		{storedTask("reverting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("reverting", ateapipb.ActorState_ACTOR_STATE_REVERTING), v1alpha1.TaskState_TASK_STATE_REVERTING, "reverting", "False", v1alpha1.ReasonResuming},
 		{storedTask("suspending", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("suspending", ateapipb.ActorState_ACTOR_STATE_SUSPENDING), v1alpha1.TaskState_TASK_STATE_SUSPENDING, "suspending", "False", v1alpha1.ReasonSuspending},
-		{storedTask("deleting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("deleting", ateapipb.ActorState_ACTOR_STATE_DELETING), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "deleting", "False", v1alpha1.ReasonTerminating},
+		{storedTask("deleting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("deleting", ateapipb.ActorState_ACTOR_STATE_DELETING), v1alpha1.TaskState_TASK_STATE_DELETING, "deleting", "False", v1alpha1.ReasonTerminating},
 		{storedTask("odd", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("odd", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "odd", "Unknown", v1alpha1.ReasonUnknown},
 		// The actor was removed outside AX.
 		{storedTask("gone", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), nil, v1alpha1.TaskState_TASK_STATE_FAILED, "", "False", v1alpha1.ReasonActorNotFound},

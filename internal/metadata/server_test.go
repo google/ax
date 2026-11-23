@@ -45,7 +45,7 @@ func TestMetadataServer(t *testing.T) {
 			Debug:   true,
 		},
 		Status: &v1alpha1.TaskStatus{
-			State: v1alpha1.TaskState_TASK_STATE_WORKING,
+			State: v1alpha1.TaskState_TASK_STATE_RUNNING,
 		},
 	}
 

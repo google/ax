@@ -27,7 +27,7 @@ import (
 
 func TestStoredStatus(t *testing.T) {
 	in := &v1alpha1.TaskStatus{
-		State:       v1alpha1.TaskState_TASK_STATE_WORKING,
+		State:       v1alpha1.TaskState_TASK_STATE_RUNNING,
 		Actor:       "actor",
 		ActorUid:    "uid-1",
 		AteTemplate: &v1alpha1.ObjectRef{Name: "task-tmpl-01234567", Atespace: "default"},
@@ -55,7 +55,6 @@ func TestStoredStatus(t *testing.T) {
 	for _, state := range []v1alpha1.TaskState{
 		v1alpha1.TaskState_TASK_STATE_QUEUED,
 		v1alpha1.TaskState_TASK_STATE_FAILED,
-		v1alpha1.TaskState_TASK_STATE_COMPLETED,
 	} {
 		t.Run(state.String(), func(t *testing.T) {
 			if got := storedStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {

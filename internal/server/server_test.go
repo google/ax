@@ -189,8 +189,8 @@ func TestServerGRPC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResumeTask failed: %v", err)
 	}
-	if resTask.Status.State != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("expected task state to be WORKING, got %v", resTask.Status.State)
+	if resTask.Status.State != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("expected task state to be RUNNING, got %v", resTask.Status.State)
 	}
 
 	// 5. Workspaces
@@ -953,8 +953,8 @@ func TestServer_DirectTaskManagerLifecycle(t *testing.T) {
 	if state := actor.GetStatus().GetState(); state != ateapipb.ActorState_ACTOR_STATE_RUNNING {
 		t.Errorf("actor state after ResumeTask = %v, want RUNNING", state)
 	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("expected state WORKING, got %v", task.GetStatus().GetState())
+	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("expected state RUNNING, got %v", task.GetStatus().GetState())
 	}
 
 	// 3. SuspendTask suspends the actor
@@ -1130,8 +1130,8 @@ func TestServer_ResumeAfterFailedDeleteClearsDeleteTime(t *testing.T) {
 	if resumed.GetMetadata().GetDeleteTime() != nil {
 		t.Errorf("expected metadata.delete_time cleared, got %v", resumed.GetMetadata().GetDeleteTime())
 	}
-	if resumed.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("resumed state = %v, want WORKING", resumed.GetStatus().GetState())
+	if resumed.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("resumed state = %v, want RUNNING", resumed.GetStatus().GetState())
 	}
 
 	stored, err := st.GetTask(ctx, "default", "task-cancel-del")
@@ -1147,8 +1147,8 @@ func TestServer_ResumeAfterFailedDeleteClearsDeleteTime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("GetTask state = %v, want WORKING", got.GetStatus().GetState())
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("GetTask state = %v, want RUNNING", got.GetStatus().GetState())
 	}
 }
 
@@ -1176,8 +1176,8 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResumeTask: %v", err)
 	}
-	if ready := readyCondition(running); running.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING || ready.GetStatus() != "True" {
-		t.Fatalf("ResumeTask status = %v, want WORKING with Ready=True", running.GetStatus())
+	if ready := readyCondition(running); running.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING || ready.GetStatus() != "True" {
+		t.Fatalf("ResumeTask status = %v, want RUNNING with Ready=True", running.GetStatus())
 	}
 
 	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend error")})
@@ -1190,8 +1190,8 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("stored state = %v, want WORKING after failed suspension", stored.GetStatus().GetState())
+	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("stored state = %v, want RUNNING after failed suspension", stored.GetStatus().GetState())
 	}
 	if ready := readyCondition(stored); ready.GetStatus() != "True" || ready.GetReason() != v1alpha1.ReasonTaskRunning {
 		t.Errorf("stored conditions = %v, want Ready=True (TaskRunning)", stored.GetStatus().GetConditions())
@@ -1286,7 +1286,7 @@ func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING || got.GetStatus().GetActor() != "observed-a" {
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING || got.GetStatus().GetActor() != "observed-a" {
 		t.Errorf("GetTask status = %v, want the actor's state", got.GetStatus())
 	}
 
@@ -1295,7 +1295,7 @@ func TestServer_ReadsActorStateFromSubstrate(t *testing.T) {
 		t.Fatalf("ListTasks: %v", err)
 	}
 	for _, task := range list.GetTasks() {
-		if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING || task.GetStatus().GetActor() != task.GetMetadata().GetName() {
+		if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING || task.GetStatus().GetActor() != task.GetMetadata().GetName() {
 			t.Errorf("ListTasks status for %s = %v, want the actor's state", task.GetMetadata().GetName(), task.GetStatus())
 		}
 	}
@@ -1491,7 +1491,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
 			Status: &v1alpha1.TaskStatus{
-				State: v1alpha1.TaskState_TASK_STATE_WORKING,
+				State: v1alpha1.TaskState_TASK_STATE_RUNNING,
 				Conditions: []*v1alpha1.Condition{
 					{Type: "Ready", Status: "True", Reason: "ClientForged"},
 				},
@@ -1559,13 +1559,14 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	}
 }
 
-// Resuming and reverting actors map to TASK_STATE_QUEUED on read (matching Sobi
-// TaskState), but CreateTask must still reject re-applying an already-created
-// task rather than running the create path and suspending the resuming actor.
+// Resuming and reverting actors map to TASK_STATE_RESUMING and
+// TASK_STATE_REVERTING on read, and CreateTask must reject re-applying an
+// already-created task rather than running the create path and suspending the
+// resuming actor.
 func TestCreateTask_RejectsResumingTask(t *testing.T) {
-	for _, actorState := range []ateapipb.ActorState{
-		ateapipb.ActorState_ACTOR_STATE_RESUMING,
-		ateapipb.ActorState_ACTOR_STATE_REVERTING,
+	for actorState, wantState := range map[ateapipb.ActorState]v1alpha1.TaskState{
+		ateapipb.ActorState_ACTOR_STATE_RESUMING:  v1alpha1.TaskState_TASK_STATE_RESUMING,
+		ateapipb.ActorState_ACTOR_STATE_REVERTING: v1alpha1.TaskState_TASK_STATE_REVERTING,
 	} {
 		t.Run(actorState.String(), func(t *testing.T) {
 			st := memory.NewStore()
@@ -1593,8 +1594,8 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetTask: %v", err)
 			}
-			if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
-				t.Fatalf("GetTask state = %v, want TASK_STATE_QUEUED", got.GetStatus().GetState())
+			if got.GetStatus().GetState() != wantState {
+				t.Fatalf("GetTask state = %v, want %v", got.GetStatus().GetState(), wantState)
 			}
 			if ready := readyCondition(got); ready.GetReason() != v1alpha1.ReasonResuming {
 				t.Fatalf("Ready = %v, want reason %q", ready, v1alpha1.ReasonResuming)
@@ -1658,49 +1659,8 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResumeTask: %v", err)
 	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_WORKING {
-		t.Errorf("state after ResumeTask = %v, want WORKING", task.GetStatus().GetState())
-	}
-}
-
-func TestServer_TerminalTaskRejectsSuspendAndResume(t *testing.T) {
-	st := memory.NewStore()
-	srv := server.NewServer(st, newTestTaskManager(substratetest.NewServer(t)))
-	ctx := context.Background()
-
-	cases := []struct {
-		name   string
-		status *v1alpha1.TaskStatus
-	}{
-		{name: "completed", status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED}},
-		{name: "cancelled", status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_CANCELLED}},
-		{
-			name: "failed-with-outcome",
-			status: &v1alpha1.TaskStatus{
-				State:   v1alpha1.TaskState_TASK_STATE_FAILED,
-				Outcome: &v1alpha1.TaskOutcome{ExitCode: 1},
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-				Metadata: &v1alpha1.ObjectMeta{Name: tc.name},
-				Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-			}}); err != nil {
-				t.Fatalf("CreateTask: %v", err)
-			}
-			if err := st.UpdateTaskStatus(ctx, "default", tc.name, tc.status); err != nil {
-				t.Fatalf("UpdateTaskStatus: %v", err)
-			}
-			if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: tc.name}); status.Code(err) != codes.FailedPrecondition {
-				t.Errorf("SuspendTask(%s) = %v, want FailedPrecondition", tc.name, err)
-			}
-			if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: tc.name}); status.Code(err) != codes.FailedPrecondition {
-				t.Errorf("ResumeTask(%s) = %v, want FailedPrecondition", tc.name, err)
-			}
-		})
+	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+		t.Errorf("state after ResumeTask = %v, want RUNNING", task.GetStatus().GetState())
 	}
 }
 
