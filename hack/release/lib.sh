@@ -70,8 +70,15 @@ is_latest_stable() {
 }
 
 # go_ldflags prints the -ldflags for a release build of version $1.
+# When a server image digest ($2, sha256:...) is given, it also stamps
+# internal/version.ServerImageDigest so release CLI builds pin ax-server by
+# digest without a runtime tag lookup.
 go_ldflags() {
-  echo "-s -w -X github.com/google/ax/internal/version.Version=$1"
+  local flags="-s -w -X github.com/google/ax/internal/version.Version=$1"
+  if [[ -n "${2:-}" ]]; then
+    flags+=" -X github.com/google/ax/internal/version.ServerImageDigest=$2"
+  fi
+  echo "${flags}"
 }
 
 # release_state prints the state of the GitHub release for tag $1 in

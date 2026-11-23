@@ -30,19 +30,29 @@ import (
 	"github.com/google/ax/deploy"
 	"github.com/google/ax/internal/install/executil"
 	"github.com/google/ax/internal/tunnel"
+	"github.com/google/ax/internal/version"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	// DefaultServerImage is the default ax-server container image when
-	// --server-image and $AX_SERVER_IMAGE are unset. Kept empty to gate zero-flag
-	// installs until official org-hosted, @sha256-pinned release images exist.
-	//
-	// TODO(release): Populate with "ghcr.io/google/ax/ax-server:<tag>@sha256:<digest>"
-	// once official multi-arch release images are published.
-	DefaultServerImage = ""
+// DefaultServerImage returns the ax-server container image used when
+// --server-image and $AX_SERVER_IMAGE are unset. Official release binaries
+// (version.IsRelease) default to the matching ghcr.io/google/ax/ax-server:<tag>
+// image, pinned with @<version.ServerImageDigest> when stamped at release time
+// (otherwise resolved to @sha256 by EnsureDigestPinned). Unversioned dev builds
+// return "" so they fail fast unless --server-image or $AX_SERVER_IMAGE is set.
+func DefaultServerImage() string {
+	if !version.IsRelease() {
+		return ""
+	}
+	ref := version.Image("ax-server")
+	if d := strings.TrimSpace(version.ServerImageDigest); d != "" {
+		return ref + "@" + d
+	}
+	return ref
+}
 
+const (
 	// DefaultRunnerVolumeImage is the optional runner volume image
 	// (Dockerfile.runner-volume) configured on ax-server
 	// (AX_RUNNER_VOLUME_IMAGE) when --runner-volume-image and
@@ -251,9 +261,9 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 // (DefaultServerImage / DefaultRunnerVolumeImage). It fails only when the
 // server image is unset.
 func ResolveImageInputs(serverImage, runnerVolumeImage string) (srvImg, runnerImg string, err error) {
-	srvImg = firstNonEmpty(serverImage, os.Getenv("AX_SERVER_IMAGE"), DefaultServerImage)
+	srvImg = firstNonEmpty(serverImage, os.Getenv("AX_SERVER_IMAGE"), DefaultServerImage())
 	if srvImg == "" {
-		return "", "", fmt.Errorf("--server-image (or $AX_SERVER_IMAGE) is required until official release images are published")
+		return "", "", fmt.Errorf("--server-image (or $AX_SERVER_IMAGE) is required on development builds (release builds default to their own version)")
 	}
 	runnerImg = firstNonEmpty(runnerVolumeImage, os.Getenv("AX_RUNNER_VOLUME_IMAGE"), DefaultRunnerVolumeImage)
 	return srvImg, runnerImg, nil

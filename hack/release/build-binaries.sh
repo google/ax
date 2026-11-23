@@ -18,6 +18,11 @@
 #
 #   hack/release/build-binaries.sh <version> [out-dir]
 #
+# When AX_SERVER_IMAGE is set to a digest-pinned reference (<repo>@sha256:...),
+# its digest is stamped into internal/version.ServerImageDigest so release
+# builds default `--server-image` to `<version>@sha256:<digest>` without a
+# runtime tag lookup.
+#
 # Writes to out-dir (default bin/release), for every platform in CLI_PLATFORMS
 # (hack/release/lib.sh):
 #
@@ -49,6 +54,22 @@ cd "${ROOT}"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
+# If AX_SERVER_IMAGE is set to a digest-pinned reference (<repo>@sha256:...),
+# the ax binary is also stamped with version.ServerImageDigest so release
+# builds pin their matching ax-server image without relying on a mutable tag.
+server_digest=""
+if [[ -n "${AX_SERVER_IMAGE:-}" ]]; then
+  if [[ "${AX_SERVER_IMAGE}" != *@* ]]; then
+    echo "error: AX_SERVER_IMAGE must carry a @sha256:<64hex> digest (got '${AX_SERVER_IMAGE}')" >&2
+    exit 1
+  fi
+  server_digest="${AX_SERVER_IMAGE##*@}"
+  if [[ ! "${server_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "error: AX_SERVER_IMAGE must carry a @sha256:<64hex> digest (got '${AX_SERVER_IMAGE}')" >&2
+    exit 1
+  fi
+fi
+
 archives=()
 for platform in "${CLI_PLATFORMS[@]}"; do
   os="${platform%/*}"
@@ -57,7 +78,7 @@ for platform in "${CLI_PLATFORMS[@]}"; do
   echo "==> Building ${archive} (${VERSION})"
   mkdir -p "${work}/${os}_${arch}"
   GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
-    go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
+    go build -trimpath -ldflags="$(go_ldflags "${VERSION}" "${server_digest}")" \
     -o "${work}/${os}_${arch}/ax" ./cmd/ax
   # Fixed owner, mode, order, and timestamps (tar and gzip) so the archive
   # depends only on the binary.

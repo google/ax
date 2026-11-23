@@ -213,7 +213,14 @@ jobs:
         cache: false
 
     - name: Build ax CLI
-      run: hack/release/build-binaries.sh "${TAG}" bin/release
+      env:
+        AX_SERVER_IMAGE: ${{ needs.images.outputs.server_image }}
+      run: |
+        if [[ -z "${AX_SERVER_IMAGE}" ]]; then
+          echo "::error::needs.images.outputs.server_image is empty; refusing to build a release CLI without a pinned server image digest"
+          exit 1
+        fi
+        hack/release/build-binaries.sh "${TAG}" bin/release
 
     - name: Render install manifests
       env:
