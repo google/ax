@@ -233,7 +233,7 @@ ax --context=dev-cluster get tasks
 
 ## AX and Agent Substrate
 
-[Agent Substrate](https://github.com/agent-substrate/substrate) is the compute runtime layer AX relies on. It schedules actors onto workers, isolates them, and suspends, resumes and snapshots them. Its boundary includes the network: AX turns a `Gateway`'s rules into an egress policy for each task's actor, and Substrate enforces it. It doesn't know much about agents.
+[Agent Substrate](https://github.com/agent-substrate/substrate) is the compute runtime layer AX relies on. It schedules actors onto workers, isolates them, and suspends, resumes and snapshots them. It also handles their networking, egress policies and credential injection. It doesn't know much about agents.
 
 Besides task execution, AX and Agent Substrate are orthogonal to each other.
 
