@@ -396,8 +396,8 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 // Callers should keep three operational constraints in mind:
 //   - Setting image overrides the container command of every AX-managed
 //     template to /opt/ax/ax-runner, so images that rely on a custom
-//     runner binary (such as Dockerfile.claude-code before migrating to
-//     /usr/local/bin/ax-harness) must migrate before enabling this setting.
+//     runner binary must migrate to /usr/local/bin/ax-harness before
+//     enabling this setting.
 //   - User-managed ate_template references are not mutated by AX and do
 //     not receive the runner volume mount.
 //   - Pure agent images still require /bin/sh and git when workspace setup
