@@ -583,8 +583,6 @@ type TaskStatus struct {
 	// Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
 	// retry (non-zero command exit, sandbox crash, or lost runner).
 	Attempt int32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	// Monotonic task revision.
-	Generation int64 `protobuf:"varint,8,opt,name=generation,proto3" json:"generation,omitempty"`
 	// Effective command argv executed by each run: spec.commands if set,
 	// otherwise the image's ENTRYPOINT + CMD.
 	ResolvedArgv []string `protobuf:"bytes,9,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
@@ -669,13 +667,6 @@ func (x *TaskStatus) GetOutcome() *TaskOutcome {
 func (x *TaskStatus) GetAttempt() int32 {
 	if x != nil {
 		return x.Attempt
-	}
-	return 0
-}
-
-func (x *TaskStatus) GetGeneration() int64 {
-	if x != nil {
-		return x.Generation
 	}
 	return 0
 }
@@ -1104,7 +1095,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\vTaskOutcome\x12*\n" +
 	"\x06status\x18\x01 \x01(\v2\x12.google.rpc.StatusR\x06status\x12\x1b\n" +
 	"\texit_code\x18\x02 \x01(\x05R\bexitCode\x12\x16\n" +
-	"\x06output\x18\x03 \x01(\tR\x06output\"\x9e\x03\n" +
+	"\x06output\x18\x03 \x01(\tR\x06output\"\xfe\x02\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
@@ -1115,10 +1106,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"conditions\x12,\n" +
 	"\x05state\x18\x05 \x01(\x0e2\x16.ax.v1alpha1.TaskStateR\x05state\x122\n" +
 	"\aoutcome\x18\x06 \x01(\v2\x18.ax.v1alpha1.TaskOutcomeR\aoutcome\x12\x18\n" +
-	"\aattempt\x18\a \x01(\x05R\aattempt\x12\x1e\n" +
-	"\n" +
-	"generation\x18\b \x01(\x03R\n" +
-	"generation\x12#\n" +
+	"\aattempt\x18\a \x01(\x05R\aattempt\x12#\n" +
 	"\rresolved_argv\x18\t \x03(\tR\fresolvedArgv\x12)\n" +
 	"\x10previous_failure\x18\n" +
 	" \x01(\tR\x0fpreviousFailure\"@\n" +

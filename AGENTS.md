@@ -28,7 +28,7 @@ internal/controller    TaskReconciler + WorkspaceManager: Substrate side of task
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
 internal/server        gRPC handlers
-internal/store/        memory + postgres backends, plus TaskApplier contract (schema.sql and schema.go change together)
+internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
 internal/workspace     spec.setup execution (git clone / inline files / skills dir / commands; MCP is read via metadata server)
 internal/{tunnel,guest,metadata}  k8s port-forward, in-sandbox guest client, metadata server
@@ -52,7 +52,7 @@ skills/                Developer skills (SKILL.md format). .agents/skills, .clau
 export GOTOOLCHAIN=auto          # go.mod wants 1.27.1; older local Go auto-downloads it
 make verify                      # make generate, go mod tidy, go fmt, golangci-lint (CI asserts no diff)
 go build ./cmd/ax ./cmd/ax-server ./cmd/ax-runner
-go test ./...                    # ~25 s, 28 packages with tests; Postgres + E2E tiers self-skip
+go test ./...                    # ~25 s, 27 packages with tests; Postgres + E2E tiers self-skip
 ```
 
 Opt-in tiers:

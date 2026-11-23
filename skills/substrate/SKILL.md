@@ -134,7 +134,7 @@ instead. No mocking library is in `go.mod`.
   `ActorResumeFailed` when the runner refuses the task or reports a failure
   for a task whose workspace is already set up.
 - `status.actorUid` is read live by `setActorStatus` in
-  `internal/server/server.go` and cleared by `store.StoredStatus` before writes.
+  `internal/server/server.go` and cleared by `storedStatus` (same file) before writes.
   It changes when Substrate recreates the actor and is empty when the actor
   is missing or cannot be read. `ax describe task` shows it as `Actor UID`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`

@@ -59,9 +59,8 @@ type Store struct {
 }
 
 var (
-	_ store.Store       = (*Store)(nil)
-	_ store.TaskApplier = (*Store)(nil)
-	_ lock.Locker       = (*Store)(nil)
+	_ store.Store = (*Store)(nil)
+	_ lock.Locker = (*Store)(nil)
 )
 
 // Open connects to the database at connURL and creates any missing tables.
@@ -116,17 +115,22 @@ const (
 	modelsTable     table = "models"
 )
 
-// save upserts a resource.
-func (s *Store) save(ctx context.Context, t table, meta *v1alpha1.ObjectMeta, m proto.Message) error {
+// save upserts a resource. Replacing a resource moves it to the front of lists
+// unless keepSavedAt is set.
+func (s *Store) save(ctx context.Context, t table, meta *v1alpha1.ObjectMeta, m proto.Message, keepSavedAt bool) error {
 	data, err := protojson.Marshal(m)
 	if err != nil {
 		return fmt.Errorf("marshaling %s: %w", t, err)
+	}
+	onConflict := `SET data = EXCLUDED.data, saved_at = EXCLUDED.saved_at`
+	if keepSavedAt {
+		onConflict = `SET data = EXCLUDED.data`
 	}
 	_, err = s.pool.Exec(ctx, `
 		INSERT INTO `+string(t)+` (atespace, name, data, saved_at)
 		VALUES ($1, $2, $3, clock_timestamp())
 		ON CONFLICT (atespace, name) DO UPDATE
-		SET data = EXCLUDED.data, saved_at = EXCLUDED.saved_at`,
+		`+onConflict,
 		meta.Atespace, meta.Name, string(data))
 	if err != nil {
 		return fmt.Errorf("saving %s: %w", t, err)
@@ -201,7 +205,9 @@ func (s *Store) delete(ctx context.Context, t table, atespace, name string) erro
 
 // --- Tasks ---
 
-// SaveTask stores or replaces a task.
+// SaveTask stores or replaces a task. Tasks are immutable, so replacing one
+// only changes its metadata (such as delete_time) and keeps its position in
+// lists.
 func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
@@ -219,10 +225,7 @@ func (s *Store) SaveTask(ctx context.Context, task *v1alpha1.Task) error {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	if task.Status.State == v1alpha1.TaskState_TASK_STATE_UNSPECIFIED && task.Metadata.GetDeleteTime() == nil {
-		task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
-	}
-	return s.save(ctx, tasksTable, task.Metadata, task)
+	return s.save(ctx, tasksTable, task.Metadata, task, true)
 }
 
 // GetTask retrieves a task by atespace and name.
@@ -234,7 +237,7 @@ func (s *Store) GetTask(ctx context.Context, atespace, name string) (*v1alpha1.T
 	return &task, nil
 }
 
-// ListTasks lists tasks ordered by most recently saved first. A limit <= 0
+// ListTasks lists tasks ordered by most recently created first. A limit <= 0
 // defaults to 50.
 func (s *Store) ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error) {
 	if limit <= 0 {
@@ -295,7 +298,7 @@ func (s *Store) SaveWorkspace(ctx context.Context, ws *v1alpha1.Workspace) error
 	if ws.Kind == "" {
 		ws.Kind = v1alpha1.KindWorkspace
 	}
-	return s.save(ctx, workspacesTable, ws.Metadata, ws)
+	return s.save(ctx, workspacesTable, ws.Metadata, ws, false)
 }
 
 // GetWorkspace retrieves a workspace by atespace and name.
@@ -368,7 +371,7 @@ func (s *Store) SaveGateway(ctx context.Context, gw *v1alpha1.Gateway) error {
 	if gw.Kind == "" {
 		gw.Kind = v1alpha1.KindGateway
 	}
-	return s.save(ctx, gatewaysTable, gw.Metadata, gw)
+	return s.save(ctx, gatewaysTable, gw.Metadata, gw, false)
 }
 
 // GetGateway retrieves a gateway by atespace and name.
@@ -408,7 +411,7 @@ func (s *Store) SaveModel(ctx context.Context, model *v1alpha1.Model) error {
 	if model.Kind == "" {
 		model.Kind = v1alpha1.KindModel
 	}
-	return s.save(ctx, modelsTable, model.Metadata, model)
+	return s.save(ctx, modelsTable, model.Metadata, model, false)
 }
 
 // GetModel retrieves a model by atespace and name.

@@ -1,6 +1,7 @@
 -- Resources are stored as protojson documents. Only the columns needed to
 -- address and order them are broken out, so adding fields to the API does not
--- require a schema change. saved_at changes on every Save but not on status
+-- require a schema change. saved_at changes on every Save of a workspace,
+-- gateway, or model, but only when a task is first saved, and never on status
 -- updates; lists are ordered by it, newest first.
 
 CREATE TABLE IF NOT EXISTS tasks (
@@ -10,7 +11,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     saved_at timestamptz NOT NULL,
     PRIMARY KEY (atespace, name)
 );
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS generation bigint NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS tasks_saved_at_idx ON tasks (saved_at DESC, atespace, name);
 CREATE INDEX IF NOT EXISTS tasks_atespace_saved_at_idx ON tasks (atespace, saved_at DESC, name);
 
