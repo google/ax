@@ -397,7 +397,15 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	if err := s.taskManager.Suspend(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
+	ws, err := s.fetchWorkspace(ctx, atespace, task)
+	if err != nil {
+		return nil, err
+	}
+	gw, err := s.fetchGateway(ctx, atespace, task)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.taskManager.Suspend(ctx, task, ws, gw); err != nil {
 		if substrate.IsTransientError(err) {
 			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
 		}
@@ -441,7 +449,15 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 
-	if err := s.taskManager.Resume(ctx, task, s.fetchWorkspace(ctx, atespace, task), s.fetchGateway(ctx, atespace, task)); err != nil {
+	ws, err := s.fetchWorkspace(ctx, atespace, task)
+	if err != nil {
+		return nil, err
+	}
+	gw, err := s.fetchGateway(ctx, atespace, task)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.taskManager.Resume(ctx, task, ws, gw); err != nil {
 		return nil, s.recordFailure(ctx, task, "resuming", err)
 	}
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
@@ -753,30 +769,36 @@ func setReady(task *v1alpha1.Task, condStatus, reason, message string) {
 
 // fetchWorkspace loads the Workspace the task binds, or nil when the task
 // binds none or the Workspace does not exist.
-func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Workspace {
+func (s *Server) fetchWorkspace(ctx context.Context, atespace string, task *v1alpha1.Task) (*v1alpha1.Workspace, error) {
 	name := task.GetSpec().GetWorkspace().GetName()
 	if name == "" {
-		return nil
+		return nil, nil
 	}
 	ws, err := s.store.GetWorkspace(ctx, atespace, name)
-	if err != nil {
-		return nil
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
 	}
-	return ws
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "getting workspace %q: %v", name, err)
+	}
+	return ws, nil
 }
 
 // fetchGateway loads the Gateway the task binds, or nil when the task binds
-// none or the Gateway cannot be loaded.
-func (s *Server) fetchGateway(ctx context.Context, atespace string, task *v1alpha1.Task) *v1alpha1.Gateway {
+// none or the Gateway does not exist.
+func (s *Server) fetchGateway(ctx context.Context, atespace string, task *v1alpha1.Task) (*v1alpha1.Gateway, error) {
 	name := task.GetSpec().GetGateway().GetName()
 	if name == "" {
-		return nil
+		return nil, nil
 	}
 	gw, err := s.store.GetGateway(ctx, atespace, name)
-	if err != nil {
-		return nil
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
 	}
-	return gw
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "getting gateway %q: %v", name, err)
+	}
+	return gw, nil
 }
 
 // --- Models ---
