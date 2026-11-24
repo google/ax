@@ -195,22 +195,27 @@ wait_for_file() {
   return 1
 }
 
-# check_gateway_secret fails the step when the cluster has no Secret for the
-# Gemini API key that gateway.yaml injects. Without it the agent's requests
-# get 403 egress denied and it exits without output, while the task still
-# reads Running. The check is skipped without kubectl, or when kubectl fails
-# for a reason other than a missing Secret. Arguments after the step are
-# kubectl flags, such as --context.
+# check_gateway_secret fails the step when the cluster has no usable Secret
+# for the Gemini API key that gateway.yaml injects: the Secret is missing, or
+# lacks the ax.io/credential=true label that k8s-credential-provider requires.
+# Either way the agent's requests get 403 egress denied and it exits without
+# output, while the task still reads Running. The check is skipped without
+# kubectl, or when kubectl fails for a reason other than a missing Secret.
+# Arguments after the step are kubectl flags, such as --context.
 check_gateway_secret() {
   local step="$1"
   shift
   command -v kubectl >/dev/null 2>&1 || return 0
   local out
-  if out="$(kubectl "$@" -n ax-system get secret "${GATEWAY_SECRET}" -o name 2>&1)"; then
+  if ! out="$(kubectl "$@" -n ax-system get secret "${GATEWAY_SECRET}" -o 'jsonpath={.metadata.labels.ax\.io/credential}' 2>&1)"; then
+    if [[ "${out}" == *NotFound* ]]; then
+      mark_fail "${step}" "Secret ax-system/${GATEWAY_SECRET} is missing${*:+ in $*}; create it as gateway.yaml describes"
+      return 1
+    fi
     return 0
   fi
-  if [[ "${out}" == *NotFound* ]]; then
-    mark_fail "${step}" "Secret ax-system/${GATEWAY_SECRET} is missing${*:+ in $*}; create it as gateway.yaml describes"
+  if [[ "${out}" != true ]]; then
+    mark_fail "${step}" "Secret ax-system/${GATEWAY_SECRET}${*:+ in $*} lacks the label ax.io/credential=true; label it as gateway.yaml describes"
     return 1
   fi
 }

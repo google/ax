@@ -29,7 +29,7 @@ With `RUN_LIVE_STEPS=1`, the harness calls:
 
 - Step 1: `ax get workspaces`, to check `ax-server` is reachable.
 - Step 2: `ax apply -f workspace.yaml`, which waits for the pre-warm, then `ax describe workspace` to check `SnapshotReady`.
-- Step 3: check that the cluster has the `hero-demo-gemini` Secret (with `kubectl`, when it is installed), `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, and wait until the agent has finished with output.
+- Step 3: check that the cluster has the `hero-demo-gemini` Secret with the `ax.io/credential=true` label (with `kubectl`, when it is installed), `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, and wait until the agent has finished with output.
 - Step 4: `ax apply -f task-custom.yaml`, then `ax resume`; once the task's command has started, `ax suspend` and `ax resume`, and wait until the command has finished with output. The command waits on its first run and runs the unit tests after the resume; the step fails unless they pass.
 - Step 5: `ax promote task hero-demo-starter-task --to <remote> --replace --suspend-source`, then wait until the promoted task's agent has finished with output on the remote cluster.
 
