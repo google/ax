@@ -116,11 +116,6 @@ func RenderServer(cfg ServerConfig) ([]byte, error) {
 		)
 		rendered = strings.ReplaceAll(
 			rendered,
-			"--template-atespace=ax-system",
-			"--template-atespace="+ns,
-		)
-		rendered = strings.ReplaceAll(
-			rendered,
 			"kubectl -n ax-system ",
 			"kubectl -n "+ns+" ",
 		)

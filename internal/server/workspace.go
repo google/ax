@@ -35,10 +35,7 @@ func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceReq
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	ws, err := s.store.GetWorkspace(ctx, atespace, req.Name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -50,15 +47,8 @@ func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceReq
 }
 
 func (s *Server) ListWorkspaces(ctx context.Context, req *v1alpha1.ListWorkspacesRequest) (*v1alpha1.ListWorkspacesResponse, error) {
-	atespace := ""
-	pageSize := int32(0)
-	token := ""
-	if req != nil {
-		atespace = req.Atespace
-		pageSize = req.PageSize
-		token = req.PageToken
-	}
-	offset, size, err := pageStart(atespace, pageSize, token)
+	atespace := req.GetAtespace()
+	offset, size, err := pageStart(atespace, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +171,7 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	wsName := req.Name
 
 	// Acquire exclusive lock for this workspace.
@@ -203,11 +190,7 @@ func (s *Server) DeleteWorkspace(ctx context.Context, req *v1alpha1.DeleteWorksp
 	}
 
 	if err := s.workspaces.Delete(ctx, atespace, ws.GetMetadata().GetUid()); err != nil {
-		code := codes.Internal
-		if substrate.IsTransientError(err) {
-			code = codes.Unavailable
-		}
-		return nil, status.Errorf(code, "deleting workspace resources on substrate: %v", err)
+		return nil, substrateError(err, "deleting workspace resources on substrate")
 	}
 	if err := s.store.DeleteWorkspace(ctx, atespace, wsName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting workspace: %v", err)

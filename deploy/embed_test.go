@@ -99,7 +99,6 @@ func TestRenderServer(t *testing.T) {
 		for _, want := range []string{
 			"name: ax-server-team-a",
 			"ax-postgres.team-a.svc.cluster.local:5432",
-			"--template-atespace=team-a",
 			srvImg,
 		} {
 			if !strings.Contains(s, want) {

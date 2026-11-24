@@ -556,6 +556,44 @@ func (f *failGetGatewayStore) GetGateway(context.Context, string, string) (*v1al
 	return nil, f.err
 }
 
+type failGetModelStore struct {
+	store.Store
+	err error
+}
+
+func (f *failGetModelStore) GetModel(context.Context, string, string) (*v1alpha1.Model, error) {
+	return nil, f.err
+}
+
+// UpdateModel must not treat a store error as a missing model, which would
+// give an existing model a new uid and createTime.
+func TestUpdateModel_StoreError(t *testing.T) {
+	ctx := t.Context()
+	mem := memory.NewStore()
+	model := func() *v1alpha1.Model {
+		return &v1alpha1.Model{
+			Metadata: &v1alpha1.ObjectMeta{Name: "m"},
+			Spec:     &v1alpha1.ModelSpec{Provider: "google", Model: "gemini-3.8-flash"},
+		}
+	}
+	created, err := server.NewServer(mem, newTestTaskManager(substratetest.NewServer(t))).UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: model()})
+	if err != nil {
+		t.Fatalf("UpdateModel: %v", err)
+	}
+
+	srv := server.NewServer(&failGetModelStore{Store: mem, err: errors.New("store unavailable")}, newTestTaskManager(substratetest.NewServer(t)))
+	if _, err := srv.UpdateModel(ctx, &v1alpha1.UpdateModelRequest{Model: model()}); status.Code(err) != codes.Internal {
+		t.Fatalf("UpdateModel with failing store = %v, want Internal", err)
+	}
+	stored, err := mem.GetModel(ctx, "default", "m")
+	if err != nil {
+		t.Fatalf("GetModel: %v", err)
+	}
+	if stored.GetMetadata().GetUid() != created.GetMetadata().GetUid() {
+		t.Errorf("uid = %q, want %q", stored.GetMetadata().GetUid(), created.GetMetadata().GetUid())
+	}
+}
+
 // A task gets its Gateway's rules when it is created, so CreateTask must not
 // save or provision a task whose Gateway does not exist.
 func TestCreateTask_RequiresBoundGateway(t *testing.T) {
@@ -1279,7 +1317,7 @@ func assertNoActorState(t *testing.T, stored *v1alpha1.Task) {
 
 // newTestTaskManager returns a TaskManager that runs tasks on sub.
 func newTestTaskManager(sub *substratetest.Server) *controller.TaskManager {
-	return controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
+	return controller.NewTaskManager(sub.Client())
 }
 
 // readyCondition returns the task's Ready condition, or nil.

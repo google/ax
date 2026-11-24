@@ -278,7 +278,7 @@ func TestTaskManager(t *testing.T) {
 	defer client.Close()
 
 	// 3. Resume the task
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -349,7 +349,7 @@ func TestTaskManager_MissingImage(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -390,7 +390,7 @@ func TestTaskManager_RunnerVolumeImage(t *testing.T) {
 		}
 		t.Cleanup(func() { client.Close() })
 
-		manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+		manager := controller.NewTaskManager(client)
 		manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 		manager.RunnerVolumeImage = runner
 		task := &v1alpha1.Task{
@@ -461,7 +461,7 @@ func TestTaskManager_Suspend(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -514,7 +514,7 @@ func TestTaskManager_GatewayRules(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	newTask := func(name string) *v1alpha1.Task {
@@ -581,7 +581,7 @@ func TestTaskManager_SuspendError(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager := controller.NewTaskManager(client)
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -635,7 +635,7 @@ func TestTaskManager_TemplateCreationFailed(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -709,7 +709,7 @@ func TestTaskManager_TemplateCreationTransient(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -772,7 +772,7 @@ func TestTaskManager_WorkspaceReady(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -876,7 +876,7 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 		t.Fatalf("failed to create substrate client: %v", err)
 	}
 	defer client.Close()
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 2 * time.Second
 
 	newTask := func(name string) *v1alpha1.Task {
@@ -1003,7 +1003,7 @@ func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 			t.Fatalf("failed to create substrate client: %v", err)
 		}
 		t.Cleanup(func() { client.Close() })
-		manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+		manager := controller.NewTaskManager(client)
 		manager.WorkspaceReadyTimeout = 10 * time.Second
 
 		task := &v1alpha1.Task{
@@ -1088,7 +1088,7 @@ func TestTaskManager_ResourceLimits(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", "ax-system")
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -1192,7 +1192,7 @@ func TestTaskManager_ResourceLimitsFailurePaths(t *testing.T) {
 			grpcServer.Stop()
 			lis.Close()
 		})
-		manager := controller.NewTaskManager(client, "test-template", "ax-system")
+		manager := controller.NewTaskManager(client)
 		manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 		return manager
 	}
@@ -1299,7 +1299,7 @@ func TestDelete_RemovesActorAndTemplates(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
 
 	if err := manager.Delete(ctx, "default", "job"); err != nil {
@@ -1361,7 +1361,7 @@ func TestDelete_BlocksUntilActorDeleted(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 
 	if err := manager.Delete(ctx, "default", "slow-delete-task"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
@@ -1402,7 +1402,7 @@ func TestDelete_ActorDeletionTimeout(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 
 	err = manager.Delete(ctx, "default", "stuck-task")
 	if err == nil {
@@ -1465,7 +1465,7 @@ func TestTaskManager_TransientSubstrateUnavailable(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	// 1. A transient error during EnsureAtespace is recorded with Reason="SubstrateUnavailable".
@@ -1547,7 +1547,7 @@ func TestTaskManager_ATETemplate(t *testing.T) {
 	}
 	defer client.Close()
 
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	task := &v1alpha1.Task{
@@ -1614,7 +1614,7 @@ func TestTaskManager_WorkspaceProfilePrecedence(t *testing.T) {
 	defer client.Close()
 
 	const taskImg = "ghcr.io/task/image@sha256:1111"
-	manager := controller.NewTaskManager(client, "test-template", v1alpha1.DefaultSystemNamespace)
+	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
 	ws := &v1alpha1.Workspace{

@@ -96,8 +96,6 @@ spec:
             - "--substrate-authority=api.ate-system.svc"
             - "--substrate-token-file=/var/run/secrets/ateapi/token"
             - "--substrate-ca-file=/run/servicedns-ca/trust-bundle.pem"
-            - "--template=default-template"
-            - "--template-atespace=ax-system"
           envFrom:
             - configMapRef:
                 name: ax-otel-config

@@ -30,10 +30,7 @@ func (s *Server) GetGateway(ctx context.Context, req *v1alpha1.GetGatewayRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	gw, err := s.store.GetGateway(ctx, atespace, req.Name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -45,15 +42,8 @@ func (s *Server) GetGateway(ctx context.Context, req *v1alpha1.GetGatewayRequest
 }
 
 func (s *Server) ListGateways(ctx context.Context, req *v1alpha1.ListGatewaysRequest) (*v1alpha1.ListGatewaysResponse, error) {
-	atespace := ""
-	pageSize := int32(0)
-	token := ""
-	if req != nil {
-		atespace = req.Atespace
-		pageSize = req.PageSize
-		token = req.PageToken
-	}
-	offset, size, err := pageStart(atespace, pageSize, token)
+	atespace := req.GetAtespace()
+	offset, size, err := pageStart(atespace, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
@@ -86,10 +76,7 @@ func (s *Server) saveGateway(ctx context.Context, gw *v1alpha1.Gateway, create b
 	if err := apivalidation.ValidateGateway(gw); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	atespace := gw.Metadata.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
+	atespace := atespaceOrDefault(gw.Metadata.Atespace)
 	gwName := gw.Metadata.Name
 
 	// Acquire exclusive lock for this gateway
@@ -110,9 +97,7 @@ func (s *Server) saveGateway(ctx context.Context, gw *v1alpha1.Gateway, create b
 	if !create && !exists {
 		return nil, status.Errorf(codes.NotFound, "gateway %q not found in atespace %q", gwName, atespace)
 	}
-	gw.Metadata = defaultMetadata(gw.Metadata, func(string, string) *v1alpha1.ObjectMeta {
-		return existing.GetMetadata()
-	})
+	gw.Metadata = defaultMetadata(gw.Metadata, existing.GetMetadata())
 
 	if err := s.store.SaveGateway(ctx, gw); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving gateway: %v", err)
@@ -124,10 +109,7 @@ func (s *Server) DeleteGateway(ctx context.Context, req *v1alpha1.DeleteGatewayR
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = "default"
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	gwName := req.Name
 
 	// Acquire exclusive lock for this gateway

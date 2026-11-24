@@ -63,10 +63,8 @@ type GatewayStore interface {
 // that run Tasks on Agent Substrate. ax-server calls it directly; it runs no
 // reconcile loop.
 type TaskManager struct {
-	client                  *substrate.Client
-	httpClient              *http.Client
-	defaultTemplate         string
-	defaultTemplateAtespace string
+	client     *substrate.Client
+	httpClient *http.Client
 
 	// WorkspaceReadyTimeout bounds how long Resume waits for the actor's runner
 	// to accept the task, set up its workspace, and start it. A runner that
@@ -90,21 +88,12 @@ type TaskManager struct {
 	GatewayStore GatewayStore
 }
 
-// NewTaskManager creates a new TaskManager. Empty defaults fall back to
-// "default-template" and v1alpha1.DefaultSystemNamespace respectively.
-func NewTaskManager(client *substrate.Client, defaultTemplate, defaultTemplateAtespace string) *TaskManager {
-	if defaultTemplate == "" {
-		defaultTemplate = "default-template"
-	}
-	if defaultTemplateAtespace == "" {
-		defaultTemplateAtespace = v1alpha1.DefaultSystemNamespace
-	}
+// NewTaskManager creates a new TaskManager.
+func NewTaskManager(client *substrate.Client) *TaskManager {
 	return &TaskManager{
-		client:                  client,
-		httpClient:              newProbeHTTPClient(),
-		defaultTemplate:         defaultTemplate,
-		defaultTemplateAtespace: defaultTemplateAtespace,
-		WorkspaceReadyTimeout:   defaultWorkspaceReadyTimeout,
+		client:                client,
+		httpClient:            newProbeHTTPClient(),
+		WorkspaceReadyTimeout: defaultWorkspaceReadyTimeout,
 	}
 }
 

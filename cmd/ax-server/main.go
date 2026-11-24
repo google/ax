@@ -32,7 +32,6 @@ import (
 	"github.com/google/ax/internal/store/postgres"
 	"github.com/google/ax/internal/substrate"
 	"github.com/google/ax/internal/telemetry"
-	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc"
@@ -40,18 +39,16 @@ import (
 
 func main() {
 	var (
-		listenAddr              string
-		metricsAddr             string
-		storeURL                string
-		substrateEndpoint       string
-		substrateAuthority      string
-		substrateTokenFile      string
-		substrateCAFile         string
-		substrateInsecureTLS    bool
-		substratePlaintext      bool
-		defaultTemplate         string
-		defaultTemplateAtespace string
-		runnerVolumeImage       string
+		listenAddr           string
+		metricsAddr          string
+		storeURL             string
+		substrateEndpoint    string
+		substrateAuthority   string
+		substrateTokenFile   string
+		substrateCAFile      string
+		substrateInsecureTLS bool
+		substratePlaintext   bool
+		runnerVolumeImage    string
 	)
 
 	flag.StringVar(&listenAddr, "addr", ":8080", "HTTP listen address")
@@ -63,8 +60,6 @@ func main() {
 	flag.StringVar(&substrateCAFile, "substrate-ca-file", "", "Path to CA PEM file for Substrate TLS")
 	flag.BoolVar(&substrateInsecureTLS, "substrate-insecure-tls", false, "Skip Substrate TLS verification")
 	flag.BoolVar(&substratePlaintext, "substrate-plaintext", false, "Use insecure plaintext gRPC connection to Substrate")
-	flag.StringVar(&defaultTemplate, "template", "default-template", "Default Substrate ActorTemplate name")
-	flag.StringVar(&defaultTemplateAtespace, "template-atespace", v1alpha1.DefaultSystemNamespace, "Default Substrate ActorTemplate atespace")
 	flag.StringVar(&runnerVolumeImage, "runner-volume-image", "", "Digest-pinned runner volume image (Dockerfile.runner-volume) to mount read-only into task containers and run the runner from; empty runs the runner baked into the task image (env: AX_RUNNER_VOLUME_IMAGE)")
 	flag.Parse()
 
@@ -107,7 +102,6 @@ func main() {
 		"metricsAddr", metricsAddr,
 		"store", describeStore(storeURL),
 		"substrateEndpoint", substrateEndpoint,
-		"template", defaultTemplate,
 		"runnerVolumeImage", runnerVolumeImage,
 	)
 
@@ -134,7 +128,7 @@ func main() {
 	}
 	defer subClient.Close()
 
-	manager := controller.NewTaskManager(subClient, defaultTemplate, defaultTemplateAtespace)
+	manager := controller.NewTaskManager(subClient)
 	manager.RunnerVolumeImage = runnerVolumeImage
 	manager.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
