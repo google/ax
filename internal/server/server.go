@@ -564,7 +564,7 @@ func (s *Server) listTasks(ctx context.Context, atespace string, limit, offset i
 		byAtespace[ns] = append(byAtespace[ns], t)
 	}
 	for ns, group := range byAtespace {
-		actors, err := s.substrate.ListActors(ctx, ns)
+		actors, err := s.substrate.ListActors(ctx, ns, ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED)
 		byName := make(map[string]*ateapipb.Actor, len(actors))
 		for _, a := range actors {
 			byName[a.GetMetadata().GetName()] = a

@@ -246,8 +246,8 @@ func (m *mockControlClient) DeleteTag(ctx context.Context, req *ateapipb.DeleteT
 	return tag, nil
 }
 
-// ListActors returns the actors of every page and, with states, only those in
-// one of them.
+// ListActors returns the actors of every page that are in the given state,
+// or all of them for ACTOR_STATE_UNSPECIFIED.
 func TestClient_ListActors_FiltersByState(t *testing.T) {
 	actor := func(name string, state ateapipb.ActorState) *ateapipb.Actor {
 		return &ateapipb.Actor{
@@ -262,23 +262,23 @@ func TestClient_ListActors_FiltersByState(t *testing.T) {
 	}}}
 
 	for _, tc := range []struct {
-		states []ateapipb.ActorState
-		want   []string
+		state ateapipb.ActorState
+		want  []string
 	}{
-		{nil, []string{"a", "b", "c", "d"}},
-		{[]ateapipb.ActorState{running}, []string{"a", "c"}},
-		{[]ateapipb.ActorState{running, crashed}, []string{"a", "c", "d"}},
+		{ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED, []string{"a", "b", "c", "d"}},
+		{running, []string{"a", "c"}},
+		{crashed, []string{"d"}},
 	} {
-		actors, err := c.ListActors(context.Background(), "", tc.states...)
+		actors, err := c.ListActors(context.Background(), "", tc.state)
 		if err != nil {
-			t.Fatalf("ListActors(%v): %v", tc.states, err)
+			t.Fatalf("ListActors(%v): %v", tc.state, err)
 		}
 		var got []string
 		for _, a := range actors {
 			got = append(got, a.GetMetadata().GetName())
 		}
 		if !slices.Equal(got, tc.want) {
-			t.Errorf("ListActors(%v) = %v, want %v", tc.states, got, tc.want)
+			t.Errorf("ListActors(%v) = %v, want %v", tc.state, got, tc.want)
 		}
 	}
 }

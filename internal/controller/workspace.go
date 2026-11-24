@@ -531,7 +531,7 @@ func (m *WorkspaceManager) Delete(ctx context.Context, atespace, workspaceUID st
 	}
 
 	actorPrefix := setupActorPrefix(workspaceUID)
-	actors, err := m.client.ListActors(ctx, atespace)
+	actors, err := m.client.ListActors(ctx, atespace, ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED)
 	if err != nil {
 		errs = append(errs, err)
 	} else {
