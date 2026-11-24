@@ -60,10 +60,6 @@ GATEWAY_NAME="hero-demo-gw"
 STARTER_TASK="hero-demo-starter-task"
 CUSTOM_TASK="hero-demo-custom-task"
 GATEWAY_SECRET="hero-demo-gemini"
-# The file in a task's sandbox that finish_task reads. The commands in
-# task-starter.yaml and task-custom.yaml write their exit status to it when
-# they finish.
-EXIT_CODE_FILE="/workspace/.ax/hero-demo-exit-code"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -198,7 +194,7 @@ wait_for_file() {
 # for the Gemini API key that gateway.yaml injects: the Secret is missing, or
 # lacks the ax.io/credential=true label that k8s-credential-provider requires.
 # Either way the agent's requests get 403 egress denied and it exits without
-# output, while the task still reads Running. The check is skipped without
+# output, and the task can still end Completed. The check is skipped without
 # kubectl, or when kubectl fails for a reason other than a missing Secret.
 # Arguments after the step are kubectl flags, such as --context.
 check_gateway_secret() {
@@ -235,26 +231,29 @@ start_task() {
   fi
 }
 
-# finish_task waits until the task's command has finished and checks that it
-# exited with status zero. AX does not report yet that a command finished
-# (#690): the task stays Running with no status.outcome. So the hero demo's
-# commands write their exit status to EXIT_CODE_FILE, and finish_task reads it
-# over ax ssh. Arguments after the task name are global ax flags, such as
+# finish_task waits until the task has ended and checks that it completed.
+# The hero demo's commands report how the task ended in the status file
+# ($AX_STATUS_FILE), and ax-server records it as the task's state: Completed
+# or Failed. Arguments after the task name are global ax flags, such as
 # --context. On failure finish_task marks the step failed and returns 1.
 finish_task() {
   local step="$1" task_name="$2"
   shift 2
   local ax_flags="${*:+ $*}"
-  if ! wait_for_file "${task_name}" "${EXIT_CODE_FILE}" "$@"; then
-    mark_fail "${step}" "${task_name} did not finish within ${AX_TIMEOUT}s (state: $(task_state "${task_name}" "$@")); see 'ax${ax_flags} ssh ${task_name}'"
-    return 1
-  fi
-  local code
-  code="$(sandbox "${task_name}" "$@" -- cat "${EXIT_CODE_FILE}")"
-  if [[ "${code}" != 0 ]]; then
-    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see 'ax${ax_flags} ssh ${task_name}'"
-    return 1
-  fi
+  local deadline=$((SECONDS + AX_TIMEOUT)) state=""
+  while ((SECONDS < deadline)); do
+    state="$(task_state "${task_name}" "$@")"
+    case "${state}" in
+      Completed) return 0 ;;
+      Failed)
+        mark_fail "${step}" "${task_name} failed; see 'ax${ax_flags} describe task ${task_name}'"
+        return 1
+        ;;
+    esac
+    sleep 2
+  done
+  mark_fail "${step}" "${task_name} did not finish within ${AX_TIMEOUT}s (state: ${state:-unknown}); see 'ax${ax_flags} ssh ${task_name}'"
+  return 1
 }
 
 # ------------------------------------------------------------------------------
@@ -361,7 +360,8 @@ step4_custom_image_task() {
   start_task "${step}" "${CUSTOM_TASK}" "${CUSTOM_MANIFEST}" task-custom.yaml || return
   # The command waits on its first run, so the task can be suspended while it
   # runs. After the resume it starts again, runs the workspace's unit tests and
-  # records their exit status, and the step fails unless they pass.
+  # reports how they went in the status file, and the step fails unless the
+  # task is Completed.
   if ! wait_for_file "${CUSTOM_TASK}" /workspace/first-run; then
     mark_fail "${step}" "${CUSTOM_TASK} did not start its command within ${AX_TIMEOUT}s"
     return

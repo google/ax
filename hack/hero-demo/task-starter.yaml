@@ -46,20 +46,22 @@ spec:
     text: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
   debug: true # serve guest services so `ax ssh` works; off by default
   # Runs the image's launcher, as the runner does for a task with a goal and no
-  # commands, and records how it ended. AX does not report a command's exit
-  # status yet (#690), so run.sh reads it from the file below. A command still
-  # gets the goal, config, MCP and session files. Once the status is recorded,
-  # a restarted command does not run the agent again.
+  # commands, and reports how it ended in the status file ($AX_STATUS_FILE),
+  # which AX records as the task's state. A command still gets the goal,
+  # config, MCP and session files. Once the status file exists, a restarted
+  # command does not run the agent again.
   commands:
     - sh
     - -c
     - |
-      status_file=/workspace/.ax/hero-demo-exit-code
-      [ -f "$status_file" ] && exit "$(cat "$status_file")"
+      [ -f "$AX_STATUS_FILE" ] && exit 0
       launcher=/usr/local/bin/ax-launcher
       [ -x "$launcher" ] || launcher=/usr/local/bin/ax-harness # images before the rename
-      "$launcher"
-      status=$?
-      echo "$status" > "$status_file.tmp"
-      mv "$status_file.tmp" "$status_file"
-      exit "$status"
+      if "$launcher"; then
+        status='{"state": "COMPLETED"}'
+      else
+        status="{\"state\": \"FAILED\", \"output\": \"the launcher exited with status $?\"}"
+      fi
+      mkdir -p "$(dirname "$AX_STATUS_FILE")"
+      echo "$status" > "$AX_STATUS_FILE.tmp"
+      mv "$AX_STATUS_FILE.tmp" "$AX_STATUS_FILE"

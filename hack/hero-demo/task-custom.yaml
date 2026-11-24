@@ -35,9 +35,9 @@ spec:
   debug: true # serve guest services so `ax ssh` works; off by default
   # The first run leaves a marker and waits, so that the task can be suspended
   # and resumed while it runs. The command then starts again, finds the marker
-  # and runs the workspace's unit tests. AX does not report a command's exit
-  # status yet (#690), so the command writes its exit status to a file that
-  # run.sh reads.
+  # and runs the workspace's unit tests. It reports how the task ended in the
+  # status file ($AX_STATUS_FILE), which AX records as the task's state:
+  # Completed when the tests pass, Failed otherwise.
   commands:
     - sh
     - -c
@@ -46,8 +46,11 @@ spec:
         touch /workspace/first-run
         sleep 300
       fi
-      python3 -m unittest discover -s /workspace/app -p "test_*.py"
-      status=$?
-      echo "$status" > /workspace/.ax/hero-demo-exit-code.tmp
-      mv /workspace/.ax/hero-demo-exit-code.tmp /workspace/.ax/hero-demo-exit-code
-      exit "$status"
+      if python3 -m unittest discover -s /workspace/app -p "test_*.py"; then
+        status='{"state": "COMPLETED", "output": "unit tests passed"}'
+      else
+        status='{"state": "FAILED", "output": "unit tests failed"}'
+      fi
+      mkdir -p "$(dirname "$AX_STATUS_FILE")"
+      echo "$status" > "$AX_STATUS_FILE.tmp"
+      mv "$AX_STATUS_FILE.tmp" "$AX_STATUS_FILE"
