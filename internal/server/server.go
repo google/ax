@@ -175,8 +175,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	// Tasks are immutable, so reject fields whose runtime enforcement has not
 	// landed yet (retry requires runner exit events and the retry loop) rather
-	// than silently
-	// storing settings that nothing honors.
+	// than silently storing settings that nothing honors.
 	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
 		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
 	}
@@ -204,13 +203,14 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	// Check the stored record (before overlaying live actor status) so only an
 	// unfinished initial CreateTask (stored State == QUEUED with no provisioned
 	// template yet) can be retried; an already-created task that hit a later
-	// transient ResumeTask error is rejected without touching the actor.
+	// transient ResumeTask error is rejected without touching the actor. The
+	// retry runs the stored task, so the incoming spec is ignored: the actor
+	// may already exist from the stored spec.
 	existing, err := s.getStoredTask(ctx, atespace, taskName)
 	if err == nil {
 		if existing.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED ||
 			existing.GetStatus().GetAteTemplate().GetName() != "" ||
-			existing.GetMetadata().GetDeleteTime() != nil ||
-			!taskSpecMatchesExisting(existing, task.GetSpec()) {
+			existing.GetMetadata().GetDeleteTime() != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
 		}
 		task = existing
@@ -307,26 +307,6 @@ func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 		return "spec.retry"
 	}
 	return ""
-}
-
-// taskSpecMatchesExisting compares an incoming TaskSpec against an existing
-// Queued task's spec, accounting for session_id defaulting to metadata.uid on
-// the initial CreateTask call.
-func taskSpecMatchesExisting(existing *v1alpha1.Task, incoming *v1alpha1.TaskSpec) bool {
-	want := incoming
-	if want == nil {
-		want = &v1alpha1.TaskSpec{}
-	} else {
-		want = proto.Clone(incoming).(*v1alpha1.TaskSpec)
-	}
-	if want.SessionId == "" && existing.GetMetadata().GetUid() != "" {
-		want.SessionId = existing.GetMetadata().GetUid()
-	}
-	have := existing.GetSpec()
-	if have == nil {
-		have = &v1alpha1.TaskSpec{}
-	}
-	return proto.Equal(have, want)
 }
 
 func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest) (*emptypb.Empty, error) {
@@ -882,16 +862,7 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 		return existing.GetMetadata()
 	})
 
-	atespace := req.Model.Metadata.Atespace
-	modelName := req.Model.Metadata.Name
-
-	// Acquire exclusive lock for this model.
-	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
-	}
-	defer unlock()
-
+	// A Model has no Substrate side effects to serialize, so it is not locked.
 	if err := s.store.SaveModel(ctx, req.Model); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving model: %v", err)
 	}
@@ -908,20 +879,10 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	}
 	modelName := req.Name
 
-	// Acquire exclusive lock for this model.
-	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
-	}
-	defer unlock()
-
-	if _, err := s.store.GetModel(ctx, atespace, modelName); err != nil {
+	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "model %q not found in atespace %q", modelName, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "getting model: %v", err)
-	}
-	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting model: %v", err)
 	}
 	return &emptypb.Empty{}, nil

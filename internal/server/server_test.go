@@ -1485,15 +1485,22 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 		t.Errorf("expected stored state QUEUED after transient Substrate error, got %v", stored.GetStatus().GetState())
 	}
 
-	// 2. Re-applying a Queued task with a different spec is rejected to preserve immutability.
+	// 2. Re-applying a Queued task retries the stored task and ignores the incoming spec.
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
 		Task: &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "debian"}},
 		},
 	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected FailedPrecondition when re-applying Queued task with modified spec, got %v", err)
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("expected Unavailable on retry while Substrate is still down, got %v", err)
+	}
+	retried, err := st.GetTask(ctx, "default", "simple-task")
+	if err != nil {
+		t.Fatalf("store GetTask: %v", err)
+	}
+	if got := retried.GetSpec().GetProfile().GetImage(); got != "alpine" {
+		t.Errorf("expected Queued retry to keep the stored image alpine, got %q", got)
 	}
 
 	// 3. Re-applying a Queued task with omitted status preserves stored status conditions
@@ -1510,7 +1517,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("expected Unavailable on retry while Substrate is still down, got %v", err)
 	}
-	retried, err := st.GetTask(ctx, "default", "simple-task")
+	retried, err = st.GetTask(ctx, "default", "simple-task")
 	if err != nil {
 		t.Fatalf("store GetTask: %v", err)
 	}

@@ -429,7 +429,16 @@ func (s *Store) ListModels(ctx context.Context, atespace string) ([]*v1alpha1.Mo
 	return list(ctx, s, modelsTable, atespace, 0, 0, func() *v1alpha1.Model { return &v1alpha1.Model{} })
 }
 
-// DeleteModel removes a model. Deleting a missing model is not an error.
+// DeleteModel removes a model. It returns store.ErrNotFound if the model
+// does not exist.
 func (s *Store) DeleteModel(ctx context.Context, atespace, name string) error {
-	return s.delete(ctx, modelsTable, atespace, name)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM `+string(modelsTable)+` WHERE atespace = $1 AND name = $2`,
+		defaultAtespace(atespace), name)
+	if err != nil {
+		return fmt.Errorf("deleting %s: %w", modelsTable, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }

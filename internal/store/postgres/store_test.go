@@ -73,6 +73,20 @@ func TestCreateSchemaConcurrent(t *testing.T) {
 	}
 }
 
+func TestDeleteModel(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := context.Background()
+	if err := s.SaveModel(ctx, &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "m"}}); err != nil {
+		t.Fatalf("SaveModel: %v", err)
+	}
+	if err := s.DeleteModel(ctx, "default", "m"); err != nil {
+		t.Fatalf("DeleteModel: %v", err)
+	}
+	if err := s.DeleteModel(ctx, "default", "m"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("DeleteModel(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 // TestListNewestFirst checks that lists are ordered by most recent save, as
 // they were with Redis: re-saving a workspace, gateway, or model moves it to
 // the front. Tasks are immutable, so re-saving one (to set or clear
