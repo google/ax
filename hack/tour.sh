@@ -176,6 +176,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+cat << 'EOF'
+    _    __  __  _____
+   / \   \ \/ / |_   _|__  _   _ _ __
+  / _ \   \  /    | |/ _ \| | | | '__|
+ / ___ \  /  \    | | (_) | |_| | |
+/_/   \_\/_/\_\   |_|\___/ \__,_|_|
+EOF
+
 step "0. Where AX runs"
 run ax version
 run ax ctx

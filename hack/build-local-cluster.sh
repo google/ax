@@ -15,9 +15,10 @@
 
 # Builds ax and the AX images from this checkout, pushes the images to a
 # registry on localhost, and runs `ax local start` with them: "Using Locally
-# Built Images" in docs/local_installer.md. Unlike hack/test-local-install.sh,
-# it uses your kubeconfig and ~/.ax and leaves the cluster and the registry
-# running. Run it again after a change: an existing cluster only rolls out the
+# Built Images" in docs/local_installer.md. Every task mounts the runner volume
+# image, so prebuilt agent images without a runner, such as Antigravity's, run
+# too. Unlike hack/test-local-install.sh, it uses your kubeconfig and ~/.ax and
+# leaves the cluster and the registry running. Run it again after a change: an existing cluster only rolls out the
 # new ax-server.
 #
 # Configurable environment variables:
@@ -86,10 +87,12 @@ make images AX_IMAGE_REPO="localhost:${REGISTRY_PORT}" IMAGE_ARCH="${IMAGE_ARCH}
   { tail -n 40 .tmp/build-local-cluster-images.log >&2; exit 1; }
 server_image="localhost:${REGISTRY_PORT}/ax-server@$(cat bin/ax-server.digest)"
 task_image="localhost:${REGISTRY_PORT}/ax-runner@$(cat bin/ax-runner.digest)"
+runner_volume_image="localhost:${REGISTRY_PORT}/ax-runner-volume@$(cat bin/ax-runner-volume.digest)"
 
 log "Running ax local start with ${server_image}..."
 unset AX_SERVER
-"${AX}" local start --name "${CLUSTER}" --server-image "${server_image}"
+"${AX}" local start --name "${CLUSTER}" --server-image "${server_image}" \
+  --runner-volume-image "${runner_volume_image}"
 "${AX}" local status --name "${CLUSTER}"
 
 cat >&2 << EOF
