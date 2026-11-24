@@ -443,8 +443,9 @@ spec:
           prompt = goal + "".join(
               f"\n\n--- {path} ---\n{pathlib.Path(path).read_text()}" for path in config.get("files", [])
           )
-          response = genai.Client().models.generate_content(model=config["model"], contents=prompt)
-          pathlib.Path(os.environ["AX_OUTPUT_FILE"]).write_text(response.text)
+          client = genai.Client()  # reads GEMINI_API_KEY
+          response = client.models.generate_content(model=config["model"], contents=prompt)
+          pathlib.Path(os.environ["AX_OUTPUT_FILE"]).write_text(response.text.rstrip() + "\n")
           print(response.text)
     commands:
       - "python3 -m venv .venv && .venv/bin/pip install --quiet --disable-pip-version-check google-genai"
