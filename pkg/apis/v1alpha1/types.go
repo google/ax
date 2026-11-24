@@ -93,6 +93,11 @@ const (
 	ReasonTerminating    = "Terminating"
 	ReasonUnknown        = "Unknown"
 
+	// ReasonTaskCompleted and ReasonTaskFailed: Ready is False with state
+	// Completed or Failed; the task ended and reported how (see RunnerStatus).
+	ReasonTaskCompleted = "TaskCompleted"
+	ReasonTaskFailed    = "TaskFailed"
+
 	// ReasonSetupComplete: WorkspaceReady is True.
 	ReasonSetupComplete = "SetupComplete"
 	// ReasonInitializing: WorkspaceReady is False; setup is still running.
@@ -388,6 +393,28 @@ const (
 	// RunnerTaskPath takes a Task as YAML, followed by its bound Workspace as a
 	// second YAML document when it binds one, and runs the task.
 	RunnerTaskPath = "/runner/v1alpha1/task"
+	// RunnerStatusPath serves, on GET, how the task ended as RunnerStatus JSON.
+	RunnerStatusPath = "/runner/v1alpha1/status"
+)
+
+// RunnerStatus is how a task ended, as its runner serves it on
+// RunnerStatusPath. The task's command reports it by writing it as a JSON
+// object to <workspace>/.ax/status.
+type RunnerStatus struct {
+	// State is RunnerStateCompleted or RunnerStateFailed, or empty while the
+	// task has not ended.
+	State string `json:"state,omitempty"`
+	// Message says why the task ended the way it did.
+	Message string `json:"message,omitempty"`
+	// Output is the task's output, such as the agent's answer. ax-server
+	// reports it as status.outcome.output.
+	Output string `json:"output,omitempty"`
+}
+
+// The values of RunnerStatus.State.
+const (
+	RunnerStateCompleted = "COMPLETED"
+	RunnerStateFailed    = "FAILED"
 )
 
 // WorkspacePath returns the task command's working directory: the bound

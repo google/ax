@@ -60,10 +60,9 @@ GATEWAY_NAME="hero-demo-gw"
 STARTER_TASK="hero-demo-starter-task"
 CUSTOM_TASK="hero-demo-custom-task"
 GATEWAY_SECRET="hero-demo-gemini"
-# Files in a task's sandbox that finish_task reads. OUTPUT_FILE is the task's
-# $AX_OUTPUT_FILE. The commands in task-starter.yaml and task-custom.yaml
-# write their exit status to EXIT_CODE_FILE when they finish.
-OUTPUT_FILE="/workspace/.ax/output"
+# The file in a task's sandbox that finish_task reads. The commands in
+# task-starter.yaml and task-custom.yaml write their exit status to it when
+# they finish.
 EXIT_CODE_FILE="/workspace/.ax/hero-demo-exit-code"
 
 while [[ $# -gt 0 ]]; do
@@ -237,8 +236,7 @@ start_task() {
 }
 
 # finish_task waits until the task's command has finished and checks that it
-# exited with status zero and wrote output to $AX_OUTPUT_FILE
-# (/workspace/.ax/output). AX does not report yet that a command finished
+# exited with status zero. AX does not report yet that a command finished
 # (#690): the task stays Running with no status.outcome. So the hero demo's
 # commands write their exit status to EXIT_CODE_FILE, and finish_task reads it
 # over ax ssh. Arguments after the task name are global ax flags, such as
@@ -251,17 +249,10 @@ finish_task() {
     mark_fail "${step}" "${task_name} did not finish within ${AX_TIMEOUT}s (state: $(task_state "${task_name}" "$@")); see 'ax${ax_flags} ssh ${task_name}'"
     return 1
   fi
-  local output code
-  output="$(sandbox "${task_name}" "$@" -- cat "${OUTPUT_FILE}")"
+  local code
   code="$(sandbox "${task_name}" "$@" -- cat "${EXIT_CODE_FILE}")"
   if [[ "${code}" != 0 ]]; then
-    # Show the end of its output, as ax_quiet does for a command that fails.
-    printf '%s\n' "${output}" | grep -v '^$' | tail -n 12 | sed 's/^/    /' >&2
-    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see 'ax${ax_flags} ssh ${task_name} -- cat ${OUTPUT_FILE}'"
-    return 1
-  fi
-  if [[ -z "${output//[[:space:]]/}" ]]; then
-    mark_fail "${step}" "${task_name} finished without output in ${OUTPUT_FILE}"
+    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see 'ax${ax_flags} ssh ${task_name}'"
     return 1
   fi
 }
@@ -352,7 +343,7 @@ step3_starter_task_session() {
   # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn on the
   # same task's workspace once multi-turn input on a single task lands. Step 4
   # shows suspend/resume.
-  mark_stub "${step}" "Turn 1 OK (agent finished with output); wire the second Session turn"
+  mark_stub "${step}" "Turn 1 OK (agent finished); wire the second Session turn"
 }
 
 # ------------------------------------------------------------------------------
@@ -412,7 +403,7 @@ step5_remote_promote() {
   fi
   # The promoted task runs from the start on the remote cluster.
   finish_task "${step}" "${STARTER_TASK}" --context "${REMOTE_CONTEXT}" || return
-  mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT} and finished there with output"
+  mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT} and finished there"
 }
 
 FUNCS=(step1_local_up step2_warm_workspace step3_starter_task_session step4_custom_image_task step5_remote_promote)

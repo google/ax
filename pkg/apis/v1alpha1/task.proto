@@ -119,7 +119,8 @@ message Goal {
 // Values below 200 are the state of the task's actor on Agent Substrate, with
 // the same names and numbers as Substrate's ActorState; they are read from the
 // actor and never stored. Values from 200 are AX's own states, stored by
-// ax-server when it could not provision or resume the task's actor.
+// ax-server when it could not provision or resume the task's actor, or when
+// the task reported how it ended.
 enum TaskState {
   // Reserved for ActorState values Substrate may add.
   reserved 8 to 199;
@@ -136,20 +137,19 @@ enum TaskState {
   // failed with a transient Substrate error and can be applied again.
   TASK_STATE_QUEUED = 200;
   // The task's actor could not be provisioned or resumed, or no longer exists
-  // on Substrate. The Ready condition says why.
+  // on Substrate; or the task reported FAILED in its status file
+  // ($AX_STATUS_FILE), and outcome is set. The Ready condition says why.
   TASK_STATE_FAILED = 201;
-  // The task is completed.
-  //
-  // TODO(#690): Nothing sets this yet; it will be used to mark tasks
-  // completed once the task can report how it ended.
+  // The task reported COMPLETED in its status file. Like a reported FAILED,
+  // it is terminal: suspending and resuming the task keep it.
   TASK_STATE_COMPLETED = 202;
 }
 
 message TaskOutcome {
   google.rpc.Status status = 1;
   int32 exit_code = 2;
-  // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
-  // automatic stdout/stderr tail fallback (capped at 64 KiB).
+  // The task's output, such as the agent's answer: the output field of its
+  // status file ($AX_STATUS_FILE), which holds at most 16 KiB.
   string output = 3;
 }
 

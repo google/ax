@@ -16,6 +16,7 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -34,8 +35,8 @@ import (
 )
 
 // Server is the cloud-style metadata server running inside the task actor container.
-// It runs two listeners. The probe listener on all interfaces serves /healthz and
-// /readyz, the push endpoints when ServerOptions.AcceptPushes is set, and the
+// It runs two listeners. The probe listener on all interfaces serves /healthz,
+// /readyz, v1alpha1.RunnerStatusPath and the push endpoints, and the
 // guest gRPC services when debug is enabled, all multiplexed on one port. The
 // metadata listener serves the /metadata endpoints on loopback only, so they are
 // reachable from inside the container and nowhere else.
@@ -54,7 +55,6 @@ type Server struct {
 	workspaceReady      bool
 	workspaceCheckReady bool
 	setupFailure        string
-	acceptPushes        bool
 	pushedSetup         *v1alpha1.Workspace
 	pushedTask          *v1alpha1.Task
 	pushes              chan Push
@@ -80,10 +80,6 @@ type ServerOptions struct {
 	// MetadataPort is the loopback port for the /metadata endpoints. Zero picks
 	// a free port; read the result from MetadataURL after Start.
 	MetadataPort int
-	// AcceptPushes serves the push endpoints and delivers what they accept on
-	// Pushes. The first setup push and the first task push are accepted;
-	// repeating either is acknowledged again, and different work is refused.
-	AcceptPushes bool
 }
 
 // NewServer creates a new metadata and guest server serving the task and its
@@ -109,11 +105,13 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 		workspace:           ws,
 		goalText:            task.GetSpec().GetGoal().GetText(),
 		workspaceCheckReady: true,
-		acceptPushes:        opt.AcceptPushes,
 		pushes:              make(chan Push, 2),
 		assignmentCh:        make(chan struct{}),
 	}
 	if task != nil {
+		// The server holds its task already: pushing the same task again is
+		// acknowledged, and other work is refused.
+		s.pushedTask = task
 		s.assignmentOnce.Do(func() { close(s.assignmentCh) })
 	}
 
@@ -129,10 +127,9 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 	probeMux := http.NewServeMux()
 	probeMux.HandleFunc("/healthz", s.handleHealthz)
 	probeMux.HandleFunc("/readyz", s.handleReadyz)
-	if opt.AcceptPushes {
-		probeMux.HandleFunc("POST "+v1alpha1.RunnerSetupPath, s.handleSetupPush)
-		probeMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, s.handleTaskPush)
-	}
+	probeMux.HandleFunc("GET "+v1alpha1.RunnerStatusPath, s.handleStatus)
+	probeMux.HandleFunc("POST "+v1alpha1.RunnerSetupPath, s.handleSetupPush)
+	probeMux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, s.handleTaskPush)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isGRPC := r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc")
@@ -141,7 +138,7 @@ func NewServer(port int, task *v1alpha1.Task, ws *v1alpha1.Workspace, opts ...Se
 		s.mu.RUnlock()
 		// A runner waiting for its task enables guest services once the task
 		// arrives, so give a guest call racing the task push a moment.
-		if grpcSrv == nil && isGRPC && s.acceptPushes {
+		if grpcSrv == nil && isGRPC {
 			timer := time.NewTimer(10 * time.Second)
 			select {
 			case <-s.assignmentCh:
@@ -307,10 +304,28 @@ func (s *Server) SetSetupFailed(err error) {
 	s.setupFailure = err.Error()
 }
 
-// Pushes delivers the work the push endpoints accept, at most one setup push
-// and one task push. Only a server with ServerOptions.AcceptPushes gets any.
+// Pushes delivers the work the push endpoints accept: the first setup push and
+// the first task push. Repeating either is acknowledged again, and different
+// work is refused. A server created with its task accepts none.
 func (s *Server) Pushes() <-chan Push {
 	return s.pushes
+}
+
+// handleStatus serves how the task ended, as the status file in its workspace
+// says on each request (see StatusFile): an empty status while there is no
+// file, and FAILED with the reason for a file that cannot be used.
+func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	path := StatusFile(s.guestCfg.Workspace)
+	s.mu.RUnlock()
+	st, err := readStatus(path)
+	if err != nil {
+		st = &v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Message: err.Error()}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(st); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {

@@ -1047,7 +1047,8 @@ const sshUsage = `Usage:
   ax ssh <task-name> [-- command...]
 
 Run a command inside a running task's container, or /bin/sh when no command is
-given. The task must be Running and have spec.debug: true.
+given. The task must have spec.debug: true and be Running, or have ended with
+its sandbox still up.
 
 Examples:
   ax ssh task123
@@ -1110,7 +1111,8 @@ func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string)
 		return fmt.Errorf("task %q has no status available", taskName)
 	}
 
-	if task.Status.GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
+	// A task that ended has an outcome, and its sandbox stays up.
+	if task.Status.GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING && task.Status.GetOutcome() == nil {
 		return fmt.Errorf("task %q is in state %q (must be Running to ssh)", taskName, v1alpha1.FormatTaskState(task))
 	}
 

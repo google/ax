@@ -38,6 +38,10 @@ import (
 	"google.golang.org/grpc"
 )
 
+// observeInterval is how often ax-server asks the runners of the running
+// actors how their tasks ended.
+const observeInterval = 5 * time.Second
+
 func main() {
 	var (
 		listenAddr              string
@@ -159,6 +163,8 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	go srv.ObserveStatus(ctx, observeInterval)
 
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

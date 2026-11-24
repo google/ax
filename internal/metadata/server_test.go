@@ -276,7 +276,7 @@ func TestMetadataServer_MetadataOnlyOnLoopback(t *testing.T) {
 }
 
 func TestMetadataServer_Pushes(t *testing.T) {
-	srv := NewServer(0, nil, nil, ServerOptions{AcceptPushes: true})
+	srv := NewServer(0, nil, nil)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
@@ -350,18 +350,37 @@ func TestMetadataServer_Pushes(t *testing.T) {
 	}
 }
 
-func TestMetadataServer_PushesOffByDefault(t *testing.T) {
-	srv := NewServer(0, nil, nil)
+// A server created with its task holds it already: pushing the same task is
+// acknowledged, and other work is refused.
+func TestMetadataServer_PushesWithTask(t *testing.T) {
+	task := &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Atespace: "default", Name: "t1", Uid: "u1"}}
+	srv := NewServer(0, task, nil)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
 	defer srv.Stop(context.Background())
-	resp, err := http.Post("http://"+srv.probeAddr+v1alpha1.RunnerTaskPath, "application/yaml", strings.NewReader("metadata: {name: t1}\n"))
-	if err != nil {
-		t.Fatalf("POST: %v", err)
+	post := func(path, body string) int {
+		t.Helper()
+		resp, err := http.Post("http://"+srv.probeAddr+path, "application/yaml", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
 	}
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
-		t.Fatalf("task push without AcceptPushes: got %d, want it refused", resp.StatusCode)
+
+	if code := post(v1alpha1.RunnerTaskPath, "metadata: {atespace: default, name: t1, uid: u1}\n"); code != http.StatusOK {
+		t.Errorf("push of the server's own task: got %d, want 200", code)
+	}
+	if code := post(v1alpha1.RunnerTaskPath, "metadata: {atespace: default, name: t2, uid: u2}\n"); code != http.StatusConflict {
+		t.Errorf("push of another task: got %d, want 409", code)
+	}
+	if code := post(v1alpha1.RunnerSetupPath, "metadata: {atespace: default, name: ws1, uid: w1}\nspec: {}\n"); code != http.StatusConflict {
+		t.Errorf("setup push: got %d, want 409", code)
+	}
+	select {
+	case p := <-srv.Pushes():
+		t.Errorf("a push was delivered: %+v", p)
+	default:
 	}
 }

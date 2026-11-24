@@ -20,14 +20,14 @@ task manager or server.
 ```
 client                 Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
 cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/studio/ctx/tunnel)
-cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
+cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly; starts the loop that records how running tasks ended
 cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
 internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
 internal/controller    TaskManager + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; task_test.go is the test template
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
-internal/server        gRPC handlers
+internal/server        gRPC handlers; ObserveStatus, the background loop that asks running actors' runners how their tasks ended
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
 internal/workspace     spec.setup execution (git clone / inline files / skills dir / commands; MCP is read via metadata server)

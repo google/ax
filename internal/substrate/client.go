@@ -650,9 +650,11 @@ func (c *Client) GetActor(ctx context.Context, atespace, actorName string) (*ate
 	})
 }
 
-// ListActors returns every Actor in the given atespace, or in all atespaces
-// when atespace is empty.
-func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.Actor, error) {
+// ListActors returns the Actors in the given atespace, or in all atespaces
+// when atespace is empty. With states, it returns only the actors in one of
+// them. Substrate's ListActors has no state filter, so every actor is still
+// fetched and the filter is applied here.
+func (c *Client) ListActors(ctx context.Context, atespace string, states ...ateapipb.ActorState) ([]*ateapipb.Actor, error) {
 	var actors []*ateapipb.Actor
 	req := &ateapipb.ListActorsRequest{Atespace: atespace, Options: &ateapipb.ListOptions{}}
 	for {
@@ -662,7 +664,11 @@ func (c *Client) ListActors(ctx context.Context, atespace string) ([]*ateapipb.A
 		if err != nil {
 			return nil, fmt.Errorf("listing actors in %q: %w", atespace, err)
 		}
-		actors = append(actors, resp.GetActors()...)
+		for _, actor := range resp.GetActors() {
+			if len(states) == 0 || slices.Contains(states, actor.GetStatus().GetState()) {
+				actors = append(actors, actor)
+			}
+		}
 		if resp.GetNextPageToken() == "" {
 			return actors, nil
 		}

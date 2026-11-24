@@ -475,7 +475,8 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //     canceling that pending deletion.
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
 //     state from its live Substrate actor rather than keeping a stored Queued
-//     or Failed state.
+//     or Failed state. A task that ended (see ObserveStatus) keeps its Completed or
+//     Failed state: those are terminal.
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
@@ -487,7 +488,9 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+	if task.Status.Outcome == nil {
+		task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+	}
 	task.Status = storedStatus(task.Status)
 	if task.GetMetadata().GetDeleteTime() != nil {
 		task.Metadata.DeleteTime = nil
@@ -504,7 +507,8 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 
 // recordFailure stores the status of a task that could not be provisioned or
 // resumed: state Queued if err is a transient Substrate error, which a retry
-// may fix, and Failed otherwise. It returns the gRPC error for action.
+// may fix, and Failed otherwise. A task that already ended keeps its state.
+// It returns the gRPC error for action.
 func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
@@ -515,7 +519,9 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
-	task.Status.State = state
+	if task.Status.Outcome == nil {
+		task.Status.State = state
+	}
 	_ = s.updateTask(ctx, atespace, name, task.Status)
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
 }

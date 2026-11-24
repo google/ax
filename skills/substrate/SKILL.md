@@ -134,13 +134,29 @@ instead. No mocking library is in `go.mod`.
   not accept the push within `WorkspaceReadyTimeout`, and with
   `ActorResumeFailed` when the runner refuses the task or reports a failure
   for a task whose workspace is already set up.
+- How a task ended is pulled, never pushed, by a background loop:
+  `Server.ObserveStatus` (`internal/server/observe.go`), which
+  `cmd/ax-server/main.go` starts with `observeInterval`. Each pass lists the
+  running actors of all atespaces (`ListActors` with an empty atespace and
+  `ACTOR_STATE_RUNNING`; Substrate's `ListActors` has no state filter, so
+  `Client.ListActors` fetches every actor and filters) and GETs
+  `v1alpha1.RunnerStatusPath` through `atenet-router` for every one whose
+  task has no stored state (`TaskManager.RunnerStatus` in
+  `internal/controller/actorhttp.go`), then stores the first
+  `COMPLETED`/`FAILED` with `status.outcome` under the task lock. Reads
+  (`getTask`, `listTasks`) never ask the runner. The runner serves the status
+  file, `<workspace>/.ax/status` (`AX_STATUS_FILE`), reading it on each
+  request (`handleStatus` in `internal/metadata/server.go`); only the
+  command writes it, and its exit status is not a report. A task with an
+  outcome keeps its state in
+  `clearStoredTaskState` and `recordFailure`.
 - `status.actorUid` is read live by `setActorStatus` in
   `internal/server/server.go` and cleared by `storedStatus` (same file) before writes.
   It changes when Substrate recreates the actor and is empty when the actor
   is missing or cannot be read. `ax describe task` shows it as `Actor UID`.
 - Guest services (process + fs) are mounted by `internal/metadata/server.go`
   only when `task.Spec.Debug` is true; `ax ssh` (`cmd/ax/main.go`) refuses to
-  connect otherwise.
+  connect otherwise, and unless the task is `RUNNING` or has an outcome.
 - Trust bundle: `BuildActorTemplate` mounts `egress-mitm.ate.dev` and
   `system-roots.ate.dev` at `v1alpha1.EgressTrustBundlePath` for every task,
   and the runner points the CA variables at it (`runner/env.go`). A

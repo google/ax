@@ -28,8 +28,8 @@ import (
 )
 
 // launcherScript is a stand-in for an image's ax-launcher: it copies every
-// launcher contract file into the output file, one per line, and counts its
-// runs in runs.
+// launcher contract file into the file out next to it, one per line, and
+// counts its runs in runs.
 const launcherScript = `#!/bin/sh
 echo run >> "$(dirname "$0")/runs"
 {
@@ -37,7 +37,7 @@ echo run >> "$(dirname "$0")/runs"
   cat "$AX_CONFIG_FILE"; echo
   cat "$AX_MCP_CONFIG_FILE"; echo
   cat "$AX_SESSION_FILE"; echo
-} > "$AX_OUTPUT_FILE"
+} > "$(dirname "$0")/out"
 `
 
 // withLauncher points h at a fake launcher and a temp run dir, gives the task
@@ -68,7 +68,7 @@ func runs(t *testing.T, launcherDir string) int {
 
 func TestRun_StartsLauncherWithContractFiles(t *testing.T) {
 	h := newHarness(t)
-	withLauncher(t, h, "Summarize the repo.")
+	dir := withLauncher(t, h, "Summarize the repo.")
 	config, err := structpb.NewStruct(map[string]any{"model": "fast"})
 	if err != nil {
 		t.Fatal(err)
@@ -85,9 +85,9 @@ func TestRun_StartsLauncherWithContractFiles(t *testing.T) {
 	if exit := h.runUntilCommandExits(t); exit.Err != nil {
 		t.Fatalf("unexpected exit: %+v", exit)
 	}
-	out, err := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output"))
+	out, err := os.ReadFile(filepath.Join(dir, "out"))
 	if err != nil {
-		t.Fatalf("launcher did not write $AX_OUTPUT_FILE under the workspace: %v", err)
+		t.Fatalf("launcher did not copy the contract files: %v", err)
 	}
 	lines := strings.Split(string(out), "\n")
 	if len(lines) < 4 {
@@ -155,7 +155,7 @@ func TestRun_DoesNotRestartFinishedLauncher(t *testing.T) {
 	if n := runs(t, dir); n != 2 {
 		t.Errorf("launcher ran %d times after a new goal, want 2", n)
 	}
-	if out, _ := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output")); !strings.HasPrefix(string(out), "second goal") {
+	if out, _ := os.ReadFile(filepath.Join(dir, "out")); !strings.HasPrefix(string(out), "second goal") {
 		t.Errorf("output = %q, want the second goal's", out)
 	}
 }
@@ -171,7 +171,7 @@ echo run >> "$runs_file"
 if [ "$(grep -c run "$runs_file")" -eq 1 ]; then
   exit 1
 fi
-cat "$AX_GOAL_FILE" > "$AX_OUTPUT_FILE"
+cat "$AX_GOAL_FILE" > /dev/null
 `
 	if err := os.WriteFile(h.cfg.LauncherPath, []byte(failOnce), 0o755); err != nil {
 		t.Fatal(err)
@@ -205,13 +205,13 @@ func TestRun_FallsBackWhenDefaultRunDirUnwritable(t *testing.T) {
 	t.Setenv("TMPDIR", tmpBase)
 
 	h := newHarness(t)
-	withLauncher(t, h, "non-root goal")
+	dir := withLauncher(t, h, "non-root goal")
 	h.cfg.RunDir = ""
 
 	if exit := h.runUntilCommandExits(t); exit.Err != nil {
 		t.Fatalf("unexpected exit with empty RunDir: %+v", exit)
 	}
-	out, err := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output"))
+	out, err := os.ReadFile(filepath.Join(dir, "out"))
 	if err != nil || !strings.HasPrefix(string(out), "non-root goal") {
 		t.Errorf("output = %q (%v), want non-root goal", out, err)
 	}
@@ -230,17 +230,18 @@ func TestRun_FallsBackWhenDefaultRunDirUnwritable(t *testing.T) {
 	}
 }
 
-// Explicit commands also get the contract's variables, so any command can
-// write $AX_OUTPUT_FILE; the launcher is not started for them.
+// Explicit commands also get the contract's variables; the launcher is not
+// started for them.
 func TestRun_CommandsGetContractEnv(t *testing.T) {
 	h := newHarness(t)
 	dir := withLauncher(t, h, "goal")
-	h.task.Spec.Commands = []string{"sh", "-c", `cat "$AX_GOAL_FILE" > "$AX_OUTPUT_FILE"`}
+	outFile := filepath.Join(dir, "out")
+	h.task.Spec.Commands = []string{"sh", "-c", `cat "$AX_GOAL_FILE" > ` + outFile}
 
 	if exit := h.runUntilCommandExits(t); exit.Err != nil {
 		t.Fatalf("unexpected exit: %+v", exit)
 	}
-	if out, _ := os.ReadFile(filepath.Join(h.wsPath, ".ax", "output")); string(out) != "goal" {
+	if out, _ := os.ReadFile(outFile); string(out) != "goal" {
 		t.Errorf("output = %q, want the goal", out)
 	}
 	if n := runs(t, dir); n != 0 {

@@ -17,6 +17,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,10 @@ const (
 	workspaceCheckPath = "/readyz?check=workspace"
 	// maxRunnerReplyBytes caps how much of a runner reply is read.
 	maxRunnerReplyBytes = 64 << 10
+	// maxRunnerStatusBytes caps how much of the runner's status reply is
+	// read: a status file of up to 16 KiB can be several times that once its
+	// message and output are JSON-escaped.
+	maxRunnerStatusBytes = 1 << 20
 )
 
 // errSetupFailed marks the runner's report that workspace setup failed, as
@@ -50,6 +55,12 @@ var errNoRouter = errors.New("ATENET_ROUTER_ADDR is not set")
 // ate-target-actor header. It returns the status code and the start of the
 // response body.
 func actorRequest(ctx context.Context, client *http.Client, atespace, actor, method, path string, body []byte) (int, string, error) {
+	return actorRequestLimit(ctx, client, atespace, actor, method, path, body, maxRunnerReplyBytes)
+}
+
+// actorRequestLimit is actorRequest, reading at most limit bytes of the
+// response body.
+func actorRequestLimit(ctx context.Context, client *http.Client, atespace, actor, method, path string, body []byte, limit int64) (int, string, error) {
 	routerURL := routerBaseURL()
 	if routerURL == "" {
 		return 0, "", errNoRouter
@@ -66,9 +77,23 @@ func actorRequest(ctx context.Context, client *http.Client, atespace, actor, met
 	if err != nil {
 		return 0, "", err
 	}
-	reply, _ := io.ReadAll(io.LimitReader(resp.Body, maxRunnerReplyBytes))
+	reply, _ := io.ReadAll(io.LimitReader(resp.Body, limit))
 	_ = resp.Body.Close()
 	return resp.StatusCode, strings.TrimSpace(string(reply)), nil
+}
+
+// RunnerStatus reads how the task named name ended from the runner in its
+// running actor (v1alpha1.RunnerStatusPath).
+func (m *TaskManager) RunnerStatus(ctx context.Context, atespace, name string) (*v1alpha1.RunnerStatus, error) {
+	code, reply, err := actorRequestLimit(ctx, m.httpClient, atespace, name, http.MethodGet, v1alpha1.RunnerStatusPath, nil, maxRunnerStatusBytes)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("reading the runner's status: HTTP %d: %s", code, reply)
+	}
+	st := &v1alpha1.RunnerStatus{}
+	return st, json.Unmarshal([]byte(reply), st)
 }
 
 // routerBaseURL returns ATENET_ROUTER_ADDR as a base URL, or "" when unset.

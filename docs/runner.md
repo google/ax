@@ -47,6 +47,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/healthz` | Return `200` as soon as the runner is alive. |
 | `/readyz` | Return `200` once the runner can take a push. Agent Substrate probes this. |
 | `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace and, for a task, started its command, `200` once it has, and `500` with the reason as the body when setup failed or the command could not be started. AX polls this on every resume to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. A `500` for a task whose workspace was already set up fails the resume. |
+| `GET /runner/v1alpha1/status` | Return how the task ended as JSON: `{"state": "COMPLETED", "output": "..."}` or `{"state": "FAILED", "message": "..."}`, or `{}` while it has not ended. ax-server asks every running task for this every few seconds, and stores the first `COMPLETED` or `FAILED` as the task's state, with `output` as `status.outcome.output`. A `404` reads as not ended. |
 
 **Serve metadata on loopback.** These endpoints are for your command, so serve them on a loopback address (the default runner uses `127.0.0.1:8099`) and pass that base URL as `AX_METADATA_URL`. Don't serve them on port 80.
 
@@ -59,9 +60,23 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 **Make outbound TLS and credentials work.** The egress gateway intercepts HTTPS that a `Gateway` rule allows, so point the CA variables your tools read (`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`) at the CA bundle when it exists. It replaces a credential header only on requests that already carry it. Tasks set placeholders for their tools in `spec.env`; the default runner adds one for git (see [Outbound TLS and credentials](sandbox.md#outbound-tls-and-credentials)).
 
-**Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
+**Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server, `AX_STATUS_FILE` (below), plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
-**Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
+**Report how the task ended.** `AX_STATUS_FILE` names `<workspace>/.ax/status`, which is on the workspace volume so that it survives suspend and resume. The command reports how the task ended by writing one JSON object of at most 16 KiB to it:
+
+```json
+{"state": "COMPLETED", "output": "Added subtract() and its test."}
+```
+
+`state` is `COMPLETED` or `FAILED`. `message` and `output` are optional: `message` says why the task ended the way it did, and `output` is the task's output, such as the agent's answer, which AX reports as `status.outcome.output`. The command should write the file atomically: write a temporary file in the same directory, then rename it. Serve what the file says on `GET /runner/v1alpha1/status`, reading it on each request:
+
+- Only the file says how the task ended. Do not write it from the command's exit status: a command that exits without the file leaves the task `Running`.
+- A file that is larger, is not JSON, or has an unknown `state` is `FAILED` with a message naming the problem.
+- A command that is still running can report: the file is served as soon as it is there.
+- `REQUIRES_ACTION` is reserved and not acted on yet.
+- AX keeps the first `COMPLETED` or `FAILED` it reads: both are terminal.
+
+**Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop.
 
 **Shut down cleanly on `SIGTERM`.** Stop and suspend both deliver `SIGTERM` to PID 1. Forward it to the command's process group, wait a bounded grace period, then `SIGKILL` whatever is left. Flush anything the agent needs to survive a resume before you exit.
 
@@ -181,7 +196,8 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 - Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until the workspace is ready
 - Serves the metadata endpoints on loopback only, at `AX_METADATA_URL`
 - Prepares the workspace exactly once across restarts and resumes, at its path
-- Starts `spec.commands` in the workspace with `AX_METADATA_URL` and `spec.env`
+- Starts `spec.commands` in the workspace with `AX_METADATA_URL`, `AX_STATUS_FILE` and `spec.env`
+- Serves `<workspace>/.ax/status` on `GET /runner/v1alpha1/status`
 - Keeps running after the command exits
 - Forwards `SIGTERM` to the command's process group and exits after a grace period
 - Serves guest gRPC services on port 80 only when `spec.debug` is true

@@ -43,7 +43,8 @@ const (
 // Values below 200 are the state of the task's actor on Agent Substrate, with
 // the same names and numbers as Substrate's ActorState; they are read from the
 // actor and never stored. Values from 200 are AX's own states, stored by
-// ax-server when it could not provision or resume the task's actor.
+// ax-server when it could not provision or resume the task's actor, or when
+// the task reported how it ended.
 type TaskState int32
 
 const (
@@ -59,12 +60,11 @@ const (
 	// failed with a transient Substrate error and can be applied again.
 	TaskState_TASK_STATE_QUEUED TaskState = 200
 	// The task's actor could not be provisioned or resumed, or no longer exists
-	// on Substrate. The Ready condition says why.
+	// on Substrate; or the task reported FAILED in its status file
+	// ($AX_STATUS_FILE), and outcome is set. The Ready condition says why.
 	TaskState_TASK_STATE_FAILED TaskState = 201
-	// The task is completed.
-	//
-	// TODO(#690): Nothing sets this yet; it will be used to mark tasks
-	// completed once the task can report how it ended.
+	// The task reported COMPLETED in its status file. Like a reported FAILED,
+	// it is terminal: suspending and resuming the task keep it.
 	TaskState_TASK_STATE_COMPLETED TaskState = 202
 )
 
@@ -528,8 +528,8 @@ type TaskOutcome struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Status   *status.Status         `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	ExitCode int32                  `protobuf:"varint,2,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
-	// Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
-	// automatic stdout/stderr tail fallback (capped at 64 KiB).
+	// The task's output, such as the agent's answer: the output field of its
+	// status file ($AX_STATUS_FILE), which holds at most 16 KiB.
 	Output        string `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

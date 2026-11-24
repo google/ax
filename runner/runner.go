@@ -124,6 +124,11 @@ type CommandExit struct {
 // cancelled a running command is sent SIGTERM, given a grace period, and then
 // killed.
 //
+// The command reports how the task ended in the file StatusFileEnv names,
+// and the probe port serves what the file says on v1alpha1.RunnerStatusPath.
+// The exit status is not a report: a command that exits without writing the
+// file leaves the task running.
+//
 // With Config.AwaitPush, Run first waits for ax-server to push the task.
 //
 // Run returns an error when the runner itself cannot start, for example when
@@ -177,7 +182,6 @@ func runPushed(ctx context.Context, cfg Config, port, metadataPort int) error {
 	metaServer := metadata.NewServer(port, nil, nil, metadata.ServerOptions{
 		WorkspacePath: DefaultWorkspacePath,
 		MetadataPort:  metadataPort,
-		AcceptPushes:  true,
 	})
 	// Substrate's WakeupProbe reads /readyz, so it reports ready while the
 	// runner waits; /readyz?check=workspace reports the pushed work.
@@ -304,6 +308,8 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 		// Keep the sandbox up and inspectable until told to stop.
 		<-ctx.Done()
 	case <-ctx.Done():
+		// A command the runner stopped did not end on its own, so its exit
+		// status says nothing about how the task ended.
 		reportExit(cfg, cmd, stopCommand(cmd, exited))
 	}
 	return nil

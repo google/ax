@@ -36,8 +36,8 @@ spec:
   # The first run leaves a marker and waits, so that the task can be suspended
   # and resumed while it runs. The command then starts again, finds the marker
   # and runs the workspace's unit tests. AX does not report a command's exit
-  # status yet (#690), so the command writes the test output to
-  # $AX_OUTPUT_FILE and its exit status to a file that run.sh reads.
+  # status yet (#690), so the command writes its exit status to a file that
+  # run.sh reads.
   commands:
     - sh
     - -c
@@ -46,9 +46,8 @@ spec:
         touch /workspace/first-run
         sleep 300
       fi
-      python3 -m unittest discover -s /workspace/app -p "test_*.py" > "$AX_OUTPUT_FILE" 2>&1
+      python3 -m unittest discover -s /workspace/app -p "test_*.py"
       status=$?
-      cat "$AX_OUTPUT_FILE"
       echo "$status" > /workspace/.ax/hero-demo-exit-code.tmp
       mv /workspace/.ax/hero-demo-exit-code.tmp /workspace/.ax/hero-demo-exit-code
       exit "$status"

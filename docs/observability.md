@@ -118,7 +118,9 @@ These buckets do not apply to them, so their buckets stop at 10 seconds.
 ax-server records a server span for each AX RPC that it serves. It records a
 client span for each call that it makes to Substrate. Reconciles run inside
 the RPC, so `CreateActor` and `ResumeActor` show under the `CreateTask` or
-`ResumeTask` span.
+`ResumeTask` span. The background loop that records how tasks ended calls
+`ListActors` every few seconds outside any RPC, so those client spans have no
+parent.
 
 - **Trace context:** the server span is a child of the caller's
   `traceparent`. ax-server sends `traceparent` to Substrate, which also

@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/google/ax/internal/metadata"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -44,10 +45,12 @@ const (
 	MCPConfigFileEnv = "AX_MCP_CONFIG_FILE"
 	// SessionFileEnv names the file holding spec.session_id.
 	SessionFileEnv = "AX_SESSION_FILE"
-	// OutputFileEnv names the file the launcher writes the agent's answer to.
-	// It is on the workspace volume so it survives suspend, and AX reports it
-	// as status.outcome.output.
-	OutputFileEnv = "AX_OUTPUT_FILE"
+	// StatusFileEnv names the file in which the task's command reports how
+	// the task ended, as one JSON object of at most 16 KiB:
+	// {"state": "COMPLETED" or "FAILED", "message": "...", "output": "..."}.
+	// It is on the workspace volume so it survives suspend. Only the file
+	// says how the task ended; the command's exit status does not.
+	StatusFileEnv = "AX_STATUS_FILE"
 
 	// DefaultLauncherPath is where the runner looks for the image's launcher
 	// when Config.LauncherPath is empty.
@@ -77,7 +80,7 @@ type launcherFiles struct {
 
 // writeLauncherFiles writes the task's goal, config, the Workspace's MCP
 // servers and the session ID under runDir, and makes the directory of the
-// output file under wsPath. When runDir is empty, DefaultRunDir (/run/ax) is
+// status file under wsPath. When runDir is empty, DefaultRunDir (/run/ax) is
 // used, falling back to a unique temporary directory under os.TempDir() if
 // DefaultRunDir is not writable (for example when a container image runs as a
 // non-root USER).
@@ -121,11 +124,11 @@ func writeLauncherFiles(runDir, wsPath string, task *v1alpha1.Task, ws *v1alpha1
 		out.env = append(out.env, f.env+"="+p)
 		_, _ = fmt.Fprintf(h, "%s=%d:%s;", f.name, len(f.data), f.data)
 	}
-	output := outputPath(wsPath)
-	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
-		return launcherFiles{}, fmt.Errorf("creating %s: %w", filepath.Dir(output), err)
+	status := metadata.StatusFile(wsPath)
+	if err := os.MkdirAll(filepath.Dir(status), 0o755); err != nil {
+		return launcherFiles{}, fmt.Errorf("creating %s: %w", filepath.Dir(status), err)
 	}
-	out.env = append(out.env, OutputFileEnv+"="+output)
+	out.env = append(out.env, StatusFileEnv+"="+status)
 	out.digest = hex.EncodeToString(h.Sum(nil))
 	return out, nil
 }
@@ -149,11 +152,6 @@ func ensureRunDir(runDir string) (string, error) {
 		return "", fmt.Errorf("creating temp run dir: %w", err)
 	}
 	return fallback, nil
-}
-
-// outputPath is where the launcher writes the agent's answer for a workspace.
-func outputPath(wsPath string) string {
-	return filepath.Join(wsPath, ".ax", "output")
 }
 
 // launcherCommand returns the command that consumes a task without
