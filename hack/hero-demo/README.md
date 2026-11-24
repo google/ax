@@ -29,13 +29,15 @@ With `RUN_LIVE_STEPS=1`, the harness calls:
 
 - Step 1: `ax get workspaces`, to check `ax-server` is reachable.
 - Step 2: `ax apply -f workspace.yaml`, which waits for the pre-warm, then `ax describe workspace` to check `SnapshotReady`.
-- Step 3: `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, and wait until `ax describe task` reports the task `Completed` with output.
-- Step 4: `ax apply -f task-custom.yaml`, then `ax resume`; once the task's command has started, `ax suspend` and `ax resume`, and wait until the task is `Completed` with output. The command waits on its first run and runs the unit tests after the resume; it fails the task unless they pass.
-- Step 5: `ax promote task hero-demo-starter-task --to <remote> --replace --suspend-source`, then wait until the promoted task is `Completed` with output on the remote cluster.
+- Step 3: check that the cluster has the `hero-demo-gemini` Secret (with `kubectl`, when it is installed), `ax apply -f gateway.yaml` and `ax apply -f task-starter.yaml`, then `ax resume`, and wait until the agent has finished with output.
+- Step 4: `ax apply -f task-custom.yaml`, then `ax resume`; once the task's command has started, `ax suspend` and `ax resume`, and wait until the command has finished with output. The command waits on its first run and runs the unit tests after the resume; the step fails unless they pass.
+- Step 5: `ax promote task hero-demo-starter-task --to <remote> --replace --suspend-source`, then wait until the promoted task's agent has finished with output on the remote cluster.
+
+AX does not report yet that a task's command finished ([#690](https://github.com/google/ax/issues/690)): the task stays `Running`, with no `status.outcome`. So both tasks set `spec.commands` that write their exit status to `/workspace/.ax/hero-demo-exit-code` when they finish, and the harness reads it, and the output in `/workspace/.ax/output` (`$AX_OUTPUT_FILE`), over `ax ssh` (both tasks set `spec.debug`). The starter task's command runs the image's launcher, as `ax-runner` does for a task with a goal and no commands, and does not run the agent again once it has recorded a status.
 
 `task-starter.yaml` pins the published Antigravity starter image (`ghcr.io/agentexecutor/antigravity`, `v0.0.0-rc.2`, pinned by digest as Substrate requires); pass `STARTER_IMAGE=<image>@sha256:<digest>` to override it for local testing. Because the starter image and the plain image of Step 4 have no `ax-runner` baked in, `ax-server` also needs a runner volume image (`ax install --runner-volume-image` or `AX_RUNNER_VOLUME_IMAGE`, which is empty by default); Step 2 needs it too, because the workspace is pre-warmed in the same image.
 
-Still stubbed: local mode and the AX Studio health check (Step 1), and the second Session turn on the same task's workspace (Step 3). Step 3 does not suspend the starter task: a completed task refuses `ax suspend` and `ax resume`, so Step 4 shows them.
+Still stubbed: local mode and the AX Studio health check (Step 1), and the second Session turn on the same task's workspace (Step 3). Step 4 shows `ax suspend` and `ax resume`.
 
 ## Checking the warm snapshot by hand
 

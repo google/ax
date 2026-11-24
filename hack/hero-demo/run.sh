@@ -59,6 +59,12 @@ WORKSPACE_NAME="hero-demo-ws"
 GATEWAY_NAME="hero-demo-gw"
 STARTER_TASK="hero-demo-starter-task"
 CUSTOM_TASK="hero-demo-custom-task"
+GATEWAY_SECRET="hero-demo-gemini"
+# Files in a task's sandbox that finish_task reads. OUTPUT_FILE is the task's
+# $AX_OUTPUT_FILE. The commands in task-starter.yaml and task-custom.yaml
+# write their exit status to EXIT_CODE_FILE when they finish.
+OUTPUT_FILE="/workspace/.ax/output"
+EXIT_CODE_FILE="/workspace/.ax/hero-demo-exit-code"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -149,7 +155,7 @@ with open(dst, "w", encoding="utf-8") as f:
 PY
 }
 
-# task_state prints the State line of `ax describe task`, such as Working.
+# task_state prints the State line of `ax describe task`, such as Running.
 # Arguments after the task name are global ax flags, such as --context.
 task_state() {
   local task_name="$1"
@@ -157,19 +163,56 @@ task_state() {
   run_ax "$@" describe task "${task_name}" 2>/dev/null | awk '/^State:/ { print $2 }'
 }
 
-# wait_for_file polls over ax ssh until the task's sandbox has the file.
-# Redirect stdin from /dev/null because timeout puts ax ssh in a background
-# process group, where reading the controlling tty triggers SIGTTIN.
+# sandbox runs a command in the task's sandbox over ax ssh, which needs
+# spec.debug. The arguments are the task name, the global ax flags (such as
+# --context) up to "--", and then the command. Redirect stdin from /dev/null
+# because timeout puts ax ssh in a background process group, where reading the
+# controlling tty triggers SIGTTIN.
+sandbox() {
+  local task_name="$1"
+  shift
+  local flags=()
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    flags+=("$1")
+    shift
+  done
+  shift
+  AX_TIMEOUT=10 run_ax ${flags[@]+"${flags[@]}"} ssh "${task_name}" -- "$@" </dev/null 2>/dev/null
+}
+
+# wait_for_file polls until the task's sandbox has the file. Arguments after
+# the file are global ax flags, such as --context.
 wait_for_file() {
   local task_name="$1" file="$2"
+  shift 2
   local deadline=$((SECONDS + AX_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if AX_TIMEOUT=10 run_ax ssh "${task_name}" -- test -f "${file}" </dev/null >/dev/null 2>&1; then
+    if sandbox "${task_name}" "$@" -- test -f "${file}" >/dev/null; then
       return 0
     fi
     sleep 2
   done
   return 1
+}
+
+# check_gateway_secret fails the step when the cluster has no Secret for the
+# Gemini API key that gateway.yaml injects. Without it the agent's requests
+# get 403 egress denied and it exits without output, while the task still
+# reads Running. The check is skipped without kubectl, or when kubectl fails
+# for a reason other than a missing Secret. Arguments after the step are
+# kubectl flags, such as --context.
+check_gateway_secret() {
+  local step="$1"
+  shift
+  command -v kubectl >/dev/null 2>&1 || return 0
+  local out
+  if out="$(kubectl "$@" -n ax-system get secret "${GATEWAY_SECRET}" -o name 2>&1)"; then
+    return 0
+  fi
+  if [[ "${out}" == *NotFound* ]]; then
+    mark_fail "${step}" "Secret ax-system/${GATEWAY_SECRET} is missing${*:+ in $*}; create it as gateway.yaml describes"
+    return 1
+  fi
 }
 
 # start_task applies a task from a fresh start and resumes it. On failure it
@@ -188,38 +231,32 @@ start_task() {
   fi
 }
 
-# finish_task waits until the task has completed with output. A finished task
-# is terminal, so ax ssh, ax suspend and ax resume refuse it. Arguments after
-# the task name are global ax flags, such as --context. On failure finish_task
-# marks the step failed and returns 1.
+# finish_task waits until the task's command has finished and checks that it
+# exited with status zero and wrote output to $AX_OUTPUT_FILE
+# (/workspace/.ax/output). AX does not report yet that a command finished
+# (#690): the task stays Running with no status.outcome. So the hero demo's
+# commands write their exit status to EXIT_CODE_FILE, and finish_task reads it
+# over ax ssh. Arguments after the task name are global ax flags, such as
+# --context. On failure finish_task marks the step failed and returns 1.
 finish_task() {
   local step="$1" task_name="$2"
   shift 2
-  local state="" deadline=$((SECONDS + AX_TIMEOUT))
-  while ((SECONDS < deadline)); do
-    state="$(task_state "${task_name}" "$@")"
-    if [[ "${state}" == Completed || "${state}" == Failed ]]; then
-      break
-    fi
-    sleep 2
-  done
-  case "${state}" in
-    Completed) ;;
-    Failed)
-      # Show the end of its output, as ax_quiet does for a command that fails.
-      run_ax "$@" describe task "${task_name}" 2>/dev/null | sed -n '/^Output:/,/^$/p' | grep -v '^$' | tail -n 12 | sed 's/^/    /' >&2
-      mark_fail "${step}" "${task_name} is Failed; see 'ax${*:+ $*} describe task ${task_name}'"
-      return 1
-      ;;
-    *)
-      mark_fail "${step}" "${task_name} did not complete within ${AX_TIMEOUT}s (state: ${state:-unknown})"
-      return 1
-      ;;
-  esac
-  # The output is the task's $AX_OUTPUT_FILE (/workspace/.ax/output), or else
-  # the end of what its command printed.
-  if [[ "$(run_ax "$@" describe task "${task_name}" 2>/dev/null)" != *$'\n'"Output:"* ]]; then
-    mark_fail "${step}" "${task_name} completed without output"
+  local ax_flags="${*:+ $*}"
+  if ! wait_for_file "${task_name}" "${EXIT_CODE_FILE}" "$@"; then
+    mark_fail "${step}" "${task_name} did not finish within ${AX_TIMEOUT}s (state: $(task_state "${task_name}" "$@")); see 'ax${ax_flags} ssh ${task_name}'"
+    return 1
+  fi
+  local output code
+  output="$(sandbox "${task_name}" "$@" -- cat "${OUTPUT_FILE}")"
+  code="$(sandbox "${task_name}" "$@" -- cat "${EXIT_CODE_FILE}")"
+  if [[ "${code}" != 0 ]]; then
+    # Show the end of its output, as ax_quiet does for a command that fails.
+    printf '%s\n' "${output}" | grep -v '^$' | tail -n 12 | sed 's/^/    /' >&2
+    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see 'ax${ax_flags} ssh ${task_name} -- cat ${OUTPUT_FILE}'"
+    return 1
+  fi
+  if [[ -z "${output//[[:space:]]/}" ]]; then
+    mark_fail "${step}" "${task_name} finished without output in ${OUTPUT_FILE}"
     return 1
   fi
 }
@@ -292,6 +329,7 @@ step3_starter_task_session() {
     mark_stub "${step}" "Set RUN_LIVE_STEPS=1 to run the starter task lifecycle"
     return
   fi
+  check_gateway_secret "${step}" || return
   # A task can only bind a Gateway that already exists.
   if ! ax_quiet apply -f "${GATEWAY_MANIFEST}"; then
     mark_fail "${step}" "ax apply -f gateway.yaml failed"
@@ -307,9 +345,9 @@ step3_starter_task_session() {
   finish_task "${step}" "${STARTER_TASK}" || return
 
   # TODO(@aprajitaarora13, @itssimrank): Send a second Session turn on the
-  # same task's workspace once multi-turn input on a single task lands. A
-  # completed task refuses suspend/resume, so Step 4 shows those.
-  mark_stub "${step}" "Turn 1 OK (task completed with output); wire the second Session turn"
+  # same task's workspace once multi-turn input on a single task lands. Step 4
+  # shows suspend/resume.
+  mark_stub "${step}" "Turn 1 OK (agent finished with output); wire the second Session turn"
 }
 
 # ------------------------------------------------------------------------------
@@ -326,8 +364,8 @@ step4_custom_image_task() {
   # runner volume image.
   start_task "${step}" "${CUSTOM_TASK}" "${CUSTOM_MANIFEST}" task-custom.yaml || return
   # The command waits on its first run, so the task can be suspended while it
-  # is Working. After the resume it starts again and runs the workspace's unit
-  # tests, and the task fails unless they pass.
+  # runs. After the resume it starts again, runs the workspace's unit tests and
+  # records their exit status, and the step fails unless they pass.
   if ! wait_for_file "${CUSTOM_TASK}" /workspace/first-run; then
     mark_fail "${step}" "${CUSTOM_TASK} did not start its command within ${AX_TIMEOUT}s"
     return
@@ -358,9 +396,10 @@ step5_remote_promote() {
     mark_fail "${step}" "ax CLI not found; run 'make install' or set AX_BIN"
     return
   fi
+  check_gateway_secret "${step}" --context "${REMOTE_CONTEXT}" || return
   # Copies the starter task that Step 3 runs, with the Gateway and Workspace it
-  # binds, to the remote cluster. --suspend-source suspends it here if it is
-  # still running; after Step 3 it has finished. --replace lets a rerun start
+  # binds, to the remote cluster. --suspend-source suspends it here, since its
+  # sandbox stays up after the agent finishes. --replace lets a rerun start
   # from a fresh task there.
   if ! ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
     mark_fail "${step}" "ax promote task ${STARTER_TASK} --to ${REMOTE_CONTEXT} failed"
@@ -368,7 +407,7 @@ step5_remote_promote() {
   fi
   # The promoted task runs from the start on the remote cluster.
   finish_task "${step}" "${STARTER_TASK}" --context "${REMOTE_CONTEXT}" || return
-  mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT} and completed there"
+  mark_pass "${step}" "${STARTER_TASK} promoted to ${REMOTE_CONTEXT} and finished there with output"
 }
 
 FUNCS=(step1_local_up step2_warm_workspace step3_starter_task_session step4_custom_image_task step5_remote_promote)
