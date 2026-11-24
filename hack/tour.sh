@@ -33,6 +33,7 @@
 #                   (default: the ax-runner that `make build-local-cluster`
 #                   pushed to localhost:5001, read from bin/ax-runner.digest)
 #   TOUR_TIMEOUT    Seconds to wait for a task to change state (default: 180)
+#   TOUR_PAUSE      Set to 1 to wait for Enter before each step after the first
 #   GEMINI_API_KEY  Gemini API key for the Gemini step, which is skipped when
 #                   unset. The tour stores it in Secret default/tour-gemini-key
 #                   of the current kube context; it never enters a sandbox.
@@ -56,6 +57,7 @@ if [[ "${AX_TASK_IMAGE:-}" != *@sha256:* ]]; then
   exit 1
 fi
 TOUR_TIMEOUT="${TOUR_TIMEOUT:-180}"
+TOUR_PAUSE="${TOUR_PAUSE:-0}"
 
 SIMPLE_TASK="tour-simple"
 GATEWAY="tour-github-gw"
@@ -73,7 +75,15 @@ MODEL="tour-model"
 
 bold=$'\033[1m' cyan=$'\033[36m' green=$'\033[32m' red=$'\033[31m' reset=$'\033[0m'
 
+# step starts a step of the tour. With TOUR_PAUSE=1, it first waits for Enter,
+# except before the first step.
+first_step=1
 step() {
+  if [[ "${TOUR_PAUSE}" == 1 && -z "${first_step}" ]]; then
+    read -rsp $'\nPress Enter to continue...' < /dev/tty
+    printf '\n'
+  fi
+  first_step=
   printf '\n%s━━ %s%s\n' "${bold}" "$*" "${reset}"
 }
 
