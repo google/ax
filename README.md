@@ -221,6 +221,15 @@ ax --context=dev-cluster get tasks
 | `--server` | Control plane address, bypassing auto-detection | derived from kube context, or `$AX_SERVER` |
 | `--trace` | Trace the command and print its trace ID to stderr. Its RPCs send a sampled W3C `traceparent`, and CLI spans are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Without it, the CLI sends no trace context and ax-server samples on its own. See [CLI traces](docs/observability.md#cli-traces) | off |
 
+## AX and Agent Substrate
+
+[Agent Substrate](https://github.com/agent-substrate/substrate) is the compute runtime layer AX relies on. It schedules actors onto workers, isolates them, and suspends, resumes and snapshots them. It also handles their networking, egress policies and credential injection.
+
+Agent Substrate is a low-opinion system in terms of agentic abstractions.
+Besides task execution, AX and Agent Substrate are orthogonal to each other.
+
+AX is aiming to grow into an agentic platform that covers session management, memory, multi-task coordination, input steering, registries, models, and trajectory collection. We are building it at Google as our portable agentic platform, one that runs the same way inside Google, on customer clusters, and on-prem.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
