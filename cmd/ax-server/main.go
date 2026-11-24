@@ -40,6 +40,11 @@ import (
 
 // observeInterval is how often ax-server asks the runners of the running
 // actors how their tasks ended.
+//
+// TODO(#690): Optimize the interval. Every pass lists all actors of all
+// atespaces and asks the runner of every running task that has not ended,
+// so its cost grows with the fleet, while a shorter interval reports an end
+// sooner.
 const observeInterval = 5 * time.Second
 
 func main() {

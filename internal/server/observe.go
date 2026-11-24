@@ -25,6 +25,10 @@ import (
 )
 
 // observeConcurrency caps how many runners ObserveStatus asks at once.
+//
+// TODO(#690): Optimize the concurrency for large fleets, together with
+// observeInterval in cmd/ax-server: a pass must ask every running task's
+// runner, each with a 2 s timeout, before the next one starts.
 const observeConcurrency = 16
 
 // ObserveStatus asks the runner of every running actor how its task ended, and
