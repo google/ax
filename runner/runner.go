@@ -255,7 +255,7 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 
 	cmdArgs := task.GetSpec().GetCommands()
 	launched := len(cmdArgs) == 0
-	files, err := writeLauncherFiles(cfg.RunDir, wsPath, task, ws)
+	files, err := writeLauncherFiles(cfg.RunDir, task, ws)
 	switch {
 	case err != nil && launched && task.GetSpec().GetGoal().GetText() != "":
 		// The launcher would have nothing to read.
@@ -276,7 +276,7 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(commandEnv(task, metadataURL), files.env...)
+	cmd.Env = append(commandEnv(task, metadataURL, wsPath), files.env...)
 	// A dedicated process group lets shutdown signal the command together with
 	// anything it spawned.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -380,14 +380,23 @@ func reportExit(cfg Config, cmd *exec.Cmd, err error) {
 }
 
 // commandEnv builds the environment for the task command: the runner's own
-// environment, the metadata URL, and the Task's spec.env entries.
-func commandEnv(task *v1alpha1.Task, metadataURL string) []string {
-	env := append(os.Environ(), "AX_METADATA_URL="+metadataURL)
+// environment, the metadata URL, the status file, and the Task's spec.env
+// entries.
+func commandEnv(task *v1alpha1.Task, metadataURL, wsPath string) []string {
+	env := append(os.Environ(), "AX_METADATA_URL="+metadataURL, StatusFileEnv+"="+metadata.StatusFile(wsPath))
 	for _, e := range task.GetSpec().GetEnv() {
 		env = append(env, fmt.Sprintf("%s=%s", e.GetName(), e.GetValue()))
 	}
 	return env
 }
+
+// StatusFileEnv names the file in which the agent running in the task
+// reports how the task ended, as one JSON object of at most 16 KiB:
+// {"state": "COMPLETED" or "FAILED", "message": "...", "output": "..."}. It is
+// <workspace>/.ax/status, on the workspace volume so it survives suspend. The
+// runner never writes it or its directory; the agent does. The command's
+// exit status does not say how the task ended.
+const StatusFileEnv = "AX_STATUS_FILE"
 
 // The user a pushed task's command runs as when the runner runs as root.
 const (

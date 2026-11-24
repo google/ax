@@ -12,6 +12,7 @@ the `ax` CLI, against a configurable Substrate branch, tag, or commit.
 |---|---|
 | `harness_test.go` | `TestMain`, cluster connection setup, and shared helpers |
 | `e2e_test.go` | The test cases |
+| `status_test.go` | How a task ended: the status file an agent writes, recorded by ax-server |
 | `manifests/` | Namespace, WorkerPool, PostgreSQL, ax-server, credential policy, and echo server manifests (rendered with `envsubst`) |
 | `Dockerfile.runner.e2e` | Extends `Dockerfile.runner` with test fixtures (a sample Git repo) |
 

@@ -62,7 +62,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 
 **Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server, `AX_STATUS_FILE` (below), plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
-**Report how the task ended.** `AX_STATUS_FILE` names `<workspace>/.ax/status`, which is on the workspace volume so that it survives suspend and resume. The command reports how the task ended by writing one JSON object of at most 16 KiB to it:
+**Report how the task ended.** `AX_STATUS_FILE` names `<workspace>/.ax/status`, which is on the workspace volume so that it survives suspend and resume. The agent running in the task reports how the task ended by writing one JSON object of at most 16 KiB to it, creating the directory if needed; the runner never writes the file:
 
 ```json
 {"state": "COMPLETED", "output": "Added subtract() and its test."}

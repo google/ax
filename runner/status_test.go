@@ -60,7 +60,8 @@ func TestRun_ServesHowTheTaskEnded(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.task.Spec.Commands = []string{"sh", "-c", tc.script}
+			// The runner does not make the status file's directory.
+			h.task.Spec.Commands = []string{"sh", "-c", `mkdir -p "$(dirname "$AX_STATUS_FILE")"; ` + tc.script}
 			h.runUntilCommandExits(t)
 
 			got := getStatus(t, h.cfg.Port)
@@ -80,6 +81,7 @@ func TestRun_ServesStatusWhileCommandRuns(t *testing.T) {
 	h := newHarness(t)
 	report := filepath.Join(t.TempDir(), "report")
 	h.task.Spec.Commands = []string{"sh", "-c", `while [ ! -f ` + report + ` ]; do sleep 0.02; done
+mkdir -p "$(dirname "$AX_STATUS_FILE")"
 echo '{"state": "COMPLETED"}' > "$AX_STATUS_FILE.tmp" && mv "$AX_STATUS_FILE.tmp" "$AX_STATUS_FILE"
 sleep 30`}
 	h.start(t)
