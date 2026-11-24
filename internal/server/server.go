@@ -541,12 +541,6 @@ func (s *Server) getStoredTask(ctx context.Context, atespace, name string) (*v1a
 	return s.store.GetTask(ctx, atespace, name)
 }
 
-// listRunningTasks returns the stored tasks that may be running (see
-// store.Store.ListRunningTasks), without live actor status from Substrate.
-func (s *Server) listRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
-	return s.store.ListRunningTasks(ctx)
-}
-
 // getTask returns a task with its Substrate-owned status filled in.
 func (s *Server) getTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error) {
 	task, err := s.getStoredTask(ctx, atespace, name)

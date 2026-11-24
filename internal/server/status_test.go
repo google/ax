@@ -70,7 +70,7 @@ func TestStoredStatus(t *testing.T) {
 // between stored and Substrate-owned status.
 func TestTasksGoThroughHelpers(t *testing.T) {
 	helpers := map[string]bool{
-		"getStoredTask": true, "getTask": true, "listTasks": true, "listRunningTasks": true,
+		"getStoredTask": true, "getTask": true, "listTasks": true,
 		"saveTask": true, "updateTask": true, "deleteTask": true,
 	}
 	files, err := filepath.Glob("*.go")

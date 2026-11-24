@@ -20,9 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
 
 // observeConcurrency caps how many runners ObserveStatus asks at once.
@@ -32,8 +30,8 @@ import (
 // runner, each with a 2 s timeout, before the next one starts.
 const observeConcurrency = 16
 
-// ObserveStatus asks the runner of every running task (store.ListRunningTasks,
-// then the actor's state on Agent Substrate) how the task ended, and stores
+// ObserveStatus asks the runner of every running task how the task ended, and
+// stores
 // the COMPLETED and FAILED ones as the tasks' states and outcomes. It repeats
 // every interval until ctx is done. Reads take both from the store, so
 // they need no sandbox, and suspending or resuming a task keeps the state.
@@ -72,16 +70,34 @@ func (s *Server) observeStatusOnce(ctx context.Context) {
 	wg.Wait()
 }
 
-// observeTaskStatus asks the runner of task, a task that may be running, how
-// the task ended and, once it reports COMPLETED or FAILED, stores that.
+// observePageSize is how many tasks listRunningTasks reads at a time.
+const observePageSize = 100
+
+// listRunningTasks returns the running tasks of all atespaces that are not
+// being deleted. Running is the actor's live state on Agent Substrate, so
+// every task is listed with listTasks and the running ones are kept.
+func (s *Server) listRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
+	var running []*v1alpha1.Task
+	for offset := int64(0); ; offset += observePageSize {
+		tasks, err := s.listTasks(ctx, "", observePageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, task := range tasks {
+			if task.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_RUNNING && task.GetMetadata().GetDeleteTime() == nil {
+				running = append(running, task)
+			}
+		}
+		if len(tasks) < observePageSize {
+			return running, nil
+		}
+	}
+}
+
+// observeTaskStatus asks the runner of task, a running task, how the task
+// ended and, once it reports COMPLETED or FAILED, stores that.
 func (s *Server) observeTaskStatus(ctx context.Context, task *v1alpha1.Task) {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
-	// Only a running actor's runner is asked: a request to a suspended one
-	// would not be answered.
-	actor, err := s.substrate.GetActor(ctx, atespace, name)
-	if err != nil || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
-		return
-	}
 	rs, err := s.taskManager.RunnerStatus(ctx, atespace, name)
 	if err != nil {
 		return
@@ -118,5 +134,5 @@ func (s *Server) observeTaskStatus(ctx context.Context, task *v1alpha1.Task) {
 // awaitsEnd reports whether a stored task can still report how it ended: it
 // has no state of AX's own, such as Completed, and is not being deleted.
 func awaitsEnd(task *v1alpha1.Task) bool {
-	return task.GetStatus() != nil && store.MayBeRunning(task)
+	return task.GetStatus() != nil && !v1alpha1.IsAXTaskState(task.Status.State) && task.GetMetadata().GetDeleteTime() == nil
 }

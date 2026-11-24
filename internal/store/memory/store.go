@@ -146,20 +146,6 @@ func (s *MemoryStore) ListTasks(ctx context.Context, atespace string, limit, off
 	return paginate(result, limit, offset), nil
 }
 
-func (s *MemoryStore) ListRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var result []*v1alpha1.Task
-	for _, t := range s.tasks {
-		if store.MayBeRunning(t) {
-			result = append(result, clone(t))
-		}
-	}
-	sortByKey(result)
-	return result, nil
-}
-
 func (s *MemoryStore) UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error {
 	key := taskKey(atespace, name)
 

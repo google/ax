@@ -19,13 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"testing"
 	"time"
 
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // testURL returns the database URL from $AX_TEST_POSTGRES_URL, skipping the
@@ -379,34 +377,5 @@ func TestSaveTaskPreservesUnspecifiedState(t *testing.T) {
 	}
 	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
 		t.Fatalf("stored state = %v, want UNSPECIFIED", got.GetStatus().GetState())
-	}
-}
-
-// ListRunningTasks returns the tasks of all atespaces that have no stored
-// state and are not being deleted.
-func TestListRunningTasks(t *testing.T) {
-	s := openTest(t, Options{})
-	ctx := t.Context()
-	for _, task := range []*v1alpha1.Task{
-		{Metadata: &v1alpha1.ObjectMeta{Name: "running", Atespace: "a"}},
-		{Metadata: &v1alpha1.ObjectMeta{Name: "running", Atespace: "b"}},
-		{Metadata: &v1alpha1.ObjectMeta{Name: "queued", Atespace: "a"}, Status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED}},
-		{Metadata: &v1alpha1.ObjectMeta{Name: "completed", Atespace: "a"}, Status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED}},
-		{Metadata: &v1alpha1.ObjectMeta{Name: "deleting", Atespace: "a", DeleteTime: timestamppb.Now()}},
-	} {
-		if err := s.SaveTask(ctx, task); err != nil {
-			t.Fatalf("SaveTask: %v", err)
-		}
-	}
-	tasks, err := s.ListRunningTasks(ctx)
-	if err != nil {
-		t.Fatalf("ListRunningTasks: %v", err)
-	}
-	var got []string
-	for _, task := range tasks {
-		got = append(got, task.GetMetadata().GetAtespace()+"/"+task.GetMetadata().GetName())
-	}
-	if want := []string{"a/running", "b/running"}; !slices.Equal(got, want) {
-		t.Errorf("ListRunningTasks = %v, want %v", got, want)
 	}
 }
