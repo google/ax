@@ -486,7 +486,7 @@ spec:
   goal:
     text: "In three short bullet points, what does this library do and why would I use it?"
   config:
-    model: gemini-3.8-flash
+    model: gemini-4-hydrogen
     files: ["chalk/readme.md"]
   env:
     - name: GEMINI_API_KEY
