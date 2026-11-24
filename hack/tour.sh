@@ -176,7 +176,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cat << 'EOF'
+# The banner, in a gradient of 256-color shades, one per line.
+shades=(33 39 38 44 49)
+i=0
+while IFS= read -r line; do
+  printf '\033[1;38;5;%sm%s%s\n' "${shades[i++]}" "${line}" "${reset}"
+done << 'EOF'
     _    __  __  _____
    / \   \ \/ / |_   _|__  _   _ _ __
   / _ \   \  /    | |/ _ \| | | | '__|
