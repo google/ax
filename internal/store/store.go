@@ -53,3 +53,18 @@ type Store interface {
 
 	Close() error
 }
+
+// WorkingQueue holds the working tasks, those whose end ax-server has yet to
+// record: ax-server asks their runners how they ended. It is kept by the
+// Store that holds the tasks, so that deleting a task removes it from the
+// queue.
+type WorkingQueue interface {
+	// Queue adds a stored task to the queue. Queueing a task again is not an
+	// error. It returns ErrNotFound if the task is not stored.
+	Queue(ctx context.Context, task *v1alpha1.ObjectRef) error
+	// Claim returns the queued tasks of all atespaces. The tasks stay queued.
+	Claim(ctx context.Context) ([]*v1alpha1.ObjectRef, error)
+	// Delete removes a task from the queue. Deleting a task that is not
+	// queued is not an error.
+	Delete(ctx context.Context, task *v1alpha1.ObjectRef) error
+}

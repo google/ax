@@ -20,10 +20,11 @@
 # $AX_IMAGE_REPO/<name>:<version>. Adding an image here is what publishes it.
 RELEASE_IMAGES=(ax-server ax-runner ax-runner-volume)
 
-# image_binary prints the Go binary (./cmd/<binary>) image $1 holds, and
-# image_binary_path where the image holds it.
-image_binary() {
+# image_binaries prints the Go binaries (./cmd/<binary>) image $1 holds, its
+# own first, and image_binary_path where the image holds its own.
+image_binaries() {
   case "$1" in
+    ax-server) echo ax-server ax-observer ;;
     ax-runner-volume) echo ax-runner ;;
     *) echo "$1" ;;
   esac

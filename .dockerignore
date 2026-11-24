@@ -8,9 +8,12 @@ bin/*
 !bin/linux_amd64
 !bin/linux_amd64/ax-runner
 !bin/linux_amd64/ax-server
+!bin/linux_amd64/ax-observer
 !bin/linux_arm64
 !bin/linux_arm64/ax-runner
 !bin/linux_arm64/ax-server
+!bin/linux_arm64/ax-observer
 ax
 ax-server
+ax-observer
 ax-runner

@@ -32,7 +32,7 @@ data:
 ```
 
 ```bash
-kubectl -n ax-system rollout restart deployment/ax-server
+kubectl -n ax-system rollout restart deployment/ax-server deployment/ax-observer
 ```
 
 On a cluster that runs Agent Substrate, the endpoint can be the one in
@@ -118,9 +118,10 @@ These buckets do not apply to them, so their buckets stop at 10 seconds.
 ax-server records a server span for each AX RPC that it serves. It records a
 client span for each call that it makes to Substrate. Reconciles run inside
 the RPC, so `CreateActor` and `ResumeActor` show under the `CreateTask` or
-`ResumeTask` span. The background loop that records how tasks ended calls
-`ListActors` every few seconds outside any RPC, so those client spans have no
-parent.
+`ResumeTask` span. ax-observer, which records how tasks ended, calls
+`GetActor` every few seconds outside any RPC, so its client spans have no
+parent. It uses the same OpenTelemetry settings as ax-server, with
+`service.name=ax-observer`, and serves `/metrics` on port 9090.
 
 - **Trace context:** the server span is a child of the caller's
   `traceparent`. ax-server sends `traceparent` to Substrate, which also

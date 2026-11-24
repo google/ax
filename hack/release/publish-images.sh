@@ -169,13 +169,14 @@ if [[ ${#build[@]} -gt 0 ]]; then
     mkdir -p "bin/${os}_${arch}"
     bins=()
     for image in "${build[@]}"; do
-      bin="$(image_binary "${image}")"
-      [[ " ${bins[*]} " == *" ${bin} "* ]] && continue
-      bins+=("${bin}")
-      echo "==> Cross-compiling ${bin} for ${p}"
-      GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
-        go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
-        -o "bin/${os}_${arch}/${bin}" "./cmd/${bin}"
+      for bin in $(image_binaries "${image}"); do
+        [[ " ${bins[*]} " == *" ${bin} "* ]] && continue
+        bins+=("${bin}")
+        echo "==> Cross-compiling ${bin} for ${p}"
+        GOOS="${os}" GOARCH="${arch}" CGO_ENABLED=0 \
+          go build -trimpath -ldflags="$(go_ldflags "${VERSION}")" \
+          -o "bin/${os}_${arch}/${bin}" "./cmd/${bin}"
+      done
     done
   done
 

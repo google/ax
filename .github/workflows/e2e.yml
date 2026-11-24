@@ -89,6 +89,7 @@ jobs:
         [[ -f "${KUBECONFIG}" ]] || exit 0
         kubectl get pods -A -o wide || true
         kubectl -n ax-system logs deployment/ax-server --tail=200 || true
+        kubectl -n ax-system logs deployment/ax-observer --tail=200 || true
         kubectl -n ate-system logs deployment/ate-api-server --all-containers --tail=200 || true
 
   # The only job that runs `ax local start`: the E2E job above installs AX

@@ -324,12 +324,13 @@ k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-workers --timeout=180
 
 # 4. Build AX binaries and images. ax-server and ax-runner run in the
 #    cluster (linux); the ax CLI runs on the host.
-log "Building ax (host), ax-server and ax-runner (linux/${GOARCH})..."
+log "Building ax (host), ax-server, ax-observer and ax-runner (linux/${GOARCH})..."
 (
   cd "${REPO_ROOT}"
   mkdir -p "bin/linux_${GOARCH}"
   CGO_ENABLED=0 go build -o "${TMP_DIR}/bin/ax" ./cmd/ax
   CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-server" ./cmd/ax-server
+  CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-observer" ./cmd/ax-observer
   CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" go build -o "bin/linux_${GOARCH}/ax-runner" ./cmd/ax-runner
 )
 
@@ -352,7 +353,7 @@ printf '  AX_SERVER_IMAGE=%s\n  AX_E2E_TASK_IMAGE=%s\n  AX_RUNNER_VOLUME_IMAGE=%
 # 5. Deploy Postgres and ax-server. Delete existing workloads and Postgres's
 #    volume first so every run starts from an empty database.
 log "Deploying ax-postgres and ax-server in namespace '${AX_SYSTEM_NAMESPACE}'..."
-k -n "${AX_SYSTEM_NAMESPACE}" delete deployment ax-server --ignore-not-found
+k -n "${AX_SYSTEM_NAMESPACE}" delete deployment ax-server ax-observer --ignore-not-found
 k -n "${AX_SYSTEM_NAMESPACE}" delete statefulset ax-postgres --ignore-not-found --wait
 k -n "${AX_SYSTEM_NAMESPACE}" delete pvc -l app.kubernetes.io/name=ax-postgres --ignore-not-found --wait
 k -n "${AX_SYSTEM_NAMESPACE}" create secret generic ax-postgres \
@@ -361,6 +362,7 @@ render_manifest postgres.yaml | k apply -f -
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status statefulset/ax-postgres --timeout=180s
 render_manifest ax-server.yaml | k apply -f -
 k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-server --timeout=120s
+k -n "${AX_SYSTEM_NAMESPACE}" rollout status deployment/ax-observer --timeout=120s
 
 # 6. Set up what TestE2E_GatewayEgress needs.
 log "Setting up the credential provider, the egress gateway and the echo server..."

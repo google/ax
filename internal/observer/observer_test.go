@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package server
+package observer
 
 import (
 	"context"
@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/google/ax/internal/controller"
+	"github.com/google/ax/internal/lock"
+	"github.com/google/ax/internal/server"
 	"github.com/google/ax/internal/store/memory"
 	"github.com/google/ax/internal/substrate/substratetest"
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -37,9 +39,17 @@ type fakeRunner struct {
 	reads  atomic.Int32
 }
 
+// observed is a server whose task "t" runs in an actor with a fake runner, and
+// an Observer of its store.
+type observed struct {
+	*server.Server
+	store *memory.MemoryStore
+	o     *Observer
+}
+
 // newRunningTask returns a server whose task "t" runs in an actor with a fake
 // runner, next to a running actor that is not a task's.
-func newRunningTask(t *testing.T) (*Server, *fakeRunner) {
+func newRunningTask(t *testing.T) (*observed, *fakeRunner) {
 	t.Helper()
 	runner := &fakeRunner{}
 	runner.status.Store(&v1alpha1.RunnerStatus{})
@@ -58,8 +68,18 @@ func newRunningTask(t *testing.T) (*Server, *fakeRunner) {
 	t.Setenv("ATENET_ROUTER_ADDR", router.URL)
 
 	sub := substratetest.NewServer(t)
-	sub.SetActor(testActor("not-a-task", ateapipb.ActorState_ACTOR_STATE_RUNNING))
-	srv := NewServer(memory.NewStore(), controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace))
+	sub.SetActor(&ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: "not-a-task"},
+		Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_RUNNING},
+	})
+	mem := memory.NewStore()
+	locker := lock.NewMemoryLocker()
+	tasks := controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
+	srv := &observed{
+		Server: server.NewServer(mem, tasks, server.Options{Locker: locker}),
+		store:  mem,
+		o:      New(mem, mem, locker, tasks),
+	}
 	ctx := context.Background()
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "t"},
@@ -73,7 +93,7 @@ func newRunningTask(t *testing.T) (*Server, *fakeRunner) {
 	return srv, runner
 }
 
-func getTestTask(t *testing.T, srv *Server) *v1alpha1.Task {
+func getTestTask(t *testing.T, srv *observed) *v1alpha1.Task {
 	t.Helper()
 	task, err := srv.GetTask(context.Background(), &v1alpha1.GetTaskRequest{Name: "t"})
 	if err != nil {
@@ -85,7 +105,7 @@ func getTestTask(t *testing.T, srv *Server) *v1alpha1.Task {
 // A pass asks the runner of a running task how the task ended, and stores
 // Completed or Failed with the outcome. After that the runner is not asked
 // again, and suspending and resuming the task keep the state.
-func TestObserveStatus(t *testing.T) {
+func TestObserver(t *testing.T) {
 	for _, tc := range []struct {
 		reported   v1alpha1.RunnerStatus
 		wantState  v1alpha1.TaskState
@@ -126,13 +146,13 @@ func TestObserveStatus(t *testing.T) {
 			}
 
 			// Until the runner reports an end, the task is Running.
-			srv.observeStatusOnce(ctx)
+			srv.o.once(ctx)
 			if task := getTestTask(t, srv); task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING || task.GetStatus().GetOutcome() != nil {
 				t.Fatalf("status = %v, want RUNNING without an outcome", task.GetStatus())
 			}
 
 			runner.status.Store(&tc.reported)
-			srv.observeStatusOnce(ctx)
+			srv.o.once(ctx)
 			check("GetTask", getTestTask(t, srv))
 			stored, err := srv.store.GetTask(ctx, "default", "t")
 			if err != nil {
@@ -150,7 +170,7 @@ func TestObserveStatus(t *testing.T) {
 				t.Fatalf("ResumeTask: %v", err)
 			}
 			check("resumed", resumed)
-			srv.observeStatusOnce(ctx)
+			srv.o.once(ctx)
 			check("after another pass", getTestTask(t, srv))
 			if got := runner.reads.Load(); got != 2 {
 				t.Errorf("the runner was asked %d times, want 2: not again after the task ended", got)
@@ -161,14 +181,14 @@ func TestObserveStatus(t *testing.T) {
 
 // A pass asks only the runners of running actors: not a suspended task's, and
 // not an actor that is not a task's.
-func TestObserveStatus_AsksOnlyRunningTasks(t *testing.T) {
+func TestObserver_AsksOnlyRunningTasks(t *testing.T) {
 	srv, runner := newRunningTask(t)
 	ctx := context.Background()
 	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "t"}); err != nil {
 		t.Fatalf("SuspendTask: %v", err)
 	}
 	runner.status.Store(&v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateCompleted})
-	srv.observeStatusOnce(ctx)
+	srv.o.once(ctx)
 	if got := runner.reads.Load(); got != 0 {
 		t.Errorf("the suspended task's runner was asked %d times, want 0", got)
 	}
@@ -177,14 +197,14 @@ func TestObserveStatus_AsksOnlyRunningTasks(t *testing.T) {
 	}
 }
 
-// observeStatus makes a pass every interval until its context is done.
-func TestObserveStatus_Repeats(t *testing.T) {
+// run makes a pass every interval until its context is done.
+func TestObserver_Repeats(t *testing.T) {
 	srv, runner := newRunningTask(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		srv.observeStatus(ctx, time.Millisecond)
+		srv.o.run(ctx, time.Millisecond)
 	}()
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
@@ -206,6 +226,49 @@ func TestObserveStatus_Repeats(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("ObserveStatus did not return after its context was done")
+		t.Fatal("run did not return after its context was done")
+	}
+}
+
+// ResumeTask queues a task as working. Recording its end removes it, and
+// resuming the ended task does not add it again.
+func TestObserver_WorkingTasks(t *testing.T) {
+	srv, runner := newRunningTask(t)
+	ctx := context.Background()
+	check := func(what string, want int) {
+		t.Helper()
+		got, err := srv.store.Claim(ctx)
+		if err != nil {
+			t.Fatalf("%s: Claim: %v", what, err)
+		}
+		if len(got) != want {
+			t.Errorf("%s: working tasks = %v, want %d", what, got, want)
+		}
+	}
+	check("resumed", 1)
+	srv.o.once(ctx)
+	check("no end yet", 1)
+	runner.status.Store(&v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateCompleted})
+	srv.o.once(ctx)
+	check("ended", 0)
+	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "t"}); err != nil {
+		t.Fatalf("ResumeTask: %v", err)
+	}
+	check("resumed after the end", 0)
+}
+
+// Deleting a working task removes it from the queue.
+func TestObserver_DeleteTask(t *testing.T) {
+	srv, runner := newRunningTask(t)
+	ctx := context.Background()
+	if _, err := srv.DeleteTask(ctx, &v1alpha1.DeleteTaskRequest{Name: "t"}); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	if got, err := srv.store.Claim(ctx); err != nil || len(got) != 0 {
+		t.Errorf("Claim = %v, %v; want none", got, err)
+	}
+	srv.o.once(ctx)
+	if got := runner.reads.Load(); got != 0 {
+		t.Errorf("the deleted task's runner was asked %d times, want 0", got)
 	}
 }

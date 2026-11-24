@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func openTest(t *testing.T, opts Options) *Store {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if _, err := s.pool.Exec(ctx, `TRUNCATE tasks, workspaces, gateways, models, locks`); err != nil {
+	if _, err := s.pool.Exec(ctx, `TRUNCATE working_tasks, tasks, workspaces, gateways, models, locks`); err != nil {
 		t.Fatalf("truncating tables: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
@@ -55,7 +56,7 @@ func openTest(t *testing.T, opts Options) *Store {
 func TestCreateSchemaConcurrent(t *testing.T) {
 	s := openTest(t, Options{})
 	ctx := context.Background()
-	if _, err := s.pool.Exec(ctx, `DROP TABLE tasks, workspaces, gateways, models, locks`); err != nil {
+	if _, err := s.pool.Exec(ctx, `DROP TABLE working_tasks, tasks, workspaces, gateways, models, locks`); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate several replicas starting at once.
@@ -378,4 +379,66 @@ func TestSaveTaskPreservesUnspecifiedState(t *testing.T) {
 	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
 		t.Fatalf("stored state = %v, want UNSPECIFIED", got.GetStatus().GetState())
 	}
+}
+
+// A task stays in the working queue until it or the task is deleted, and only
+// a stored task can be queued.
+func TestWorkingTasks(t *testing.T) {
+	s := openTest(t, Options{})
+	ctx := t.Context()
+	if err := s.Queue(ctx, &v1alpha1.ObjectRef{Atespace: "default", Name: "missing"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Queue(missing) = %v, want ErrNotFound", err)
+	}
+	for _, name := range []string{"a", "b"} {
+		if err := s.SaveTask(ctx, &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: "default"}}); err != nil {
+			t.Fatalf("SaveTask(%s): %v", name, err)
+		}
+		// Adding twice is not an error.
+		for range 2 {
+			if err := s.Queue(ctx, &v1alpha1.ObjectRef{Atespace: "default", Name: name}); err != nil {
+				t.Fatalf("Queue(%s): %v", name, err)
+			}
+		}
+	}
+	check := func(what string, want ...string) {
+		t.Helper()
+		got, err := s.Claim(ctx)
+		if err != nil {
+			t.Fatalf("%s: Claim: %v", what, err)
+		}
+		var names []string
+		for _, w := range got {
+			if w.GetAtespace() != "default" {
+				t.Errorf("%s: working task %v, want atespace default", what, w)
+			}
+			names = append(names, w.GetName())
+		}
+		if !slices.Equal(names, want) {
+			t.Errorf("%s: working tasks = %v, want %v", what, names, want)
+		}
+	}
+	check("added", "a", "b")
+
+	// Saving a task again keeps it queued.
+	if err := s.SaveTask(ctx, &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "a", Atespace: "default"}}); err != nil {
+		t.Fatalf("SaveTask(a): %v", err)
+	}
+	check("saved again", "a", "b")
+
+	a := &v1alpha1.ObjectRef{Atespace: "default", Name: "a"}
+	if err := s.Delete(ctx, a); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if err := s.Delete(ctx, a); err != nil {
+		t.Fatalf("Delete again: %v", err)
+	}
+	if _, err := s.GetTask(ctx, "default", "a"); err != nil {
+		t.Fatalf("GetTask(a) after Delete: %v", err)
+	}
+	check("mark deleted", "b")
+
+	if err := s.DeleteTask(ctx, "default", "b"); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	check("task deleted")
 }

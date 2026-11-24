@@ -56,7 +56,7 @@ All Control API traffic goes through this package. It encapsulates:
 
 | Value | Occurrences |
 |---|---|
-| `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (`NewClientWithOptions`: default target, TLS `ServerName`, authority), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
+| `api.ate-system.svc.cluster.local:443` + authority `api.ate-system.svc` | `cmd/ax-server/main.go` and `cmd/ax-observer/main.go` (`--substrate-endpoint` / `--substrate-authority` flag defaults), `internal/substrate/client.go` (`NewClientWithOptions`: default target, TLS `ServerName`, authority), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `test/e2e/harness_test.go` |
 | `atenet-router.ate-system.svc[.cluster.local]` | `internal/controller/task.go` (`defaultRouterServerName`), `internal/tunnel/router_tls.go` (`routerServerName`), `cmd/ax/main.go` (ssh port-forward path), `internal/guest/client.go` (doc comment), `deploy/ax-server.yaml`, `test/e2e/manifests/ax-server.yaml`, `docs/networking.md` |
 | namespace `ate-system` | all of the above + `test/e2e/harness_test.go` (`ateSystemNamespace`), `test/e2e/manifests/credential-policy.yaml`, `internal/install/axdeploy/authz.go`, `internal/install/cluster/kind.go`, `internal/install/substrate/bootstrap.go`, `internal/install/substrate/pki.go`, `hack/sync-substrate-manifests.sh` (and generated `internal/install/substrate/manifests/*.yaml`) |
 | pod labels `ate.dev/worker-pool` (worker pods) and `app: atenet-egress` (egress gateway) | the `ax-server` NetworkPolicy in `deploy/ax-server.yaml` and `test/e2e/manifests/ax-server.yaml`, which keeps both away from ax-server |
@@ -135,14 +135,19 @@ instead. No mocking library is in `go.mod`.
   `ActorResumeFailed` when the runner refuses the task or reports a failure
   for a task whose workspace is already set up.
 - How a task ended is pulled, never pushed, by a background loop:
-  `Server.ObserveStatus` (`internal/server/observe.go`), which
-  `cmd/ax-server/main.go` starts; it makes a pass every `observeInterval`
-  (same file). Each pass lists the actors of all atespaces (`ListActors`
-  with an empty atespace; Substrate cannot filter by state yet,
-  agent-substrate/substrate#1256), keeps the `ACTOR_STATE_RUNNING` ones, and
-  GETs `v1alpha1.RunnerStatusPath` through `atenet-router` for each whose
-  task has no stored state and is not being deleted
-  (`TaskManager.RunnerStatus` in
+  `Observer.Run` (`internal/observer/observer.go`), which the separate
+  binary `cmd/ax-observer` runs (the one-replica
+  `ax-observer` Deployment in `deploy/ax-server.yaml`, same image
+  and service account as ax-server); it makes a pass every `interval`
+  (same file). Each pass lists the working tasks, those whose end is not
+  recorded yet (`store.WorkingQueue`, kept by the task store; Postgres
+  table `working_tasks`, which cascades on task deletion). `ResumeTask`
+  adds a task without an outcome, and recording the end removes it; suspend
+  leaves it. For each working task the pass calls `GetActor`, skips it
+  unless the actor is `ACTOR_STATE_RUNNING` (asking a suspended one would
+  resume it), and GETs
+  `v1alpha1.RunnerStatusPath` through `atenet-router` for each whose task has
+  no stored state and is not being deleted (`TaskManager.RunnerStatus` in
   `internal/controller/actorhttp.go`), then stores the first
   `COMPLETED`/`FAILED` with `status.outcome` under the task lock. Reads
   (`getTask`, `listTasks`) never ask the runner. The runner serves the status

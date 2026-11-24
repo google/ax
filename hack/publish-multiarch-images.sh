@@ -39,10 +39,12 @@ cd "${REPO_ROOT}"
 export GOTOOLCHAIN=auto
 
 for arch in amd64 arm64; do
-  echo "==> Cross-compiling ax-server and ax-runner for linux/${arch}..."
+  echo "==> Cross-compiling ax-server, ax-observer and ax-runner for linux/${arch}..."
   mkdir -p "bin/linux_${arch}"
   CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags="-s -w" \
     -o "bin/linux_${arch}/ax-server" ./cmd/ax-server
+  CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags="-s -w" \
+    -o "bin/linux_${arch}/ax-observer" ./cmd/ax-observer
   CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags="-s -w" \
     -o "bin/linux_${arch}/ax-runner" ./cmd/ax-runner
 done

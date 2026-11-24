@@ -46,10 +46,11 @@ GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
 
 # Build all local binaries (ax CLI, server)
 build:
-	@echo "==> Building local binaries (ax, ax-server)..."
+	@echo "==> Building local binaries (ax, ax-server, ax-observer)..."
 	@mkdir -p bin
 	go build -trimpath -ldflags="-s -w" -o bin/ax ./cmd/ax
 	go build -trimpath -ldflags="-s -w" -o bin/ax-server ./cmd/ax-server
+	go build -trimpath -ldflags="-s -w" -o bin/ax-observer ./cmd/ax-observer
 
 # Install the ax CLI into $(go env GOPATH)/bin
 install:
@@ -61,15 +62,16 @@ check-image-repo:
 		echo "error: AX_IMAGE_REPO is not set (e.g. AX_IMAGE_REPO=gcr.io/my-project)"; exit 1; \
 	fi
 
-# Cross-compile ax-server and ax-runner for linux/$(IMAGE_ARCH), then build
-# and push their container images.
+# Cross-compile ax-server, ax-observer (in the ax-server image) and
+# ax-runner for linux/$(IMAGE_ARCH), then build and push their container images.
 images: check-image-repo
 	@if [ -z "$(CONTAINER_CLI)" ]; then \
 		echo "error: neither podman nor docker found in PATH (or set CONTAINER_CLI)"; exit 1; \
 	fi
-	@echo "==> Cross-compiling ax-server and ax-runner for linux/$(IMAGE_ARCH)..."
+	@echo "==> Cross-compiling ax-server, ax-observer and ax-runner for linux/$(IMAGE_ARCH)..."
 	@mkdir -p bin/linux_$(IMAGE_ARCH)
 	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-server ./cmd/ax-server
+	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-observer ./cmd/ax-observer
 	GOOS=linux GOARCH=$(IMAGE_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/linux_$(IMAGE_ARCH)/ax-runner ./cmd/ax-runner
 	@echo "==> Building $(AX_SERVER_IMAGE) using $(CONTAINER_CLI)..."
 	$(CONTAINER_CLI) build --platform linux/$(IMAGE_ARCH) --build-arg TARGETARCH=$(IMAGE_ARCH) -t $(AX_SERVER_IMAGE) -f Dockerfile.server .

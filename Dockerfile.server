@@ -18,5 +18,6 @@ RUN apk add --no-cache ca-certificates
 
 ARG TARGETARCH
 COPY bin/linux_${TARGETARCH:-amd64}/ax-server /usr/local/bin/ax-server
+COPY bin/linux_${TARGETARCH:-amd64}/ax-observer /usr/local/bin/ax-observer
 
 ENTRYPOINT ["/usr/local/bin/ax-server"]

@@ -61,6 +61,7 @@ jobs:
       run: |
         go build -v ./cmd/ax
         go build -v ./cmd/ax-server
+        go build -v ./cmd/ax-observer
         go build -v ./cmd/ax-runner
 
     - name: Test

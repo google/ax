@@ -171,8 +171,10 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if _, err := k.run(ctx, bytes.NewReader(srvManifest), "apply", "-f", "-"); err != nil {
 		return fmt.Errorf("applying ax-server: %w", err)
 	}
-	if err := k.rolloutStatus(ctx, ns, "deployment/ax-server", timeout); err != nil {
-		return err
+	for _, d := range []string{"deployment/ax-server", "deployment/ax-observer"} {
+		if err := k.rolloutStatus(ctx, ns, d, timeout); err != nil {
+			return err
+		}
 	}
 
 	// Stop any stale port-forward tunnel so the next CLI call reconnects cleanly
@@ -231,6 +233,7 @@ func Uninstall(ctx context.Context, opts UninstallOptions) error {
 	roleName := deploy.ClusterRoleName(ns)
 	for _, target := range [][]string{
 		{"-n", ns, "delete", "deployment", "ax-server", "--ignore-not-found"},
+		{"-n", ns, "delete", "deployment", "ax-observer", "--ignore-not-found"},
 		{"-n", ns, "delete", "service", "ax-server", "--ignore-not-found"},
 		{"-n", ns, "delete", "configmap", "ax-otel-config", "--ignore-not-found"},
 		{"-n", ns, "delete", "networkpolicy", "ax-server", "--ignore-not-found"},

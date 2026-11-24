@@ -52,6 +52,7 @@ on:
     - 'go.sum'
     - 'cmd/ax/**'
     - 'cmd/ax-server/**'
+    - 'cmd/ax-observer/**'
     - 'cmd/ax-runner/**'
     - 'internal/version/**'
   workflow_dispatch:

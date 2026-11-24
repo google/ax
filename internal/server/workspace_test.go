@@ -76,7 +76,8 @@ func newPrewarmWorkspaceTestServer(t *testing.T, coord controller.SetupRunner) (
 func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.SetupRunner) (*server.Server, *substratetest.Server, *controller.WorkspaceManager) {
 	t.Helper()
 	sub := substratetest.NewServer(t)
-	st := &ctxCheckingWorkspaceStore{Store: memory.NewStore()}
+	mem := memory.NewStore()
+	st := &ctxCheckingWorkspaceStore{Store: mem}
 	locker := lock.NewMemoryLocker()
 	wsMgr := controller.NewWorkspaceManager(sub.Client(), controller.WorkspaceManagerOptions{
 		Locker:      locker,
@@ -86,6 +87,7 @@ func newPrewarmWorkspaceTestServerWithManager(t *testing.T, coord controller.Set
 	srv := server.NewServer(st, newTestTaskManager(sub), server.Options{
 		Locker:           locker,
 		WorkspaceManager: wsMgr,
+		WorkingQueue:     mem,
 	})
 	return srv, sub, wsMgr
 }

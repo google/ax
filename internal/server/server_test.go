@@ -504,7 +504,7 @@ func TestCreateTask_RequiresBoundWorkspace(t *testing.T) {
 			}
 			sub := substratetest.NewServer(t)
 			rec := newTestTaskManager(sub)
-			srv := server.NewServer(st, rec)
+			srv := server.NewServer(st, rec, server.Options{WorkingQueue: mem})
 
 			task := &v1alpha1.Task{
 				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
@@ -595,7 +595,7 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 			}
 			sub := substratetest.NewServer(t)
 			rec := newTestTaskManager(sub)
-			srv := server.NewServer(st, rec)
+			srv := server.NewServer(st, rec, server.Options{WorkingQueue: mem})
 
 			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 				Metadata: &v1alpha1.ObjectMeta{Atespace: tc.taskAtespace, Name: "task"},
@@ -878,7 +878,7 @@ func TestServer_ResumeAndSuspendWithStoreError(t *testing.T) {
 		{&failGetWorkspaceStore{Store: mem, err: storeErr}, `getting workspace "ws": store unavailable`},
 		{&failGetGatewayStore{Store: mem, err: storeErr}, `getting gateway "gw": store unavailable`},
 	} {
-		srv := server.NewServer(tc.st, newTestTaskManager(sub))
+		srv := server.NewServer(tc.st, newTestTaskManager(sub), server.Options{WorkingQueue: mem})
 		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"}); status.Code(err) != codes.Internal || status.Convert(err).Message() != tc.wantMsg {
 			t.Errorf("ResumeTask: got %v, want Internal %q", err, tc.wantMsg)
 		}
@@ -1110,10 +1110,11 @@ func (f *failSaveTaskStore) SaveTask(ctx context.Context, task *v1alpha1.Task) e
 }
 
 func TestServer_DeleteTask_SetDeleteTimeError(t *testing.T) {
-	st := &failSaveTaskStore{Store: memory.NewStore()}
+	mem := memory.NewStore()
+	st := &failSaveTaskStore{Store: mem}
 	sub := substratetest.NewServer(t)
 	rec := newTestTaskManager(sub)
-	srv := server.NewServer(st, rec)
+	srv := server.NewServer(st, rec, server.Options{WorkingQueue: mem})
 	ctx := context.Background()
 
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{

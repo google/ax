@@ -50,12 +50,17 @@ type Options struct {
 	// When omitted, NewServer constructs one backed by taskManager's Substrate
 	// client and Locker; it has no SetupRunner, so it does not pre-warm.
 	WorkspaceManager *controller.WorkspaceManager
+	// WorkingQueue records the tasks whose runners ax-observer asks
+	// how they ended (internal/observer). It must be kept by the store passed to NewServer, and
+	// defaults to that store if it implements store.WorkingQueue.
+	WorkingQueue store.WorkingQueue
 }
 
 // Server provides the gRPC API for AX.
 type Server struct {
 	v1alpha1.UnimplementedAXServer
 	store       store.Store
+	queue       store.WorkingQueue
 	locker      lock.Locker
 	taskManager *controller.TaskManager
 	workspaces  *controller.WorkspaceManager
@@ -78,6 +83,13 @@ func NewServer(s store.Store, taskManager *controller.TaskManager, opts ...Optio
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
+	queue := opt.WorkingQueue
+	if queue == nil {
+		var ok bool
+		if queue, ok = s.(store.WorkingQueue); !ok {
+			panic("server: NewServer requires Options.WorkingQueue for a store that does not implement store.WorkingQueue")
+		}
+	}
 	workspaces := opt.WorkspaceManager
 	if workspaces == nil {
 		workspaces = controller.NewWorkspaceManager(taskManager.Client(), controller.WorkspaceManagerOptions{
@@ -88,6 +100,7 @@ func NewServer(s store.Store, taskManager *controller.TaskManager, opts ...Optio
 
 	srv := &Server{
 		store:       s,
+		queue:       queue,
 		locker:      locker,
 		taskManager: taskManager,
 		workspaces:  workspaces,
@@ -463,6 +476,12 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
 		return nil, err
 	}
+	// From now on ax-observer asks the task's runner how the task ended.
+	if task.Status.Outcome == nil {
+		if err := s.queue.Queue(ctx, &v1alpha1.ObjectRef{Atespace: atespace, Name: taskName}); err != nil {
+			return nil, status.Errorf(codes.Internal, "queueing task as working: %v", err)
+		}
+	}
 
 	// Report the actor as it is now, as GetTask would.
 	s.applyActor(ctx, task)
@@ -475,8 +494,8 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //     canceling that pending deletion.
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
 //     state from its live Substrate actor rather than keeping a stored Queued
-//     or Failed state. A task that ended (see ObserveStatus) keeps its Completed or
-//     Failed state: those are terminal.
+//     or Failed state. A task that ended (see internal/observer) keeps its
+//     Completed or Failed state: those are terminal.
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {

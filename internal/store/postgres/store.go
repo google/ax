@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package postgres implements store.Store and lock.Locker on PostgreSQL.
+// Package postgres implements store.Store, store.WorkingQueue, and lock.Locker
+// on PostgreSQL.
 //
 // Open takes a libpq-style connection URL; standard libpq environment
 // variables such as PGPASSWORD fill in what it leaves out.
@@ -30,6 +31,7 @@ import (
 	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -50,7 +52,8 @@ type Options struct {
 	LockRetryInterval time.Duration
 }
 
-// Store is a PostgreSQL implementation of store.Store. It is also a
+// Store is a PostgreSQL implementation of store.Store and store.WorkingQueue.
+// It is also a
 // lock.Locker (see Lock) whose locks are shared by every ax-server replica
 // using the same database.
 type Store struct {
@@ -59,8 +62,9 @@ type Store struct {
 }
 
 var (
-	_ store.Store = (*Store)(nil)
-	_ lock.Locker = (*Store)(nil)
+	_ store.Store        = (*Store)(nil)
+	_ store.WorkingQueue = (*Store)(nil)
+	_ lock.Locker        = (*Store)(nil)
 )
 
 // Open connects to the database at connURL and creates any missing tables.
@@ -109,10 +113,11 @@ func defaultAtespace(atespace string) string {
 type table string
 
 const (
-	tasksTable      table = "tasks"
-	workspacesTable table = "workspaces"
-	gatewaysTable   table = "gateways"
-	modelsTable     table = "models"
+	tasksTable        table = "tasks"
+	workingTasksTable table = "working_tasks"
+	workspacesTable   table = "workspaces"
+	gatewaysTable     table = "gateways"
+	modelsTable       table = "models"
 )
 
 // save upserts a resource. Replacing a resource moves it to the front of lists
@@ -279,6 +284,45 @@ func (s *Store) UpdateTaskStatus(ctx context.Context, atespace, name string, sta
 // DeleteTask removes a task. Deleting a missing task is not an error.
 func (s *Store) DeleteTask(ctx context.Context, atespace, name string) error {
 	return s.delete(ctx, tasksTable, atespace, name)
+}
+
+// Queue adds a stored task to the working queue. It returns
+// store.ErrNotFound if the task is not stored.
+func (s *Store) Queue(ctx context.Context, task *v1alpha1.ObjectRef) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO working_tasks (atespace, name)
+		VALUES ($1, $2)
+		ON CONFLICT (atespace, name) DO NOTHING`,
+		defaultAtespace(task.GetAtespace()), task.GetName())
+	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23503" { // foreign_key_violation
+		return store.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("queueing working task: %w", err)
+	}
+	return nil
+}
+
+// Claim returns the tasks in the working queue of all atespaces.
+func (s *Store) Claim(ctx context.Context) ([]*v1alpha1.ObjectRef, error) {
+	rows, err := s.pool.Query(ctx, `SELECT atespace, name FROM working_tasks ORDER BY atespace, name`)
+	if err != nil {
+		return nil, fmt.Errorf("claiming working tasks: %w", err)
+	}
+	tasks, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (*v1alpha1.ObjectRef, error) {
+		ref := &v1alpha1.ObjectRef{}
+		return ref, row.Scan(&ref.Atespace, &ref.Name)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("claiming working tasks: %w", err)
+	}
+	return tasks, nil
+}
+
+// Delete removes a task from the working queue. Deleting a task that is not
+// queued is not an error.
+func (s *Store) Delete(ctx context.Context, task *v1alpha1.ObjectRef) error {
+	return s.delete(ctx, workingTasksTable, task.GetAtespace(), task.GetName())
 }
 
 // --- Workspaces ---

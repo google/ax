@@ -147,6 +147,7 @@ func main() {
 	srv := server.NewServer(backend, manager, server.Options{
 		Locker:           backend,
 		WorkspaceManager: workspaces,
+		WorkingQueue:     backend,
 	})
 
 	httpServer := &http.Server{
@@ -159,8 +160,6 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	go srv.ObserveStatus(ctx)
 
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

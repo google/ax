@@ -14,6 +14,15 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS tasks_saved_at_idx ON tasks (saved_at DESC, atespace, name);
 CREATE INDEX IF NOT EXISTS tasks_atespace_saved_at_idx ON tasks (atespace, saved_at DESC, name);
 
+-- Tasks whose end ax-server has yet to record: ax-server asks the runner of
+-- each one that is running how it ended. Deleting a task deletes its row.
+CREATE TABLE IF NOT EXISTS working_tasks (
+    atespace text NOT NULL,
+    name     text NOT NULL,
+    PRIMARY KEY (atespace, name),
+    FOREIGN KEY (atespace, name) REFERENCES tasks (atespace, name) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS workspaces (
     atespace text        NOT NULL,
     name     text        NOT NULL,

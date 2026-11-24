@@ -42,9 +42,14 @@ type MemoryStore struct {
 	models     map[string]*v1alpha1.Model
 	workspaces map[string]*v1alpha1.Workspace
 	gateways   map[string]*v1alpha1.Gateway
+	// working holds the keys of the working tasks.
+	working map[string]bool
 }
 
-var _ store.Store = (*MemoryStore)(nil)
+var (
+	_ store.Store        = (*MemoryStore)(nil)
+	_ store.WorkingQueue = (*MemoryStore)(nil)
+)
 
 // NewStore creates a new in-memory Store.
 func NewStore() *MemoryStore {
@@ -53,6 +58,7 @@ func NewStore() *MemoryStore {
 		models:     make(map[string]*v1alpha1.Model),
 		workspaces: make(map[string]*v1alpha1.Workspace),
 		gateways:   make(map[string]*v1alpha1.Gateway),
+		working:    make(map[string]bool),
 	}
 }
 
@@ -164,6 +170,39 @@ func (s *MemoryStore) DeleteTask(ctx context.Context, atespace, name string) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.tasks, taskKey(atespace, name))
+	delete(s.working, taskKey(atespace, name))
+	return nil
+}
+
+func (s *MemoryStore) Queue(ctx context.Context, task *v1alpha1.ObjectRef) error {
+	key := taskKey(task.GetAtespace(), task.GetName())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tasks[key]; !ok {
+		return store.ErrNotFound
+	}
+	s.working[key] = true
+	return nil
+}
+
+func (s *MemoryStore) Claim(ctx context.Context) ([]*v1alpha1.ObjectRef, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*v1alpha1.ObjectRef, 0, len(s.working))
+	for key := range s.working {
+		meta := s.tasks[key].GetMetadata()
+		out = append(out, &v1alpha1.ObjectRef{Atespace: meta.GetAtespace(), Name: meta.GetName()})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return taskKey(out[i].Atespace, out[i].Name) < taskKey(out[j].Atespace, out[j].Name)
+	})
+	return out, nil
+}
+
+func (s *MemoryStore) Delete(ctx context.Context, task *v1alpha1.ObjectRef) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.working, taskKey(task.GetAtespace(), task.GetName()))
 	return nil
 }
 

@@ -63,6 +63,7 @@ cleanup() {
     log "Failed. State of the cluster:"
     kubectl get pods -A -o wide >&2 || true
     kubectl -n ax-system logs deployment/ax-server --tail=100 >&2 || true
+    kubectl -n ax-system logs deployment/ax-observer --tail=100 >&2 || true
   fi
   if [[ "${KEEP_CLUSTER:-false}" != "true" ]]; then
     if [[ -x "${AX}" ]]; then

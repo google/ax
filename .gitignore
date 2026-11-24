@@ -9,3 +9,4 @@ bin/
 /ax-runner
 
 .vscode/
+/ax-observer
