@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/ax/internal/store"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
@@ -31,9 +32,10 @@ import (
 // runner, each with a 2 s timeout, before the next one starts.
 const observeConcurrency = 16
 
-// ObserveStatus asks the runner of every running actor how its task ended, and
-// stores the COMPLETED and FAILED ones as the tasks' states and outcomes. It
-// repeats every interval until ctx is done. Reads take both from the store, so
+// ObserveStatus asks the runner of every running task (store.ListRunningTasks,
+// then the actor's state on Agent Substrate) how the task ended, and stores
+// the COMPLETED and FAILED ones as the tasks' states and outcomes. It repeats
+// every interval until ctx is done. Reads take both from the store, so
 // they need no sandbox, and suspending or resuming a task keeps the state.
 func (s *Server) ObserveStatus(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
@@ -48,34 +50,36 @@ func (s *Server) ObserveStatus(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// observeStatusOnce makes one pass of ObserveStatus over the running actors of
+// observeStatusOnce makes one pass of ObserveStatus over the running tasks of
 // all atespaces.
 func (s *Server) observeStatusOnce(ctx context.Context) {
-	actors, err := s.substrate.ListActors(ctx, "", ateapipb.ActorState_ACTOR_STATE_RUNNING)
+	tasks, err := s.listRunningTasks(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
-			slog.Warn("could not list the actors to ask how their tasks ended", "error", err)
+			slog.Warn("could not list the tasks to ask how they ended", "error", err)
 		}
 		return
 	}
 	sem := make(chan struct{}, observeConcurrency)
 	var wg sync.WaitGroup
-	for _, actor := range actors {
+	for _, task := range tasks {
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
-			s.observeTaskStatus(ctx, actor.GetMetadata().GetAtespace(), actor.GetMetadata().GetName())
+			s.observeTaskStatus(ctx, task)
 		})
 	}
 	wg.Wait()
 }
 
-// observeTaskStatus asks the runner of the running actor named name how its
-// task ended and, once it reports COMPLETED or FAILED, stores that.
-func (s *Server) observeTaskStatus(ctx context.Context, atespace, name string) {
-	// Not every actor is a task's, and a task that ended is not asked again.
-	task, err := s.getStoredTask(ctx, atespace, name)
-	if err != nil || !awaitsEnd(task) {
+// observeTaskStatus asks the runner of task, a task that may be running, how
+// the task ended and, once it reports COMPLETED or FAILED, stores that.
+func (s *Server) observeTaskStatus(ctx context.Context, task *v1alpha1.Task) {
+	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
+	// Only a running actor's runner is asked: a request to a suspended one
+	// would not be answered.
+	actor, err := s.substrate.GetActor(ctx, atespace, name)
+	if err != nil || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
 		return
 	}
 	rs, err := s.taskManager.RunnerStatus(ctx, atespace, name)
@@ -114,5 +118,5 @@ func (s *Server) observeTaskStatus(ctx context.Context, atespace, name string) {
 // awaitsEnd reports whether a stored task can still report how it ended: it
 // has no state of AX's own, such as Completed, and is not being deleted.
 func awaitsEnd(task *v1alpha1.Task) bool {
-	return task.GetStatus() != nil && !v1alpha1.IsAXTaskState(task.Status.State) && task.GetMetadata().GetDeleteTime() == nil
+	return task.GetStatus() != nil && store.MayBeRunning(task)
 }

@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -56,18 +55,6 @@ type mockControlClient struct {
 	deleteTagErrs       []error
 	deleteTagCalls      int
 	suspendCalls        []*ateapipb.SuspendActorRequest
-	actorPages          [][]*ateapipb.Actor // what ListActors returns, page by page
-}
-
-func (m *mockControlClient) ListActors(ctx context.Context, req *ateapipb.ListActorsRequest, opts ...grpc.CallOption) (*ateapipb.ListActorsResponse, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	page, _ := strconv.Atoi(req.GetOptions().GetPageToken())
-	resp := &ateapipb.ListActorsResponse{Actors: m.actorPages[page]}
-	if page+1 < len(m.actorPages) {
-		resp.NextPageToken = strconv.Itoa(page + 1)
-	}
-	return resp, nil
 }
 
 func (m *mockControlClient) SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest, opts ...grpc.CallOption) (*ateapipb.SuspendActorResponse, error) {
@@ -244,43 +231,6 @@ func (m *mockControlClient) DeleteTag(ctx context.Context, req *ateapipb.DeleteT
 	}
 	delete(m.tags, key)
 	return tag, nil
-}
-
-// ListActors returns the actors of every page that are in the given state,
-// or all of them for ACTOR_STATE_UNSPECIFIED.
-func TestClient_ListActors_FiltersByState(t *testing.T) {
-	actor := func(name string, state ateapipb.ActorState) *ateapipb.Actor {
-		return &ateapipb.Actor{
-			Metadata: &ateapipb.ResourceMetadata{Atespace: "default", Name: name},
-			Status:   &ateapipb.ActorStatus{State: state},
-		}
-	}
-	const running, suspended, crashed = ateapipb.ActorState_ACTOR_STATE_RUNNING, ateapipb.ActorState_ACTOR_STATE_SUSPENDED, ateapipb.ActorState_ACTOR_STATE_CRASHED
-	c := &Client{control: &mockControlClient{actorPages: [][]*ateapipb.Actor{
-		{actor("a", running), actor("b", suspended)},
-		{actor("c", running), actor("d", crashed)},
-	}}}
-
-	for _, tc := range []struct {
-		state ateapipb.ActorState
-		want  []string
-	}{
-		{ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED, []string{"a", "b", "c", "d"}},
-		{running, []string{"a", "c"}},
-		{crashed, []string{"d"}},
-	} {
-		actors, err := c.ListActors(context.Background(), "", tc.state)
-		if err != nil {
-			t.Fatalf("ListActors(%v): %v", tc.state, err)
-		}
-		var got []string
-		for _, a := range actors {
-			got = append(got, a.GetMetadata().GetName())
-		}
-		if !slices.Equal(got, tc.want) {
-			t.Errorf("ListActors(%v) = %v, want %v", tc.state, got, tc.want)
-		}
-	}
 }
 
 func TestClient_DeleteActor_AnyStateTrue(t *testing.T) {

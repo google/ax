@@ -27,7 +27,7 @@ internal/apivalidation Manifest admission validation (common, task, workspace, m
 internal/controller    TaskManager + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; task_test.go is the test template
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
-internal/server        gRPC handlers; ObserveStatus, the background loop that asks running actors' runners how their tasks ended
+internal/server        gRPC handlers; ObserveStatus, the background loop that asks running tasks' runners how the tasks ended
 internal/store/        memory + postgres backends (schema.sql and schema.go change together)
 internal/substrate     The only place that talks to the Substrate Control API
 internal/workspace     spec.setup execution (git clone / inline files / skills dir / commands; MCP is read via metadata server)

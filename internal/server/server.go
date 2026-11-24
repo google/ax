@@ -541,6 +541,12 @@ func (s *Server) getStoredTask(ctx context.Context, atespace, name string) (*v1a
 	return s.store.GetTask(ctx, atespace, name)
 }
 
+// listRunningTasks returns the stored tasks that may be running (see
+// store.Store.ListRunningTasks), without live actor status from Substrate.
+func (s *Server) listRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
+	return s.store.ListRunningTasks(ctx)
+}
+
 // getTask returns a task with its Substrate-owned status filled in.
 func (s *Server) getTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error) {
 	task, err := s.getStoredTask(ctx, atespace, name)
@@ -564,7 +570,7 @@ func (s *Server) listTasks(ctx context.Context, atespace string, limit, offset i
 		byAtespace[ns] = append(byAtespace[ns], t)
 	}
 	for ns, group := range byAtespace {
-		actors, err := s.substrate.ListActors(ctx, ns, ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED)
+		actors, err := s.substrate.ListActors(ctx, ns)
 		byName := make(map[string]*ateapipb.Actor, len(actors))
 		for _, a := range actors {
 			byName[a.GetMetadata().GetName()] = a

@@ -246,6 +246,31 @@ func (s *Store) ListTasks(ctx context.Context, atespace string, limit, offset in
 	return list(ctx, s, tasksTable, atespace, limit, offset, func() *v1alpha1.Task { return &v1alpha1.Task{} })
 }
 
+// ListRunningTasks implements store.Store. Tasks being deleted are left out
+// by the query; the state is checked once the record is read.
+func (s *Store) ListRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
+	rows, err := s.pool.Query(ctx, `SELECT data FROM tasks WHERE NOT (data->'metadata' ? 'deleteTime') ORDER BY atespace, name`)
+	if err != nil {
+		return nil, fmt.Errorf("listing running tasks: %w", err)
+	}
+	datas, err := pgx.CollectRows(rows, pgx.RowTo[[]byte])
+	if err != nil {
+		return nil, fmt.Errorf("listing running tasks: %w", err)
+	}
+	var out []*v1alpha1.Task
+	for _, data := range datas {
+		task := &v1alpha1.Task{}
+		if err := unmarshalOpts.Unmarshal(data, task); err != nil {
+			slog.Warn("skipping unreadable record", "table", tasksTable, "error", err)
+			continue
+		}
+		if store.MayBeRunning(task) {
+			out = append(out, task)
+		}
+	}
+	return out, nil
+}
+
 // UpdateTaskStatus replaces only the status of a task. It does not change the
 // task's position in lists.
 func (s *Store) UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error {

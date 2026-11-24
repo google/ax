@@ -32,6 +32,12 @@ type Store interface {
 	SaveTask(ctx context.Context, task *v1alpha1.Task) error
 	GetTask(ctx context.Context, atespace, name string) (*v1alpha1.Task, error)
 	ListTasks(ctx context.Context, atespace string, limit, offset int64) ([]*v1alpha1.Task, error)
+	// ListRunningTasks returns the tasks of all atespaces that may be running:
+	// those with no stored state, such as QUEUED or COMPLETED (see
+	// v1alpha1.IsAXTaskState), that are not being deleted. Whether a task's
+	// actor runs is known only to Agent Substrate, so a suspended task is
+	// returned too.
+	ListRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error)
 	UpdateTaskStatus(ctx context.Context, atespace, name string, status *v1alpha1.TaskStatus) error
 	DeleteTask(ctx context.Context, atespace, name string) error
 
@@ -52,4 +58,10 @@ type Store interface {
 	DeleteModel(ctx context.Context, atespace, name string) error
 
 	Close() error
+}
+
+// MayBeRunning reports whether ListRunningTasks returns task: it has no
+// stored state and is not being deleted.
+func MayBeRunning(task *v1alpha1.Task) bool {
+	return !v1alpha1.IsAXTaskState(task.GetStatus().GetState()) && task.GetMetadata().GetDeleteTime() == nil
 }

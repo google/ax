@@ -242,7 +242,7 @@ func TestWorkspaceManager_PrepareCoalesceAndDelete(t *testing.T) {
 	if coord.calls.Load() != 1 {
 		t.Fatalf("RunSetup calls = %d, want 1", coord.calls.Load())
 	}
-	actors, err := sub.Client().ListActors(ctx, "default", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED)
+	actors, err := sub.Client().ListActors(ctx, "default")
 	if err != nil || len(actors) != 0 {
 		t.Fatalf("expected temporary setup actor to be cleaned up, found actors=%+v err=%v", actors, err)
 	}
@@ -409,7 +409,7 @@ func TestWorkspaceManager_RetriesAndFailures(t *testing.T) {
 		if st.GetPhase() != v1alpha1.WorkspacePhaseFailed || !strings.Contains(st.GetLastSetupError(), "E404") {
 			t.Fatalf("status = %+v, want Failed with E404 in LastSetupError", st)
 		}
-		if actors, _ := sub.Client().ListActors(ctx, "default", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED); len(actors) != 0 {
+		if actors, _ := sub.Client().ListActors(ctx, "default"); len(actors) != 0 {
 			t.Errorf("setup actor leaked after failure: %+v", actors)
 		}
 		if tags, _ := sub.Client().ListTags(ctx, "default"); len(tags) != 0 {

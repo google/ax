@@ -159,6 +159,24 @@ func TestObserveStatus(t *testing.T) {
 	}
 }
 
+// A pass asks only the runners of running actors: not a suspended task's, and
+// not an actor that is not a task's.
+func TestObserveStatus_AsksOnlyRunningTasks(t *testing.T) {
+	srv, runner := newRunningTask(t)
+	ctx := context.Background()
+	if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "t"}); err != nil {
+		t.Fatalf("SuspendTask: %v", err)
+	}
+	runner.status.Store(&v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateCompleted})
+	srv.observeStatusOnce(ctx)
+	if got := runner.reads.Load(); got != 0 {
+		t.Errorf("the suspended task's runner was asked %d times, want 0", got)
+	}
+	if got := getTestTask(t, srv).GetStatus().GetState(); got != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
+		t.Errorf("state = %v, want SUSPENDED", got)
+	}
+}
+
 // ObserveStatus makes a pass every interval until its context is done.
 func TestObserveStatus_Repeats(t *testing.T) {
 	srv, runner := newRunningTask(t)
