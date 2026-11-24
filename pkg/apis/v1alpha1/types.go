@@ -404,8 +404,6 @@ type RunnerStatus struct {
 	// State is RunnerStateCompleted or RunnerStateFailed, or empty while the
 	// task has not ended.
 	State string `json:"state,omitempty"`
-	// Message says why the task ended the way it did.
-	Message string `json:"message,omitempty"`
 	// Output is the task's output, such as the agent's answer. ax-server
 	// reports it as status.outcome.output.
 	Output string `json:"output,omitempty"`

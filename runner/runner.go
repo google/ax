@@ -392,7 +392,7 @@ func commandEnv(task *v1alpha1.Task, metadataURL, wsPath string) []string {
 
 // StatusFileEnv names the file in which the agent running in the task
 // reports how the task ended, as one JSON object of at most 16 KiB:
-// {"state": "COMPLETED" or "FAILED", "message": "...", "output": "..."}. It is
+// {"state": "COMPLETED" or "FAILED", "output": "..."}. It is
 // <workspace>/.ax/status, on the workspace volume so it survives suspend. The
 // runner never writes it or its directory; the agent does. The command's
 // exit status does not say how the task ended.

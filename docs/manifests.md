@@ -64,7 +64,7 @@ ax resume task task123
 
 ### How a task ends
 
-A task's command reports how it ended by writing `{"state": "COMPLETED"}` or `{"state": "FAILED", "message": "..."}` to `$AX_STATUS_FILE` (`<workspace>/.ax/status`, at most 16 KiB); the exit status does not count, so a command that exits without writing the file leaves the task `Running`. ax-server asks the sandbox every few seconds and records it: `status.state` becomes `Completed` or `Failed`, and `Ready` is `False` with reason `TaskCompleted` or `TaskFailed` and the message. An `output` field in the file, such as the agent's answer, becomes `status.outcome.output`, which `ax describe task` shows. Both states are terminal: suspending and resuming the task keep them, and `ax ssh` still connects while the sandbox is up. See [Report how the task ended](runner.md#what-a-runner-must-do) for the file's rules.
+A task's command reports how it ended by writing `{"state": "COMPLETED"}` or `{"state": "FAILED", "output": "..."}` to `$AX_STATUS_FILE` (`<workspace>/.ax/status`, at most 16 KiB); the exit status does not count, so a command that exits without writing the file leaves the task `Running`. ax-server asks the sandbox every few seconds and records it: `status.state` becomes `Completed` or `Failed`, and `Ready` is `False` with reason `TaskCompleted` or `TaskFailed`. The `output` field, such as the agent's answer or why it failed, becomes `status.outcome.output`, which `ax describe task` shows. Both states are terminal: suspending and resuming the task keep them, and `ax ssh` still connects while the sandbox is up. See [Report how the task ended](runner.md#what-a-runner-must-do) for the file's rules.
 
 ### Actor identity
 

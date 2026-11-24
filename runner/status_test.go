@@ -46,16 +46,16 @@ func TestRun_ServesHowTheTaskEnded(t *testing.T) {
 	const completed, failed = v1alpha1.RunnerStateCompleted, v1alpha1.RunnerStateFailed
 	for _, tc := range []struct {
 		name, script string
-		want         v1alpha1.RunnerStatus // a Message matches as a substring
+		want         v1alpha1.RunnerStatus // an Output matches as a substring
 	}{
 		{"exit zero without a status file", `exit 0`, v1alpha1.RunnerStatus{}},
 		{"exit non-zero without a status file", `exit 3`, v1alpha1.RunnerStatus{}},
-		{"status file", `echo '{"state": "FAILED", "message": "tests failed: 3 of 120"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Message: "tests failed: 3 of 120"}},
+		{"status file", `echo '{"state": "FAILED", "output": "tests failed: 3 of 120"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Output: "tests failed: 3 of 120"}},
 		{"status file with output", `echo '{"state": "COMPLETED", "output": "the answer"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: completed, Output: "the answer"}},
 		{"status file wins over the exit status", `echo '{"state": "COMPLETED"}' > "$AX_STATUS_FILE"; exit 1`, v1alpha1.RunnerStatus{State: completed}},
-		{"not JSON", `echo done > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Message: "parsing status file"}},
-		{"unknown state", `echo '{"state": "DONE"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Message: `unknown state "DONE"`}},
-		{"over 16 KiB", `printf '{"state": "COMPLETED", "message": "%s"}' "$(head -c 17000 /dev/zero | tr '\0' x)" > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Message: "exceeds 16384 bytes"}},
+		{"not JSON", `echo done > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Output: "parsing status file"}},
+		{"unknown state", `echo '{"state": "DONE"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Output: `unknown state "DONE"`}},
+		{"over 16 KiB", `printf '{"state": "COMPLETED", "output": "%s"}' "$(head -c 17000 /dev/zero | tr '\0' x)" > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{State: failed, Output: "exceeds 16384 bytes"}},
 		{"REQUIRES_ACTION is not acted on", `echo '{"state": "REQUIRES_ACTION"}' > "$AX_STATUS_FILE"`, v1alpha1.RunnerStatus{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,8 +65,8 @@ func TestRun_ServesHowTheTaskEnded(t *testing.T) {
 			h.runUntilCommandExits(t)
 
 			got := getStatus(t, h.cfg.Port)
-			if tc.want.Message != "" && strings.Contains(got.Message, tc.want.Message) {
-				got.Message = tc.want.Message
+			if tc.want.Output != "" && strings.Contains(got.Output, tc.want.Output) {
+				got.Output = tc.want.Output
 			}
 			if got != tc.want {
 				t.Errorf("status = %+v, want %+v", got, tc.want)
@@ -118,7 +118,7 @@ func TestRun_ServesStatusFileFromBeforeSuspend(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(h.wsPath, ".ax"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(h.wsPath, ".ax", "status"), []byte(`{"state": "FAILED", "message": "boom"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.wsPath, ".ax", "status"), []byte(`{"state": "FAILED", "output": "boom"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h.start(t)
@@ -126,7 +126,7 @@ func TestRun_ServesStatusFileFromBeforeSuspend(t *testing.T) {
 		t.Fatalf("workspace check = %d, want 200", code)
 	}
 
-	if got, want := getStatus(t, h.cfg.Port), (v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Message: "boom"}); got != want {
+	if got, want := getStatus(t, h.cfg.Port), (v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Output: "boom"}); got != want {
 		t.Errorf("status = %+v, want %+v", got, want)
 	}
 }

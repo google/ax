@@ -63,8 +63,8 @@ func report(status string) string {
 
 // TestE2E_TaskStatusFile verifies that ax-server records how a task ended from
 // the status file its agent writes:
-//   - COMPLETED and FAILED become the task's state, with the Ready reason,
-//     the message, and status.outcome.output.
+//   - COMPLETED and FAILED become the task's state, with the Ready reason
+//     and status.outcome.output.
 //   - The state survives suspend and resume.
 //   - A command that exits without a status file leaves the task running:
 //     the exit status does not say how the task ended.
@@ -74,20 +74,19 @@ func TestE2E_TaskStatusFile(t *testing.T) {
 		name, script string
 		want         v1alpha1.TaskState // UNSPECIFIED: still running
 		reason       string
-		message      string
 		output       string
 	}{
 		{
 			name:   uniqueName("task-completed"),
-			script: report(`{"state": "COMPLETED", "message": "all done", "output": "the answer is 42"}`),
+			script: report(`{"state": "COMPLETED", "output": "the answer is 42"}`),
 			want:   v1alpha1.TaskState_TASK_STATE_COMPLETED, reason: v1alpha1.ReasonTaskCompleted,
-			message: "all done", output: "the answer is 42",
+			output: "the answer is 42",
 		},
 		{
 			name:   uniqueName("task-failed"),
-			script: report(`{"state": "FAILED", "message": "tests failed: 3 of 120"}`),
+			script: report(`{"state": "FAILED", "output": "tests failed: 3 of 120"}`),
 			want:   v1alpha1.TaskState_TASK_STATE_FAILED, reason: v1alpha1.ReasonTaskFailed,
-			message: "tests failed: 3 of 120",
+			output: "tests failed: 3 of 120",
 		},
 		{
 			name:   uniqueName("task-exits"),
@@ -126,7 +125,7 @@ func TestE2E_TaskStatusFile(t *testing.T) {
 			t.Errorf("task %s: outcome.output = %q, want %q", tc.name, got, tc.output)
 		}
 		assertContains(t, "'ax describe task "+tc.name+"'", env.mustRunAX(t, ns, "describe", "task", tc.name),
-			tc.reason, tc.message, tc.output)
+			tc.reason, tc.output)
 	}
 
 	// 2. After a few more passes of ax-server's loop, the task whose command

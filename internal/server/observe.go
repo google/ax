@@ -101,7 +101,7 @@ func (s *Server) observeTaskStatus(ctx context.Context, atespace, name string) {
 	task.Status.State = state
 	// An outcome, even one without output, marks the task as ended.
 	task.Status.Outcome = &v1alpha1.TaskOutcome{Output: rs.Output}
-	setReady(task, "False", reason, rs.Message)
+	setReady(task, "False", reason, "")
 	if err := s.updateTask(ctx, atespace, name, task.Status); err != nil {
 		slog.Warn("could not store how the task ended", "atespace", atespace, "task", name, "error", err)
 	}

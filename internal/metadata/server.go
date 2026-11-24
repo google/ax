@@ -320,7 +320,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RUnlock()
 	st, err := readStatus(path)
 	if err != nil {
-		st = &v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Message: err.Error()}
+		// A broken status file fails the task, with the problem as its output.
+		st = &v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Output: err.Error()}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(st); err != nil {

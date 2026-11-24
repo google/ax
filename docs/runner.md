@@ -47,7 +47,7 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/healthz` | Return `200` as soon as the runner is alive. |
 | `/readyz` | Return `200` once the runner can take a push. Agent Substrate probes this. |
 | `/readyz?check=workspace` | Return `503` until the pushed work has prepared the workspace and, for a task, started its command, `200` once it has, and `500` with the reason as the body when setup failed or the command could not be started. AX polls this on every resume to set the task's `WorkspaceReady` condition, which `ax describe` shows, and to know when a setup actor can be snapshotted. A `500` for a task whose workspace was already set up fails the resume. |
-| `GET /runner/v1alpha1/status` | Return how the task ended as JSON: `{"state": "COMPLETED", "output": "..."}` or `{"state": "FAILED", "message": "..."}`, or `{}` while it has not ended. ax-server asks every running task for this every few seconds, and stores the first `COMPLETED` or `FAILED` as the task's state, with `output` as `status.outcome.output`. A `404` reads as not ended. |
+| `GET /runner/v1alpha1/status` | Return how the task ended as JSON: `{"state": "COMPLETED", "output": "..."}` or `{"state": "FAILED", "output": "..."}`, or `{}` while it has not ended. ax-server asks every running task for this every few seconds, and stores the first `COMPLETED` or `FAILED` as the task's state, with `output` as `status.outcome.output`. A `404` reads as not ended. |
 
 **Serve metadata on loopback.** These endpoints are for your command, so serve them on a loopback address (the default runner uses `127.0.0.1:8099`) and pass that base URL as `AX_METADATA_URL`. Don't serve them on port 80.
 
@@ -68,10 +68,10 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 {"state": "COMPLETED", "output": "Added subtract() and its test."}
 ```
 
-`state` is `COMPLETED` or `FAILED`. `message` and `output` are optional: `message` says why the task ended the way it did, and `output` is the task's output, such as the agent's answer, which AX reports as `status.outcome.output`. The command should write the file atomically: write a temporary file in the same directory, then rename it. Serve what the file says on `GET /runner/v1alpha1/status`, reading it on each request:
+`state` is `COMPLETED` or `FAILED`. `output` is optional: it is the task's output, such as the agent's answer or why it failed, which AX reports as `status.outcome.output`. The command should write the file atomically: write a temporary file in the same directory, then rename it. Serve what the file says on `GET /runner/v1alpha1/status`, reading it on each request:
 
 - Only the file says how the task ended. Do not write it from the command's exit status: a command that exits without the file leaves the task `Running`.
-- A file that is larger, is not JSON, or has an unknown `state` is `FAILED` with a message naming the problem.
+- A file that is larger, is not JSON, or has an unknown `state` is `FAILED` with the problem as its `output`.
 - A command that is still running can report: the file is served as soon as it is there.
 - `REQUIRES_ACTION` is reserved and not acted on yet.
 - AX keeps the first `COMPLETED` or `FAILED` it reads: both are terminal.

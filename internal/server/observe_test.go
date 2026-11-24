@@ -97,7 +97,7 @@ func TestObserveStatus(t *testing.T) {
 			wantReason: v1alpha1.ReasonTaskCompleted,
 		},
 		{
-			reported:   v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Message: "tests failed: 3 of 120"},
+			reported:   v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Output: "tests failed: 3 of 120"},
 			wantState:  v1alpha1.TaskState_TASK_STATE_FAILED,
 			wantReason: v1alpha1.ReasonTaskFailed,
 		},
@@ -120,8 +120,8 @@ func TestObserveStatus(t *testing.T) {
 						ready = c
 					}
 				}
-				if ready.GetStatus() != "False" || ready.GetReason() != tc.wantReason || ready.GetMessage() != tc.reported.Message {
-					t.Errorf("%s: Ready = %v, want False (%s) with the reported message", what, ready, tc.wantReason)
+				if ready.GetStatus() != "False" || ready.GetReason() != tc.wantReason {
+					t.Errorf("%s: Ready = %v, want False (%s)", what, ready, tc.wantReason)
 				}
 			}
 
