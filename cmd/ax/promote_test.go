@@ -179,10 +179,10 @@ func TestRunPromote(t *testing.T) {
 	if out != wantOutput {
 		t.Fatalf("expected output %q, got %q", wantOutput, out)
 	}
-	if got := taskState(remote, "dev"); got != v1alpha1.TaskState_TASK_STATE_WORKING {
+	if got := taskState(remote, "dev"); got != v1alpha1.TaskState_TASK_STATE_RUNNING {
 		t.Errorf("expected the task working on the target, got %v", got)
 	}
-	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_WORKING {
+	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_RUNNING {
 		t.Errorf("expected the task still working on the source, got %v", got)
 	}
 	// The target has the three specs unchanged.
@@ -266,7 +266,7 @@ func TestRunPromote(t *testing.T) {
 	if _, err := promote("--to", "other", "--to-namespace", "ax", "--to-atespace", "team"); err != nil {
 		t.Fatalf("runPromote failed: %v", err)
 	}
-	if got := taskState(other, "team"); got != v1alpha1.TaskState_TASK_STATE_WORKING {
+	if got := taskState(other, "team"); got != v1alpha1.TaskState_TASK_STATE_RUNNING {
 		t.Errorf("expected the task working in the target atespace, got %v", got)
 	}
 
@@ -283,7 +283,7 @@ func TestRunPromote(t *testing.T) {
 	if _, err := promote("--to", "full", "--suspend-source"); err == nil {
 		t.Fatal("expected runPromote to fail when the target cannot create the task")
 	}
-	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_WORKING {
+	if got := taskState(source, "dev"); got != v1alpha1.TaskState_TASK_STATE_RUNNING {
 		t.Errorf("expected the task still working on the source, got %v", got)
 	}
 	full.sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.ResourceExhausted, "no worker has room for the actor")})
@@ -311,7 +311,7 @@ func TestRunPromote(t *testing.T) {
 			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED},
 			suspended: "task.ax.io/demo suspended on the source\n",
 		},
-		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_COMPLETED, Outcome: &v1alpha1.TaskOutcome{ExitCode: 0}}},
+		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, Outcome: &v1alpha1.TaskOutcome{ExitCode: 0}}},
 	} {
 		if err := source.store.UpdateTaskStatus(t.Context(), "dev", "demo", tt.status); err != nil {
 			t.Fatal(err)

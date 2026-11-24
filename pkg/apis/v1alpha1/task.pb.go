@@ -38,46 +38,63 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// TaskState is where a task is in its lifecycle.
+//
+// Values below 200 are the state of the task's actor on Agent Substrate, with
+// the same names and numbers as Substrate's ActorState; they are read from the
+// actor and never stored. Values from 200 are AX's own states, stored by
+// ax-server when it could not provision or resume the task's actor.
 type TaskState int32
 
 const (
-	TaskState_TASK_STATE_UNSPECIFIED     TaskState = 0
-	TaskState_TASK_STATE_IDLE            TaskState = 1
-	TaskState_TASK_STATE_WORKING         TaskState = 2
-	TaskState_TASK_STATE_REQUIRES_ACTION TaskState = 3
-	TaskState_TASK_STATE_COMPLETED       TaskState = 4
-	TaskState_TASK_STATE_FAILED          TaskState = 5
-	TaskState_TASK_STATE_CANCELLED       TaskState = 6
-	TaskState_TASK_STATE_QUEUED          TaskState = 7
-	TaskState_TASK_STATE_SUSPENDED       TaskState = 8
-	TaskState_TASK_STATE_SUSPENDING      TaskState = 9
+	TaskState_TASK_STATE_UNSPECIFIED TaskState = 0
+	TaskState_TASK_STATE_RESUMING    TaskState = 1
+	TaskState_TASK_STATE_RUNNING     TaskState = 2
+	TaskState_TASK_STATE_SUSPENDING  TaskState = 3
+	TaskState_TASK_STATE_SUSPENDED   TaskState = 4
+	TaskState_TASK_STATE_CRASHED     TaskState = 5
+	TaskState_TASK_STATE_DELETING    TaskState = 6
+	TaskState_TASK_STATE_REVERTING   TaskState = 7
+	// The task's actor is not provisioned yet: CreateTask is in progress or
+	// failed with a transient Substrate error and can be applied again.
+	TaskState_TASK_STATE_QUEUED TaskState = 200
+	// The task's actor could not be provisioned or resumed, or no longer exists
+	// on Substrate. The Ready condition says why.
+	TaskState_TASK_STATE_FAILED TaskState = 201
+	// The task is completed.
+	//
+	// TODO(#690): Nothing sets this yet; it will be used to mark tasks
+	// completed once the task can report how it ended.
+	TaskState_TASK_STATE_COMPLETED TaskState = 202
 )
 
 // Enum value maps for TaskState.
 var (
 	TaskState_name = map[int32]string{
-		0: "TASK_STATE_UNSPECIFIED",
-		1: "TASK_STATE_IDLE",
-		2: "TASK_STATE_WORKING",
-		3: "TASK_STATE_REQUIRES_ACTION",
-		4: "TASK_STATE_COMPLETED",
-		5: "TASK_STATE_FAILED",
-		6: "TASK_STATE_CANCELLED",
-		7: "TASK_STATE_QUEUED",
-		8: "TASK_STATE_SUSPENDED",
-		9: "TASK_STATE_SUSPENDING",
+		0:   "TASK_STATE_UNSPECIFIED",
+		1:   "TASK_STATE_RESUMING",
+		2:   "TASK_STATE_RUNNING",
+		3:   "TASK_STATE_SUSPENDING",
+		4:   "TASK_STATE_SUSPENDED",
+		5:   "TASK_STATE_CRASHED",
+		6:   "TASK_STATE_DELETING",
+		7:   "TASK_STATE_REVERTING",
+		200: "TASK_STATE_QUEUED",
+		201: "TASK_STATE_FAILED",
+		202: "TASK_STATE_COMPLETED",
 	}
 	TaskState_value = map[string]int32{
-		"TASK_STATE_UNSPECIFIED":     0,
-		"TASK_STATE_IDLE":            1,
-		"TASK_STATE_WORKING":         2,
-		"TASK_STATE_REQUIRES_ACTION": 3,
-		"TASK_STATE_COMPLETED":       4,
-		"TASK_STATE_FAILED":          5,
-		"TASK_STATE_CANCELLED":       6,
-		"TASK_STATE_QUEUED":          7,
-		"TASK_STATE_SUSPENDED":       8,
-		"TASK_STATE_SUSPENDING":      9,
+		"TASK_STATE_UNSPECIFIED": 0,
+		"TASK_STATE_RESUMING":    1,
+		"TASK_STATE_RUNNING":     2,
+		"TASK_STATE_SUSPENDING":  3,
+		"TASK_STATE_SUSPENDED":   4,
+		"TASK_STATE_CRASHED":     5,
+		"TASK_STATE_DELETING":    6,
+		"TASK_STATE_REVERTING":   7,
+		"TASK_STATE_QUEUED":      200,
+		"TASK_STATE_FAILED":      201,
+		"TASK_STATE_COMPLETED":   202,
 	}
 )
 
@@ -1131,18 +1148,19 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
 	"\x11ResumeTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name*\x8b\x02\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name*\xaa\x02\n" +
 	"\tTaskState\x12\x1a\n" +
-	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
-	"\x0fTASK_STATE_IDLE\x10\x01\x12\x16\n" +
-	"\x12TASK_STATE_WORKING\x10\x02\x12\x1e\n" +
-	"\x1aTASK_STATE_REQUIRES_ACTION\x10\x03\x12\x18\n" +
-	"\x14TASK_STATE_COMPLETED\x10\x04\x12\x15\n" +
-	"\x11TASK_STATE_FAILED\x10\x05\x12\x18\n" +
-	"\x14TASK_STATE_CANCELLED\x10\x06\x12\x15\n" +
-	"\x11TASK_STATE_QUEUED\x10\a\x12\x18\n" +
-	"\x14TASK_STATE_SUSPENDED\x10\b\x12\x19\n" +
-	"\x15TASK_STATE_SUSPENDING\x10\tB(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13TASK_STATE_RESUMING\x10\x01\x12\x16\n" +
+	"\x12TASK_STATE_RUNNING\x10\x02\x12\x19\n" +
+	"\x15TASK_STATE_SUSPENDING\x10\x03\x12\x18\n" +
+	"\x14TASK_STATE_SUSPENDED\x10\x04\x12\x16\n" +
+	"\x12TASK_STATE_CRASHED\x10\x05\x12\x17\n" +
+	"\x13TASK_STATE_DELETING\x10\x06\x12\x18\n" +
+	"\x14TASK_STATE_REVERTING\x10\a\x12\x16\n" +
+	"\x11TASK_STATE_QUEUED\x10\xc8\x01\x12\x16\n" +
+	"\x11TASK_STATE_FAILED\x10\xc9\x01\x12\x19\n" +
+	"\x14TASK_STATE_COMPLETED\x10\xca\x01\"\x05\b\b\x10\xc7\x01B(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_task_proto_rawDescOnce sync.Once

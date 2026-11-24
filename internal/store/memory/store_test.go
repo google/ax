@@ -147,7 +147,7 @@ func TestSaveAndUpdateTask(t *testing.T) {
 		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
 	// Mutating caller's status after update must not mutate stored task.
-	st.State = v1alpha1.TaskState_TASK_STATE_COMPLETED
+	st.State = v1alpha1.TaskState_TASK_STATE_QUEUED
 
 	got, err = s.GetTask(ctx, "default", "t1")
 	if err != nil {

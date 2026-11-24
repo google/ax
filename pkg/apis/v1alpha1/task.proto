@@ -114,17 +114,35 @@ message Goal {
   string text = 1;
 }
 
+// TaskState is where a task is in its lifecycle.
+//
+// Values below 200 are the state of the task's actor on Agent Substrate, with
+// the same names and numbers as Substrate's ActorState; they are read from the
+// actor and never stored. Values from 200 are AX's own states, stored by
+// ax-server when it could not provision or resume the task's actor.
 enum TaskState {
+  // Reserved for ActorState values Substrate may add.
+  reserved 8 to 199;
+
   TASK_STATE_UNSPECIFIED = 0;
-  TASK_STATE_IDLE = 1;
-  TASK_STATE_WORKING = 2;
-  TASK_STATE_REQUIRES_ACTION = 3;
-  TASK_STATE_COMPLETED = 4;
-  TASK_STATE_FAILED = 5;
-  TASK_STATE_CANCELLED = 6;
-  TASK_STATE_QUEUED = 7;
-  TASK_STATE_SUSPENDED = 8;
-  TASK_STATE_SUSPENDING = 9;
+  TASK_STATE_RESUMING = 1;
+  TASK_STATE_RUNNING = 2;
+  TASK_STATE_SUSPENDING = 3;
+  TASK_STATE_SUSPENDED = 4;
+  TASK_STATE_CRASHED = 5;
+  TASK_STATE_DELETING = 6;
+  TASK_STATE_REVERTING = 7;
+  // The task's actor is not provisioned yet: CreateTask is in progress or
+  // failed with a transient Substrate error and can be applied again.
+  TASK_STATE_QUEUED = 200;
+  // The task's actor could not be provisioned or resumed, or no longer exists
+  // on Substrate. The Ready condition says why.
+  TASK_STATE_FAILED = 201;
+  // The task is completed.
+  //
+  // TODO(#690): Nothing sets this yet; it will be used to mark tasks
+  // completed once the task can report how it ended.
+  TASK_STATE_COMPLETED = 202;
 }
 
 message TaskOutcome {

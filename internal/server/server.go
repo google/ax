@@ -203,9 +203,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 
 	// Check the stored record (before overlaying live actor status) so only an
 	// unfinished initial CreateTask (stored State == QUEUED with no provisioned
-	// template yet) can be retried; an already-created task whose actor happens
-	// to be resuming (ACTOR_STATE_RESUMING -> TASK_STATE_QUEUED on read) or that
-	// hit a later transient ResumeTask error is rejected without touching the actor.
+	// template yet) can be retried; an already-created task that hit a later
+	// transient ResumeTask error is rejected without touching the actor.
 	existing, err := s.getStoredTask(ctx, atespace, taskName)
 	if err == nil {
 		if existing.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED ||
@@ -394,9 +393,6 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
 	}
-	if isExecutionTerminal(task) {
-		return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, task.GetStatus().GetState())
-	}
 
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -439,9 +435,6 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
 		}
 		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
-	if isExecutionTerminal(task) {
-		return nil, status.Errorf(codes.FailedPrecondition, "task %q is in terminal state %v", taskName, task.GetStatus().GetState())
 	}
 
 	if task.Status == nil {
@@ -491,25 +484,6 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 		return status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 	return nil
-}
-
-// isExecutionTerminal reports whether task has reached a terminal execution
-// outcome that forbids subsequent SuspendTask or ResumeTask operations.
-//
-// Only recordFailure stores FAILED without an execution Outcome (when
-// provisioning or resuming failed); those tasks remain eligible for retry via
-// ResumeTask or SuspendTask once the underlying precondition is resolved.
-func isExecutionTerminal(task *v1alpha1.Task) bool {
-	st := task.GetStatus()
-	switch st.GetState() {
-	case v1alpha1.TaskState_TASK_STATE_COMPLETED,
-		v1alpha1.TaskState_TASK_STATE_CANCELLED:
-		return true
-	case v1alpha1.TaskState_TASK_STATE_FAILED:
-		return st.GetOutcome() != nil
-	default:
-		return false
-	}
 }
 
 // recordFailure stores the status of a task that could not be provisioned or
@@ -721,21 +695,24 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	}
 }
 
-// actorTaskState maps an actor's state to the task's TaskState and Ready condition reason.
+// actorTaskState maps an actor's state to the task's TaskState, which has the
+// same name, and the Ready condition reason.
 func actorTaskState(state ateapipb.ActorState) (v1alpha1.TaskState, string) {
 	switch state {
 	case ateapipb.ActorState_ACTOR_STATE_RUNNING:
-		return v1alpha1.TaskState_TASK_STATE_WORKING, v1alpha1.ReasonTaskRunning
-	case ateapipb.ActorState_ACTOR_STATE_RESUMING, ateapipb.ActorState_ACTOR_STATE_REVERTING:
-		return v1alpha1.TaskState_TASK_STATE_QUEUED, v1alpha1.ReasonResuming
+		return v1alpha1.TaskState_TASK_STATE_RUNNING, v1alpha1.ReasonTaskRunning
+	case ateapipb.ActorState_ACTOR_STATE_RESUMING:
+		return v1alpha1.TaskState_TASK_STATE_RESUMING, v1alpha1.ReasonResuming
+	case ateapipb.ActorState_ACTOR_STATE_REVERTING:
+		return v1alpha1.TaskState_TASK_STATE_REVERTING, v1alpha1.ReasonResuming
 	case ateapipb.ActorState_ACTOR_STATE_SUSPENDING:
 		return v1alpha1.TaskState_TASK_STATE_SUSPENDING, v1alpha1.ReasonSuspending
 	case ateapipb.ActorState_ACTOR_STATE_SUSPENDED:
 		return v1alpha1.TaskState_TASK_STATE_SUSPENDED, v1alpha1.ReasonSuspended
 	case ateapipb.ActorState_ACTOR_STATE_CRASHED:
-		return v1alpha1.TaskState_TASK_STATE_FAILED, v1alpha1.ReasonSandboxCrashed
+		return v1alpha1.TaskState_TASK_STATE_CRASHED, v1alpha1.ReasonSandboxCrashed
 	case ateapipb.ActorState_ACTOR_STATE_DELETING:
-		return v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, v1alpha1.ReasonTerminating
+		return v1alpha1.TaskState_TASK_STATE_DELETING, v1alpha1.ReasonTerminating
 	default:
 		return v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, v1alpha1.ReasonUnknown
 	}

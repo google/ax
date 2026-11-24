@@ -75,7 +75,7 @@ func fullTask() *v1alpha1.Task {
 				Message:    "ok",
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
-			State: v1alpha1.TaskState_TASK_STATE_WORKING,
+			State: v1alpha1.TaskState_TASK_STATE_RUNNING,
 			Outcome: &v1alpha1.TaskOutcome{
 				Status:   &rpcstatus.Status{Code: 0, Message: "done"},
 				ExitCode: 0,
@@ -120,7 +120,7 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"initialBackoff: 30s",
 		"maxBackoff: 300s",
 		"backoffMultiplier: 2",
-		"state: TASK_STATE_WORKING",
+		"state: TASK_STATE_RUNNING",
 		"output: all checks passed",
 		"actorUid: actor-uid-1",
 		"ateTemplate:",

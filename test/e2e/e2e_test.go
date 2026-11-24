@@ -244,7 +244,7 @@ func TestE2E_GatewayCRUD(t *testing.T) {
 //   - A new Task starts Suspended and is immutable.
 //   - Substrate has a suspended Actor backed by a shared Profile ActorTemplate
 //     (ax-<hash>) with the /readyz:80 wakeup probe and a snapshot config.
-//   - Resuming moves the Task to Working with WorkspaceReady and Ready
+//   - Resuming moves the Task to Running with WorkspaceReady and Ready
 //     conditions, on the worker Substrate reports.
 //   - Deleting the Task removes the Actor while preserving the shared template.
 func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
@@ -305,10 +305,10 @@ func TestE2E_TaskLifecycleAndSubstrateSync(t *testing.T) {
 		t.Fatalf("unexpected SnapshotConfig: %+v", sc)
 	}
 
-	// 4. Resuming moves the task to Working on a worker reported by Substrate.
+	// 4. Resuming moves the task to Running on a worker reported by Substrate.
 	assertContains(t, "'ax resume task'", env.mustRunAX(t, ns, "resume", "task", name), "resumed")
 	task = env.getTask(t, ns, name)
-	assertState(t, task, v1alpha1.TaskState_TASK_STATE_WORKING)
+	assertState(t, task, v1alpha1.TaskState_TASK_STATE_RUNNING)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 	assertCondition(t, task, "Ready", "True", v1alpha1.ReasonTaskRunning)
 	actor = env.getActor(t, ns, name, ateapipb.ActorState_ACTOR_STATE_RUNNING)
@@ -592,7 +592,7 @@ func TestE2E_DescribeAndAtespaceIsolation(t *testing.T) {
 
 	// 3. `ax describe task` reflects the running task and its conditions.
 	assertContains(t, "'ax describe task'", env.mustRunAX(t, ns, "describe", "task", task),
-		task, ns, "Working", "WorkspaceReady", v1alpha1.ReasonTaskRunning)
+		task, ns, "Running", "WorkspaceReady", v1alpha1.ReasonTaskRunning)
 }
 
 const gatewayEgressManifest = `apiVersion: ax.io/v1alpha1

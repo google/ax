@@ -128,14 +128,13 @@ const (
 )
 
 // IsAXTaskState reports whether state describes the control plane's own stored
-// state on a task (queued for provisioning/retry, or terminal) rather than a
-// live state derived from the task's actor on Agent Substrate.
+// state on a task (QUEUED, FAILED, or COMPLETED) rather than a live state read
+// from the task's actor on Agent Substrate.
 func IsAXTaskState(state TaskState) bool {
 	switch state {
 	case TaskState_TASK_STATE_QUEUED,
-		TaskState_TASK_STATE_COMPLETED,
 		TaskState_TASK_STATE_FAILED,
-		TaskState_TASK_STATE_CANCELLED:
+		TaskState_TASK_STATE_COMPLETED:
 		return true
 	}
 	return false
@@ -148,24 +147,26 @@ func FormatTaskState(task *Task) string {
 		return ReasonTerminating
 	}
 	switch task.GetStatus().GetState() {
-	case TaskState_TASK_STATE_IDLE:
-		return "Idle"
-	case TaskState_TASK_STATE_WORKING:
-		return "Working"
-	case TaskState_TASK_STATE_REQUIRES_ACTION:
-		return "RequiresAction"
-	case TaskState_TASK_STATE_COMPLETED:
-		return "Completed"
-	case TaskState_TASK_STATE_FAILED:
-		return "Failed"
-	case TaskState_TASK_STATE_CANCELLED:
-		return "Cancelled"
-	case TaskState_TASK_STATE_QUEUED:
-		return "Queued"
-	case TaskState_TASK_STATE_SUSPENDED:
-		return "Suspended"
+	case TaskState_TASK_STATE_RESUMING:
+		return "Resuming"
+	case TaskState_TASK_STATE_RUNNING:
+		return "Running"
 	case TaskState_TASK_STATE_SUSPENDING:
 		return "Suspending"
+	case TaskState_TASK_STATE_SUSPENDED:
+		return "Suspended"
+	case TaskState_TASK_STATE_CRASHED:
+		return "Crashed"
+	case TaskState_TASK_STATE_DELETING:
+		return "Deleting"
+	case TaskState_TASK_STATE_REVERTING:
+		return "Reverting"
+	case TaskState_TASK_STATE_QUEUED:
+		return "Queued"
+	case TaskState_TASK_STATE_FAILED:
+		return "Failed"
+	case TaskState_TASK_STATE_COMPLETED:
+		return "Completed"
 	default:
 		return ReasonUnknown
 	}
