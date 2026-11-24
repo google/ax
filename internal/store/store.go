@@ -49,6 +49,7 @@ type Store interface {
 	SaveModel(ctx context.Context, model *v1alpha1.Model) error
 	GetModel(ctx context.Context, atespace, name string) (*v1alpha1.Model, error)
 	ListModels(ctx context.Context, atespace string) ([]*v1alpha1.Model, error)
+	// DeleteModel returns ErrNotFound if the model does not exist.
 	DeleteModel(ctx context.Context, atespace, name string) error
 
 	Close() error

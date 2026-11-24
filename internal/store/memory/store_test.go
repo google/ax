@@ -120,6 +120,21 @@ func TestUpdateWorkspaceStatus(t *testing.T) {
 	}
 }
 
+func TestDeleteModel(t *testing.T) {
+	ctx := t.Context()
+	s := memory.NewStore()
+
+	if err := s.SaveModel(ctx, &v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "m", Atespace: "default"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteModel(ctx, "default", "m"); err != nil {
+		t.Fatalf("DeleteModel: %v", err)
+	}
+	if err := s.DeleteModel(ctx, "default", "m"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("DeleteModel(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestSaveAndUpdateTask(t *testing.T) {
 	ctx := t.Context()
 	s := memory.NewStore()

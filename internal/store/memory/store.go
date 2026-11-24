@@ -221,7 +221,11 @@ func (s *MemoryStore) DeleteModel(ctx context.Context, atespace, name string) er
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.models, taskKey(atespace, name))
+	key := taskKey(atespace, name)
+	if _, ok := s.models[key]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.models, key)
 	return nil
 }
 

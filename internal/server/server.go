@@ -882,16 +882,7 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 		return existing.GetMetadata()
 	})
 
-	atespace := req.Model.Metadata.Atespace
-	modelName := req.Model.Metadata.Name
-
-	// Acquire exclusive lock for this model.
-	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
-	}
-	defer unlock()
-
+	// A Model has no Substrate side effects to serialize, so it is not locked.
 	if err := s.store.SaveModel(ctx, req.Model); err != nil {
 		return nil, status.Errorf(codes.Internal, "saving model: %v", err)
 	}
@@ -908,20 +899,10 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	}
 	modelName := req.Name
 
-	// Acquire exclusive lock for this model.
-	unlock, err := s.locker.Lock(ctx, "model", atespace, modelName)
-	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking model %s/%s: %v", atespace, modelName, err)
-	}
-	defer unlock()
-
-	if _, err := s.store.GetModel(ctx, atespace, modelName); err != nil {
+	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "model %q not found in atespace %q", modelName, atespace)
 		}
-		return nil, status.Errorf(codes.Internal, "getting model: %v", err)
-	}
-	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
 		return nil, status.Errorf(codes.Internal, "deleting model: %v", err)
 	}
 	return &emptypb.Empty{}, nil
