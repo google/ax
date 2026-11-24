@@ -35,6 +35,22 @@ func TestValidateRunnerVolumeImage(t *testing.T) {
 	}
 }
 
+func TestValidateRouterURL(t *testing.T) {
+	for _, tt := range []struct {
+		routerURL string
+		wantErr   bool
+	}{
+		{routerURL: "https://atenet-router.ate-system.svc.cluster.local:443"},
+		{routerURL: "http://127.0.0.1:8080"},
+		{routerURL: "", wantErr: true},
+		{routerURL: "atenet-router.ate-system.svc.cluster.local:443", wantErr: true},
+	} {
+		if err := validateRouterURL(tt.routerURL); (err != nil) != tt.wantErr {
+			t.Errorf("validateRouterURL(%q) = %v, want error: %v", tt.routerURL, err, tt.wantErr)
+		}
+	}
+}
+
 func TestDescribeStore(t *testing.T) {
 	tests := []struct {
 		name string
