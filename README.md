@@ -119,7 +119,7 @@ The first resume also waits for the workspace to initialize (cloning its git rep
 
 Every Task runs an image pinned by digest, named by `spec.profile.image` or `spec.profile.ateTemplate.name` or inherited from its Workspace's `spec.profile`; replace the image in `examples/simple.yaml` with `$AX_TASK_IMAGE` if you built your own.
 
-Want to see the whole lifecycle end to end? Run `AX_TASK_IMAGE=... ./demo.sh` ([`demo.sh`](demo.sh)). It applies a custom workspace, resumes the task, runs commands over `ax ssh`, and suspends it again.
+Want a tour of AX end to end? Run [`./hack/tour.sh`](hack/tour.sh) against the current context. It walks through Tasks, Gateways, Workspaces with setup, suspend and resume, fan-out from a workspace snapshot, atespaces, and Models, and deletes everything it creates when it exits.
 
 ## Documentation
 
