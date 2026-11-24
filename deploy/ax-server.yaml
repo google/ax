@@ -96,6 +96,7 @@ spec:
             - "--substrate-authority=api.ate-system.svc"
             - "--substrate-token-file=/var/run/secrets/ateapi/token"
             - "--substrate-ca-file=/run/servicedns-ca/trust-bundle.pem"
+            - "--router-url=https://atenet-router.ate-system.svc.cluster.local:443"
           envFrom:
             - configMapRef:
                 name: ax-otel-config
@@ -121,8 +122,6 @@ spec:
                 secretKeyRef:
                   name: ax-postgres
                   key: password
-            - name: ATENET_ROUTER_ADDR
-              value: "https://atenet-router.ate-system.svc.cluster.local:443"
             # Empty runs the runner baked into each task image.
             - name: AX_RUNNER_VOLUME_IMAGE
               value: "${AX_RUNNER_VOLUME_IMAGE}"

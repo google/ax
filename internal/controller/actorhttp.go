@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -41,16 +40,15 @@ const (
 // opposed to the runner being unreachable or still busy.
 var errSetupFailed = errors.New("workspace setup failed")
 
-// errNoRouter reports that an actor cannot be reached because
-// ATENET_ROUTER_ADDR is unset. Retrying does not help.
-var errNoRouter = errors.New("ATENET_ROUTER_ADDR is not set")
+// errNoRouter reports that an actor cannot be reached because no router URL
+// is set. Retrying does not help.
+var errNoRouter = errors.New("router URL is not set")
 
 // actorRequest sends an HTTP request to port 80 of a running actor through
-// atenet-router (ATENET_ROUTER_ADDR), the only way into an actor, with the
+// atenet-router (routerURL), the only way into an actor, with the
 // ate-target-actor header. It returns the status code and the start of the
 // response body.
-func actorRequest(ctx context.Context, client *http.Client, atespace, actor, method, path string, body []byte) (int, string, error) {
-	routerURL := routerBaseURL()
+func actorRequest(ctx context.Context, client *http.Client, routerURL, atespace, actor, method, path string, body []byte) (int, string, error) {
 	if routerURL == "" {
 		return 0, "", errNoRouter
 	}
@@ -71,30 +69,14 @@ func actorRequest(ctx context.Context, client *http.Client, atespace, actor, met
 	return resp.StatusCode, strings.TrimSpace(string(reply)), nil
 }
 
-// routerBaseURL returns ATENET_ROUTER_ADDR as a base URL, or "" when unset.
-func routerBaseURL() string {
-	addr := os.Getenv("ATENET_ROUTER_ADDR")
-	if addr == "" {
-		return ""
-	}
-	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
-		if strings.HasSuffix(addr, ":443") {
-			addr = "https://" + addr
-		} else {
-			addr = "http://" + addr
-		}
-	}
-	return strings.TrimRight(addr, "/")
-}
-
 // pushToRunner posts body to path on the actor's runner, retrying every
 // interval until the runner accepts it or ctx is done, or fails at once with
 // errNoRouter when the router's address is unset. A runner rejects a push
 // for good (4xx) only when it already holds different work or cannot decode
 // the body, so those replies are returned without retrying.
-func pushToRunner(ctx context.Context, client *http.Client, atespace, actor, path string, body []byte, interval time.Duration) error {
+func pushToRunner(ctx context.Context, client *http.Client, routerURL, atespace, actor, path string, body []byte, interval time.Duration) error {
 	for {
-		code, reply, err := actorRequest(ctx, client, atespace, actor, http.MethodPost, path, body)
+		code, reply, err := actorRequest(ctx, client, routerURL, atespace, actor, http.MethodPost, path, body)
 		switch {
 		case err == nil && code >= 200 && code < 300:
 			return nil
@@ -117,9 +99,9 @@ func pushToRunner(ctx context.Context, client *http.Client, atespace, actor, pat
 // it reports the workspace ready (nil) or setup failed (an error wrapping
 // errSetupFailed with the runner's reason), or until ctx is done. It fails at
 // once with errNoRouter when the router's address is unset.
-func waitWorkspaceReady(ctx context.Context, client *http.Client, atespace, actor string, interval time.Duration) error {
+func waitWorkspaceReady(ctx context.Context, client *http.Client, routerURL, atespace, actor string, interval time.Duration) error {
 	for {
-		code, reply, err := actorRequest(ctx, client, atespace, actor, http.MethodGet, workspaceCheckPath, nil)
+		code, reply, err := actorRequest(ctx, client, routerURL, atespace, actor, http.MethodGet, workspaceCheckPath, nil)
 		if errors.Is(err, errNoRouter) {
 			return err
 		}

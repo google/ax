@@ -79,6 +79,10 @@ type TaskManager struct {
 	// Empty keeps running the runner baked into the task image.
 	RunnerVolumeImage string
 
+	// RouterURL is the base URL of atenet-router (no trailing slash), through
+	// which a task's runner is reached.
+	RouterURL string
+
 	// WorkspaceManager, when configured with pre-warming enabled, resolves warm
 	// Workspace snapshot Tags so task actors start from pre-warmed snapshots.
 	WorkspaceManager *WorkspaceManager
@@ -336,7 +340,7 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 	var notReadyMsg string
 	body, err := taskPushBody(task, ws)
 	if err == nil {
-		err = pushToRunner(pollCtx, m.httpClient, atespace, actorName, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
+		err = pushToRunner(pollCtx, m.httpClient, m.RouterURL, atespace, actorName, v1alpha1.RunnerTaskPath, body, workspaceReadyPollInterval)
 	}
 	switch {
 	case errors.Is(err, errNoRouter):
@@ -354,7 +358,7 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 		m.setNotReady(task, v1alpha1.ReasonSubstrateUnavailable, err.Error(), time.Now())
 		return err
 	default:
-		err = waitWorkspaceReady(pollCtx, m.httpClient, atespace, actorName, workspaceReadyPollInterval)
+		err = waitWorkspaceReady(pollCtx, m.httpClient, m.RouterURL, atespace, actorName, workspaceReadyPollInterval)
 		switch {
 		case err == nil:
 			workspaceReady = true

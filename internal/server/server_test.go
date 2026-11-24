@@ -1230,11 +1230,11 @@ func TestServer_SuspendTask_ReconcileErrorRetainsRunningState(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer readySrv.Close()
-	t.Setenv("ATENET_ROUTER_ADDR", readySrv.URL)
 
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	rec := newTestTaskManager(sub)
+	rec.RouterURL = readySrv.URL
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 

@@ -41,9 +41,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// readyRunnerAddr is the address of a runner, shared by the tests, that
+// readyRunnerURL is the URL of a runner, shared by the tests, that
 // accepts every push and passes every readiness check.
-var readyRunnerAddr = sync.OnceValue(func() string {
+var readyRunnerURL = sync.OnceValue(func() string {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+v1alpha1.RunnerTaskPath, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
@@ -51,7 +51,7 @@ var readyRunnerAddr = sync.OnceValue(func() string {
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	return strings.TrimPrefix(httptest.NewServer(mux).URL, "http://")
+	return httptest.NewServer(mux).URL
 })
 
 type mockControlServer struct {
@@ -255,7 +255,6 @@ func (m *mockControlServer) DeleteActorTemplate(ctx context.Context, req *ateapi
 
 func TestTaskManager(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("ATENET_ROUTER_ADDR", readyRunnerAddr())
 
 	// 1. Start in-process mock gRPC Substrate server
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
@@ -280,6 +279,7 @@ func TestTaskManager(t *testing.T) {
 	// 3. Resume the task
 	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager.RouterURL = readyRunnerURL()
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -758,7 +758,6 @@ func TestTaskManager_WorkspaceReady(t *testing.T) {
 	})
 	runnerSrv := httptest.NewServer(httpMux)
 	defer runnerSrv.Close()
-	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
 
 	mockSrv := &mockControlServer{}
 	grpcServer := grpc.NewServer()
@@ -774,6 +773,7 @@ func TestTaskManager_WorkspaceReady(t *testing.T) {
 
 	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 200 * time.Millisecond
+	manager.RouterURL = runnerSrv.URL
 
 	task := &v1alpha1.Task{
 		ApiVersion: v1alpha1.APIVersion,
@@ -808,14 +808,14 @@ func TestTaskManager_WorkspaceReady(t *testing.T) {
 
 	// Case 4: The runner cannot be reached, so the task is never pushed -> the
 	// resume fails with a transient error and WorkspaceReady is left alone.
-	t.Setenv("ATENET_ROUTER_ADDR", "127.0.0.1:1")
+	manager.RouterURL = "http://127.0.0.1:1"
 	err = manager.Resume(ctx, task, nil, nil)
 	if err == nil || !substrate.IsTransientError(err) {
 		t.Fatalf("Resume with an unreachable runner = %v, want a transient error", err)
 	}
 	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonSubstrateUnavailable)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
-	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
+	manager.RouterURL = runnerSrv.URL
 	if got := len(mockSrv.actorTemplates); got != 1 {
 		t.Fatalf("readiness updates and suspend/resume created %d templates, want 1", got)
 	}
@@ -858,7 +858,6 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 	})
 	runnerSrv := httptest.NewServer(httpMux)
 	defer runnerSrv.Close()
-	t.Setenv("ATENET_ROUTER_ADDR", runnerSrv.URL)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -878,6 +877,7 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 	defer client.Close()
 	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 2 * time.Second
+	manager.RouterURL = runnerSrv.URL
 
 	newTask := func(name string) *v1alpha1.Task {
 		return &v1alpha1.Task{
@@ -936,7 +936,7 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 }
 
 // startPushRunner runs the real runner, waiting for a push, with its state
-// under a temp dir, and returns the address of its probe port.
+// under a temp dir, and returns the URL of its probe port.
 func startPushRunner(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -977,7 +977,7 @@ func startPushRunner(t *testing.T) string {
 			t.Error("runner did not stop")
 		}
 	})
-	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
+	return "http://" + net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
 }
 
 // A task whose command cannot be started (a typo in spec.commands) must not
@@ -993,7 +993,6 @@ func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to listen: %v", err)
 		}
-		t.Setenv("ATENET_ROUTER_ADDR", startPushRunner(t))
 		grpcServer := grpc.NewServer()
 		ateapipb.RegisterControlServer(grpcServer, &mockControlServer{})
 		go grpcServer.Serve(lis)
@@ -1005,6 +1004,7 @@ func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 		t.Cleanup(func() { client.Close() })
 		manager := controller.NewTaskManager(client)
 		manager.WorkspaceReadyTimeout = 10 * time.Second
+		manager.RouterURL = startPushRunner(t)
 
 		task := &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "task", Atespace: "default", Uid: "task-uid"},

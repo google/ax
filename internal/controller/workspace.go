@@ -118,7 +118,8 @@ type SetupRunner interface {
 // the runner's v1alpha1.RunnerSetupPath on port 80 through atenet-router, and
 // polls /readyz?check=workspace for the outcome.
 type HTTPSetupRunner struct {
-	client *http.Client
+	client    *http.Client
+	routerURL string
 	// AcceptTimeout bounds how long the runner may take to boot and accept the
 	// Workspace. Waiting for setup itself is bounded only by the caller's ctx.
 	AcceptTimeout time.Duration
@@ -126,10 +127,12 @@ type HTTPSetupRunner struct {
 	PollInterval time.Duration
 }
 
-// NewHTTPSetupRunner returns an HTTPSetupRunner with default timeouts.
-func NewHTTPSetupRunner() *HTTPSetupRunner {
+// NewHTTPSetupRunner returns an HTTPSetupRunner with default timeouts that
+// reaches runners through atenet-router at routerURL.
+func NewHTTPSetupRunner(routerURL string) *HTTPSetupRunner {
 	return &HTTPSetupRunner{
 		client:        newProbeHTTPClient(),
+		routerURL:     routerURL,
 		AcceptTimeout: 2 * time.Minute,
 		PollInterval:  workspaceReadyPollInterval,
 	}
@@ -143,10 +146,10 @@ func (h *HTTPSetupRunner) RunSetup(ctx context.Context, atespace, actor string, 
 	}
 	pushCtx, cancel := context.WithTimeout(ctx, h.AcceptTimeout)
 	defer cancel()
-	if err := pushToRunner(pushCtx, h.client, atespace, actor, v1alpha1.RunnerSetupPath, body, h.PollInterval); err != nil {
+	if err := pushToRunner(pushCtx, h.client, h.routerURL, atespace, actor, v1alpha1.RunnerSetupPath, body, h.PollInterval); err != nil {
 		return err
 	}
-	return waitWorkspaceReady(ctx, h.client, atespace, actor, h.PollInterval)
+	return waitWorkspaceReady(ctx, h.client, h.routerURL, atespace, actor, h.PollInterval)
 }
 
 // WorkspaceStore reads the stored Workspace record under a shared Workspace

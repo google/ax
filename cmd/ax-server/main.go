@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -48,6 +49,7 @@ func main() {
 		substrateCAFile      string
 		substrateInsecureTLS bool
 		substratePlaintext   bool
+		routerURL            string
 		runnerVolumeImage    string
 	)
 
@@ -60,6 +62,7 @@ func main() {
 	flag.StringVar(&substrateCAFile, "substrate-ca-file", "", "Path to CA PEM file for Substrate TLS")
 	flag.BoolVar(&substrateInsecureTLS, "substrate-insecure-tls", false, "Skip Substrate TLS verification")
 	flag.BoolVar(&substratePlaintext, "substrate-plaintext", false, "Use insecure plaintext gRPC connection to Substrate")
+	flag.StringVar(&routerURL, "router-url", "https://atenet-router.ate-system.svc.cluster.local:443", "Agent Substrate router (atenet-router) base URL, no trailing slash")
 	flag.StringVar(&runnerVolumeImage, "runner-volume-image", "", "Digest-pinned runner volume image (Dockerfile.runner-volume) to mount read-only into task containers and run the runner from; empty runs the runner baked into the task image (env: AX_RUNNER_VOLUME_IMAGE)")
 	flag.Parse()
 
@@ -81,6 +84,10 @@ func main() {
 
 	if err := validateRunnerVolumeImage(runnerVolumeImage); err != nil {
 		slog.Error("invalid runner volume image", "error", err)
+		os.Exit(1)
+	}
+	if err := validateRouterURL(routerURL); err != nil {
+		slog.Error("invalid router URL", "error", err)
 		os.Exit(1)
 	}
 
@@ -130,11 +137,12 @@ func main() {
 
 	manager := controller.NewTaskManager(subClient)
 	manager.RunnerVolumeImage = runnerVolumeImage
+	manager.RouterURL = routerURL
 	manager.GatewayStore = backend
 	workspaces := controller.NewWorkspaceManager(subClient, controller.WorkspaceManagerOptions{
 		Locker:      backend,
 		Store:       backend,
-		SetupRunner: controller.NewHTTPSetupRunner(),
+		SetupRunner: controller.NewHTTPSetupRunner(routerURL),
 		RunnerImage: runnerVolumeImage,
 	})
 	manager.WorkspaceManager = workspaces
@@ -195,6 +203,16 @@ func validateRunnerVolumeImage(image string) error {
 	}
 	if _, err := name.NewDigest(image); err != nil {
 		return fmt.Errorf("%q must be pinned by digest (name@sha256:...): %w", image, err)
+	}
+	return nil
+}
+
+// validateRouterURL checks that the router URL is an http:// or https:// URL,
+// so it cannot be empty. ax-server reaches every actor through the router, so
+// a URL that cannot work is rejected at startup.
+func validateRouterURL(routerURL string) error {
+	if !strings.HasPrefix(routerURL, "http://") && !strings.HasPrefix(routerURL, "https://") {
+		return fmt.Errorf("%q must be an http:// or https:// URL", routerURL)
 	}
 	return nil
 }

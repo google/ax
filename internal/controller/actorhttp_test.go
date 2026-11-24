@@ -70,11 +70,11 @@ func (f *fakeRunner) start(t *testing.T) string {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://")
+	return srv.URL
 }
 
-func newTestSetupRunner() *controller.HTTPSetupRunner {
-	r := controller.NewHTTPSetupRunner()
+func newTestSetupRunner(routerURL string) *controller.HTTPSetupRunner {
+	r := controller.NewHTTPSetupRunner(routerURL)
 	r.AcceptTimeout = 2 * time.Second
 	r.PollInterval = 10 * time.Millisecond
 	return r
@@ -89,11 +89,11 @@ func setupWorkspace() *v1alpha1.Workspace {
 
 func TestHTTPSetupRunner_PushesAndWaits(t *testing.T) {
 	f := &fakeRunner{busyPolls: 2}
-	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
+	runner := newTestSetupRunner(f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace()); err != nil {
+	if err := runner.RunSetup(ctx, "default", "setup-1", setupWorkspace()); err != nil {
 		t.Fatalf("RunSetup: %v", err)
 	}
 	if got := f.pushes.Load(); got != 1 {
@@ -112,11 +112,11 @@ func TestHTTPSetupRunner_PushesAndWaits(t *testing.T) {
 
 func TestHTTPSetupRunner_SetupFailed(t *testing.T) {
 	f := &fakeRunner{result: http.StatusInternalServerError, reason: "git clone failed"}
-	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
+	runner := newTestSetupRunner(f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace())
+	err := runner.RunSetup(ctx, "default", "setup-1", setupWorkspace())
 	if err == nil || !strings.Contains(err.Error(), "git clone failed") {
 		t.Fatalf("RunSetup error = %v, want the runner's reason", err)
 	}
@@ -124,11 +124,11 @@ func TestHTTPSetupRunner_SetupFailed(t *testing.T) {
 
 func TestHTTPSetupRunner_RejectedPushIsNotRetried(t *testing.T) {
 	f := &fakeRunner{pushCode: http.StatusConflict}
-	t.Setenv("ATENET_ROUTER_ADDR", f.start(t))
+	runner := newTestSetupRunner(f.start(t))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err := newTestSetupRunner().RunSetup(ctx, "default", "setup-1", setupWorkspace())
+	err := runner.RunSetup(ctx, "default", "setup-1", setupWorkspace())
 	if err == nil || !strings.Contains(err.Error(), "409") {
 		t.Fatalf("RunSetup error = %v, want the 409 rejection", err)
 	}
@@ -141,13 +141,12 @@ func TestHTTPSetupRunner_RejectedPushIsNotRetried(t *testing.T) {
 }
 
 func TestHTTPSetupRunner_NoRouter(t *testing.T) {
-	t.Setenv("ATENET_ROUTER_ADDR", "")
 	start := time.Now()
-	err := newTestSetupRunner().RunSetup(context.Background(), "default", "setup-1", setupWorkspace())
-	if err == nil || !strings.Contains(err.Error(), "ATENET_ROUTER_ADDR is not set") {
-		t.Fatalf("RunSetup error = %v, want ATENET_ROUTER_ADDR is not set", err)
+	err := newTestSetupRunner("").RunSetup(context.Background(), "default", "setup-1", setupWorkspace())
+	if err == nil || !strings.Contains(err.Error(), "router URL is not set") {
+		t.Fatalf("RunSetup error = %v, want router URL is not set", err)
 	}
 	if time.Since(start) > time.Second {
-		t.Errorf("RunSetup took %v; without a router address it must fail at once", time.Since(start))
+		t.Errorf("RunSetup took %v; without a router URL it must fail at once", time.Since(start))
 	}
 }
