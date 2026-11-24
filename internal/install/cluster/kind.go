@@ -16,9 +16,11 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/google/ax/internal/install/executil"
@@ -294,17 +296,22 @@ func (p *KindProvider) Status(ctx context.Context, name string) (Status, error) 
 	}
 	st.State = StateRunning
 
-	// Probe Substrate control plane readiness.
+	// Probe Substrate control plane and dataplane readiness.
 	if res, err := p.Runner.Run(ctx, executil.Spec{
 		Name: kubectlBin,
 		Args: []string{"--context", kubeCtx, "-n", "ate-system", "get", "deployment", "ate-api-server", "-o", "jsonpath={.status.availableReplicas}/{.spec.replicas}"},
 	}); err == nil && strings.TrimSpace(res.Stdout) != "" {
-		st.SubstrateStatus = fmt.Sprintf("ate-api-server (%s available)", formatReplicaRatio(res.Stdout))
-		if sysctlRes, sysctlErr := p.Runner.Run(ctx, executil.Spec{
-			Name: rt.Binary,
-			Args: []string{"exec", nodes[0], "sysctl", "-n", "net.ipv4.conf.all.proxy_arp"},
-		}); sysctlErr == nil && strings.TrimSpace(sysctlRes.Stdout) == "0" {
-			st.SubstrateStatus += " [degraded: node sysctls reset after restart; run 'ax local start' to restore]"
+		// When all is well the line is "ate-api-server (1/1 available)".
+		// Otherwise it names only what is wrong, for example
+		// "degraded: atenet-router (0/1 available)".
+		apiServer := fmt.Sprintf("ate-api-server (%s available)", formatReplicaRatio(res.Stdout))
+		var unavailable []string
+		if !replicaRatioAvailable(res.Stdout) {
+			unavailable = append(unavailable, apiServer)
+		}
+		st.SubstrateStatus = apiServer
+		if note := p.substrateDegradedNote(ctx, rt, kubectlBin, kubeCtx, nodes[0], unavailable); note != "" {
+			st.SubstrateStatus = "degraded: " + note
 		}
 	} else {
 		st.SubstrateStatus = "NotInstalled"
@@ -332,6 +339,128 @@ func formatReplicaRatio(raw string) string {
 		return "0" + s
 	}
 	return s
+}
+
+// replicaRatioAvailable reports whether raw, "<available>/<wanted>" with an
+// empty <available> for none, has every wanted replica available.
+func replicaRatioAvailable(raw string) bool {
+	available, wanted, _ := strings.Cut(strings.TrimSpace(raw), "/")
+	w, err := strconv.Atoi(wanted)
+	if err != nil {
+		return true
+	}
+	a, _ := strconv.Atoi(available)
+	return a >= w
+}
+
+// substrateWorkload names a Kubernetes workload that Agent Substrate needs in
+// order to run and reach actors on a local cluster. ate-api-server is omitted
+// because Status already prints its replica ratio at the start of
+// SubstrateStatus.
+type substrateWorkload struct {
+	namespace string
+	kind      string // lowercase Kubernetes resource kind ("deployment", "statefulset", "daemonset")
+	name      string
+}
+
+// substrateWorkloads lists the workloads installed by
+// internal/install/substrate.Bootstrap, other than ate-api-server and the
+// telemetry stack in otel-system, which Substrate runs without.
+//
+// The list has to follow the manifests in internal/install/substrate/manifests:
+// a workload that a new Substrate version adds is not looked at until it is
+// listed here. TestSubstrateWorkloadsMatchManifests fails when the two differ.
+var substrateWorkloads = []substrateWorkload{
+	{namespace: "podcertificate-controller-system", kind: "deployment", name: "podcertificate-controller"},
+	{namespace: "ate-system", kind: "statefulset", name: "postgres"},
+	{namespace: "ate-system", kind: "deployment", name: "ate-idp-server"},
+	{namespace: "ate-system", kind: "deployment", name: "ate-controller"},
+	{namespace: "ate-system", kind: "deployment", name: "atenet-router"},
+	{namespace: "ate-system", kind: "deployment", name: "atenet-egress"},
+	{namespace: "ate-system", kind: "deployment", name: "k8s-credential-provider"},
+	{namespace: "ate-system", kind: "deployment", name: "rustfs"},
+	{namespace: "ate-system", kind: "daemonset", name: "atelet"},
+	{namespace: "ate-workers", kind: "deployment", name: "ax-workers"},
+}
+
+// substrateDegradedNote returns what SubstrateStatus says after "degraded: ",
+// or "" when nothing is wrong: unavailable (ate-api-server, when it is not
+// fully available) and the other Substrate workloads that are not, and the
+// node sysctls when a restart of the node container reset them.
+//
+// It names the unready workloads and no command. A workload is usually
+// unready because its pods are still starting or being restarted, and
+// `ax local start` does not restart a pod that stays unready.
+func (p *KindProvider) substrateDegradedNote(ctx context.Context, rt executil.ContainerRuntime, kubectlBin, kubeCtx, node string, unavailable []string) string {
+	var problems []string
+	if res, err := p.Runner.Run(ctx, executil.Spec{
+		Name: kubectlBin,
+		Args: []string{"--context", kubeCtx, "get", "deployments,statefulsets,daemonsets", "-A", "-o", "json"},
+	}); err == nil {
+		unavailable = append(unavailable, unreadySubstrateWorkloads(res.Stdout)...)
+	}
+	if len(unavailable) > 0 {
+		problems = append(problems, strings.Join(unavailable, ", "))
+	}
+	if sysctlRes, sysctlErr := p.Runner.Run(ctx, executil.Spec{
+		Name: rt.Binary,
+		Args: []string{"exec", node, "sysctl", "-n", "net.ipv4.conf.all.proxy_arp"},
+	}); sysctlErr == nil && strings.TrimSpace(sysctlRes.Stdout) == "0" {
+		problems = append(problems, "node sysctls reset after restart; run 'ax local start' to restore")
+	}
+	return strings.Join(problems, "; ")
+}
+
+// unreadySubstrateWorkloads reads the JSON of a list of Deployments,
+// StatefulSets and DaemonSets, and describes each workload of
+// substrateWorkloads in it that has fewer ready pods than it wants, as
+// "<name> (<ready>/<wanted> available)". A workload that
+// is not in the list is left out.
+func unreadySubstrateWorkloads(rawJSON string) []string {
+	var list struct {
+		Items []struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Spec struct {
+				Replicas *int `json:"replicas"`
+			} `json:"spec"`
+			Status struct {
+				AvailableReplicas      int `json:"availableReplicas"`
+				DesiredNumberScheduled int `json:"desiredNumberScheduled"`
+				NumberAvailable        int `json:"numberAvailable"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &list); err != nil {
+		return nil
+	}
+
+	var out []string
+	for _, w := range substrateWorkloads {
+		for _, item := range list.Items {
+			if item.Metadata.Namespace != w.namespace || strings.ToLower(item.Kind) != w.kind || item.Metadata.Name != w.name {
+				continue
+			}
+			var ready, wanted int
+			if w.kind == "daemonset" {
+				wanted, ready = item.Status.DesiredNumberScheduled, item.Status.NumberAvailable
+			} else {
+				// Kubernetes defaults spec.replicas to 1.
+				wanted, ready = 1, item.Status.AvailableReplicas
+				if item.Spec.Replicas != nil {
+					wanted = *item.Spec.Replicas
+				}
+			}
+			if ready < wanted {
+				out = append(out, fmt.Sprintf("%s (%d/%d available)", w.name, ready, wanted))
+			}
+			break
+		}
+	}
+	return out
 }
 
 // Delete destroys the Kind cluster and removes its kubeconfig context.

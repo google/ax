@@ -211,6 +211,7 @@ ax ctx
   Substrate:       ate-api-server (1/1 available)
   AX Server:       ax-server (1/1 available in ax-system)
   ```
+- When a workload of Agent Substrate is not fully available, the `Substrate:` line names it instead, for example `degraded: atenet-router (0/1 available)`. A workload whose pods are starting or restarting shows up this way for a short time.
 - `ax local status -o json` prints the same fields as JSON for tools such as AX Studio, plus a `host` object describing the container engine (`runtime`, `kernelVersion`, `memTotalBytes`, `rootless`) and whether `ax local start` would accept it (`error`, `warning`). It exits 0 when no container engine is running: `state` is then `NotFound` and `host.error` says why.
 - `ax ctx` lists your kubeconfig contexts with `*` on `ax-local`. `AX TUNNEL` shows `-` until the first workload command lazily opens a background tunnel.
 
