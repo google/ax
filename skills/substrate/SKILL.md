@@ -119,9 +119,10 @@ instead. No mocking library is in `go.mod`.
   `SuspendTask`) and before it is resumed (`ResumeTask`). Substrate validates
   the rules when they are copied. `bindGateway` fails with reason
   `GatewayBindingFailed` when Substrate refuses them, or when the actor has no
-  policy and the Gateway cannot be loaded. `SuspendTask` and `ResumeTask` do
-  not fail on the Gateway themselves (`fetchGateway` in
-  `internal/server/server.go`), so a suspend always reaches `SuspendActor`.
+  policy and the Gateway no longer exists. `SuspendTask` and `ResumeTask`
+  treat a deleted Workspace or Gateway as none, and fail before they touch the
+  actor when the store cannot read one (`fetchWorkspace`, `fetchGateway` in
+  `internal/server/server.go`).
 - Actors come from shared profile templates, so the runner learns its work
   by push: after `ResumeActor`, ax-server POSTs the Task (and its Workspace)
   to `v1alpha1.RunnerTaskPath`, or a Workspace to a setup actor at

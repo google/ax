@@ -838,12 +838,19 @@ func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
 	}
 }
 
-// A task that has its gateway's rules can be resumed and suspended while its
-// Gateway cannot be read.
-func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
+// A resume or suspend fails while the store cannot read the task's Workspace
+// or Gateway, and does not start the task's actor. A Workspace that no longer
+// exists is not an error.
+func TestServer_ResumeAndSuspendWithStoreError(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewStore()
 	sub := substratetest.NewServer(t)
+	if err := mem.SaveWorkspace(ctx, &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "ws"},
+		Spec:     &v1alpha1.WorkspaceSpec{},
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
 	if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
 		Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
 		Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
@@ -854,12 +861,39 @@ func TestServer_ResumeAndSuspendWithUnreadableGateway(t *testing.T) {
 	}
 	if _, err := server.NewServer(mem, newTestTaskManager(sub)).CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
+		Spec: &v1alpha1.TaskSpec{
+			Profile:   &v1alpha1.Profile{Image: "alpine"},
+			Workspace: &v1alpha1.WorkspaceRef{Name: "ws"},
+			Gateway:   &v1alpha1.GatewayRef{Name: "gw"},
+		},
 	}}); err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
 
-	srv := server.NewServer(&failGetGatewayStore{Store: mem, err: errors.New("store unavailable")}, newTestTaskManager(sub))
+	storeErr := errors.New("store unavailable")
+	for _, tc := range []struct {
+		st      store.Store
+		wantMsg string
+	}{
+		{&failGetWorkspaceStore{Store: mem, err: storeErr}, `getting workspace "ws": store unavailable`},
+		{&failGetGatewayStore{Store: mem, err: storeErr}, `getting gateway "gw": store unavailable`},
+	} {
+		srv := server.NewServer(tc.st, newTestTaskManager(sub))
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"}); status.Code(err) != codes.Internal || status.Convert(err).Message() != tc.wantMsg {
+			t.Errorf("ResumeTask: got %v, want Internal %q", err, tc.wantMsg)
+		}
+		if _, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"}); status.Code(err) != codes.Internal || status.Convert(err).Message() != tc.wantMsg {
+			t.Errorf("SuspendTask: got %v, want Internal %q", err, tc.wantMsg)
+		}
+	}
+	if actor, _ := sub.Actor("default", "task"); actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("actor state after the failed requests = %v, want suspended", actor.GetStatus().GetState())
+	}
+
+	if err := mem.DeleteWorkspace(ctx, "default", "ws"); err != nil {
+		t.Fatalf("DeleteWorkspace: %v", err)
+	}
+	srv := server.NewServer(mem, newTestTaskManager(sub))
 	if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"}); err != nil {
 		t.Errorf("ResumeTask: %v", err)
 	}
