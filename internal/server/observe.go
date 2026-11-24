@@ -21,13 +21,14 @@ import (
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
 )
 
 // observeInterval is how often ObserveStatus asks the runners of the running
 // tasks how the tasks ended.
 //
-// TODO(#690): Optimize the interval. Every pass lists all tasks and the
-// actors of their atespaces, and asks the runner of every running task, so
+// TODO(#690): Optimize the interval. Every pass lists all actors of all
+// atespaces and asks the runner of every running task that has not ended, so
 // its cost grows with the fleet, while a shorter interval reports an end
 // sooner.
 const observeInterval = 5 * time.Second
@@ -62,56 +63,42 @@ func (s *Server) observeStatus(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// observeStatusOnce makes one pass of ObserveStatus over the running tasks of
+// observeStatusOnce makes one pass of ObserveStatus over the running actors of
 // all atespaces.
 func (s *Server) observeStatusOnce(ctx context.Context) {
-	tasks, err := s.listRunningTasks(ctx)
+	// TODO(#690): List only the running actors once Substrate's ListActors can
+	// filter by state (agent-substrate/substrate#1256). Until then every actor
+	// is listed and the running ones are kept here.
+	actors, err := s.substrate.ListActors(ctx, "")
 	if err != nil {
 		if ctx.Err() == nil {
-			slog.Warn("could not list the tasks to ask how they ended", "error", err)
+			slog.Warn("could not list the actors to ask how their tasks ended", "error", err)
 		}
 		return
 	}
 	sem := make(chan struct{}, observeConcurrency)
 	var wg sync.WaitGroup
-	for _, task := range tasks {
+	for _, actor := range actors {
+		if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+			continue
+		}
 		sem <- struct{}{}
 		wg.Go(func() {
 			defer func() { <-sem }()
-			s.observeTaskStatus(ctx, task)
+			s.observeTaskStatus(ctx, actor.GetMetadata().GetAtespace(), actor.GetMetadata().GetName())
 		})
 	}
 	wg.Wait()
 }
 
-// observePageSize is how many tasks listRunningTasks reads at a time.
-const observePageSize = 100
-
-// listRunningTasks returns the running tasks of all atespaces that are not
-// being deleted. Running is the actor's live state on Agent Substrate, so
-// every task is listed with listTasks and the running ones are kept.
-func (s *Server) listRunningTasks(ctx context.Context) ([]*v1alpha1.Task, error) {
-	var running []*v1alpha1.Task
-	for offset := int64(0); ; offset += observePageSize {
-		tasks, err := s.listTasks(ctx, "", observePageSize, offset)
-		if err != nil {
-			return nil, err
-		}
-		for _, task := range tasks {
-			if task.GetStatus().GetState() == v1alpha1.TaskState_TASK_STATE_RUNNING && task.GetMetadata().GetDeleteTime() == nil {
-				running = append(running, task)
-			}
-		}
-		if len(tasks) < observePageSize {
-			return running, nil
-		}
+// observeTaskStatus asks the runner of the running actor named name how its
+// task ended and, once it reports COMPLETED or FAILED, stores that.
+func (s *Server) observeTaskStatus(ctx context.Context, atespace, name string) {
+	// Not every actor is a task's, and a task that ended is not asked again.
+	task, err := s.getStoredTask(ctx, atespace, name)
+	if err != nil || !awaitsEnd(task) {
+		return
 	}
-}
-
-// observeTaskStatus asks the runner of task, a running task, how the task
-// ended and, once it reports COMPLETED or FAILED, stores that.
-func (s *Server) observeTaskStatus(ctx context.Context, task *v1alpha1.Task) {
-	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	rs, err := s.taskManager.RunnerStatus(ctx, atespace, name)
 	if err != nil {
 		return

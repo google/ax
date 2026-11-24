@@ -137,11 +137,12 @@ instead. No mocking library is in `go.mod`.
 - How a task ended is pulled, never pushed, by a background loop:
   `Server.ObserveStatus` (`internal/server/observe.go`), which
   `cmd/ax-server/main.go` starts; it makes a pass every `observeInterval`
-  (same file). Each pass lists every
-  task with `listTasks`, which reads the actors' live states from Substrate
-  (the store cannot know which tasks run), and GETs
-  `v1alpha1.RunnerStatusPath` through `atenet-router` for each `RUNNING` one
-  that is not being deleted (`TaskManager.RunnerStatus` in
+  (same file). Each pass lists the actors of all atespaces (`ListActors`
+  with an empty atespace; Substrate cannot filter by state yet,
+  agent-substrate/substrate#1256), keeps the `ACTOR_STATE_RUNNING` ones, and
+  GETs `v1alpha1.RunnerStatusPath` through `atenet-router` for each whose
+  task has no stored state and is not being deleted
+  (`TaskManager.RunnerStatus` in
   `internal/controller/actorhttp.go`), then stores the first
   `COMPLETED`/`FAILED` with `status.outcome` under the task lock. Reads
   (`getTask`, `listTasks`) never ask the runner. The runner serves the status
