@@ -136,7 +136,8 @@ instead. No mocking library is in `go.mod`.
   for a task whose workspace is already set up.
 - How a task ended is pulled, never pushed, by a background loop:
   `Server.ObserveStatus` (`internal/server/observe.go`), which
-  `cmd/ax-server/main.go` starts with `observeInterval`. Each pass lists every
+  `cmd/ax-server/main.go` starts; it makes a pass every `observeInterval`
+  (same file). Each pass lists every
   task with `listTasks`, which reads the actors' live states from Substrate
   (the store cannot know which tasks run), and GETs
   `v1alpha1.RunnerStatusPath` through `atenet-router` for each `RUNNING` one

@@ -23,19 +23,33 @@ import (
 	"github.com/google/ax/pkg/apis/v1alpha1"
 )
 
+// observeInterval is how often ObserveStatus asks the runners of the running
+// tasks how the tasks ended.
+//
+// TODO(#690): Optimize the interval. Every pass lists all tasks and the
+// actors of their atespaces, and asks the runner of every running task, so
+// its cost grows with the fleet, while a shorter interval reports an end
+// sooner.
+const observeInterval = 5 * time.Second
+
 // observeConcurrency caps how many runners ObserveStatus asks at once.
 //
 // TODO(#690): Optimize the concurrency for large fleets, together with
-// observeInterval in cmd/ax-server: a pass must ask every running task's
-// runner, each with a 2 s timeout, before the next one starts.
+// observeInterval: a pass must ask every running task's runner, each with a
+// 2 s timeout, before the next one starts.
 const observeConcurrency = 16
 
 // ObserveStatus asks the runner of every running task how the task ended, and
-// stores
-// the COMPLETED and FAILED ones as the tasks' states and outcomes. It repeats
-// every interval until ctx is done. Reads take both from the store, so
-// they need no sandbox, and suspending or resuming a task keeps the state.
-func (s *Server) ObserveStatus(ctx context.Context, interval time.Duration) {
+// stores the COMPLETED and FAILED ones as the tasks' states and outcomes. It
+// repeats every observeInterval until ctx is done. Reads take both from the
+// store, so they need no sandbox, and suspending or resuming a task keeps the
+// state.
+func (s *Server) ObserveStatus(ctx context.Context) {
+	s.observeStatus(ctx, observeInterval)
+}
+
+// observeStatus is ObserveStatus with a pass every interval.
+func (s *Server) observeStatus(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

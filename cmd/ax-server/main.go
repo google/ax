@@ -38,15 +38,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// observeInterval is how often ax-server asks the runners of the running
-// tasks how the tasks ended.
-//
-// TODO(#690): Optimize the interval. Every pass lists all tasks and the
-// actors of their atespaces, and asks the runner of every running task, so
-// its cost grows with the fleet, while a shorter interval reports an end
-// sooner.
-const observeInterval = 5 * time.Second
-
 func main() {
 	var (
 		listenAddr              string
@@ -169,7 +160,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	go srv.ObserveStatus(ctx, observeInterval)
+	go srv.ObserveStatus(ctx)
 
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -177,14 +177,14 @@ func TestObserveStatus_AsksOnlyRunningTasks(t *testing.T) {
 	}
 }
 
-// ObserveStatus makes a pass every interval until its context is done.
+// observeStatus makes a pass every interval until its context is done.
 func TestObserveStatus_Repeats(t *testing.T) {
 	srv, runner := newRunningTask(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		srv.ObserveStatus(ctx, time.Millisecond)
+		srv.observeStatus(ctx, time.Millisecond)
 	}()
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
