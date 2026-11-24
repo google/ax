@@ -382,7 +382,7 @@ func TestRunGetListsEveryPage(t *testing.T) {
 
 // newTestTaskManager returns a TaskManager that runs tasks on sub.
 func newTestTaskManager(sub *substratetest.Server) *controller.TaskManager {
-	return controller.NewTaskManager(sub.Client(), "test-template", v1alpha1.DefaultSystemNamespace)
+	return controller.NewTaskManager(sub.Client())
 }
 
 func TestRunDeleteTask(t *testing.T) {

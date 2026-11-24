@@ -129,10 +129,7 @@ func (s *Server) GetTask(ctx context.Context, req *v1alpha1.GetTaskRequest) (*v1
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	task, err := s.getTask(ctx, atespace, req.Name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -144,15 +141,8 @@ func (s *Server) GetTask(ctx context.Context, req *v1alpha1.GetTaskRequest) (*v1
 }
 
 func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) (*v1alpha1.ListTasksResponse, error) {
-	atespace := ""
-	pageSize := int32(0)
-	token := ""
-	if req != nil {
-		atespace = req.Atespace
-		pageSize = req.PageSize
-		token = req.PageToken
-	}
-	offset, size, err := pageStart(atespace, pageSize, token)
+	atespace := req.GetAtespace()
+	offset, size, err := pageStart(atespace, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
@@ -187,11 +177,8 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	// ignore any client-supplied value.
 	task.Metadata.Uid, task.Metadata.CreateTime, task.Metadata.DeleteTime = "", nil, nil
 	task.Status = nil
-	atespace := task.Metadata.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-		task.Metadata.Atespace = atespace
-	}
+	atespace := atespaceOrDefault(task.Metadata.Atespace)
+	task.Metadata.Atespace = atespace
 	taskName := task.Metadata.GetName()
 
 	// Acquire exclusive lock for this task.
@@ -333,30 +320,17 @@ func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	taskName := req.Name
+	atespace := atespaceOrDefault(req.Atespace)
 
-	// Acquire exclusive lock for this task.
-	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	task, unlock, err := s.lockStoredTask(ctx, atespace, req.Name)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+		return nil, err
 	}
 	defer unlock()
 
-	task, err := s.getStoredTask(ctx, atespace, taskName)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
-		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
-
 	// Mark the task with delete_time while actor cleanup is in progress.
 	if task.Metadata == nil {
-		task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: taskName}
+		task.Metadata = &v1alpha1.ObjectMeta{Atespace: atespace, Name: req.Name}
 	}
 	task.Metadata.DeleteTime = timestamppb.Now()
 	if err := s.saveTask(ctx, task); err != nil {
@@ -373,26 +347,13 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	taskName := req.Name
+	atespace := atespaceOrDefault(req.Atespace)
 
-	// Acquire exclusive lock for this task.
-	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	task, unlock, err := s.lockStoredTask(ctx, atespace, req.Name)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+		return nil, err
 	}
 	defer unlock()
-
-	task, err := s.getStoredTask(ctx, atespace, taskName)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
-		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
 
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -406,10 +367,7 @@ func (s *Server) SuspendTask(ctx context.Context, req *v1alpha1.SuspendTaskReque
 		return nil, err
 	}
 	if err := s.taskManager.Suspend(ctx, task, ws, gw); err != nil {
-		if substrate.IsTransientError(err) {
-			return nil, status.Errorf(codes.Unavailable, "suspending task on substrate: %v", err)
-		}
-		return nil, status.Errorf(codes.Internal, "suspending task on substrate: %v", err)
+		return nil, substrateError(err, "suspending task on substrate")
 	}
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
 		return nil, err
@@ -424,26 +382,13 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	taskName := req.Name
+	atespace := atespaceOrDefault(req.Atespace)
 
-	// Acquire exclusive lock for this task.
-	unlock, err := s.locker.Lock(ctx, "task", atespace, taskName)
+	task, unlock, err := s.lockStoredTask(ctx, atespace, req.Name)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, taskName, err)
+		return nil, err
 	}
 	defer unlock()
-
-	task, err := s.getStoredTask(ctx, atespace, taskName)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", taskName, atespace)
-		}
-		return nil, status.Errorf(codes.Internal, "getting task: %v", err)
-	}
 
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -479,11 +424,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
-	atespace := task.GetMetadata().GetAtespace()
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
-	taskName := task.GetMetadata().GetName()
+	atespace, taskName := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
@@ -510,16 +451,47 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
-	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+	state := v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 	if substrate.IsTransientError(err) {
-		code, state = codes.Unavailable, v1alpha1.TaskState_TASK_STATE_QUEUED
+		state = v1alpha1.TaskState_TASK_STATE_QUEUED
 	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.State = state
-	_ = s.updateFailedTask(ctx, task)
-	return status.Errorf(code, "%s task on substrate: %v", action, err)
+	if uerr := s.updateFailedTask(ctx, task); uerr != nil {
+		slog.Error("recording task failure", "atespace", atespace, "task", name, "state", state, "error", uerr)
+	}
+	return substrateError(err, action+" task on substrate")
+}
+
+// substrateError returns err from Substrate as a gRPC status error prefixed
+// with msg: Unavailable if a retry may fix it (substrate.IsTransientError), and
+// Internal otherwise.
+func substrateError(err error, msg string) error {
+	code := codes.Internal
+	if substrate.IsTransientError(err) {
+		code = codes.Unavailable
+	}
+	return status.Errorf(code, "%s: %v", msg, err)
+}
+
+// lockStoredTask takes the task's exclusive lock and loads its stored record.
+// The caller must call unlock when err is nil. err is a gRPC status error.
+func (s *Server) lockStoredTask(ctx context.Context, atespace, name string) (task *v1alpha1.Task, unlock func(), err error) {
+	unlock, err = s.locker.Lock(ctx, "task", atespace, name)
+	if err != nil {
+		return nil, nil, status.Errorf(codes.Aborted, "locking task %s/%s: %v", atespace, name, err)
+	}
+	task, err = s.getStoredTask(ctx, atespace, name)
+	if err != nil {
+		unlock()
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, status.Errorf(codes.NotFound, "task %q not found in atespace %q", name, atespace)
+		}
+		return nil, nil, status.Errorf(codes.Internal, "getting task: %v", err)
+	}
+	return task, unlock, nil
 }
 
 // Task storage and Substrate.
@@ -831,10 +803,7 @@ func (s *Server) GetModel(ctx context.Context, req *v1alpha1.GetModelRequest) (*
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	model, err := s.store.GetModel(ctx, atespace, req.Name)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -846,15 +815,8 @@ func (s *Server) GetModel(ctx context.Context, req *v1alpha1.GetModelRequest) (*
 }
 
 func (s *Server) ListModels(ctx context.Context, req *v1alpha1.ListModelsRequest) (*v1alpha1.ListModelsResponse, error) {
-	atespace := ""
-	pageSize := int32(0)
-	token := ""
-	if req != nil {
-		atespace = req.Atespace
-		pageSize = req.PageSize
-		token = req.PageToken
-	}
-	offset, size, err := pageStart(atespace, pageSize, token)
+	atespace := req.GetAtespace()
+	offset, size, err := pageStart(atespace, req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
@@ -874,13 +836,12 @@ func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelReque
 	if err := apivalidation.ValidateModel(req.Model); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	req.Model.Metadata = defaultMetadata(req.Model.Metadata, func(atespace, name string) *v1alpha1.ObjectMeta {
-		existing, err := s.store.GetModel(ctx, atespace, name)
-		if err != nil {
-			return nil
-		}
-		return existing.GetMetadata()
-	})
+	atespace := atespaceOrDefault(req.Model.GetMetadata().GetAtespace())
+	existing, err := s.store.GetModel(ctx, atespace, req.Model.GetMetadata().GetName())
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "getting model: %v", err)
+	}
+	req.Model.Metadata = defaultMetadata(req.Model.Metadata, existing.GetMetadata())
 
 	// A Model has no Substrate side effects to serialize, so it is not locked.
 	if err := s.store.SaveModel(ctx, req.Model); err != nil {
@@ -893,10 +854,7 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing request")
 	}
-	atespace := req.Atespace
-	if atespace == "" {
-		atespace = v1alpha1.DefaultAtespace
-	}
+	atespace := atespaceOrDefault(req.Atespace)
 	modelName := req.Name
 
 	if err := s.store.DeleteModel(ctx, atespace, modelName); err != nil {
@@ -908,17 +866,13 @@ func (s *Server) DeleteModel(ctx context.Context, req *v1alpha1.DeleteModelReque
 	return &emptypb.Empty{}, nil
 }
 
-func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name string) *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {
+// defaultMetadata fills in the server-assigned fields of meta for a resource
+// whose stored metadata is prev, or nil if it is new.
+func defaultMetadata(meta, prev *v1alpha1.ObjectMeta) *v1alpha1.ObjectMeta {
 	if meta == nil {
 		meta = &v1alpha1.ObjectMeta{}
 	}
-	if meta.Atespace == "" {
-		meta.Atespace = v1alpha1.DefaultAtespace
-	}
-	var prev *v1alpha1.ObjectMeta
-	if existing != nil {
-		prev = existing(meta.Atespace, meta.Name)
-	}
+	meta.Atespace = atespaceOrDefault(meta.Atespace)
 	// metadata.uid and the timestamps are server-assigned; always ignore any
 	// client-supplied value, preserving prev's uid and createTime on updates
 	// and assigning fresh ones on creates.
@@ -935,6 +889,15 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
 	}
 	meta.UpdateTime, meta.DeleteTime = now, nil
 	return meta
+}
+
+// atespaceOrDefault returns atespace, or v1alpha1.DefaultAtespace if it is
+// empty.
+func atespaceOrDefault(atespace string) string {
+	if atespace == "" {
+		return v1alpha1.DefaultAtespace
+	}
+	return atespace
 }
 
 // List pagination.
