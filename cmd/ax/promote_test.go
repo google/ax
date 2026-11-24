@@ -299,34 +299,9 @@ func TestRunPromote(t *testing.T) {
 		t.Errorf("expected the task suspended on the source, got %v", got)
 	}
 
-	// 7. A task that has run to its end has an outcome, and is not suspended on
-	// the source, which the source would refuse. A task that failed without
-	// one can still be resumed there, so it is suspended as any other.
 	full.sub.SetErrors(substratetest.Errors{})
-	for _, tt := range []struct {
-		status    *v1alpha1.TaskStatus
-		suspended string
-	}{
-		{
-			status:    &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED},
-			suspended: "task.ax.io/demo suspended on the source\n",
-		},
-		{status: &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED, Outcome: &v1alpha1.TaskOutcome{ExitCode: 0}}},
-	} {
-		if err := source.store.UpdateTaskStatus(t.Context(), "dev", "demo", tt.status); err != nil {
-			t.Fatal(err)
-		}
-		out, err = promote("--to", "full", "--suspend-source", "--replace")
-		if err != nil {
-			t.Fatalf("runPromote failed: %v", err)
-		}
-		wantOutput = "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\n" + tt.suspended + "task.ax.io/demo resumed\n"
-		if out != wantOutput {
-			t.Fatalf("expected output %q, got %q", wantOutput, out)
-		}
-	}
 
-	// 8. A target that has to create the workspace sets it up through the
+	// 7. A target that has to create the workspace sets it up through the
 	// gateway that its setup names, so that gateway is promoted before it. It
 	// is not promoted for a workspace that the target already has, and only
 	// once when it is the task's gateway too.

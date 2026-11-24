@@ -475,7 +475,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //     canceling that pending deletion.
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
 //     state from its live Substrate actor rather than keeping a stored Queued
-//     or Failed state.
+//     state, and drops a Ready condition stored by recordFailure.
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
@@ -504,11 +504,13 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 
 // recordFailure stores the status of a task that could not be provisioned or
 // resumed: state Queued if err is a transient Substrate error, which a retry
-// may fix, and Failed otherwise. It returns the gRPC error for action.
+// may fix, and Unspecified otherwise. The Ready condition is stored either way,
+// so that it says why while the task has no actor. It returns the gRPC error
+// for action.
 func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
-	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_FAILED
+	code, state := codes.Internal, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 	if substrate.IsTransientError(err) {
 		code, state = codes.Unavailable, v1alpha1.TaskState_TASK_STATE_QUEUED
 	}
@@ -516,7 +518,7 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.State = state
-	_ = s.updateTask(ctx, atespace, name, task.Status)
+	_ = s.updateFailedTask(ctx, task)
 	return status.Errorf(code, "%s task on substrate: %v", action, err)
 }
 
@@ -525,9 +527,9 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 // A task's actor on Agent Substrate is the source of truth for whether the task
 // is running and whether it is healthy. The store keeps only what AX itself knows.
 //
-// Handlers never call s.store for tasks; they use the methods below. saveTask
-// and updateTask drop the actor-owned status before writing. getTask and
-// listTasks fill it in from Substrate.
+// Handlers never call s.store for tasks; they use the methods below. saveTask,
+// updateTask, and updateFailedTask drop the actor-owned status before writing.
+// getTask and listTasks fill it in from Substrate.
 
 // getStoredTask returns a task directly from the store without overlaying live
 // actor status from Substrate.
@@ -581,6 +583,17 @@ func (s *Server) saveTask(ctx context.Context, task *v1alpha1.Task) error {
 // not modified.
 func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1alpha1.TaskStatus) error {
 	return s.store.UpdateTaskStatus(ctx, atespace, name, storedStatus(st))
+}
+
+// updateFailedTask stores the status of a task that could not be provisioned
+// or resumed as updateTask does, but keeps its Ready condition, which says why.
+// task is not modified.
+func (s *Server) updateFailedTask(ctx context.Context, task *v1alpha1.Task) error {
+	st := storedStatus(task.Status)
+	if ready := readyCondition(task); ready != nil && !v1alpha1.IsAXTaskState(st.State) {
+		st.Conditions = append(st.Conditions, proto.Clone(ready).(*v1alpha1.Condition))
+	}
+	return s.store.UpdateTaskStatus(ctx, task.GetMetadata().GetAtespace(), task.GetMetadata().GetName(), st)
 }
 
 // storedStatus returns the part of a task's status that AX owns and stores. The
@@ -670,10 +683,11 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
 			return
 		}
-		// A task that finished provisioning always has an actor, so a missing one
-		// was removed outside AX.
-		if !v1alpha1.IsAXTaskState(st.State) {
-			st.State = v1alpha1.TaskState_TASK_STATE_FAILED
+		// A stored Ready condition says why the actor could not be provisioned.
+		// Otherwise the task finished provisioning, so its actor was removed
+		// outside AX.
+		if !v1alpha1.IsAXTaskState(st.State) && readyCondition(task) == nil {
+			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 			setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
 		}
 	default:
@@ -743,6 +757,16 @@ func conditionTrue(task *v1alpha1.Task, condType string) bool {
 		}
 	}
 	return false
+}
+
+// readyCondition returns the task's Ready condition, or nil.
+func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == v1alpha1.ConditionReady {
+			return c
+		}
+	}
+	return nil
 }
 
 // setReady sets the task's Ready condition. Its update time changes only when

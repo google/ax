@@ -96,11 +96,11 @@ A task binds at most one `Gateway` through `spec.gateway`, for example `gateway:
 
 A task gets a copy of the gateway's rules when it is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
 
-If Agent Substrate refuses one of the rules, the task is marked `Failed` with reason `GatewayBindingFailed` and does not run.
+If Agent Substrate refuses one of the rules, the task reports `Ready=False` with reason `GatewayBindingFailed` and does not run.
 
 ### Sizing the sandbox
 
-`spec.profile.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses is marked `Failed` with reason `TemplateCreationFailed` rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
+`spec.profile.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses reports `Ready=False` with reason `TemplateCreationFailed` rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
 
 Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` is not supported and `ax apply` rejects a manifest that sets it.
 

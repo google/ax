@@ -128,16 +128,10 @@ const (
 )
 
 // IsAXTaskState reports whether state describes the control plane's own stored
-// state on a task (QUEUED, FAILED, or COMPLETED) rather than a live state read
-// from the task's actor on Agent Substrate.
+// state on a task (QUEUED) rather than a live state read from the task's actor
+// on Agent Substrate.
 func IsAXTaskState(state TaskState) bool {
-	switch state {
-	case TaskState_TASK_STATE_QUEUED,
-		TaskState_TASK_STATE_FAILED,
-		TaskState_TASK_STATE_COMPLETED:
-		return true
-	}
-	return false
+	return state == TaskState_TASK_STATE_QUEUED
 }
 
 // FormatTaskState returns a human-readable state label for CLI display. A task
@@ -163,10 +157,6 @@ func FormatTaskState(task *Task) string {
 		return "Reverting"
 	case TaskState_TASK_STATE_QUEUED:
 		return "Queued"
-	case TaskState_TASK_STATE_FAILED:
-		return "Failed"
-	case TaskState_TASK_STATE_COMPLETED:
-		return "Completed"
 	default:
 		return ReasonUnknown
 	}

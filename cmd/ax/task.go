@@ -98,16 +98,6 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 		}
 	}
 
-	if outcome := st.GetOutcome(); outcome != nil {
-		fmt.Fprintf(out, "Exit Code:    %d\n", outcome.GetExitCode())
-		if output := outcome.GetOutput(); output != "" {
-			fmt.Fprintln(out, "Output:")
-			for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
-				fmt.Fprintf(out, "  %s\n", line)
-			}
-		}
-	}
-
 	if conditions := st.GetConditions(); len(conditions) > 0 {
 		fmt.Fprintln(out, "\nConditions:")
 		w := tabwriter.NewWriter(out, 0, 8, 2, ' ', 0)
