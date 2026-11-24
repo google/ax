@@ -383,7 +383,7 @@ func reportExit(cfg Config, cmd *exec.Cmd, err error) {
 // environment, the metadata URL, the status file, and the Task's spec.env
 // entries.
 func commandEnv(task *v1alpha1.Task, metadataURL, wsPath string) []string {
-	env := append(os.Environ(), "AX_METADATA_URL="+metadataURL, StatusFileEnv+"="+metadata.StatusFile(wsPath))
+	env := append(os.Environ(), "AX_METADATA_URL="+metadataURL, StatusFileEnv+"="+filepath.Join(wsPath, ".ax", "status"))
 	for _, e := range task.GetSpec().GetEnv() {
 		env = append(env, fmt.Sprintf("%s=%s", e.GetName(), e.GetValue()))
 	}

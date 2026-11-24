@@ -312,13 +312,13 @@ func (s *Server) Pushes() <-chan Push {
 }
 
 // handleStatus serves how the task ended, as the status file in its workspace
-// says on each request (see StatusFile): an empty status while there is no
+// says on each request (see readStatus): an empty status while there is no
 // file, and FAILED with the reason for a file that cannot be used.
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
-	path := StatusFile(s.guestCfg.Workspace)
+	wsPath := s.guestCfg.Workspace
 	s.mu.RUnlock()
-	st, err := readStatus(path)
+	st, err := readStatus(wsPath)
 	if err != nil {
 		// A broken status file fails the task, with the problem as its output.
 		st = &v1alpha1.RunnerStatus{State: v1alpha1.RunnerStateFailed, Output: err.Error()}

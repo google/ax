@@ -29,17 +29,12 @@ import (
 // maxStatusBytes caps the size of the status file.
 const maxStatusBytes = 16 << 10
 
-// StatusFile is the file in the workspace at wsPath that says how the task
-// ended. Only the task's command writes it.
-func StatusFile(wsPath string) string {
-	return filepath.Join(wsPath, ".ax", "status")
-}
-
-// readStatus reads the status file at path. Without a file the status is
-// empty: the task has not ended. A file that cannot be read, is not JSON,
-// exceeds maxStatusBytes, or has an unknown state is an error.
-func readStatus(path string) (*v1alpha1.RunnerStatus, error) {
-	f, err := os.Open(path)
+// readStatus reads the status file of the workspace at wsPath,
+// <workspace>/.ax/status, which only the task's agent writes. Without a file
+// the status is empty: the task has not ended. A file that cannot be read, is
+// not JSON, exceeds maxStatusBytes, or has an unknown state is an error.
+func readStatus(wsPath string) (*v1alpha1.RunnerStatus, error) {
+	f, err := os.Open(filepath.Join(wsPath, ".ax", "status"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return &v1alpha1.RunnerStatus{}, nil
 	}
