@@ -18,7 +18,6 @@ package ax.v1alpha1;
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
-import "google/rpc/status.proto";
 import "pkg/apis/v1alpha1/common.proto";
 import "pkg/apis/v1alpha1/gateway.proto";
 import "pkg/apis/v1alpha1/workspace.proto";
@@ -119,7 +118,7 @@ message Goal {
 // Values below 200 are the state of the task's actor on Agent Substrate, with
 // the same names and numbers as Substrate's ActorState; they are read from the
 // actor and never stored. Values from 200 are AX's own states, stored by
-// ax-server when it could not provision or resume the task's actor.
+// ax-server.
 enum TaskState {
   // Reserved for ActorState values Substrate may add.
   reserved 8 to 199;
@@ -135,22 +134,6 @@ enum TaskState {
   // The task's actor is not provisioned yet: CreateTask is in progress or
   // failed with a transient Substrate error and can be applied again.
   TASK_STATE_QUEUED = 200;
-  // The task's actor could not be provisioned or resumed, or no longer exists
-  // on Substrate. The Ready condition says why.
-  TASK_STATE_FAILED = 201;
-  // The task is completed.
-  //
-  // TODO(#690): Nothing sets this yet; it will be used to mark tasks
-  // completed once the task can report how it ended.
-  TASK_STATE_COMPLETED = 202;
-}
-
-message TaskOutcome {
-  google.rpc.Status status = 1;
-  int32 exit_code = 2;
-  // Unstructured task output from $AX_OUTPUT_FILE (/workspace/.ax/output) or
-  // automatic stdout/stderr tail fallback (capped at 64 KiB).
-  string output = 3;
 }
 
 message TaskStatus {
@@ -161,16 +144,13 @@ message TaskStatus {
   ObjectRef ate_template = 3;
   repeated Condition conditions = 4;
   TaskState state = 5;
-  TaskOutcome outcome = 6;
   // 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
   // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
   // retry (non-zero command exit, sandbox crash, or lost runner).
-  int32 attempt = 7;
+  int32 attempt = 6;
   // Effective command argv executed by each run: spec.commands if set,
   // otherwise the image's ENTRYPOINT + CMD.
-  repeated string resolved_argv = 9;
-  // Summary of the previous attempt's failure, provided as context on retry.
-  string previous_failure = 10;
+  repeated string resolved_argv = 7;
 }
 
 // --- RPC Request & Response Messages ---

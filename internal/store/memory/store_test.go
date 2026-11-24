@@ -142,7 +142,7 @@ func TestSaveAndUpdateTask(t *testing.T) {
 		t.Fatalf("stored state = %v, want UNSPECIFIED", got.GetStatus().GetState())
 	}
 
-	st := &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_FAILED}
+	st := &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED}
 	if err := s.UpdateTaskStatus(ctx, "default", "t1", st); err != nil {
 		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestSaveAndUpdateTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask after update: %v", err)
 	}
-	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED {
-		t.Fatalf("stored state after update = %v, want FAILED", got.GetStatus().GetState())
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
+		t.Fatalf("stored state after update = %v, want QUEUED", got.GetStatus().GetState())
 	}
 }

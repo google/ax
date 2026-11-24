@@ -686,9 +686,9 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetTask: %v", err)
 	}
-	ready := readyCondition(stored)
-	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED || ready.GetReason() != v1alpha1.ReasonGatewayBindingFailed || ready.GetMessage() != `gateway "gw": `+substrateMsg {
-		t.Errorf("after refusal: state %v, Ready %v; want FAILED with reason GatewayBindingFailed and Substrate's message", stored.GetStatus().GetState(), ready)
+	// The actor was provisioned before the refusal, so its state is reported.
+	if got := stored.GetStatus().GetState(); got != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
+		t.Errorf("after refusal: state %v, want SUSPENDED", got)
 	}
 
 	// Resuming the task fails as well.
@@ -1397,13 +1397,13 @@ func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
 		t.Fatalf("expected Internal error when Substrate fails to suspend the new actor, got %v", err)
 	}
 
-	// Task was saved and updated to FAILED state in store
+	// Task was saved, and its state is read from the actor that was provisioned
 	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-create-fail"})
 	if err != nil {
 		t.Fatalf("expected task to exist in store after a failed create, got %v", err)
 	}
-	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED {
-		t.Errorf("stored state = %v, want FAILED", stored.GetStatus().GetState())
+	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
+		t.Errorf("state = %v, want SUSPENDED", stored.GetStatus().GetState())
 	}
 
 	// Because task already exists in store, attempting to create it again must fail with FailedPrecondition
@@ -1651,15 +1651,39 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 	}
 }
 
-// A failed create stores state Failed. A later successful suspend or resume
-// clears it, so the state is read from the actor again.
+// A task whose actor could not be created reports why in its Ready condition,
+// not as a missing actor.
+func TestServer_CreateTask_ActorCreationFailureKeepsReady(t *testing.T) {
+	sub := substratetest.NewServer(t)
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
+	ctx := context.Background()
+
+	sub.SetErrors(substratetest.Errors{CreateActor: status.Error(codes.InvalidArgument, "refused")})
+	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
+		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+	}}); status.Code(err) != codes.Internal {
+		t.Fatalf("CreateTask: got %v, want Internal", err)
+	}
+	task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	ready := readyCondition(task)
+	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || ready.GetStatus() != "False" || ready.GetReason() != v1alpha1.ReasonActorCreationFailed {
+		t.Errorf("state %v, Ready %v; want UNSPECIFIED with Ready False/%s", task.GetStatus().GetState(), ready, v1alpha1.ReasonActorCreationFailed)
+	}
+}
+
+// A failed create stores the task's Ready condition. A later successful
+// suspend or resume clears it, and the state is read from the actor.
 func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	sub := substratetest.NewServer(t)
 	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	ctx := context.Background()
 
 	// createFailed creates a task whose actor exists but could not be
-	// suspended, which leaves its stored state Failed.
+	// suspended.
 	createFailed := func(name string) {
 		t.Helper()
 		sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend failure")})
@@ -1669,13 +1693,6 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
 		}}); status.Code(err) != codes.Internal {
 			t.Fatalf("CreateTask(%s): got %v, want Internal", name, err)
-		}
-		task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: name})
-		if err != nil {
-			t.Fatalf("GetTask(%s): %v", name, err)
-		}
-		if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_FAILED {
-			t.Fatalf("state of %s after a failed create = %v, want FAILED", name, task.GetStatus().GetState())
 		}
 	}
 

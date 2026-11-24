@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	rpcstatus "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -75,19 +74,13 @@ func fullTask() *v1alpha1.Task {
 				Message:    "ok",
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
-			State: v1alpha1.TaskState_TASK_STATE_RUNNING,
-			Outcome: &v1alpha1.TaskOutcome{
-				Status:   &rpcstatus.Status{Code: 0, Message: "done"},
-				ExitCode: 0,
-				Output:   "all checks passed",
-			},
+			State:   v1alpha1.TaskState_TASK_STATE_RUNNING,
 			Attempt: 1,
 			AteTemplate: &v1alpha1.ObjectRef{
 				Name:     "ax-3f9c1a2b5d7e9f01",
 				Atespace: "shared",
 			},
-			ResolvedArgv:    []string{"sh", "-c", "true"},
-			PreviousFailure: "exit status 1",
+			ResolvedArgv: []string{"sh", "-c", "true"},
 		},
 	}
 }
@@ -121,11 +114,9 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"maxBackoff: 300s",
 		"backoffMultiplier: 2",
 		"state: TASK_STATE_RUNNING",
-		"output: all checks passed",
 		"actorUid: actor-uid-1",
 		"ateTemplate:",
 		"resolvedArgv:",
-		"previousFailure: exit status 1",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("yaml missing %s:\n%s", want, out)
@@ -149,7 +140,7 @@ func TestTask_RejectsRemovedAndDeferredFields(t *testing.T) {
 		{name: "status_id_removed", src: "kind: Task\nstatus:\n  id: t-1\n", wantErr: "id"},
 		{name: "status_worker_ip_removed", src: "kind: Task\nstatus:\n  workerIP: 10.0.0.1\n", wantErr: "workerIP"},
 		{name: "status_status_detail_removed", src: "kind: Task\nstatus:\n  statusDetail:\n    detail: OOMKilled\n", wantErr: "statusDetail"},
-		{name: "status_outcome_result_removed", src: "kind: Task\nstatus:\n  outcome:\n    result: TASK_RESULT_SUCCEEDED\n", wantErr: "result"},
+		{name: "status_outcome_removed", src: "kind: Task\nstatus:\n  outcome:\n    exitCode: 0\n", wantErr: "outcome"},
 		{name: "status_parent_tag_deferred", src: "kind: Task\nstatus:\n  parentTag: tag-1\n", wantErr: "parentTag"},
 		{name: "status_init_start_time_deferred", src: "kind: Task\nstatus:\n  initStartTime: 2026-09-19T12:00:00Z\n", wantErr: "initStartTime"},
 		{name: "status_current_start_time_deferred", src: "kind: Task\nstatus:\n  currentStartTime: 2026-09-19T12:00:00Z\n", wantErr: "currentStartTime"},

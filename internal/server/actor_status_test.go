@@ -43,7 +43,7 @@ func TestActorTaskStateMirrorsActorState(t *testing.T) {
 			t.Errorf("actorTaskState(%v) = %v (%d), want %s (%d < 200)", actorState, got, got, wantName, num)
 		}
 	}
-	for _, state := range []v1alpha1.TaskState{v1alpha1.TaskState_TASK_STATE_QUEUED, v1alpha1.TaskState_TASK_STATE_FAILED, v1alpha1.TaskState_TASK_STATE_COMPLETED} {
+	for _, state := range []v1alpha1.TaskState{v1alpha1.TaskState_TASK_STATE_QUEUED} {
 		if state < 200 {
 			t.Errorf("AX-only %v has number %d, want >= 200", state, state)
 		}
@@ -55,15 +55,6 @@ func storedTask(name string, state v1alpha1.TaskState, conds ...*v1alpha1.Condit
 		Metadata: &v1alpha1.ObjectMeta{Name: name, Atespace: "default"},
 		Status:   &v1alpha1.TaskStatus{State: state, Conditions: conds},
 	}
-}
-
-func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
-	for _, c := range task.GetStatus().GetConditions() {
-		if c.GetType() == "Ready" {
-			return c
-		}
-	}
-	return nil
 }
 
 func TestSetActorStatus(t *testing.T) {
@@ -87,9 +78,12 @@ func TestSetActorStatus(t *testing.T) {
 		{storedTask("deleting", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("deleting", ateapipb.ActorState_ACTOR_STATE_DELETING), v1alpha1.TaskState_TASK_STATE_DELETING, "deleting", "False", v1alpha1.ReasonTerminating},
 		{storedTask("odd", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("odd", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "odd", "Unknown", v1alpha1.ReasonUnknown},
 		// The actor was removed outside AX.
-		{storedTask("gone", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), nil, v1alpha1.TaskState_TASK_STATE_FAILED, "", "False", v1alpha1.ReasonActorNotFound},
-		// States that describe AX's own work are kept, and so is their Ready reason.
-		{storedTask("failed", v1alpha1.TaskState_TASK_STATE_FAILED, &v1alpha1.Condition{Type: "Ready", Status: "False", Reason: v1alpha1.ReasonActorResumeFailed}), testActor("failed", ateapipb.ActorState_ACTOR_STATE_SUSPENDED), v1alpha1.TaskState_TASK_STATE_FAILED, "failed", "False", v1alpha1.ReasonActorResumeFailed},
+		{storedTask("gone", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), nil, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "", "False", v1alpha1.ReasonActorNotFound},
+		// A Ready reason stored when the actor could not be provisioned is kept.
+		{storedTask("unprovisioned", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, &v1alpha1.Condition{Type: "Ready", Status: "False", Reason: v1alpha1.ReasonGatewayBindingFailed}), nil, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "", "False", v1alpha1.ReasonGatewayBindingFailed},
+		// The live actor state wins over a Ready reason stored by a failed resume.
+		{storedTask("resume-failed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, &v1alpha1.Condition{Type: "Ready", Status: "False", Reason: v1alpha1.ReasonActorResumeFailed}), testActor("resume-failed", ateapipb.ActorState_ACTOR_STATE_SUSPENDED), v1alpha1.TaskState_TASK_STATE_SUSPENDED, "resume-failed", "False", v1alpha1.ReasonSuspended},
+		// States that describe AX's own work are kept.
 		{storedTask("not-yet", v1alpha1.TaskState_TASK_STATE_QUEUED), nil, v1alpha1.TaskState_TASK_STATE_QUEUED, "", "", ""},
 	}
 	for _, tt := range tests {
