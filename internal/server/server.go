@@ -253,9 +253,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Spec == nil {
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
-	if task.Spec.SessionId == "" {
-		task.Spec.SessionId = task.Metadata.Uid
-	}
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
 	}
@@ -296,18 +293,11 @@ func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 	return ""
 }
 
-// taskSpecMatchesExisting compares an incoming TaskSpec against an existing
-// Queued task's spec, accounting for session_id defaulting to metadata.uid on
-// the initial CreateTask call.
+// taskSpecMatchesExisting reports whether incoming matches existing's spec.
 func taskSpecMatchesExisting(existing *v1alpha1.Task, incoming *v1alpha1.TaskSpec) bool {
 	want := incoming
 	if want == nil {
 		want = &v1alpha1.TaskSpec{}
-	} else {
-		want = proto.Clone(incoming).(*v1alpha1.TaskSpec)
-	}
-	if want.SessionId == "" && existing.GetMetadata().GetUid() != "" {
-		want.SessionId = existing.GetMetadata().GetUid()
 	}
 	have := existing.GetSpec()
 	if have == nil {

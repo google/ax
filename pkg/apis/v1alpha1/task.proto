@@ -87,8 +87,8 @@ message TaskSpec {
   // access.
   GatewayRef gateway = 9;
 
-  // Logical multi-turn session / conversation thread ID. Defaults to
-  // metadata.uid on CreateTask if unset.
+  // Optional logical multi-turn session / conversation thread ID. Left empty
+  // when unset.
   string session_id = 10;
 }
 

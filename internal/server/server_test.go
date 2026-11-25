@@ -148,8 +148,8 @@ func TestServerGRPC(t *testing.T) {
 	if task.Metadata.Uid == "" {
 		t.Errorf("expected server-assigned uid to be populated on applied task")
 	}
-	if task.Spec.SessionId != task.Metadata.Uid {
-		t.Errorf("expected session_id to default to metadata.uid (%q), got %q", task.Metadata.Uid, task.Spec.SessionId)
+	if task.Spec.SessionId != "" {
+		t.Errorf("expected omitted session_id to stay empty, got %q", task.Spec.SessionId)
 	}
 	if task.Status.Attempt != 1 {
 		t.Errorf("expected attempt = 1, got %d", task.Status.Attempt)
@@ -1922,4 +1922,89 @@ func TestServer_ActorUIDIsLiveAndNotStored(t *testing.T) {
 	if uid := got.GetStatus().GetActorUid(); uid != "" {
 		t.Errorf("UID after actor deletion = %q, want empty", uid)
 	}
+}
+
+func TestServer_TaskSessionID(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("omitted stays empty and explicit is preserved", func(t *testing.T) {
+		st := memory.NewStore()
+		sub := substratetest.NewServer(t)
+		srv := server.NewServer(st, newTestTaskManager(sub))
+
+		for _, tc := range []struct {
+			name, sessionID string
+		}{
+			{name: "one-off", sessionID: ""},
+			{name: "multi-turn", sessionID: "sess-42"},
+		} {
+			created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: tc.name},
+				Spec: &v1alpha1.TaskSpec{
+					Profile:   &v1alpha1.Profile{Image: "alpine"},
+					SessionId: tc.sessionID,
+				},
+			}})
+			if err != nil {
+				t.Fatalf("CreateTask(%s): %v", tc.name, err)
+			}
+			if got := created.GetSpec().GetSessionId(); got != tc.sessionID {
+				t.Errorf("CreateTask(%s) sessionId = %q, want %q", tc.name, got, tc.sessionID)
+			}
+			fetched, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: tc.name})
+			if err != nil {
+				t.Fatalf("GetTask(%s): %v", tc.name, err)
+			}
+			if got := fetched.GetSpec().GetSessionId(); got != tc.sessionID {
+				t.Errorf("GetTask(%s) sessionId = %q, want %q", tc.name, got, tc.sessionID)
+			}
+		}
+	})
+
+	t.Run("queued retry rejects sessionId mismatch", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			initial string
+			bad     string
+		}{
+			{name: "empty to non-empty", initial: "", bad: "sess-added"},
+			{name: "non-empty to empty", initial: "sess-1", bad: ""},
+			{name: "non-empty to different", initial: "sess-1", bad: "sess-2"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := memory.NewStore()
+				sub := substratetest.NewServer(t)
+				sub.SetErrors(substratetest.Errors{
+					CreateAtespace: status.Error(codes.DeadlineExceeded, "transient timeout"),
+				})
+				srv := server.NewServer(st, newTestTaskManager(sub))
+
+				newReq := func(sid string) *v1alpha1.CreateTaskRequest {
+					return &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+						Metadata: &v1alpha1.ObjectMeta{Name: "retry-task"},
+						Spec: &v1alpha1.TaskSpec{
+							Profile:   &v1alpha1.Profile{Image: "alpine"},
+							SessionId: sid,
+						},
+					}}
+				}
+
+				if _, err := srv.CreateTask(ctx, newReq(tc.initial)); status.Code(err) != codes.Unavailable {
+					t.Fatalf("initial CreateTask code = %v, want Unavailable (err=%v)", status.Code(err), err)
+				}
+				if _, err := srv.CreateTask(ctx, newReq(tc.bad)); status.Code(err) != codes.FailedPrecondition {
+					t.Fatalf("mismatched retry code = %v, want FailedPrecondition (err=%v)", status.Code(err), err)
+				}
+
+				sub.SetErrors(substratetest.Errors{})
+				got, err := srv.CreateTask(ctx, newReq(tc.initial))
+				if err != nil {
+					t.Fatalf("matching retry failed: %v", err)
+				}
+				if got.GetSpec().GetSessionId() != tc.initial {
+					t.Errorf("retry sessionId = %q, want %q", got.GetSpec().GetSessionId(), tc.initial)
+				}
+			})
+		}
+	})
 }

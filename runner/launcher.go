@@ -42,7 +42,7 @@ const (
 	// MCPConfigFileEnv names the file holding the Workspace's MCP servers in
 	// the common {"mcpServers": {...}} JSON format.
 	MCPConfigFileEnv = "AX_MCP_CONFIG_FILE"
-	// SessionFileEnv names the file holding spec.session_id.
+	// SessionFileEnv names the file holding spec.session_id (empty when unset).
 	SessionFileEnv = "AX_SESSION_FILE"
 	// OutputFileEnv names the file the launcher writes the agent's answer to.
 	// It is on the workspace volume so it survives suspend, and AX reports it

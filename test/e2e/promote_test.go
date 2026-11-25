@@ -43,6 +43,7 @@ metadata:
 spec:
   profile:
     image: {{taskImage}}
+  sessionId: {{.Session}}
   debug: true
   gateway:
     name: {{.Gateway}}
@@ -60,7 +61,7 @@ spec:
 func TestE2E_Promote(t *testing.T) {
 	remote := env.remote(t)
 	ns := defaultAtespace
-	gw, setupGW, ws, task := uniqueName("gw-promote"), uniqueName("gw-promote-setup"), uniqueName("ws-promote"), uniqueName("task-promote")
+	gw, setupGW, ws, task, session := uniqueName("gw-promote"), uniqueName("gw-promote-setup"), uniqueName("ws-promote"), uniqueName("task-promote"), uniqueName("session-promote")
 	for _, cluster := range []*suiteEnv{env, remote} {
 		cluster.deleteOnCleanup(t, ns, "gateway", gw)
 		cluster.deleteOnCleanup(t, ns, "gateway", setupGW)
@@ -79,7 +80,7 @@ func TestE2E_Promote(t *testing.T) {
 		}))
 	}
 	env.apply(t, ns, renderYAML(t, promoteManifest, map[string]string{
-		"Gateway": gw, "SetupGateway": setupGW, "Workspace": ws, "Task": task, "Atespace": ns,
+		"Gateway": gw, "SetupGateway": setupGW, "Workspace": ws, "Task": task, "Atespace": ns, "Session": session,
 	}))
 	env.mustRunAX(t, ns, "resume", "task", task)
 	promote := func(flags ...string) string {
@@ -100,8 +101,11 @@ func TestE2E_Promote(t *testing.T) {
 	if promoted.GetMetadata().GetUid() == source.GetMetadata().GetUid() {
 		t.Fatalf("promoted task has the source's UID %q", source.GetMetadata().GetUid())
 	}
-	if got, want := promoted.GetSpec().GetSessionId(), source.GetSpec().GetSessionId(); got != want {
-		t.Fatalf("promoted task: sessionId = %q, want the source's %q", got, want)
+	if got := source.GetSpec().GetSessionId(); got != session {
+		t.Fatalf("source task: sessionId = %q, want %q", got, session)
+	}
+	if got := promoted.GetSpec().GetSessionId(); got != session {
+		t.Fatalf("promoted task: sessionId = %q, want the source's %q", got, session)
 	}
 	assertContains(t, "promoted workspace", remote.ssh(t, ns, task, "cat /workspace/seed.txt"), "initial-seed")
 

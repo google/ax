@@ -107,7 +107,7 @@ const MaxEnvValueSize = 32 << 10
 // encoded as YAML, the form in which it reaches the runner through the
 // AX_TASK_YAML environment variable. It keeps 1 KiB of MaxEnvValueSize in
 // reserve for the fields the control plane fills in after validation, such as
-// metadata.atespace, metadata.uid, metadata.createTime, and spec.sessionId.
+// metadata.atespace, metadata.uid, and metadata.createTime.
 const MaxTaskYAMLSize = MaxEnvValueSize - 1<<10
 
 // MaxTaskConfigSize is the largest spec.config a task may have, measured as

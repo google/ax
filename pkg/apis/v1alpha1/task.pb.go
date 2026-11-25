@@ -235,8 +235,8 @@ type TaskSpec struct {
 	// missing gateway fails). A task without a Gateway has no external network
 	// access.
 	Gateway *GatewayRef `protobuf:"bytes,9,opt,name=gateway,proto3" json:"gateway,omitempty"`
-	// Logical multi-turn session / conversation thread ID. Defaults to
-	// metadata.uid on CreateTask if unset.
+	// Optional logical multi-turn session / conversation thread ID. Left empty
+	// when unset.
 	SessionId     string `protobuf:"bytes,10,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
