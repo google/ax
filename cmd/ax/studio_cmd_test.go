@@ -309,7 +309,7 @@ detect_os && detect_arch && resolve_install_dir && install_studio`
 	})
 }
 
-func TestInstallShAXVersionUsesReleaseInstaller(t *testing.T) {
+func TestInstallShAXVersion(t *testing.T) {
 	for _, tool := range []string{"sh", "curl", "tar"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not available in PATH", tool)
@@ -326,84 +326,63 @@ func TestInstallShAXVersionUsesReleaseInstaller(t *testing.T) {
 	archive, archiveSHA := buildTestTarGz(t, "ax", "#!/bin/sh\necho v0.9.0\n")
 	asset := fmt.Sprintf("ax_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
 
-	// run installs AX_VERSION=v0.9.0 with github.com/google/ax redirected to a
-	// server that attaches install.sh to v0.9.0 only if releaseScript is set.
-	run := func(t *testing.T, releaseScript string) (string, string) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/releases/download/v0.9.0/install.sh":
-				if releaseScript == "" {
-					http.NotFound(w, r)
-					return
-				}
-				_, _ = w.Write([]byte(releaseScript))
-			case "/releases/download/v0.9.0/" + asset:
-				_, _ = w.Write(archive)
-			case "/releases/download/v0.9.0/checksums.txt":
-				_, _ = fmt.Fprintf(w, "%s  %s\n", archiveSHA, asset)
-			case "/releases/download/v0.9.0/images.env":
-				_, _ = fmt.Fprint(w, "AX_SERVER_IMAGE=ghcr.io/google/ax/ax-server@sha256:s\nAX_RUNNER_IMAGE=ghcr.io/google/ax/ax-runner@sha256:r\nAX_RUNNER_VOLUME_REF=ghcr.io/google/ax/ax-runner-volume@sha256:v\nAX_RUNNER_VOLUME_IMAGE=\n")
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		t.Cleanup(srv.Close)
+	// github.com/google/ax is redirected to a server holding release v0.9.0.
+	var fetchedScript atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases/download/v0.9.0/" + asset:
+			_, _ = w.Write(archive)
+		case "/releases/download/v0.9.0/checksums.txt":
+			_, _ = fmt.Fprintf(w, "%s  %s\n", archiveSHA, asset)
+		case "/releases/download/v0.9.0/images.env":
+			_, _ = fmt.Fprint(w, "AX_SERVER_IMAGE=ghcr.io/google/ax/ax-server@sha256:s\nAX_RUNNER_IMAGE=ghcr.io/google/ax/ax-runner@sha256:r\nAX_RUNNER_VOLUME_REF=ghcr.io/google/ax/ax-runner-volume@sha256:v\nAX_RUNNER_VOLUME_IMAGE=\n")
+		case "/releases/download/v0.9.0/install.sh":
+			fetchedScript.Store(true)
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
 
-		tmp := t.TempDir()
-		shimDir := filepath.Join(tmp, "shim")
-		if err := os.MkdirAll(shimDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		rewriteCurl := fmt.Sprintf("#!/bin/sh\nargs=\"\"\nfor a in \"$@\"; do\n  a=$(printf '%%s' \"$a\" | sed 's|https://github.com/google/ax|%s|g')\n  args=\"$args '$a'\"\ndone\neval exec '%s' $args\n", srv.URL, realCurl)
-		if err := os.WriteFile(filepath.Join(shimDir, "curl"), []byte(rewriteCurl), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		installDir := filepath.Join(tmp, "bin")
-		cmd := exec.Command("sh", installScript)
-		cmd.Env = append(os.Environ(),
-			"AX_VERSION=v0.9.0",
-			"AX_INSTALL_DIR="+installDir,
-			"AX_GITHUB_REPO=",
-			"AX_RELEASE_BASE_URL=",
-			"AX_INSTALL_LOCAL_BIN=",
-			"AX_SKIP_STUDIO=1",
-			"MARKER="+filepath.Join(tmp, "marker"),
-			"PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH"),
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("install.sh failed: %v\n%s", err, out)
-		}
-		return tmp, string(out)
+	tmp := t.TempDir()
+	shimDir := filepath.Join(tmp, "shim")
+	if err := os.MkdirAll(shimDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-
-	t.Run("runs_the_release_installer", func(t *testing.T) {
-		tmp, out := run(t, "#!/bin/sh\nprintf '%s|%s' \"$AX_VERSION\" \"$__AX_INSTALL_DELEGATED\" > \"$MARKER\"\n")
-		got, err := os.ReadFile(filepath.Join(tmp, "marker"))
-		if err != nil {
-			t.Fatalf("release installer did not run: %v\n%s", err, out)
+	rewriteCurl := fmt.Sprintf("#!/bin/sh\nargs=\"\"\nfor a in \"$@\"; do\n  a=$(printf '%%s' \"$a\" | sed 's|https://github.com/google/ax|%s|g')\n  args=\"$args '$a'\"\ndone\neval exec '%s' $args\n", srv.URL, realCurl)
+	if err := os.WriteFile(filepath.Join(shimDir, "curl"), []byte(rewriteCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installDir := filepath.Join(tmp, "bin")
+	cmd := exec.Command("sh", installScript)
+	cmd.Env = append(os.Environ(),
+		"AX_VERSION=v0.9.0",
+		"AX_INSTALL_DIR="+installDir,
+		"AX_GITHUB_REPO=",
+		"AX_RELEASE_BASE_URL=",
+		"AX_INSTALL_LOCAL_BIN=",
+		"AX_SKIP_STUDIO=1",
+		"PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	b, err := cmd.CombinedOutput()
+	out := string(b)
+	if err != nil {
+		t.Fatalf("install.sh failed: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "ax")); err != nil {
+		t.Fatalf("expected ax installed: %v\n%s", err, out)
+	}
+	if fetchedScript.Load() {
+		t.Error("expected install.sh to install AX_VERSION itself, not fetch that release's install.sh")
+	}
+	for _, want := range []string{
+		"ax-server         ghcr.io/google/ax/ax-server@sha256:s",
+		"ax-runner         ghcr.io/google/ax/ax-runner@sha256:r",
+		"ax-runner-volume  ghcr.io/google/ax/ax-runner-volume@sha256:v",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected install.sh output to contain %q, got:\n%s", want, out)
 		}
-		if string(got) != "v0.9.0|1" {
-			t.Fatalf("release installer saw %q, want %q", got, "v0.9.0|1")
-		}
-		if _, err := os.Stat(filepath.Join(tmp, "bin", "ax")); err == nil {
-			t.Fatal("expected only the release installer to install ax")
-		}
-	})
-
-	t.Run("installs_itself_without_a_release_installer", func(t *testing.T) {
-		tmp, out := run(t, "")
-		if _, err := os.Stat(filepath.Join(tmp, "bin", "ax")); err != nil {
-			t.Fatalf("expected ax installed: %v\n%s", err, out)
-		}
-		for _, want := range []string{
-			"ax-server         ghcr.io/google/ax/ax-server@sha256:s",
-			"ax-runner         ghcr.io/google/ax/ax-runner@sha256:r",
-			"ax-runner-volume  ghcr.io/google/ax/ax-runner-volume@sha256:v",
-		} {
-			if !strings.Contains(out, want) {
-				t.Errorf("expected install.sh output to contain %q, got:\n%s", want, out)
-			}
-		}
-	})
+	}
 }

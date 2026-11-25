@@ -5,13 +5,12 @@ Install the `ax` CLI, run AX on a local Kind cluster, run a task, and move it to
 ## 1. Install `ax`
 
 ```bash
-export AX_VERSION=v0.4.0-rc.2
-curl -fsSL "https://github.com/google/ax/releases/download/${AX_VERSION}/install.sh" | sh
+curl -fsSL https://raw.githubusercontent.com/google/ax/main/install.sh | AX_VERSION=v0.4.0-rc.2 sh
 export PATH="$HOME/.ax/bin:$PATH"
 ax version
 ```
 
-`install.sh` installs the `ax` and `ax-studio` of release `AX_VERSION` into `~/.ax/bin`, verifying their SHA-256 digests, and never needs `sudo`. Without `AX_VERSION` it installs the latest stable release. To build from source instead (Go 1.27+), run `go install github.com/google/ax/cmd/ax@main`.
+`install.sh` installs `ax` from release `AX_VERSION`, and `ax-studio`, into `~/.ax/bin`, verifying their SHA-256 digests, and prints the release's images. It never needs `sudo`. Without `AX_VERSION` it installs the latest stable release. To build from source instead (Go 1.27+), run `go install github.com/google/ax/cmd/ax@main`.
 
 ## 2. Start a local cluster
 
