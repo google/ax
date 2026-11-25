@@ -266,7 +266,7 @@ Substrate checks the rest of a rule's syntax when a task that binds the gateway 
 
 ## Model
 
-`google` is the only supported `provider`. Store the API key in a Secret:
+`google` is the only supported `provider` for now. Store the API key in a Secret:
 
 ```bash
 kubectl create secret generic gemini-api-secret --from-literal=GEMINI_API_KEY="AIzaSy..."
