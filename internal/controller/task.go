@@ -134,10 +134,9 @@ func newProbeHTTPClient() *http.Client {
 
 // ensureSubstrateResources resolves the effective Profile and makes sure the
 // task's atespace, ActorTemplate and actor exist on Substrate. It records only
-// what AX stores in the task's status: the resolved template name, resolved
-// argv, and on a failure that is not transient the reason in a False Ready
-// condition. The caller sets the state, and the server reads the rest of the
-// status from the actor.
+// what AX stores in the task's status: the resolved template name and resolved
+// argv. The caller sets the state, and the server reads the rest of the status
+// from the actor.
 func (m *TaskManager) ensureSubstrateResources(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace) error {
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
@@ -163,17 +162,12 @@ func (m *TaskManager) ensureSubstrateResources(ctx context.Context, task *v1alph
 	// well as at apply time: a task must never run without limits it asked for.
 	if effective.GetAteTemplate().GetName() == "" {
 		if err := apivalidation.ValidateResources(effective.GetResources()); err != nil {
-			m.setNotReady(task, v1alpha1.ReasonInvalidResources, err.Error(), now)
 			return fmt.Errorf("validating resources: %w", err)
 		}
 	}
 
 	// 1. Ensure the Atespace exists in Substrate.
 	if err := m.client.EnsureAtespace(ctx, atespace); err != nil {
-		if substrate.IsTransientError(err) {
-			return fmt.Errorf("ensuring atespace: %w", err)
-		}
-		m.setNotReady(task, v1alpha1.ReasonAtespaceCreationFailed, err.Error(), now)
 		return fmt.Errorf("ensuring atespace: %w", err)
 	}
 
@@ -184,10 +178,6 @@ func (m *TaskManager) ensureSubstrateResources(ctx context.Context, task *v1alph
 	// 3. Resolve or provision the ActorTemplate for the task.
 	templateAtespace, templateName, err := ensureProfileTemplate(ctx, m.client, atespace, effective, m.RunnerVolumeImage)
 	if err != nil {
-		if substrate.IsTransientError(err) {
-			return fmt.Errorf("ensuring actor template: %w", err)
-		}
-		m.setNotReady(task, v1alpha1.ReasonTemplateCreationFailed, statusErrorMessage(err), now)
 		return fmt.Errorf("ensuring actor template: %w", err)
 	}
 
@@ -205,20 +195,12 @@ func (m *TaskManager) ensureSubstrateResources(ctx context.Context, task *v1alph
 		}
 		sourceTag, err = m.WorkspaceManager.EnsureSnapshotTag(ctx, ws, effective, setupGW)
 		if err != nil {
-			if substrate.IsTransientError(err) {
-				return fmt.Errorf("resolving workspace snapshot tag: %w", err)
-			}
-			m.setNotReady(task, v1alpha1.ReasonActorCreationFailed, statusErrorMessage(err), now)
 			return fmt.Errorf("resolving workspace snapshot tag: %w", err)
 		}
 	}
 
 	_, err = m.client.EnsureActorFromTag(ctx, atespace, actorName, templateAtespace, templateName, sourceTag)
 	if err != nil {
-		if substrate.IsTransientError(err) {
-			return fmt.Errorf("ensuring actor: %w", err)
-		}
-		m.setNotReady(task, v1alpha1.ReasonActorCreationFailed, err.Error(), now)
 		return fmt.Errorf("ensuring actor: %w", err)
 	}
 
@@ -257,11 +239,6 @@ func (m *TaskManager) bindGateway(ctx context.Context, task *v1alpha1.Task, gw *
 		}
 	}
 	if err != nil {
-		now := time.Now()
-		if substrate.IsTransientError(err) {
-			return fmt.Errorf("binding gateway %q: %w", gwName, err)
-		}
-		m.setNotReady(task, v1alpha1.ReasonGatewayBindingFailed, fmt.Sprintf("gateway %q: %s", gwName, statusErrorMessage(err)), now)
 		return fmt.Errorf("binding gateway %q: %w", gwName, err)
 	}
 	return nil
@@ -296,12 +273,10 @@ func (m *TaskManager) Suspend(ctx context.Context, task *v1alpha1.Task, ws *v1al
 // actor, pushes the task to its runner (v1alpha1.RunnerTaskPath), and waits up
 // to WorkspaceReadyTimeout for the runner to set up the task's workspace and
 // start the task, recording the result in the WorkspaceReady condition. A
-// failure to resume the actor, the runner refusing the task, and the runner
-// failing to start a task whose workspace is already set up are recorded the
-// way ensureSubstrateResources records its own. A runner that does not
-// accept the task in time is a transient error (substrate.IsTransientError):
-// the task is not running, and resuming again repeats the push. A runner that
-// accepted the task and is still working when the wait ends is not an error.
+// runner that does not accept the task in time is a transient error
+// (substrate.IsTransientError): the task is not running, and resuming again
+// repeats the push. A runner that accepted the task and is still working when
+// the wait ends is not an error.
 func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alpha1.Workspace, gw *v1alpha1.Gateway) error {
 	if err := m.ensureSubstrateResources(ctx, task, ws); err != nil {
 		return err
@@ -310,16 +285,11 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 		return err
 	}
 	atespace, actorName := task.Metadata.Atespace, task.Metadata.Name
-	now := time.Now()
 
 	// Resume the Actor to activate container execution.
 	slog.Info("resuming actor on Substrate worker", "actor", actorName)
 	_, workerIP, err := m.client.ResumeActor(ctx, atespace, actorName)
 	if err != nil {
-		if substrate.IsTransientError(err) {
-			return fmt.Errorf("resuming actor: %w", err)
-		}
-		m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), now)
 		return fmt.Errorf("resuming actor: %w", err)
 	}
 
@@ -343,7 +313,6 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 		notReadyMsg = err.Error()
 	case err != nil && pollCtx.Err() == nil:
 		// The runner refused the task, so it never runs it.
-		m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, err.Error(), time.Now())
 		return fmt.Errorf("pushing task to runner: %w", err)
 	case err != nil:
 		// The task reaches the runner only through this push, so without it
@@ -360,7 +329,6 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 			// is starting the task: nothing runs in the resumed actor. The
 			// runner's reason is reported without errSetupFailed's text.
 			reason := strings.TrimPrefix(err.Error(), errSetupFailed.Error()+": ")
-			m.setNotReady(task, v1alpha1.ReasonActorResumeFailed, reason, time.Now())
 			return errors.New(reason)
 		case errors.Is(err, errSetupFailed):
 			notReadyMsg = err.Error()
@@ -388,12 +356,6 @@ func (m *TaskManager) Resume(ctx context.Context, task *v1alpha1.Task, ws *v1alp
 	)
 
 	return nil
-}
-
-// setNotReady marks the task's Ready condition False. WorkspaceReady is left untouched:
-// workspace setup is a one-time step whose result outlives actor failures and suspends.
-func (m *TaskManager) setNotReady(task *v1alpha1.Task, reason, message string, t time.Time) {
-	setCondition(task, v1alpha1.ConditionReady, "False", reason, message, t)
 }
 
 // conditionTrue reports whether the task currently has the given condition with status True.

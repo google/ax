@@ -570,8 +570,8 @@ func (s *Server) applyActor(ctx context.Context, task *v1alpha1.Task) {
 // setActorStatus overlays the actor's state on the task's status: actor name,
 // actorUID, and, unless the state is one of AX's own or deletion is in progress,
 // the state and Ready condition. actor is nil when the task has no actor; err is
-// set when the actor could not be looked up, in which case Ready is reported as
-// Unknown.
+// set when the actor could not be looked up, in which case the state and Ready
+// condition are left empty.
 func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -590,7 +590,6 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		}
 		if !v1alpha1.IsAXTaskState(st.State) {
 			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-			setReady(task, "Unknown", v1alpha1.ReasonSubstrateUnavailable, err.Error())
 		}
 	case actor == nil:
 		if terminating {

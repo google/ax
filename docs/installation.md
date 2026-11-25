@@ -276,7 +276,7 @@ resume it:
 ```
 
 Continue when the task is `Running` with `Ready=True`. Substrate first waits for
-the runner's wakeup probe; a failure can produce `ActorResumeFailed`. Check the
+the runner's wakeup probe; a failure makes `resume` fail. Check the
 reported error, worker capacity, image pulls, snapshot storage, and worker logs,
 then retry `resume` after fixing the cause.
 

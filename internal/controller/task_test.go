@@ -361,7 +361,6 @@ func TestTaskManager_MissingImage(t *testing.T) {
 	if err := manager.Resume(context.Background(), task, nil, nil); err == nil {
 		t.Fatal("Resume succeeded, want an error for a task without an image")
 	}
-	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 	if len(mockSrv.createdTemplates) != 0 {
 		t.Errorf("created %d ActorTemplates, want 0", len(mockSrv.createdTemplates))
 	}
@@ -659,18 +658,6 @@ func TestTaskManager_TemplateCreationFailed(t *testing.T) {
 		t.Errorf("expected error to carry the Substrate message, got %v", err)
 	}
 
-	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
-	for _, c := range task.Status.Conditions {
-		if c.Type != "Ready" {
-			continue
-		}
-		// The user-facing message should be exactly what Substrate said, without the
-		// "rpc error: code = ... desc = " wrapper or our internal context prefix.
-		if c.Message != substrateMsg {
-			t.Errorf("expected Ready message to be the bare Substrate error\n got: %q\nwant: %q", c.Message, substrateMsg)
-		}
-	}
-
 	// Resume must stop before touching the actor: no fallback to the default template.
 	if len(mockSrv.createdActors) != 0 {
 		t.Errorf("expected no actor to be created, got %v", mockSrv.createdActors)
@@ -682,8 +669,8 @@ func TestTaskManager_TemplateCreationFailed(t *testing.T) {
 
 // TestTaskManager_TemplateCreationTransient checks that a transient Substrate
 // error during ActorTemplate creation (for example Unavailable after retries are
-// exhausted) is not recorded as TemplateCreationFailed.
-// The server keeps a task that failed this way Pending for a retry.
+// exhausted) stays a transient error. The server keeps a task that failed this
+// way Queued for a retry.
 func TestTaskManager_TemplateCreationTransient(t *testing.T) {
 	ctx := t.Context()
 
@@ -722,10 +709,9 @@ func TestTaskManager_TemplateCreationTransient(t *testing.T) {
 		Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghcr.io/my-org/my-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000"}},
 	}
 
-	if err := manager.Resume(ctx, task, nil, nil); err == nil {
-		t.Fatal("expected Resume to return an error on transient template failure")
+	if err := manager.Resume(ctx, task, nil, nil); !substrate.IsTransientError(err) {
+		t.Fatalf("Resume on a transient template failure = %v, want a transient error", err)
 	}
-	assertNoCondition(t, task, "Ready")
 	if len(mockSrv.createdActors) != 0 {
 		t.Errorf("expected no actor to be created, got %v", mockSrv.createdActors)
 	}
@@ -813,7 +799,6 @@ func TestTaskManager_WorkspaceReady(t *testing.T) {
 	if err == nil || !substrate.IsTransientError(err) {
 		t.Fatalf("Resume with an unreachable runner = %v, want a transient error", err)
 	}
-	assertNoCondition(t, task, "Ready")
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 	manager.RouterURL = runnerSrv.URL
 	if got := len(mockSrv.actorTemplates); got != 1 {
@@ -897,7 +882,6 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 	if err := manager.Resume(ctx, task, ws, nil); err == nil {
 		t.Fatal("Resume succeeded although the runner rejected the task")
 	}
-	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
 	body, _ := pushed.Load().(string)
 	if !strings.Contains(body, "name: rejected") || !strings.Contains(body, "agent.py") || !strings.Contains(body, "---") || !strings.Contains(body, "name: repo") {
 		t.Errorf("pushed body %q lacks the task and its workspace", body)
@@ -931,7 +915,6 @@ func TestTaskManager_ResumeTaskPush(t *testing.T) {
 	if substrate.IsTransientError(err) {
 		t.Errorf("Resume error %v is transient; a task that cannot start does not start on a retry", err)
 	}
-	assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
 	assertCondition(t, task, "WorkspaceReady", "True", v1alpha1.ReasonSetupComplete)
 }
 
@@ -1031,7 +1014,7 @@ func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 	})
 
 	t.Run("a typo fails the resume of a task whose workspace is ready", func(t *testing.T) {
-		task, err := resume(t, typo, true)
+		_, err := resume(t, typo, true)
 		if err == nil {
 			t.Fatal("Resume succeeded although the task's command cannot be started")
 		}
@@ -1044,10 +1027,6 @@ func TestTaskManager_ResumeCommandCannotStart(t *testing.T) {
 		}
 		if substrate.IsTransientError(err) {
 			t.Errorf("Resume error %v is transient; the command does not start on a retry", err)
-		}
-		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonActorResumeFailed)
-		if got := conditionMessage(task, "Ready"); !strings.Contains(got, "ax-no-such-command") || strings.Contains(got, "workspace setup failed") {
-			t.Errorf("Ready message = %q, want it to name the command and not workspace setup", got)
 		}
 	})
 
@@ -1211,7 +1190,6 @@ func TestTaskManager_ResourceLimitsFailurePaths(t *testing.T) {
 			if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 				t.Errorf("Suspend(%v) succeeded, want error", reqs)
 			}
-			assertCondition(t, task, "Ready", "False", v1alpha1.ReasonInvalidResources)
 		}
 		if len(mockSrv.createdTemplates) != 0 || len(mockSrv.createdActors) != 0 || len(mockSrv.resumedActors) != 0 {
 			t.Errorf("invalid limits reached Substrate: templates=%d actors=%v resumed=%v",
@@ -1231,7 +1209,6 @@ func TestTaskManager_ResourceLimitsFailurePaths(t *testing.T) {
 		if err := manager.Suspend(ctx, task, nil, nil); err == nil {
 			t.Fatal("Suspend succeeded although the template with limits was rejected")
 		}
-		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 		if len(mockSrv.createdActors) != 0 || len(mockSrv.resumedActors) != 0 {
 			t.Errorf("task ran on a fallback template without its limits: actors=%v resumed=%v", mockSrv.createdActors, mockSrv.resumedActors)
 		}
@@ -1249,7 +1226,6 @@ func TestTaskManager_ResourceLimitsFailurePaths(t *testing.T) {
 		}
 		// Falling back would run a different image than the task asked for, so the
 		// template error is terminal regardless of whether limits are set (#366).
-		assertCondition(t, task, "Ready", "False", v1alpha1.ReasonTemplateCreationFailed)
 		if len(mockSrv.createdActors) != 0 {
 			t.Errorf("task ran on a fallback template: actors=%v", mockSrv.createdActors)
 		}
@@ -1270,15 +1246,6 @@ func assertCondition(t *testing.T, task *v1alpha1.Task, condType, wantStatus, wa
 		return
 	}
 	t.Errorf("expected %s condition to be set", condType)
-}
-
-func assertNoCondition(t *testing.T, task *v1alpha1.Task, condType string) {
-	t.Helper()
-	for _, c := range task.Status.Conditions {
-		if c.Type == condType {
-			t.Errorf("expected no %s condition, got Status=%s Reason=%s", condType, c.Status, c.Reason)
-		}
-	}
 }
 
 func TestDelete_RemovesActorAndTemplates(t *testing.T) {
@@ -1477,41 +1444,38 @@ func TestTaskManager_TransientSubstrateUnavailable(t *testing.T) {
 	manager := controller.NewTaskManager(client)
 	manager.WorkspaceReadyTimeout = 50 * time.Millisecond
 
-	// 1. A transient error during EnsureAtespace sets no Ready condition.
+	// 1. A transient error during EnsureAtespace stays transient.
 	mockSrv.createAtespaceErr = status.Error(codes.DeadlineExceeded, "substrate control plane timed out")
 	task := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-atespace"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := manager.Suspend(ctx, task, nil, nil); err == nil {
-		t.Fatal("expected error from Suspend when EnsureAtespace fails, got nil")
+	if err := manager.Suspend(ctx, task, nil, nil); !substrate.IsTransientError(err) {
+		t.Fatalf("Suspend when EnsureAtespace fails = %v, want a transient error", err)
 	}
-	assertNoCondition(t, task, "Ready")
 	mockSrv.createAtespaceErr = nil
 
-	// 2. A transient error during EnsureActor sets no Ready condition.
+	// 2. A transient error during EnsureActor stays transient.
 	mockSrv.createActorErr = status.Error(codes.DeadlineExceeded, "substrate actor creation timed out")
 	task2 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-actor"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := manager.Suspend(ctx, task2, nil, nil); err == nil {
-		t.Fatal("expected error from Suspend when EnsureActor fails, got nil")
+	if err := manager.Suspend(ctx, task2, nil, nil); !substrate.IsTransientError(err) {
+		t.Fatalf("Suspend when EnsureActor fails = %v, want a transient error", err)
 	}
-	assertNoCondition(t, task2, "Ready")
 	mockSrv.createActorErr = nil
 
-	// 3. A transient error during ResumeActor sets no Ready condition,
+	// 3. A transient error during ResumeActor stays transient,
 	// and a subsequent Resume once Substrate recovers resumes the actor.
 	mockSrv.resumeActorErr = status.Error(codes.DeadlineExceeded, "substrate worker pool temporarily unreachable")
 	task3 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "transient-resume"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := manager.Resume(ctx, task3, nil, nil); err == nil {
-		t.Fatal("expected error from Resume when ResumeActor fails, got nil")
+	if err := manager.Resume(ctx, task3, nil, nil); !substrate.IsTransientError(err) {
+		t.Fatalf("Resume when ResumeActor fails = %v, want a transient error", err)
 	}
-	assertNoCondition(t, task3, "Ready")
 
 	// Recovery on retry:
 	mockSrv.resumeActorErr = nil
@@ -1522,16 +1486,15 @@ func TestTaskManager_TransientSubstrateUnavailable(t *testing.T) {
 		t.Errorf("expected actor 'transient-resume' resumed after recovery, got %v", mockSrv.resumedActors)
 	}
 
-	// 4. A permanent error is recorded with its own reason.
+	// 4. A permanent error is not transient.
 	mockSrv.createActorErr = status.Error(codes.InvalidArgument, "invalid actor specification")
 	task4 := &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "permanent-actor-err"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "ghrc.io/my-org/my-image"}},
 	}
-	if err := manager.Suspend(ctx, task4, nil, nil); err == nil {
-		t.Fatal("expected error on InvalidArgument, got nil")
+	if err := manager.Suspend(ctx, task4, nil, nil); err == nil || substrate.IsTransientError(err) {
+		t.Fatalf("Suspend on InvalidArgument = %v, want an error that is not transient", err)
 	}
-	assertCondition(t, task4, "Ready", "False", v1alpha1.ReasonActorCreationFailed)
 	mockSrv.createActorErr = nil
 }
 

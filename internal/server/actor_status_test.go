@@ -127,7 +127,7 @@ func TestSetActorStatus(t *testing.T) {
 	})
 }
 
-func TestSetActorStatus_SubstrateErrorReportsUnknown(t *testing.T) {
+func TestSetActorStatus_SubstrateErrorLeavesStatusEmpty(t *testing.T) {
 	err := errors.New("denied")
 	task := storedTask("a", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED)
 	terminating := storedTask("b", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED)
@@ -138,8 +138,8 @@ func TestSetActorStatus_SubstrateErrorReportsUnknown(t *testing.T) {
 	if got := task.GetStatus().GetState(); got != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED {
 		t.Errorf("state = %v, want UNSPECIFIED", got)
 	}
-	if c := readyCondition(task); c.GetStatus() != "Unknown" || c.GetReason() != v1alpha1.ReasonSubstrateUnavailable {
-		t.Errorf("Ready = %v, want Unknown/SubstrateUnavailable", c)
+	if c := readyCondition(task); c != nil {
+		t.Errorf("Ready = %v, want none", c)
 	}
 	if got := v1alpha1.FormatTaskState(terminating); got != v1alpha1.ReasonTerminating {
 		t.Errorf("FormatTaskState = %q, want %q", got, v1alpha1.ReasonTerminating)
