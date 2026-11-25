@@ -158,6 +158,20 @@ wait_state() {
   exit 1
 }
 
+# wait_ssh waits until a command, $2 onward, succeeds in task $1's sandbox.
+wait_ssh() {
+  local task="$1"
+  shift
+  local deadline=$((SECONDS + TOUR_TIMEOUT))
+  until ax ssh "${task}" -- "$@" > /dev/null 2>&1; do
+    if ((SECONDS >= deadline)); then
+      printf '%s%s: %s did not succeed after %ss%s\n' "${red}" "${task}" "$*" "${TOUR_TIMEOUT}" "${reset}" >&2
+      exit 1
+    fi
+    sleep 0.5
+  done
+}
+
 cleanup() {
   printf '\n%s━━ Cleaning up%s\n' "${bold}" "${reset}"
   local kind name atespace
@@ -171,7 +185,7 @@ cleanup() {
     fi
   done
   if kubectl get secret "${GEMINI_SECRET}" -n default > /dev/null 2>&1; then
-    run kubectl delete secret "${GEMINI_SECRET}" -n default
+    run kubectl delete secret "${GEMINI_SECRET}" -n default || true
   fi
 }
 trap cleanup EXIT
@@ -328,7 +342,7 @@ wait_state "${AGENT}" Running
 say "The task starts warm from the workspace snapshot."
 run ax describe task "${AGENT}"
 run ax ssh "${AGENT}" -- sh -c 'cd /workspace && ls -A && cat setup.txt'
-sleep 1
+wait_ssh "${AGENT}" test -s /workspace/.ax/heartbeat
 say "The agent's report, from \$AX_OUTPUT_FILE:"
 run ax ssh "${AGENT}" -- cat /workspace/.ax/output
 say "Its Gateway lets it reach GitHub, and nothing else."
@@ -344,13 +358,10 @@ run ax suspend task "${AGENT}"
 wait_state "${AGENT}" Suspended
 run ax resume task "${AGENT}"
 wait_state "${AGENT}" Running
-sleep 2
+say "Waiting for the heartbeat to pass ${before}..."
+wait_ssh "${AGENT}" sh -c "test \"\$(cat /workspace/.ax/heartbeat)\" -gt ${before}"
 after="$(ssh_out "${AGENT}" cat /workspace/.ax/heartbeat)"
 say "heartbeat after resume: ${after}"
-if ((after <= before)); then
-  printf '%sthe agent lost its progress%s\n' "${red}" "${reset}" >&2
-  exit 1
-fi
 say "The agent picked up its saved progress and kept counting."
 
 step "6. Tasks are immutable"
@@ -393,7 +404,7 @@ run ax get tasks
 say "Each runs in its own sandbox; suspended tasks hold no worker."
 run ax resume task "${FANOUT_A}"
 wait_state "${FANOUT_A}" Running
-sleep 1
+wait_ssh "${FANOUT_A}" test -s /workspace/.ax/output
 run ax ssh "${FANOUT_A}" -- cat /workspace/.ax/output
 say "This task writes a file into its copy of the workspace."
 run ax ssh "${FANOUT_A}" -- sh -c "echo 'written by ${FANOUT_A}' > /workspace/claim.txt && cat /workspace/claim.txt"
@@ -401,7 +412,7 @@ run ax suspend task "${FANOUT_A}"
 wait_state "${FANOUT_A}" Suspended
 run ax resume task "${FANOUT_B}"
 wait_state "${FANOUT_B}" Running
-sleep 1
+wait_ssh "${FANOUT_B}" test -s /workspace/.ax/output
 run ax ssh "${FANOUT_B}" -- cat /workspace/.ax/output
 say "The other task's copy does not have it."
 expect_fail ax ssh "${FANOUT_B}" -- cat /workspace/claim.txt
@@ -414,9 +425,11 @@ if [[ -z "${GEMINI_API_KEY:-}" ]]; then
 else
   say "The API key goes into a Kubernetes Secret, labeled so that the default"
   say "atespace's tasks may use it."
-  show kubectl create secret generic "${GEMINI_SECRET}" -n default '--from-literal=api-key=$GEMINI_API_KEY'
-  kubectl create secret generic "${GEMINI_SECRET}" -n default --from-literal=api-key="${GEMINI_API_KEY}"
-  run kubectl label secret "${GEMINI_SECRET}" -n default ax.io/credential=true
+  printf '%s$ printf %%s "$GEMINI_API_KEY" | kubectl create secret generic %s -n default --from-file=api-key=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -%s\n' "${cyan}" "${GEMINI_SECRET}" "${reset}"
+  printf '%s' "${GEMINI_API_KEY}" |
+    kubectl create secret generic "${GEMINI_SECRET}" -n default --from-file=api-key=/dev/stdin --dry-run=client -o yaml |
+    kubectl apply -f -
+  run kubectl label secret "${GEMINI_SECRET}" -n default --overwrite ax.io/credential=true
   say "The Gateway sets the x-goog-api-key header on requests to the Gemini API"
   say "outside the sandbox, so the task holds only a placeholder. It also lets"
   say "setup reach PyPI and GitHub."
@@ -498,14 +511,7 @@ EOF
   run ax resume task "${GEMINI_TASK}"
   wait_state "${GEMINI_TASK}" Running
   say "Waiting for Gemini's answer..."
-  deadline=$((SECONDS + TOUR_TIMEOUT))
-  until ax ssh "${GEMINI_TASK}" -- test -s /workspace/.ax/output 2> /dev/null; do
-    if ((SECONDS > deadline)); then
-      printf '%sno answer from Gemini after %ss%s\n' "${red}" "${TOUR_TIMEOUT}" "${reset}" >&2
-      exit 1
-    fi
-    sleep 1
-  done
+  wait_ssh "${GEMINI_TASK}" test -s /workspace/.ax/output
   run ax ssh "${GEMINI_TASK}" -- cat /workspace/.ax/output
   run ax delete task "${GEMINI_TASK}"
   run ax delete workspace "${GEMINI_WORKSPACE}"
