@@ -83,14 +83,10 @@ There are three levels of customization. Pick the shallowest one that solves you
 
 If the runner behavior is fine and you only need different tools in the sandbox, build on top of the default image and keep its entrypoint:
 
-The image below is private. Build and push your own runner from the same AX
-checkout as the CLI and control plane, then replace `FROM` with its digest
-reference. The [installation guide](installation.md) shows the build steps for
-its pinned baseline.
+Use the `ax-runner` digest from the release notes of the AX version you run; the one below is from v0.4.0-rc.2.
 
 ```dockerfile
-# Replace this with the digest of the runner built from the same AX checkout.
-FROM gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:69b764607ec7f1e433d83d2eca17dccfa04f663b43f071fd376e2dd716a57f8c
+FROM ghcr.io/google/ax/ax-runner@sha256:0937ebe5ad2d8db6bb25e88ded44d2d65de1b1bd8f0a9a97c6bb3787407d9947
 
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
     && rm -rf /var/lib/apt/lists/*
