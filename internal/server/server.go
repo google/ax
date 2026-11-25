@@ -164,13 +164,6 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if err := apivalidation.ValidateTask(task); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	// Tasks are immutable, so reject fields whose runtime enforcement has not
-	// landed yet (retry requires runner exit events and the retry loop) rather
-	// than silently
-	// storing settings that nothing honors.
-	if field := firstUnimplementedTaskField(task.GetSpec()); field != "" {
-		return nil, status.Errorf(codes.Unimplemented, "%s is not supported yet", field)
-	}
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -238,7 +231,7 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	if task.Spec == nil {
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
-	task.Status = &v1alpha1.TaskStatus{Attempt: 1}
+	task.Status = &v1alpha1.TaskStatus{}
 	if len(task.Spec.Commands) > 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
 	}
@@ -275,17 +268,6 @@ func (s *Server) deleteFailedCreate(ctx context.Context, task *v1alpha1.Task) {
 	if err := s.taskManager.DeleteTask(ctx, task); err != nil {
 		slog.Warn("could not remove the actor of a failed create", "atespace", task.GetMetadata().GetAtespace(), "task", task.GetMetadata().GetName(), "error", err)
 	}
-}
-
-// TODO: Drop this check once task retries are wired.
-func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
-	if spec == nil {
-		return ""
-	}
-	if spec.GetRetry() != nil {
-		return "spec.retry"
-	}
-	return ""
 }
 
 func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest) (*emptypb.Empty, error) {

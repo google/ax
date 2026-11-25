@@ -42,12 +42,6 @@ spec:
   goal:
     text: "Fix the failing unit tests."
 
-  # retry:                         # not available yet: rejected until task retries are wired
-  #   maxRetries: 2
-  #   initialBackoff: 30s
-  #   maxBackoff: 300s
-  #   backoffMultiplier: 2
-
   sessionId: "session-42"   # optional; defaults to metadata.uid on creation
   debug: true               # serve guest services inside the sandbox so `ax ssh` works; off by default
 ```
@@ -104,10 +98,9 @@ If Agent Substrate refuses one of the rules, `ax apply` fails and the task is no
 
 Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` is not supported and `ax apply` rejects a manifest that sets it.
 
-### Goal, retries, and session ID
+### Goal and session ID
 
 - **`spec.goal.text`** is an optional natural-language description of the task's objective, delivered as part of the task metadata.
-- **`spec.retry`** configures retry limits and backoff (`maxRetries >= 0`, non-negative `initialBackoff` and `maxBackoff` with `initialBackoff <= maxBackoff`, and `backoffMultiplier >= 1.0` when set). *Not available yet: ax-server rejects `spec.retry` until task retries are wired.*
 - **`spec.sessionId`** groups related tasks or multi-turn runs under one correlation ID. When omitted, `CreateTask` defaults it to the server-assigned `metadata.uid`.
 
 ### Runner configuration

@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3"
@@ -55,12 +54,6 @@ func fullTask() *v1alpha1.Task {
 			Workspace: &v1alpha1.WorkspaceRef{Name: "ws", Path: "/workspace"},
 			Debug:     true,
 			Goal:      &v1alpha1.Goal{Text: "Run verification suite"},
-			Retry: &v1alpha1.RetryConfig{
-				MaxRetries:        2,
-				InitialBackoff:    durationpb.New(30 * time.Second),
-				MaxBackoff:        durationpb.New(5 * time.Minute),
-				BackoffMultiplier: 2.0,
-			},
 			Gateway:   &v1alpha1.GatewayRef{Name: "gw"},
 			SessionId: "sess-123",
 		},
@@ -74,8 +67,7 @@ func fullTask() *v1alpha1.Task {
 				Message:    "ok",
 				UpdateTime: timestamppb.New(time.Date(2026, 9, 19, 12, 5, 0, 0, time.UTC)),
 			}},
-			State:   v1alpha1.TaskState_TASK_STATE_RUNNING,
-			Attempt: 1,
+			State: v1alpha1.TaskState_TASK_STATE_RUNNING,
 			AteTemplate: &v1alpha1.ObjectRef{
 				Name:     "ax-3f9c1a2b5d7e9f01",
 				Atespace: "shared",
@@ -110,9 +102,6 @@ func TestTask_YAMLFieldNames(t *testing.T) {
 		"updateTime: 2026-09-19T12:01:00Z",
 		"deleteTime: 2026-09-19T12:10:00Z",
 		"sessionId: sess-123",
-		"initialBackoff: 30s",
-		"maxBackoff: 300s",
-		"backoffMultiplier: 2",
 		"state: TASK_STATE_RUNNING",
 		"actorUid: actor-uid-1",
 		"ateTemplate:",

@@ -16,7 +16,6 @@ syntax = "proto3";
 
 package ax.v1alpha1;
 
-import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "pkg/apis/v1alpha1/common.proto";
 import "pkg/apis/v1alpha1/gateway.proto";
@@ -77,35 +76,21 @@ message TaskSpec {
   // Optional natural-language task goal.
   Goal goal = 7;
 
-  // Retries after a failed exit, sandbox crash, or lost runner.
-  RetryConfig retry = 8;
-
   // gateway binds the Gateway whose rules allow the task's external network
   // traffic. Rules are copied onto the actor when the task is created (later
   // edits or deletes of the gateway don't change existing tasks, and binding a
   // missing gateway fails). A task without a Gateway has no external network
   // access.
-  GatewayRef gateway = 9;
+  GatewayRef gateway = 8;
 
   // Logical multi-turn session / conversation thread ID. Defaults to
   // metadata.uid on CreateTask if unset.
-  string session_id = 10;
+  string session_id = 9;
 }
 
 message EnvVar {
   string name = 1;
   string value = 2;
-}
-
-message RetryConfig {
-  // Retries per turn (attempt runs 1 … max_retries + 1).
-  int32 max_retries = 1;
-  // Delay before the first retry. Default 0 (retry immediately).
-  google.protobuf.Duration initial_backoff = 2;
-  // Cap on retry delay. Default 5m.
-  google.protobuf.Duration max_backoff = 3;
-  // Multiplier applied after each retry (must be >= 1.0 when set).
-  double backoff_multiplier = 4;
 }
 
 message Goal {
@@ -144,13 +129,9 @@ message TaskStatus {
   ObjectRef ate_template = 3;
   repeated Condition conditions = 4;
   TaskState state = 5;
-  // 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
-  // Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
-  // retry (non-zero command exit, sandbox crash, or lost runner).
-  int32 attempt = 6;
   // Effective command argv executed by each run: spec.commands if set,
   // otherwise the image's ENTRYPOINT + CMD.
-  repeated string resolved_argv = 7;
+  repeated string resolved_argv = 6;
 }
 
 // --- RPC Request & Response Messages ---

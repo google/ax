@@ -67,9 +67,6 @@ func describeTask(out io.Writer, task *v1alpha1.Task) {
 			fmt.Fprintf(out, "Template:     %s\n", tpl.GetName())
 		}
 	}
-	if attempt := st.GetAttempt(); attempt > 0 {
-		fmt.Fprintf(out, "Attempt:      %d\n", attempt)
-	}
 
 	if spec != nil {
 		if sid := spec.GetSessionId(); sid != "" {
