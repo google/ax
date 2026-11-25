@@ -375,7 +375,11 @@ func applyDocument(ctx context.Context, client v1alpha1.AXClient, doc *yaml.Node
 		if err := setApplyAtespace(task.Metadata, atespace); err != nil {
 			return "", "", "", err
 		}
-		res, err := client.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &task})
+		// CreateTask builds a workspace snapshot when the task's profile differs
+		// from its workspace's.
+		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lifecycleRPCTimeout)
+		defer cancel()
+		res, err := client.CreateTask(createCtx, &v1alpha1.CreateTaskRequest{Task: &task})
 		if err != nil {
 			return "", "", "", err
 		}

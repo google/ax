@@ -2,7 +2,7 @@
 
 All four kinds can live in one multi-document YAML file. The examples below show every kind; [`examples/simple.yaml`](../examples/simple.yaml) is the smallest working Task.
 
-`metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting the task fail later with `ActorCreationFailed`.
+`metadata.name` and `metadata.atespace` become Substrate resource names, so they must be lowercase RFC 1123 labels: at most 63 lowercase alphanumeric characters or `-`, starting and ending with an alphanumeric character. `ax apply` rejects anything else up front rather than letting Agent Substrate refuse it.
 
 When `metadata.atespace` is omitted, `ax apply -a team-a -f manifest.yaml` uses `team-a`. Without `-a` or `--atespace`, the manifest's atespace is preserved, or defaults to `default` if omitted. If an explicit flag disagrees with `metadata.atespace`, that resource is rejected before it is submitted.
 
@@ -80,7 +80,7 @@ A Task runs the image named by its `spec.profile.image` or `spec.profile.ateTemp
 - **Omitted `Task.spec.profile` (warm path):** the task uses `Workspace.spec.profile` and starts directly from the Workspace's pre-warmed snapshot. ax-server rejects a Task that omits `spec.profile` unless it binds a Workspace whose `spec.profile` sets `image` or `ateTemplate.name`.
 - **Explicit `Task.spec.profile` (independent override / cold-boot on mismatch):** it must set `image` or `ateTemplate.name` and is used **as-is**; `Workspace.spec.profile` never constrains or leaks fields into it. Unset `resources.limits` default to `1` CPU (`1000m`) and `512Mi` memory, never to `Workspace.spec.profile`. If the profile differs from `Workspace.spec.profile`, the task misses the pre-warmed snapshot and cold-boots to run workspace setup in its own sandbox first.
 
-Substrate requires `spec.profile.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens the task reports `Ready=False` with reason `TemplateCreationFailed` and the Substrate error as the message. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
+Substrate requires `spec.profile.image` (and a Workspace's `spec.profile.image`) to be pinned by digest, e.g. `ghcr.io/my-org/my-agent-image@sha256:...`. A tag-only reference such as `my-agent:v1` is rejected when the ActorTemplate is created, because a tag can move and would silently invalidate the actor's snapshots. If that happens `ax apply` fails with the Substrate error and the task is not created. Resolve a tag to its digest with `docker buildx imagetools inspect <image:tag>` or `crane digest <image:tag>`.
 
 ### Binding a workspace
 
@@ -96,11 +96,11 @@ A task binds at most one `Gateway` through `spec.gateway`, for example `gateway:
 
 A task gets a copy of the gateway's rules when it is created. Editing or deleting the `Gateway` afterwards does not change tasks that already exist; create a new task to pick up the new rules. The bound `Gateway` must already exist in the task's atespace, so list it before the `Task` that binds it.
 
-If Agent Substrate refuses one of the rules, the task reports `Ready=False` with reason `GatewayBindingFailed` and does not run.
+If Agent Substrate refuses one of the rules, `ax apply` fails and the task is not created.
 
 ### Sizing the sandbox
 
-`spec.profile.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses reports `Ready=False` with reason `TemplateCreationFailed` rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
+`spec.profile.resources.limits` caps the CPU and memory of the task's sandbox. The controller copies the limits onto the Substrate `ActorTemplate` it provisions for the task, using Kubernetes quantity syntax (`500m`, `2`, `4Gi`). Only `cpu` and `memory` are supported, each quantity must be greater than zero, and the CPU limit must be below 1000 cores. `ax apply` rejects values outside these rules, and a task whose limits Substrate refuses is not created rather than run without them. Because Substrate requires both CPU and memory limits on every `ActorTemplate`, any omitted dimension defaults to `1` CPU (`1000m`) and `512Mi` memory.
 
 Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` is not supported and `ax apply` rejects a manifest that sets it.
 

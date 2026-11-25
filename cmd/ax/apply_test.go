@@ -75,12 +75,16 @@ spec:
 	client := &mockAXClient{
 		createTaskFn: func(ctx context.Context, in *v1alpha1.CreateTaskRequest, opts ...grpc.CallOption) (*v1alpha1.Task, error) {
 			created = true
-			return in.Task, nil
+			return in.Task, ctx.Err()
 		},
 	}
 
+	// The create has a deadline of its own, so it runs although the context of
+	// the whole file is done.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	docNode := node.Content[0]
-	kind, name, outcome, err := applyDocument(context.Background(), client, docNode, nil)
+	kind, name, outcome, err := applyDocument(ctx, client, docNode, nil)
 	if err != nil {
 		t.Fatalf("expected applyDocument to succeed, got: %v", err)
 	}

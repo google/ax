@@ -62,7 +62,7 @@ const (
 	// the workspace is still being set up.
 	ReasonWorkspaceInitializing = "WorkspaceInitializing"
 	// ReasonSubstrateUnavailable: Agent Substrate could not be reached. Ready
-	// is False with state Queued while provisioning, or Unknown while reading
+	// is False with state Queued after a failed resume, or Unknown while reading
 	// the actor.
 	ReasonSubstrateUnavailable = "SubstrateUnavailable"
 	// ReasonActorNotFound: Ready is False; the task's actor was removed

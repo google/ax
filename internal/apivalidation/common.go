@@ -27,8 +27,8 @@ import (
 //
 // A resource's name and atespace become Substrate resource names (the task's
 // actor and ActorTemplate, and the atespace itself), which must be lowercase
-// RFC 1123 labels. Checking them at apply time turns an asynchronous
-// ActorCreationFailed condition into an immediate error.
+// RFC 1123 labels. Checking them at apply time reports a bad name before
+// Agent Substrate refuses it.
 
 // MaxNameLength is the longest name or atespace a resource may have.
 const MaxNameLength = 63

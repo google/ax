@@ -57,6 +57,15 @@ func storedTask(name string, state v1alpha1.TaskState, conds ...*v1alpha1.Condit
 	}
 }
 
+func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
+	for _, c := range task.GetStatus().GetConditions() {
+		if c.GetType() == "Ready" {
+			return c
+		}
+	}
+	return nil
+}
+
 func TestSetActorStatus(t *testing.T) {
 	workspaceReady := &v1alpha1.Condition{Type: "WorkspaceReady", Status: "True"}
 	crashed := testActor("crashed", ateapipb.ActorState_ACTOR_STATE_CRASHED)
@@ -79,10 +88,6 @@ func TestSetActorStatus(t *testing.T) {
 		{storedTask("odd", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("odd", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "odd", "Unknown", v1alpha1.ReasonUnknown},
 		// The actor was removed outside AX.
 		{storedTask("gone", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), nil, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "", "False", v1alpha1.ReasonActorNotFound},
-		// A Ready reason stored when the actor could not be provisioned is kept.
-		{storedTask("unprovisioned", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, &v1alpha1.Condition{Type: "Ready", Status: "False", Reason: v1alpha1.ReasonGatewayBindingFailed}), nil, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "", "False", v1alpha1.ReasonGatewayBindingFailed},
-		// The live actor state wins over a Ready reason stored by a failed resume.
-		{storedTask("resume-failed", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, &v1alpha1.Condition{Type: "Ready", Status: "False", Reason: v1alpha1.ReasonActorResumeFailed}), testActor("resume-failed", ateapipb.ActorState_ACTOR_STATE_SUSPENDED), v1alpha1.TaskState_TASK_STATE_SUSPENDED, "resume-failed", "False", v1alpha1.ReasonSuspended},
 		// States that describe AX's own work are kept.
 		{storedTask("not-yet", v1alpha1.TaskState_TASK_STATE_QUEUED), nil, v1alpha1.TaskState_TASK_STATE_QUEUED, "", "", ""},
 	}

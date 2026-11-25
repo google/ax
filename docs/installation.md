@@ -260,15 +260,15 @@ EOF
 
 A newly created task should be `Suspended`. In the server log, confirm the
 `reconciling task` entry for this task has an `image` matching
-`$AX_TASK_IMAGE`. If creation fails or conditions report
-`TemplateCreationFailed`, diagnose the error before proceeding:
+`$AX_TASK_IMAGE`. If creation fails, diagnose the error before proceeding:
 
 ```bash
 kubectl --context "$AX_CONTEXT" -n ax-system logs deployment/ax-server --since=10m
 ```
 
-To recreate a `Suspended` or `Failed` check task, delete it before applying it
-again; those tasks are immutable. Once creation succeeds, resume it:
+A failed creation leaves no task. To recreate a `Suspended` check task, delete
+it before applying it again; tasks are immutable. Once creation succeeds,
+resume it:
 
 ```bash
 "$AX_BIN" --context "$AX_CONTEXT" -n ax-system resume task "$AX_CHECK_TASK"

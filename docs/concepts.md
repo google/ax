@@ -10,14 +10,14 @@ The unit is deliberately small. An agent is not one process that runs to complet
 
 ### Lifecycle
 
-`status.state` summarizes where the task is. While its actor exists, it is the actor's state on Agent Substrate, with the same name (`TASK_STATE_RESUMING`, `TASK_STATE_RUNNING`, `TASK_STATE_SUSPENDING`, `TASK_STATE_SUSPENDED`, `TASK_STATE_CRASHED`, `TASK_STATE_DELETING`, `TASK_STATE_REVERTING`). AX adds `TASK_STATE_QUEUED` (the actor is not provisioned yet). A task whose actor could not be provisioned, or no longer exists, has no state; its `Ready` condition says why. `metadata.deleteTime` marks a task whose deletion is in progress. Conditions carry the detail. Check them with `ax describe`.
+`status.state` summarizes where the task is. While its actor exists, it is the actor's state on Agent Substrate, with the same name (`TASK_STATE_RESUMING`, `TASK_STATE_RUNNING`, `TASK_STATE_SUSPENDING`, `TASK_STATE_SUSPENDED`, `TASK_STATE_CRASHED`, `TASK_STATE_DELETING`, `TASK_STATE_REVERTING`). AX adds `TASK_STATE_QUEUED` (a resume failed with a transient error and can be repeated). A task whose actor no longer exists has no state; its `Ready` condition says why. `metadata.deleteTime` marks a task whose deletion is in progress. Conditions carry the detail. Check them with `ax describe`.
 
 | Condition | True when |
 |---|---|
 | `WorkspaceReady` | The workspace has finished setting up. Stays True afterwards. |
 | `Ready` | The task is running and `WorkspaceReady` is True. This is the one to wait on. |
 
-New tasks created with `ax apply` start in the `Suspended` phase (`Ready` is False with reason `Suspended`). Running `ax resume task <name>` starts or restores the sandbox and sets `Ready` to True once `WorkspaceReady` is True; running `ax suspend task <name>` checkpoints the sandbox back to `Suspended`. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
+New tasks created with `ax apply` start in the `Suspended` phase (`Ready` is False with reason `Suspended`). A create that fails leaves no task behind. Running `ax resume task <name>` starts or restores the sandbox and sets `Ready` to True once `WorkspaceReady` is True; running `ax suspend task <name>` checkpoints the sandbox back to `Suspended`. Deleting a task tears down the sandbox on Agent Substrate and removes the record. `ax delete` blocks until that has completed.
 
 ## Workspace
 

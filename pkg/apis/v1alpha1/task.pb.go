@@ -54,8 +54,8 @@ const (
 	TaskState_TASK_STATE_CRASHED     TaskState = 5
 	TaskState_TASK_STATE_DELETING    TaskState = 6
 	TaskState_TASK_STATE_REVERTING   TaskState = 7
-	// The task's actor is not provisioned yet: CreateTask is in progress or
-	// failed with a transient Substrate error and can be applied again.
+	// ResumeTask failed with a transient Substrate error and can be called
+	// again.
 	TaskState_TASK_STATE_QUEUED TaskState = 200
 )
 

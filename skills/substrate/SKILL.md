@@ -94,8 +94,9 @@ instead. No mocking library is in `go.mod`.
 ### Substrate behaviour the code already depends on
 
 - Actor template images must be digest-pinned (`@sha256:…`); a tag-only
-  `spec.profile.image` fails at ActorTemplate creation with reason
-  `TemplateCreationFailed` (`docs/manifests.md`). `make images` writes
+  `spec.profile.image` fails at ActorTemplate creation (`docs/manifests.md`):
+  `CreateTask` returns the error, and a Workspace records reason
+  `TemplateCreationFailed`. `make images` writes
   `bin/ax-server.digest` / `bin/ax-runner.digest` for this reason.
 - There is no server-wide default task image. A set `spec.profile` must name
   `image` or `ateTemplate.name` (`validateProfile` in
@@ -123,6 +124,9 @@ instead. No mocking library is in `go.mod`.
   treat a deleted Workspace or Gateway as none, and fail before they touch the
   actor when the store cannot read one (`fetchWorkspace`, `fetchGateway` in
   `internal/server/server.go`).
+- A Task is stored only once its actor exists. When provisioning or the store
+  write fails, `CreateTask` (`internal/server/server.go`) deletes the actor
+  and stores nothing (`deleteFailedCreate`).
 - Actors come from shared profile templates, so the runner learns its work
   by push: after `ResumeActor`, ax-server POSTs the Task (and its Workspace)
   to `v1alpha1.RunnerTaskPath`, or a Workspace to a setup actor at

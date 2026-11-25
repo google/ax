@@ -70,7 +70,7 @@ func TestStoredStatus(t *testing.T) {
 func TestTasksGoThroughHelpers(t *testing.T) {
 	helpers := map[string]bool{
 		"getStoredTask": true, "getTask": true, "listTasks": true,
-		"saveTask": true, "updateTask": true, "updateFailedTask": true, "deleteTask": true,
+		"saveTask": true, "updateTask": true, "deleteTask": true,
 	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {

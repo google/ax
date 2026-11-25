@@ -681,8 +681,8 @@ func TestCreateTask_RequiresBoundGateway(t *testing.T) {
 }
 
 // A task gets its gateway's rules before it can run. If Substrate refuses
-// them, the task fails and cannot be resumed. Once the task has them, later
-// changes to the gateway do not affect it.
+// them, the task is not created. Once the task has them, later changes to the
+// gateway do not affect it.
 func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	ctx := context.Background()
 	mem := memory.NewStore()
@@ -711,25 +711,30 @@ func TestServer_GatewayRulesAreCopiedOnce(t *testing.T) {
 	resume := &v1alpha1.ResumeTaskRequest{Name: "task"}
 
 	const substrateMsg = `egress_policy.rules[0].https.hostnames[0]: Invalid value: "a.example.com": refused`
-	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, substrateMsg)})
+	refused := substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, substrateMsg)}
+	sub.SetErrors(refused)
 	saveGateway("a.example.com")
-	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
+	create := &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
-	}})
+	}}
+	_, err := srv.CreateTask(ctx, create)
 	if msg := status.Convert(err).Message(); !strings.Contains(msg, `binding gateway "gw"`) || !strings.Contains(msg, substrateMsg) {
 		t.Fatalf("CreateTask error = %v, want it to name the gateway and carry Substrate's message", err)
 	}
-	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	// The actor was provisioned before the refusal, so its state is reported.
-	if got := stored.GetStatus().GetState(); got != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
-		t.Errorf("after refusal: state %v, want SUSPENDED", got)
-	}
 
-	// Resuming the task fails as well.
+	// The actor is replaced outside AX by one that has no rules. It does not
+	// run without them.
+	sub.SetErrors(substratetest.Errors{})
+	if _, err := srv.CreateTask(ctx, create); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	actor, _ := sub.Actor("default", "task")
+	if err := sub.Client().DeleteActor(ctx, "default", "task"); err != nil {
+		t.Fatalf("DeleteActor: %v", err)
+	}
+	sub.SetActor(actor)
+	sub.SetErrors(refused)
 	if _, err := srv.ResumeTask(ctx, resume); err == nil {
 		t.Fatal("ResumeTask succeeded although the gateway's rules were refused")
 	}
@@ -798,81 +803,27 @@ func TestServer_SuspendTask_RunningTaskWithoutGatewayRules(t *testing.T) {
 		t.Fatalf("SaveGateway: %v", err)
 	}
 
-	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, "refused")})
 	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
-	}}); err == nil {
-		t.Fatal("CreateTask succeeded although the gateway's rules were refused")
+	}}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
 	}
 
-	// Substrate may start an actor on its own, for example for a request.
+	// The actor is replaced outside AX by a running one, which has no rules.
 	actor, _ := sub.Actor("default", "task")
+	if err := sub.Client().DeleteActor(ctx, "default", "task"); err != nil {
+		t.Fatalf("DeleteActor: %v", err)
+	}
 	actor.Status.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
 	sub.SetActor(actor)
+	sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.InvalidArgument, "refused")})
 	_, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"})
 	if msg := status.Convert(err).Message(); !strings.Contains(msg, `binding gateway "gw"`) {
 		t.Errorf("SuspendTask error = %v, want it to report that the gateway was not bound", err)
 	}
 	if actor, _ := sub.Actor("default", "task"); actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
 		t.Errorf("actor state after SuspendTask = %v, want suspended", actor.GetStatus().GetState())
-	}
-}
-
-// A task whose creation failed before its gateway's rules were copied gets
-// them when it is next suspended or resumed.
-func TestServer_PendingTaskGetsGatewayRules(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		next func(context.Context, *server.Server) error
-	}{
-		{name: "suspend", next: func(ctx context.Context, srv *server.Server) error {
-			_, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task"})
-			return err
-		}},
-		{name: "resume", next: func(ctx context.Context, srv *server.Server) error {
-			_, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task"})
-			return err
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
-			mem := memory.NewStore()
-			sub := substratetest.NewServer(t)
-			srv := server.NewServer(mem, newTestTaskManager(sub))
-			if err := mem.SaveGateway(ctx, &v1alpha1.Gateway{
-				Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
-				Spec: &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{
-					Https: &ateapipb.HttpsRule{Hostnames: []string{"a.example.com"}},
-				}}},
-			}); err != nil {
-				t.Fatalf("SaveGateway: %v", err)
-			}
-
-			sub.SetErrors(substratetest.Errors{CreateEgressPolicy: status.Error(codes.DeadlineExceeded, "substrate control plane timed out")})
-			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-				Metadata: &v1alpha1.ObjectMeta{Name: "task"},
-				Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Gateway: &v1alpha1.GatewayRef{Name: "gw"}},
-			}})
-			if status.Code(err) != codes.Unavailable {
-				t.Fatalf("CreateTask: got %v, want Unavailable", err)
-			}
-			stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
-			if err != nil {
-				t.Fatalf("GetTask: %v", err)
-			}
-			if reason := readyCondition(stored).GetReason(); reason != v1alpha1.ReasonSubstrateUnavailable {
-				t.Errorf("Ready reason after the failed creation = %q, want %q", reason, v1alpha1.ReasonSubstrateUnavailable)
-			}
-
-			sub.SetErrors(substratetest.Errors{})
-			if err := tc.next(ctx, srv); err != nil {
-				t.Fatalf("%s: %v", tc.name, err)
-			}
-			if policy, _ := sub.EgressPolicy("default", "task"); len(policy.GetRules()) != 1 {
-				t.Errorf("actor's rules after %s = %v, want the gateway's", tc.name, policy.GetRules())
-			}
-		})
 	}
 }
 
@@ -1417,54 +1368,56 @@ func TestServer_CreateTask_InitialStateSuspended(t *testing.T) {
 	assertNoActorState(t, stored)
 }
 
-func TestServer_CreateTask_ReconcileErrorMarksFailed(t *testing.T) {
-	st := memory.NewStore()
+// A create that fails after its actor exists stores no task and removes the
+// actor.
+func TestServer_CreateTask_FailureLeavesNothing(t *testing.T) {
+	st := &failSaveTaskStore{Store: memory.NewStore()}
 	sub := substratetest.NewServer(t)
-	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	rec := newTestTaskManager(sub)
-	srv := server.NewServer(st, rec)
+	srv := server.NewServer(st, newTestTaskManager(sub))
 	ctx := context.Background()
-
-	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "task-create-fail"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		},
-	})
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("expected Internal error when Substrate fails to suspend the new actor, got %v", err)
+	create := func(ctx context.Context) error {
+		_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+			Task: &v1alpha1.Task{
+				Metadata: &v1alpha1.ObjectMeta{Name: "task-create-fail"},
+				Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
+			},
+		})
+		return err
+	}
+	assertNothingLeft := func() {
+		t.Helper()
+		if _, err := st.GetTask(ctx, "default", "task-create-fail"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("stored task after a failed create: got %v, want ErrNotFound", err)
+		}
+		if actor, ok := sub.Actor("default", "task-create-fail"); ok {
+			t.Errorf("failed create left actor %v, want none", actor)
+		}
 	}
 
-	// Task was saved, and its state is read from the actor that was provisioned
-	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-create-fail"})
-	if err != nil {
-		t.Fatalf("expected task to exist in store after a failed create, got %v", err)
+	// 1. Substrate fails, and the request runs out of time while the call is
+	// retried.
+	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Unavailable, "substrate is unavailable")})
+	expiring, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if err := create(expiring); status.Code(err) != codes.Unavailable {
+		t.Fatalf("CreateTask while Substrate is unavailable: got %v, want Unavailable", err)
 	}
-	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
-		t.Errorf("state = %v, want SUSPENDED", stored.GetStatus().GetState())
-	}
+	assertNothingLeft()
 
-	// Because task already exists in store, attempting to create it again must fail with FailedPrecondition
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "task-create-fail"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		},
-	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected FailedPrecondition on duplicate create, got %v", err)
+	// 2. The store fails.
+	sub.SetErrors(substratetest.Errors{})
+	st.failSave = true
+	if err := create(ctx); status.Code(err) != codes.Internal {
+		t.Fatalf("CreateTask while the store fails: got %v, want Internal", err)
 	}
+	assertNothingLeft()
 }
 
 // TestCreateTask_IgnoresServerAssignedFields creates a task from a manifest
 // copied from `ax get task`, which carries metadata.uid, the timestamps, and
 // status. The server must assign its own.
 func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
-	sub := substratetest.NewServer(t)
-	// Provisioning fails so that the task reads back as CreateTask stored it; a
-	// successful CreateTask clears deleteTime on its own.
-	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend actor failure")})
-	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
+	srv := server.NewServer(memory.NewStore(), newTestTaskManager(substratetest.NewServer(t)))
 	ctx := context.Background()
 
 	copied := timestamppb.New(time.Unix(1, 0))
@@ -1475,8 +1428,8 @@ func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
 			Status:   &v1alpha1.TaskStatus{Attempt: 7},
 		},
 	})
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("expected Internal error when Substrate fails to suspend the new actor, got %v", err)
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
 	}
 
 	task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task-copy"})
@@ -1503,8 +1456,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
 
-	// 1. CreateTask while Substrate is unavailable records State=QUEUED (not FAILED)
-	// and returns codes.Unavailable.
+	// 1. CreateTask while Substrate is unavailable returns codes.Unavailable.
 	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
 		Task: &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
@@ -1515,95 +1467,23 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 		t.Fatalf("expected Unavailable from CreateTask when Substrate is unreachable, got %v", err)
 	}
 
-	stored, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "simple-task"})
-	if err != nil {
-		t.Fatalf("GetTask failed: %v", err)
-	}
-	if stored.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
-		t.Errorf("expected stored state QUEUED after transient Substrate error, got %v", stored.GetStatus().GetState())
-	}
-
-	// 2. Re-applying a Queued task with a different spec is rejected to preserve immutability.
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
+	// 2. Nothing was stored, so once Substrate recovers CreateTask succeeds, also
+	// with a different spec.
+	sub.SetErrors(substratetest.Errors{})
+	created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
 		Task: &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "debian"}},
 		},
 	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected FailedPrecondition when re-applying Queued task with modified spec, got %v", err)
-	}
-
-	// 3. Re-applying a Queued task with omitted status preserves stored status conditions
-	// rather than dropping them before reconciliation. Steps 3 and 4 fail at SuspendActor,
-	// which leaves the conditions it is given alone; a failing CreateAtespace would
-	// overwrite Ready with SubstrateUnavailable whatever the server passed in.
-	sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.DeadlineExceeded, "substrate timed out suspending actor")})
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		},
-	})
-	if status.Code(err) != codes.Unavailable {
-		t.Fatalf("expected Unavailable on retry while Substrate is still down, got %v", err)
-	}
-	retried, err := st.GetTask(ctx, "default", "simple-task")
 	if err != nil {
-		t.Fatalf("store GetTask: %v", err)
-	}
-	if conds := retried.GetStatus().GetConditions(); len(conds) != 1 || conds[0].GetReason() != v1alpha1.ReasonSubstrateUnavailable {
-		t.Errorf("expected stored condition SubstrateUnavailable to be preserved on omitted-status retry, got %v", conds)
-	}
-
-	// 4. Re-applying a Queued task with client-supplied conditions reuses the stored task
-	// rather than overwriting status with client-supplied values.
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-			Status: &v1alpha1.TaskStatus{
-				State: v1alpha1.TaskState_TASK_STATE_RUNNING,
-				Conditions: []*v1alpha1.Condition{
-					{Type: "Ready", Status: "True", Reason: "ClientForged"},
-				},
-			},
-		},
-	})
-	if status.Code(err) != codes.Unavailable {
-		t.Fatalf("expected Unavailable on retry while Substrate is still down, got %v", err)
-	}
-	retried, err = st.GetTask(ctx, "default", "simple-task")
-	if err != nil {
-		t.Fatalf("store GetTask: %v", err)
-	}
-	if conds := retried.GetStatus().GetConditions(); len(conds) != 1 || conds[0].GetReason() != v1alpha1.ReasonSubstrateUnavailable {
-		t.Errorf("expected client-supplied conditions to be ignored on Queued retry, got %v", conds)
-	}
-
-	// 5. Once Substrate recovers, re-applying CreateTask with the unchanged spec succeeds
-	// for a Queued task and transitions it to Suspended.
-	sub.SetErrors(substratetest.Errors{})
-	created, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("CreateTask retry after Substrate recovery failed: %v", err)
+		t.Fatalf("CreateTask after Substrate recovery failed: %v", err)
 	}
 	if created.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
 		t.Errorf("expected state SUSPENDED after recovery, got %v", created.GetStatus().GetState())
 	}
-	if !created.GetMetadata().GetCreateTime().AsTime().Equal(stored.GetMetadata().GetCreateTime().AsTime()) {
-		t.Errorf("expected CreateTime to be preserved across Queued re-apply")
-	}
-	if created.GetMetadata().GetUid() != stored.GetMetadata().GetUid() {
-		t.Errorf("expected Uid to be preserved across Queued re-apply")
-	}
 
-	// 6. ResumeTask during a brief Substrate outage keeps the task Queued instead of Failed.
+	// 3. ResumeTask during a brief Substrate outage keeps the task Queued instead of Failed.
 	sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.DeadlineExceeded, "substrate worker pool temporarily unreachable")})
 	_, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "simple-task"})
 	if status.Code(err) != codes.Unavailable {
@@ -1617,7 +1497,7 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 		t.Errorf("expected stored state QUEUED after transient ResumeTask error, got %v", storedAfterResumeErr.GetStatus().GetState())
 	}
 
-	// 7. Because initial CreateTask already completed, re-applying CreateTask on a task
+	// 4. Because initial CreateTask already completed, re-applying CreateTask on a task
 	// that entered QUEUED from a later ResumeTask failure is still rejected as immutable.
 	sub.SetErrors(substratetest.Errors{})
 	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
@@ -1689,52 +1569,31 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 	}
 }
 
-// A task whose actor could not be created reports why in its Ready condition,
-// not as a missing actor.
-func TestServer_CreateTask_ActorCreationFailureKeepsReady(t *testing.T) {
-	sub := substratetest.NewServer(t)
-	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
-	ctx := context.Background()
-
-	sub.SetErrors(substratetest.Errors{CreateActor: status.Error(codes.InvalidArgument, "refused")})
-	if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "task"},
-		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-	}}); status.Code(err) != codes.Internal {
-		t.Fatalf("CreateTask: got %v, want Internal", err)
-	}
-	task, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "task"})
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
-	}
-	ready := readyCondition(task)
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_UNSPECIFIED || ready.GetStatus() != "False" || ready.GetReason() != v1alpha1.ReasonActorCreationFailed {
-		t.Errorf("state %v, Ready %v; want UNSPECIFIED with Ready False/%s", task.GetStatus().GetState(), ready, v1alpha1.ReasonActorCreationFailed)
-	}
-}
-
-// A failed create stores the task's Ready condition. A later successful
-// suspend or resume clears it, and the state is read from the actor.
+// A failed resume stores the task's state and Ready condition. A later
+// successful suspend or resume clears them, and the state is read from the
+// actor.
 func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	sub := substratetest.NewServer(t)
 	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
 	ctx := context.Background()
 
-	// createFailed creates a task whose actor exists but could not be
-	// suspended.
-	createFailed := func(name string) {
+	// resumeFailed creates a task whose actor could not be resumed.
+	resumeFailed := func(name string) {
 		t.Helper()
-		sub.SetErrors(substratetest.Errors{SuspendActor: status.Error(codes.Internal, "substrate suspend failure")})
-		defer sub.SetErrors(substratetest.Errors{})
 		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: name},
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		}}); status.Code(err) != codes.Internal {
-			t.Fatalf("CreateTask(%s): got %v, want Internal", name, err)
+		}}); err != nil {
+			t.Fatalf("CreateTask(%s): %v", name, err)
+		}
+		sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.DeadlineExceeded, "substrate resume timed out")})
+		defer sub.SetErrors(substratetest.Errors{})
+		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: name}); status.Code(err) != codes.Unavailable {
+			t.Fatalf("ResumeTask(%s): got %v, want Unavailable", name, err)
 		}
 	}
 
-	createFailed("task-suspend")
+	resumeFailed("task-suspend")
 	task, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task-suspend"})
 	if err != nil {
 		t.Fatalf("SuspendTask: %v", err)
@@ -1743,7 +1602,7 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 		t.Errorf("state after SuspendTask = %v, want SUSPENDED", task.GetStatus().GetState())
 	}
 
-	createFailed("task-resume")
+	resumeFailed("task-resume")
 	task, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task-resume"})
 	if err != nil {
 		t.Fatalf("ResumeTask: %v", err)
