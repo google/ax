@@ -266,7 +266,7 @@ Substrate checks the rest of a rule's syntax when a task that binds the gateway 
 
 ## Model
 
-For Google models, store the API key and set `provider: google`.
+`google` is the only supported `provider` for now. Store the API key in a Secret:
 
 ```bash
 kubectl create secret generic gemini-api-secret --from-literal=GEMINI_API_KEY="AIzaSy..."
@@ -286,26 +286,4 @@ spec:
   secretKey:
     name: gemini-api-secret
     key: GEMINI_API_KEY
-```
-
-For Anthropic models, store the key the same way and set `provider: anthropic`.
-
-```bash
-kubectl create secret generic anthropic-api-secret --from-literal=ANTHROPIC_API_KEY="sk-ant-..."
-```
-
-```yaml
-apiVersion: ax.io/v1alpha1
-kind: Model
-metadata:
-  name: claude-model
-  atespace: default
-spec:
-  provider: anthropic
-  model: claude-opus-5
-  secretKey:
-    name: anthropic-api-secret
-    key: ANTHROPIC_API_KEY
-  parameters:
-    maxTokens: 16000
 ```
