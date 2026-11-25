@@ -17,11 +17,9 @@ package apivalidation_test
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -130,46 +128,12 @@ func TestValidateTask(t *testing.T) {
 			wantErr: "spec.gateway.name",
 		},
 		{
-			name: "goal retry and session_id",
+			name: "goal and session_id",
 			spec: &v1alpha1.TaskSpec{
 				Profile:   img,
 				Goal:      &v1alpha1.Goal{Text: "Fix failing unit tests"},
 				SessionId: "session-42",
-				Retry: &v1alpha1.RetryConfig{
-					MaxRetries:        3,
-					InitialBackoff:    durationpb.New(10 * time.Second),
-					MaxBackoff:        durationpb.New(5 * time.Minute),
-					BackoffMultiplier: 2.0,
-				},
 			},
-		},
-		{
-			name:    "negative max_retries",
-			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{MaxRetries: -1}},
-			wantErr: "spec.retry.maxRetries",
-		},
-		{
-			name:    "negative initial_backoff",
-			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{InitialBackoff: durationpb.New(-time.Second)}},
-			wantErr: "spec.retry.initialBackoff",
-		},
-		{
-			name:    "negative max_backoff",
-			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{MaxBackoff: durationpb.New(-time.Second)}},
-			wantErr: "spec.retry.maxBackoff",
-		},
-		{
-			name: "initial_backoff exceeds max_backoff",
-			spec: &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{
-				InitialBackoff: durationpb.New(2 * time.Minute),
-				MaxBackoff:     durationpb.New(time.Minute),
-			}},
-			wantErr: "spec.retry.initialBackoff: must not exceed maxBackoff",
-		},
-		{
-			name:    "backoff_multiplier below 1",
-			spec:    &v1alpha1.TaskSpec{Profile: img, Retry: &v1alpha1.RetryConfig{BackoffMultiplier: 0.5}},
-			wantErr: "spec.retry.backoffMultiplier",
 		},
 		{
 			name: "config",

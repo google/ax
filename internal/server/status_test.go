@@ -31,7 +31,6 @@ func TestStoredStatus(t *testing.T) {
 		Actor:       "actor",
 		ActorUid:    "uid-1",
 		AteTemplate: &v1alpha1.ObjectRef{Name: "task-tmpl-01234567", Atespace: "default"},
-		Attempt:     1,
 		Conditions:  []*v1alpha1.Condition{{Type: "Ready"}, {Type: "WorkspaceReady"}},
 	}
 	got := storedStatus(in)

@@ -23,7 +23,6 @@ package v1alpha1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
@@ -227,17 +226,15 @@ type TaskSpec struct {
 	Config *structpb.Struct `protobuf:"bytes,6,opt,name=config,proto3" json:"config,omitempty"`
 	// Optional natural-language task goal.
 	Goal *Goal `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`
-	// Retries after a failed exit, sandbox crash, or lost runner.
-	Retry *RetryConfig `protobuf:"bytes,8,opt,name=retry,proto3" json:"retry,omitempty"`
 	// gateway binds the Gateway whose rules allow the task's external network
 	// traffic. Rules are copied onto the actor when the task is created (later
 	// edits or deletes of the gateway don't change existing tasks, and binding a
 	// missing gateway fails). A task without a Gateway has no external network
 	// access.
-	Gateway *GatewayRef `protobuf:"bytes,9,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	Gateway *GatewayRef `protobuf:"bytes,8,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	// Logical multi-turn session / conversation thread ID. Defaults to
 	// metadata.uid on CreateTask if unset.
-	SessionId     string `protobuf:"bytes,10,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SessionId     string `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -321,13 +318,6 @@ func (x *TaskSpec) GetGoal() *Goal {
 	return nil
 }
 
-func (x *TaskSpec) GetRetry() *RetryConfig {
-	if x != nil {
-		return x.Retry
-	}
-	return nil
-}
-
 func (x *TaskSpec) GetGateway() *GatewayRef {
 	if x != nil {
 		return x.Gateway
@@ -394,78 +384,6 @@ func (x *EnvVar) GetValue() string {
 	return ""
 }
 
-type RetryConfig struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Retries per turn (attempt runs 1 … max_retries + 1).
-	MaxRetries int32 `protobuf:"varint,1,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`
-	// Delay before the first retry. Default 0 (retry immediately).
-	InitialBackoff *durationpb.Duration `protobuf:"bytes,2,opt,name=initial_backoff,json=initialBackoff,proto3" json:"initial_backoff,omitempty"`
-	// Cap on retry delay. Default 5m.
-	MaxBackoff *durationpb.Duration `protobuf:"bytes,3,opt,name=max_backoff,json=maxBackoff,proto3" json:"max_backoff,omitempty"`
-	// Multiplier applied after each retry (must be >= 1.0 when set).
-	BackoffMultiplier float64 `protobuf:"fixed64,4,opt,name=backoff_multiplier,json=backoffMultiplier,proto3" json:"backoff_multiplier,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *RetryConfig) Reset() {
-	*x = RetryConfig{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[3]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RetryConfig) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RetryConfig) ProtoMessage() {}
-
-func (x *RetryConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[3]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RetryConfig.ProtoReflect.Descriptor instead.
-func (*RetryConfig) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *RetryConfig) GetMaxRetries() int32 {
-	if x != nil {
-		return x.MaxRetries
-	}
-	return 0
-}
-
-func (x *RetryConfig) GetInitialBackoff() *durationpb.Duration {
-	if x != nil {
-		return x.InitialBackoff
-	}
-	return nil
-}
-
-func (x *RetryConfig) GetMaxBackoff() *durationpb.Duration {
-	if x != nil {
-		return x.MaxBackoff
-	}
-	return nil
-}
-
-func (x *RetryConfig) GetBackoffMultiplier() float64 {
-	if x != nil {
-		return x.BackoffMultiplier
-	}
-	return 0
-}
-
 type Goal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Goal as natural language.
@@ -476,7 +394,7 @@ type Goal struct {
 
 func (x *Goal) Reset() {
 	*x = Goal{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -488,7 +406,7 @@ func (x *Goal) String() string {
 func (*Goal) ProtoMessage() {}
 
 func (x *Goal) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[4]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -501,7 +419,7 @@ func (x *Goal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Goal.ProtoReflect.Descriptor instead.
 func (*Goal) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{4}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Goal) GetText() string {
@@ -520,20 +438,16 @@ type TaskStatus struct {
 	AteTemplate *ObjectRef   `protobuf:"bytes,3,opt,name=ate_template,json=ateTemplate,proto3" json:"ate_template,omitempty"`
 	Conditions  []*Condition `protobuf:"bytes,4,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	State       TaskState    `protobuf:"varint,5,opt,name=state,proto3,enum=ax.v1alpha1.TaskState" json:"state,omitempty"`
-	// 1-based execution attempt counter (1 … spec.retry.max_retries + 1).
-	// Starts at 1 on CreateTask; increments (+1) only when a failure consumes a
-	// retry (non-zero command exit, sandbox crash, or lost runner).
-	Attempt int32 `protobuf:"varint,6,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	// Effective command argv executed by each run: spec.commands if set,
 	// otherwise the image's ENTRYPOINT + CMD.
-	ResolvedArgv  []string `protobuf:"bytes,7,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
+	ResolvedArgv  []string `protobuf:"bytes,6,rep,name=resolved_argv,json=resolvedArgv,proto3" json:"resolved_argv,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskStatus) Reset() {
 	*x = TaskStatus{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -545,7 +459,7 @@ func (x *TaskStatus) String() string {
 func (*TaskStatus) ProtoMessage() {}
 
 func (x *TaskStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[5]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -558,7 +472,7 @@ func (x *TaskStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskStatus.ProtoReflect.Descriptor instead.
 func (*TaskStatus) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{5}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *TaskStatus) GetActor() string {
@@ -596,13 +510,6 @@ func (x *TaskStatus) GetState() TaskState {
 	return TaskState_TASK_STATE_UNSPECIFIED
 }
 
-func (x *TaskStatus) GetAttempt() int32 {
-	if x != nil {
-		return x.Attempt
-	}
-	return 0
-}
-
 func (x *TaskStatus) GetResolvedArgv() []string {
 	if x != nil {
 		return x.ResolvedArgv
@@ -621,7 +528,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -633,7 +540,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -646,7 +553,7 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{6}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetTaskRequest) GetAtespace() string {
@@ -678,7 +585,7 @@ type ListTasksRequest struct {
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -690,7 +597,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[7]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -703,7 +610,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{7}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListTasksRequest) GetAtespace() string {
@@ -738,7 +645,7 @@ type ListTasksResponse struct {
 
 func (x *ListTasksResponse) Reset() {
 	*x = ListTasksResponse{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +657,7 @@ func (x *ListTasksResponse) String() string {
 func (*ListTasksResponse) ProtoMessage() {}
 
 func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[8]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +670,7 @@ func (x *ListTasksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksResponse.ProtoReflect.Descriptor instead.
 func (*ListTasksResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{8}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListTasksResponse) GetTasks() []*Task {
@@ -789,7 +696,7 @@ type CreateTaskRequest struct {
 
 func (x *CreateTaskRequest) Reset() {
 	*x = CreateTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -801,7 +708,7 @@ func (x *CreateTaskRequest) String() string {
 func (*CreateTaskRequest) ProtoMessage() {}
 
 func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[9]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -814,7 +721,7 @@ func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{9}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CreateTaskRequest) GetTask() *Task {
@@ -834,7 +741,7 @@ type DeleteTaskRequest struct {
 
 func (x *DeleteTaskRequest) Reset() {
 	*x = DeleteTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -846,7 +753,7 @@ func (x *DeleteTaskRequest) String() string {
 func (*DeleteTaskRequest) ProtoMessage() {}
 
 func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[10]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -859,7 +766,7 @@ func (x *DeleteTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTaskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{10}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteTaskRequest) GetAtespace() string {
@@ -886,7 +793,7 @@ type SuspendTaskRequest struct {
 
 func (x *SuspendTaskRequest) Reset() {
 	*x = SuspendTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -898,7 +805,7 @@ func (x *SuspendTaskRequest) String() string {
 func (*SuspendTaskRequest) ProtoMessage() {}
 
 func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[11]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -911,7 +818,7 @@ func (x *SuspendTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuspendTaskRequest.ProtoReflect.Descriptor instead.
 func (*SuspendTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{11}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SuspendTaskRequest) GetAtespace() string {
@@ -938,7 +845,7 @@ type ResumeTaskRequest struct {
 
 func (x *ResumeTaskRequest) Reset() {
 	*x = ResumeTaskRequest{}
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -950,7 +857,7 @@ func (x *ResumeTaskRequest) String() string {
 func (*ResumeTaskRequest) ProtoMessage() {}
 
 func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[12]
+	mi := &file_pkg_apis_v1alpha1_task_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -963,7 +870,7 @@ func (x *ResumeTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeTaskRequest.ProtoReflect.Descriptor instead.
 func (*ResumeTaskRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{12}
+	return file_pkg_apis_v1alpha1_task_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ResumeTaskRequest) GetAtespace() string {
@@ -984,14 +891,14 @@ var File_pkg_apis_v1alpha1_task_proto protoreflect.FileDescriptor
 
 const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\n" +
-	"\x1cpkg/apis/v1alpha1/task.proto\x12\vax.v1alpha1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\x1a!pkg/apis/v1alpha1/workspace.proto\"\xcc\x01\n" +
+	"\x1cpkg/apis/v1alpha1/task.proto\x12\vax.v1alpha1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1epkg/apis/v1alpha1/common.proto\x1a\x1fpkg/apis/v1alpha1/gateway.proto\x1a!pkg/apis/v1alpha1/workspace.proto\"\xcc\x01\n" +
 	"\x04Task\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x123\n" +
 	"\bmetadata\x18\x03 \x01(\v2\x17.ax.v1alpha1.ObjectMetaR\bmetadata\x12)\n" +
 	"\x04spec\x18\x04 \x01(\v2\x15.ax.v1alpha1.TaskSpecR\x04spec\x12/\n" +
-	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xa6\x03\n" +
+	"\x06status\x18\x05 \x01(\v2\x17.ax.v1alpha1.TaskStatusR\x06status\"\xf6\x02\n" +
 	"\bTaskSpec\x12.\n" +
 	"\aprofile\x18\x01 \x01(\v2\x14.ax.v1alpha1.ProfileR\aprofile\x12\x1a\n" +
 	"\bcommands\x18\x02 \x03(\tR\bcommands\x12%\n" +
@@ -999,24 +906,15 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\tworkspace\x18\x04 \x01(\v2\x19.ax.v1alpha1.WorkspaceRefR\tworkspace\x12\x14\n" +
 	"\x05debug\x18\x05 \x01(\bR\x05debug\x12/\n" +
 	"\x06config\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06config\x12%\n" +
-	"\x04goal\x18\a \x01(\v2\x11.ax.v1alpha1.GoalR\x04goal\x12.\n" +
-	"\x05retry\x18\b \x01(\v2\x18.ax.v1alpha1.RetryConfigR\x05retry\x121\n" +
-	"\agateway\x18\t \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\x12\x1d\n" +
+	"\x04goal\x18\a \x01(\v2\x11.ax.v1alpha1.GoalR\x04goal\x121\n" +
+	"\agateway\x18\b \x01(\v2\x17.ax.v1alpha1.GatewayRefR\agateway\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\n" +
-	" \x01(\tR\tsessionId\"2\n" +
+	"session_id\x18\t \x01(\tR\tsessionId\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\xdd\x01\n" +
-	"\vRetryConfig\x12\x1f\n" +
-	"\vmax_retries\x18\x01 \x01(\x05R\n" +
-	"maxRetries\x12B\n" +
-	"\x0finitial_backoff\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x0einitialBackoff\x12:\n" +
-	"\vmax_backoff\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\n" +
-	"maxBackoff\x12-\n" +
-	"\x12backoff_multiplier\x18\x04 \x01(\x01R\x11backoffMultiplier\"\x1a\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"\x1a\n" +
 	"\x04Goal\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\x9f\x02\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\x85\x02\n" +
 	"\n" +
 	"TaskStatus\x12\x14\n" +
 	"\x05actor\x18\x01 \x01(\tR\x05actor\x12\x1b\n" +
@@ -1025,9 +923,8 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\n" +
 	"conditions\x18\x04 \x03(\v2\x16.ax.v1alpha1.ConditionR\n" +
 	"conditions\x12,\n" +
-	"\x05state\x18\x05 \x01(\x0e2\x16.ax.v1alpha1.TaskStateR\x05state\x12\x18\n" +
-	"\aattempt\x18\x06 \x01(\x05R\aattempt\x12#\n" +
-	"\rresolved_argv\x18\a \x03(\tR\fresolvedArgv\"@\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x16.ax.v1alpha1.TaskStateR\x05state\x12#\n" +
+	"\rresolved_argv\x18\x06 \x03(\tR\fresolvedArgv\"@\n" +
 	"\x0eGetTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"j\n" +
@@ -1074,54 +971,49 @@ func file_pkg_apis_v1alpha1_task_proto_rawDescGZIP() []byte {
 }
 
 var file_pkg_apis_v1alpha1_task_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_pkg_apis_v1alpha1_task_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_pkg_apis_v1alpha1_task_proto_goTypes = []any{
-	(TaskState)(0),              // 0: ax.v1alpha1.TaskState
-	(*Task)(nil),                // 1: ax.v1alpha1.Task
-	(*TaskSpec)(nil),            // 2: ax.v1alpha1.TaskSpec
-	(*EnvVar)(nil),              // 3: ax.v1alpha1.EnvVar
-	(*RetryConfig)(nil),         // 4: ax.v1alpha1.RetryConfig
-	(*Goal)(nil),                // 5: ax.v1alpha1.Goal
-	(*TaskStatus)(nil),          // 6: ax.v1alpha1.TaskStatus
-	(*GetTaskRequest)(nil),      // 7: ax.v1alpha1.GetTaskRequest
-	(*ListTasksRequest)(nil),    // 8: ax.v1alpha1.ListTasksRequest
-	(*ListTasksResponse)(nil),   // 9: ax.v1alpha1.ListTasksResponse
-	(*CreateTaskRequest)(nil),   // 10: ax.v1alpha1.CreateTaskRequest
-	(*DeleteTaskRequest)(nil),   // 11: ax.v1alpha1.DeleteTaskRequest
-	(*SuspendTaskRequest)(nil),  // 12: ax.v1alpha1.SuspendTaskRequest
-	(*ResumeTaskRequest)(nil),   // 13: ax.v1alpha1.ResumeTaskRequest
-	(*ObjectMeta)(nil),          // 14: ax.v1alpha1.ObjectMeta
-	(*Profile)(nil),             // 15: ax.v1alpha1.Profile
-	(*WorkspaceRef)(nil),        // 16: ax.v1alpha1.WorkspaceRef
-	(*structpb.Struct)(nil),     // 17: google.protobuf.Struct
-	(*GatewayRef)(nil),          // 18: ax.v1alpha1.GatewayRef
-	(*durationpb.Duration)(nil), // 19: google.protobuf.Duration
-	(*ObjectRef)(nil),           // 20: ax.v1alpha1.ObjectRef
-	(*Condition)(nil),           // 21: ax.v1alpha1.Condition
+	(TaskState)(0),             // 0: ax.v1alpha1.TaskState
+	(*Task)(nil),               // 1: ax.v1alpha1.Task
+	(*TaskSpec)(nil),           // 2: ax.v1alpha1.TaskSpec
+	(*EnvVar)(nil),             // 3: ax.v1alpha1.EnvVar
+	(*Goal)(nil),               // 4: ax.v1alpha1.Goal
+	(*TaskStatus)(nil),         // 5: ax.v1alpha1.TaskStatus
+	(*GetTaskRequest)(nil),     // 6: ax.v1alpha1.GetTaskRequest
+	(*ListTasksRequest)(nil),   // 7: ax.v1alpha1.ListTasksRequest
+	(*ListTasksResponse)(nil),  // 8: ax.v1alpha1.ListTasksResponse
+	(*CreateTaskRequest)(nil),  // 9: ax.v1alpha1.CreateTaskRequest
+	(*DeleteTaskRequest)(nil),  // 10: ax.v1alpha1.DeleteTaskRequest
+	(*SuspendTaskRequest)(nil), // 11: ax.v1alpha1.SuspendTaskRequest
+	(*ResumeTaskRequest)(nil),  // 12: ax.v1alpha1.ResumeTaskRequest
+	(*ObjectMeta)(nil),         // 13: ax.v1alpha1.ObjectMeta
+	(*Profile)(nil),            // 14: ax.v1alpha1.Profile
+	(*WorkspaceRef)(nil),       // 15: ax.v1alpha1.WorkspaceRef
+	(*structpb.Struct)(nil),    // 16: google.protobuf.Struct
+	(*GatewayRef)(nil),         // 17: ax.v1alpha1.GatewayRef
+	(*ObjectRef)(nil),          // 18: ax.v1alpha1.ObjectRef
+	(*Condition)(nil),          // 19: ax.v1alpha1.Condition
 }
 var file_pkg_apis_v1alpha1_task_proto_depIdxs = []int32{
-	14, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
+	13, // 0: ax.v1alpha1.Task.metadata:type_name -> ax.v1alpha1.ObjectMeta
 	2,  // 1: ax.v1alpha1.Task.spec:type_name -> ax.v1alpha1.TaskSpec
-	6,  // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
-	15, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
+	5,  // 2: ax.v1alpha1.Task.status:type_name -> ax.v1alpha1.TaskStatus
+	14, // 3: ax.v1alpha1.TaskSpec.profile:type_name -> ax.v1alpha1.Profile
 	3,  // 4: ax.v1alpha1.TaskSpec.env:type_name -> ax.v1alpha1.EnvVar
-	16, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
-	17, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
-	5,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
-	4,  // 8: ax.v1alpha1.TaskSpec.retry:type_name -> ax.v1alpha1.RetryConfig
-	18, // 9: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
-	19, // 10: ax.v1alpha1.RetryConfig.initial_backoff:type_name -> google.protobuf.Duration
-	19, // 11: ax.v1alpha1.RetryConfig.max_backoff:type_name -> google.protobuf.Duration
-	20, // 12: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
-	21, // 13: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
-	0,  // 14: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
-	1,  // 15: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
-	1,  // 16: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	15, // 5: ax.v1alpha1.TaskSpec.workspace:type_name -> ax.v1alpha1.WorkspaceRef
+	16, // 6: ax.v1alpha1.TaskSpec.config:type_name -> google.protobuf.Struct
+	4,  // 7: ax.v1alpha1.TaskSpec.goal:type_name -> ax.v1alpha1.Goal
+	17, // 8: ax.v1alpha1.TaskSpec.gateway:type_name -> ax.v1alpha1.GatewayRef
+	18, // 9: ax.v1alpha1.TaskStatus.ate_template:type_name -> ax.v1alpha1.ObjectRef
+	19, // 10: ax.v1alpha1.TaskStatus.conditions:type_name -> ax.v1alpha1.Condition
+	0,  // 11: ax.v1alpha1.TaskStatus.state:type_name -> ax.v1alpha1.TaskState
+	1,  // 12: ax.v1alpha1.ListTasksResponse.tasks:type_name -> ax.v1alpha1.Task
+	1,  // 13: ax.v1alpha1.CreateTaskRequest.task:type_name -> ax.v1alpha1.Task
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_pkg_apis_v1alpha1_task_proto_init() }
@@ -1138,7 +1030,7 @@ func file_pkg_apis_v1alpha1_task_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_apis_v1alpha1_task_proto_rawDesc), len(file_pkg_apis_v1alpha1_task_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

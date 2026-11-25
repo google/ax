@@ -151,9 +151,6 @@ func TestServerGRPC(t *testing.T) {
 	if task.Spec.SessionId != task.Metadata.Uid {
 		t.Errorf("expected session_id to default to metadata.uid (%q), got %q", task.Metadata.Uid, task.Spec.SessionId)
 	}
-	if task.Status.Attempt != 1 {
-		t.Errorf("expected attempt = 1, got %d", task.Status.Attempt)
-	}
 
 	listTasksResp, err := client.ListTasks(ctx, &v1alpha1.ListTasksRequest{Atespace: "default"})
 	if err != nil {
@@ -1425,7 +1422,7 @@ func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
 		Task: &v1alpha1.Task{
 			Metadata: &v1alpha1.ObjectMeta{Name: "task-copy", Uid: "copied-uid", CreateTime: copied, DeleteTime: copied},
 			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-			Status:   &v1alpha1.TaskStatus{Attempt: 7},
+			Status:   &v1alpha1.TaskStatus{ResolvedArgv: []string{"copied"}},
 		},
 	})
 	if err != nil {
@@ -1443,8 +1440,8 @@ func TestCreateTask_IgnoresServerAssignedFields(t *testing.T) {
 	if meta.GetCreateTime().AsTime().Equal(copied.AsTime()) || meta.GetDeleteTime() != nil {
 		t.Errorf("createTime = %v, deleteTime = %v, want the client-supplied timestamps ignored", meta.GetCreateTime(), meta.GetDeleteTime())
 	}
-	if attempt := task.GetStatus().GetAttempt(); attempt != 1 {
-		t.Errorf("status.attempt = %d, want 1", attempt)
+	if argv := task.GetStatus().GetResolvedArgv(); len(argv) != 0 {
+		t.Errorf("status.resolvedArgv = %v, want the client-supplied status ignored", argv)
 	}
 }
 
@@ -1612,48 +1609,12 @@ func TestServer_SuccessClearsStoredFailure(t *testing.T) {
 	}
 }
 
-func TestCreateTask_RejectsUnimplementedFields(t *testing.T) {
+func TestCreateTask_InheritsWorkspaceProfile(t *testing.T) {
 	st := memory.NewStore()
 	sub := substratetest.NewServer(t)
 	rec := newTestTaskManager(sub)
 	srv := server.NewServer(st, rec)
 	ctx := context.Background()
-
-	tests := []struct {
-		name      string
-		spec      *v1alpha1.TaskSpec
-		wantField string
-	}{
-		{
-			name:      "retry",
-			spec:      &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}, Retry: &v1alpha1.RetryConfig{MaxRetries: 2}},
-			wantField: "spec.retry is not supported yet",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-				Metadata: &v1alpha1.ObjectMeta{Name: "unimpl-task"},
-				Spec:     tc.spec,
-			}})
-			if status.Code(err) != codes.Unimplemented || !strings.Contains(err.Error(), tc.wantField) {
-				t.Fatalf("CreateTask() = %v, want Unimplemented containing %q", err, tc.wantField)
-			}
-			if _, err := st.GetTask(ctx, "default", "unimpl-task"); !errors.Is(err, store.ErrNotFound) {
-				t.Errorf("expected rejected task not to be saved, got %v", err)
-			}
-		})
-	}
-
-	// Invalid retry values are still caught by admission validation before Unimplemented.
-	_, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-		Metadata: &v1alpha1.ObjectMeta{Name: "bad-retry"},
-		Spec:     &v1alpha1.TaskSpec{Retry: &v1alpha1.RetryConfig{MaxRetries: -1}},
-	}})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("CreateTask(negative maxRetries) = %v, want InvalidArgument", err)
-	}
 
 	// When a Workspace in the store defines a profile with ateTemplate,
 	// a task omitting spec.profile inherits the Workspace's template.

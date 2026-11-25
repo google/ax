@@ -17,7 +17,6 @@ package apivalidation
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
@@ -61,41 +60,10 @@ func ValidateTask(t *v1alpha1.Task) error {
 	if err := validateGatewayRef("spec.gateway", spec.GetGateway()); err != nil {
 		return err
 	}
-	if err := validateRetry("spec.retry", spec.GetRetry()); err != nil {
-		return err
-	}
 	if err := ValidateTaskConfig(spec); err != nil {
 		return err
 	}
 	return ValidateTaskSize(t)
-}
-
-func validateRetry(field string, r *v1alpha1.RetryConfig) error {
-	if r == nil {
-		return nil
-	}
-	if r.GetMaxRetries() < 0 {
-		return fmt.Errorf("%s.maxRetries: must not be negative", field)
-	}
-	if d := r.GetInitialBackoff(); d != nil {
-		if !d.IsValid() || d.AsDuration() < 0 {
-			return fmt.Errorf("%s.initialBackoff: must not be negative", field)
-		}
-	}
-	if d := r.GetMaxBackoff(); d != nil {
-		if !d.IsValid() || d.AsDuration() < 0 {
-			return fmt.Errorf("%s.maxBackoff: must not be negative", field)
-		}
-	}
-	if r.GetInitialBackoff() != nil && r.GetMaxBackoff() != nil &&
-		r.GetMaxBackoff().AsDuration() > 0 &&
-		r.GetInitialBackoff().AsDuration() > r.GetMaxBackoff().AsDuration() {
-		return fmt.Errorf("%s.initialBackoff: must not exceed maxBackoff", field)
-	}
-	if m := r.GetBackoffMultiplier(); m != 0 && (math.IsNaN(m) || math.IsInf(m, 0) || m < 1.0) {
-		return fmt.Errorf("%s.backoffMultiplier: must be >= 1.0", field)
-	}
-	return nil
 }
 
 // MaxEnvValueSize is the longest environment variable value Substrate accepts
