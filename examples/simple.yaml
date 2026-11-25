@@ -27,7 +27,7 @@ metadata:
   atespace: default
 spec:
   profile:
-    image: "gcr.io/ax-substrate/ate-images/ax-task-runner@sha256:3a0dea6ad8b55278685db58aca6e37dc4ba04056831d45bef3aaeafdca43cac6"
+    image: "ghcr.io/google/ax/ax-runner@sha256:0937ebe5ad2d8db6bb25e88ded44d2d65de1b1bd8f0a9a97c6bb3787407d9947"
   commands: ["sh", "-c", "echo $ENVIRONMENT"]
   env:
     - name: ENVIRONMENT
