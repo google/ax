@@ -99,12 +99,9 @@ message Goal {
   string text = 1;
 }
 
-// TaskState is where a task is in its lifecycle.
-//
-// Values below 200 are the state of the task's actor on Agent Substrate, with
-// the same names and numbers as Substrate's ActorState; they are read from the
-// actor and never stored. Values from 200 are AX's own states, stored by
-// ax-server.
+// TaskState is where a task is in its lifecycle. It is the state of the task's
+// actor on Agent Substrate, with the same names and numbers as Substrate's
+// ActorState; it is read from the actor and never stored.
 enum TaskState {
   // Reserved for ActorState values Substrate may add.
   reserved 8 to 199;
@@ -117,9 +114,6 @@ enum TaskState {
   TASK_STATE_CRASHED = 5;
   TASK_STATE_DELETING = 6;
   TASK_STATE_REVERTING = 7;
-  // ResumeTask failed with a transient Substrate error and can be called
-  // again.
-  TASK_STATE_QUEUED = 200;
 }
 
 message TaskStatus {

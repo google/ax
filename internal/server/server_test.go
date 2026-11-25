@@ -1483,31 +1483,11 @@ func TestServer_TransientSubstrateUnavailableRecovery(t *testing.T) {
 		t.Errorf("expected state SUSPENDED after recovery, got %v", created.GetStatus().GetState())
 	}
 
-	// 3. ResumeTask during a brief Substrate outage keeps the task Queued instead of Failed.
+	// 3. ResumeTask during a brief Substrate outage returns codes.Unavailable.
 	sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.DeadlineExceeded, "substrate worker pool temporarily unreachable")})
 	_, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "simple-task"})
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("expected Unavailable from ResumeTask when Substrate is unreachable, got %v", err)
-	}
-	storedAfterResumeErr, err := srv.GetTask(ctx, &v1alpha1.GetTaskRequest{Name: "simple-task"})
-	if err != nil {
-		t.Fatalf("GetTask failed: %v", err)
-	}
-	if storedAfterResumeErr.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
-		t.Errorf("expected stored state QUEUED after transient ResumeTask error, got %v", storedAfterResumeErr.GetStatus().GetState())
-	}
-
-	// 4. Because initial CreateTask already completed, re-applying CreateTask on a task
-	// that entered QUEUED from a later ResumeTask failure is still rejected as immutable.
-	sub.SetErrors(substratetest.Errors{})
-	_, err = srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{
-		Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: "simple-task"},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		},
-	})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("expected FailedPrecondition re-applying already-provisioned task after ResumeTask error, got %v", err)
 	}
 }
 
@@ -1566,49 +1546,6 @@ func TestCreateTask_RejectsResumingTask(t *testing.T) {
 				t.Errorf("actor state changed to %v after rejected CreateTask; want %v preserved", after.GetStatus().GetState(), actorState)
 			}
 		})
-	}
-}
-
-// A failed resume stores the task's state and Ready condition. A later
-// successful suspend or resume clears them, and the state is read from the
-// actor.
-func TestServer_SuccessClearsStoredFailure(t *testing.T) {
-	sub := substratetest.NewServer(t)
-	srv := server.NewServer(memory.NewStore(), newTestTaskManager(sub))
-	ctx := context.Background()
-
-	// resumeFailed creates a task whose actor could not be resumed.
-	resumeFailed := func(name string) {
-		t.Helper()
-		if _, err := srv.CreateTask(ctx, &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{
-			Metadata: &v1alpha1.ObjectMeta{Name: name},
-			Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "alpine"}},
-		}}); err != nil {
-			t.Fatalf("CreateTask(%s): %v", name, err)
-		}
-		sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.DeadlineExceeded, "substrate resume timed out")})
-		defer sub.SetErrors(substratetest.Errors{})
-		if _, err := srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: name}); status.Code(err) != codes.Unavailable {
-			t.Fatalf("ResumeTask(%s): got %v, want Unavailable", name, err)
-		}
-	}
-
-	resumeFailed("task-suspend")
-	task, err := srv.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Name: "task-suspend"})
-	if err != nil {
-		t.Fatalf("SuspendTask: %v", err)
-	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
-		t.Errorf("state after SuspendTask = %v, want SUSPENDED", task.GetStatus().GetState())
-	}
-
-	resumeFailed("task-resume")
-	task, err = srv.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Name: "task-resume"})
-	if err != nil {
-		t.Fatalf("ResumeTask: %v", err)
-	}
-	if task.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_RUNNING {
-		t.Errorf("state after ResumeTask = %v, want RUNNING", task.GetStatus().GetState())
 	}
 }
 

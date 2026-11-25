@@ -10,7 +10,7 @@ The unit is deliberately small. An agent is not one process that runs to complet
 
 ### Lifecycle
 
-`status.state` summarizes where the task is. While its actor exists, it is the actor's state on Agent Substrate, with the same name (`TASK_STATE_RESUMING`, `TASK_STATE_RUNNING`, `TASK_STATE_SUSPENDING`, `TASK_STATE_SUSPENDED`, `TASK_STATE_CRASHED`, `TASK_STATE_DELETING`, `TASK_STATE_REVERTING`). AX adds `TASK_STATE_QUEUED` (a resume failed with a transient error and can be repeated). A task whose actor no longer exists has no state; its `Ready` condition says why. `metadata.deleteTime` marks a task whose deletion is in progress. Conditions carry the detail. Check them with `ax describe`.
+`status.state` summarizes where the task is. While its actor exists, it is the actor's state on Agent Substrate, with the same name (`TASK_STATE_RESUMING`, `TASK_STATE_RUNNING`, `TASK_STATE_SUSPENDING`, `TASK_STATE_SUSPENDED`, `TASK_STATE_CRASHED`, `TASK_STATE_DELETING`, `TASK_STATE_REVERTING`). A task whose actor no longer exists has no state; its `Ready` condition says why. `metadata.deleteTime` marks a task whose deletion is in progress. Conditions carry the detail. Check them with `ax describe`.
 
 | Condition | True when |
 |---|---|

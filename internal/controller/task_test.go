@@ -669,8 +669,8 @@ func TestTaskManager_TemplateCreationFailed(t *testing.T) {
 
 // TestTaskManager_TemplateCreationTransient checks that a transient Substrate
 // error during ActorTemplate creation (for example Unavailable after retries are
-// exhausted) stays a transient error. The server keeps a task that failed this
-// way Queued for a retry.
+// exhausted) stays a transient error. The server answers Unavailable for a
+// task that failed this way.
 func TestTaskManager_TemplateCreationTransient(t *testing.T) {
 	ctx := t.Context()
 

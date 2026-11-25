@@ -143,7 +143,7 @@ func TestSaveAndUpdateTask(t *testing.T) {
 		t.Fatalf("UpdateTaskStatus(missing) = %v, want ErrNotFound", err)
 	}
 
-	// SaveTask preserves TASK_STATE_UNSPECIFIED rather than coercing to QUEUED.
+	// SaveTask preserves TASK_STATE_UNSPECIFIED.
 	if err := s.SaveTask(ctx, &v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "t1", Atespace: "default"},
 	}); err != nil {
@@ -157,18 +157,18 @@ func TestSaveAndUpdateTask(t *testing.T) {
 		t.Fatalf("stored state = %v, want UNSPECIFIED", got.GetStatus().GetState())
 	}
 
-	st := &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED}
+	st := &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_SUSPENDED}
 	if err := s.UpdateTaskStatus(ctx, "default", "t1", st); err != nil {
 		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
 	// Mutating caller's status after update must not mutate stored task.
-	st.State = v1alpha1.TaskState_TASK_STATE_QUEUED
+	st.State = v1alpha1.TaskState_TASK_STATE_RUNNING
 
 	got, err = s.GetTask(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("GetTask after update: %v", err)
 	}
-	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED {
-		t.Fatalf("stored state after update = %v, want QUEUED", got.GetStatus().GetState())
+	if got.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_SUSPENDED {
+		t.Fatalf("stored state after update = %v, want SUSPENDED", got.GetStatus().GetState())
 	}
 }
