@@ -375,7 +375,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 //     canceling that pending deletion.
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
 //     state from its live Substrate actor rather than keeping a stored Queued
-//     state, and drops a Ready condition stored by recordFailure.
+//     state.
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
@@ -399,9 +399,8 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 }
 
 // recordFailure stores the status of a task that could not be resumed: state
-// Queued, with the Ready condition that says why, if err is a transient
-// Substrate error, which a retry may fix, and no state otherwise. It returns
-// the gRPC error for action.
+// Queued if err is a transient Substrate error, which a retry may fix, and no
+// state otherwise. It returns the gRPC error for action.
 func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)

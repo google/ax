@@ -149,7 +149,7 @@ func (s *Server) prepareWorkspace(ctx context.Context, ws *v1alpha1.Workspace, s
 	ws.Status = st
 
 	// Use an independent context for persisting status so a canceled or timed-out
-	// client RPC still records the Preparing/condition state in the store.
+	// client RPC still records the status in the store.
 	statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceStatusUpdateTimeout)
 	defer cancel()
 	if err := s.store.UpdateWorkspaceStatus(statusCtx, atespace, wsName, st); err != nil {
