@@ -22,12 +22,12 @@ metadata:
   atespace: default
 spec:
   profile:
-    # Antigravity starter image published from github.com/agentexecutor/images
-    # (v0.0.0-rc.2, pinned by digest; pass STARTER_IMAGE to hack/hero-demo/run.sh
+    # Antigravity CLI starter image published from github.com/agentexecutor/images
+    # (v0.0.0-rc.3, pinned by digest; pass STARTER_IMAGE to hack/hero-demo/run.sh
     # to override). Substrate rejects tag-only images when it creates the actor
     # template. Keep the image and limits identical to workspace.yaml, so the
     # task starts from the workspace's pre-warmed snapshot.
-    image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
+    image: "ghcr.io/agentexecutor/agy-cli@sha256:13c1957d2e790c3a981de08e3996acc268e855f2e6a79b5e931ec62e8b54c2a5"
     resources:
       limits:
         cpu: "2"
@@ -46,11 +46,11 @@ spec:
     text: "Add a subtract(a, b) function to /workspace/app/math_utils.py and a unit test in test_math.py."
   debug: true # serve guest services so `ax ssh` works; off by default
   # Runs the image's launcher, as the runner does for a task with a goal and no
-  # commands, and records how it ended. AX does not report a command's exit
-  # status yet (#690), so run.sh reads it from the file below, and the agent's
-  # answer from $AX_OUTPUT_FILE. A command still gets the goal, config, MCP and
-  # session files. Once the status is recorded, a restarted command does not
-  # run the agent again.
+  # commands, and records how it ended. AX leaves command completion and output
+  # on the data plane (#756), so run.sh reads the exit status from the file below
+  # and the agent's answer from $AX_OUTPUT_FILE. A command still gets the goal,
+  # config, MCP and session files. Once the status is recorded, a restarted
+  # command does not run the agent again.
   commands:
     - sh
     - -c

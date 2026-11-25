@@ -30,7 +30,7 @@
 #   STARTER_IMAGE   Starter image digest override for Step 3 / Step 5
 #   STUDIO_URL      AX Studio base URL (default: http://127.0.0.1:8080)
 #   REMOTE_CONTEXT  kube context of a remote cluster for Step 5 (same as --remote-context)
-#   AX_TIMEOUT      seconds allowed per ax call in live mode (default: 120)
+#   AX_TIMEOUT      seconds allowed per ax call in live mode (default: 300)
 
 set -uo pipefail
 
@@ -48,7 +48,7 @@ RUN_LIVE_STEPS="${RUN_LIVE_STEPS:-0}"
 STARTER_IMAGE="${STARTER_IMAGE:-}"
 STUDIO_URL="${STUDIO_URL:-http://127.0.0.1:8080}"
 REMOTE_CONTEXT="${REMOTE_CONTEXT:-}"
-AX_TIMEOUT="${AX_TIMEOUT:-120}"
+AX_TIMEOUT="${AX_TIMEOUT:-300}"
 ONLY_STEP=""
 
 WORKSPACE_MANIFEST="${HERO_DIR}/workspace.yaml"
@@ -238,11 +238,11 @@ start_task() {
 
 # finish_task waits until the task's command has finished and checks that it
 # exited with status zero and wrote output to $AX_OUTPUT_FILE
-# (/workspace/.ax/output). AX does not report yet that a command finished
-# (#690): the task stays Running with no status.outcome. So the hero demo's
-# commands write their exit status to EXIT_CODE_FILE, and finish_task reads it
-# over ax ssh. Arguments after the task name are global ax flags, such as
-# --context. On failure finish_task marks the step failed and returns 1.
+# (/workspace/.ax/output). AX leaves command completion and output on the data
+# plane (#756): the task stays Running. So the hero demo's commands write their
+# exit status to EXIT_CODE_FILE, and finish_task reads it over ax ssh. Arguments
+# after the task name are global ax flags, such as --context. On failure
+# finish_task marks the step failed and returns 1.
 finish_task() {
   local step="$1" task_name="$2"
   shift 2
@@ -405,8 +405,9 @@ step5_remote_promote() {
   # Copies the starter task that Step 3 runs, with the Gateway and Workspace it
   # binds, to the remote cluster. --suspend-source suspends it here, since its
   # sandbox stays up after the agent finishes. --replace lets a rerun start
-  # from a fresh task there.
-  if ! ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
+  # from a fresh task there. Use 600s like Step 2 because promote pre-warms
+  # hero-demo-ws synchronously when the target does not have it yet.
+  if ! AX_TIMEOUT=600 ax_quiet promote task "${STARTER_TASK}" --to "${REMOTE_CONTEXT}" --replace --suspend-source; then
     mark_fail "${step}" "ax promote task ${STARTER_TASK} --to ${REMOTE_CONTEXT} failed"
     return
   fi
