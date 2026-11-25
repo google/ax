@@ -127,7 +127,9 @@ Every Task runs an image pinned by digest, named by `spec.profile.image` or `spe
 
 ### Prebuilt agent images
 
-Ready-to-run agent images, such as Antigravity, are published from [agentexecutor/images](https://github.com/agentexecutor/images). Each image's README has a complete Gateway and Task manifest, and the [images releases](https://github.com/agentexecutor/images/releases) list the digests to pin. Start AX with `--runner-volume-image` as shown above to run them.
+Ready-to-run agent images, such as Antigravity, are published from [agentexecutor/images](https://github.com/agentexecutor/images). Each image's README has a complete Gateway and Task manifest.
+
+### Tour
 
 Want a tour of AX end to end? Run [`./hack/tour.sh`](hack/tour.sh) against the current context. It walks through Tasks, Gateways, Workspaces with setup, suspend and resume, fan-out from a workspace snapshot, atespaces, and Models, and deletes everything it creates when it exits.
 
