@@ -16,12 +16,13 @@
 # AX CLI one-line installer for macOS and Linux.
 #
 # Usage:
-#   curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/google/ax/main/install.sh | AX_VERSION=v0.4.0-rc.2 sh
 #
 # Environment overrides:
 #   AX_INSTALL_DIR          Target directory for `ax` and `ax-studio` (default: ~/.ax/bin)
 #   AX_GITHUB_REPO          GitHub org/repo for AX CLI releases (default: google/ax)
-#   AX_VERSION              AX CLI release tag (e.g. v0.1.0); empty uses latest release
+#   AX_VERSION              AX release tag (e.g. v0.4.0) to install `ax` from and print the images of;
+#                           empty uses the latest stable release
 #   AX_RELEASE_BASE_URL     Explicit base URL hosting ax_<os>_<arch>.tar.gz and checksums.txt
 #   AX_INSTALL_LOCAL_BIN    Install `ax` from a local prebuilt binary (for CI / offline testing)
 #   AX_STUDIO_GITHUB_REPO   GitHub org/repo for AX Studio releases (default: agentexecutor/studio)
@@ -139,6 +140,24 @@ verify_checksum() {
     fi
 }
 
+# print_images prints the images of the release at base URL $1, from its
+# images.env asset. A release without one (v0.4.0-rc.2 and earlier) prints
+# nothing.
+print_images() {
+    _images="$(curl -fsSL "${1}/images.env" 2>/dev/null)" || return 0
+    printf '%s\n' "$_images" | awk -F= '
+        $1 == "AX_SERVER_IMAGE"      { s = $2 }
+        $1 == "AX_RUNNER_IMAGE"      { r = $2 }
+        $1 == "AX_RUNNER_VOLUME_REF" { v = $2 }
+        END {
+            if (s == "" && r == "" && v == "") exit
+            print "==> Images of this release:"
+            if (s != "") print "    ax-server         " s
+            if (r != "") print "    ax-runner         " r "  (base image for spec.profile.image)"
+            if (v != "") print "    ax-runner-volume  " v "  (for --runner-volume-image)"
+        }'
+}
+
 install_main() {
     detect_os
     detect_arch
@@ -200,6 +219,9 @@ install_main() {
 
     _ver="$("$_dest" version 2>/dev/null || echo "ax installed")"
     echo "==> Installed ${_ver} at ${_dest}"
+    if [ -z "$AX_INSTALL_LOCAL_BIN" ]; then
+        print_images "$_base"
+    fi
 
     install_studio
 

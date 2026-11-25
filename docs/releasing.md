@@ -48,9 +48,10 @@ stable tag, so a patch to an older line does not take Latest from a newer one.
 |---|---|
 | `ax_<os>_<arch>.tar.gz` | The `ax` CLI for linux and darwin, amd64 and arm64. Static, and `ax version` prints the tag. |
 | `checksums.txt` | SHA-256 of every archive, in `sha256sum` format. |
-| `install.sh` | The CLI installer from the repository root, when the tag has one, so `releases/latest/download/install.sh` always matches the latest archives. |
+| `install.sh` | The CLI installer from the repository root, when the tag has one, so `releases/latest/download/install.sh` always matches the latest archives. The documented install command uses `install.sh` from `main` with `AX_VERSION`, so `install.sh` must keep working with older releases' assets. |
 | `ax-server.yaml` | [`deploy/ax-server.yaml`](../deploy/ax-server.yaml) with `ax-server` pinned by digest. `AX_RUNNER_VOLUME_IMAGE` is empty (tasks run the runner baked into their image) unless `AX_RELEASE_RUNNER_VOLUME` is `true`. |
 | `postgres.yaml` | [`deploy/postgres.yaml`](../deploy/postgres.yaml), unchanged. |
+| `images.env` | The digest-pinned image references (`AX_SERVER_IMAGE`, `AX_RUNNER_IMAGE`, `AX_RUNNER_VOLUME_REF`, and the rendered `AX_RUNNER_VOLUME_IMAGE`). `install.sh` prints them after installing `ax`. |
 
 The release notes start with install commands, the Substrate version from
 `go.mod`, and the image digests, followed by GitHub's generated notes since the
