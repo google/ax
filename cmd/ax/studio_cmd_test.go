@@ -341,6 +341,8 @@ func TestInstallShAXVersionUsesReleaseInstaller(t *testing.T) {
 				_, _ = w.Write(archive)
 			case "/releases/download/v0.9.0/checksums.txt":
 				_, _ = fmt.Fprintf(w, "%s  %s\n", archiveSHA, asset)
+			case "/releases/download/v0.9.0/images.env":
+				_, _ = fmt.Fprint(w, "AX_SERVER_IMAGE=ghcr.io/google/ax/ax-server@sha256:s\nAX_RUNNER_IMAGE=ghcr.io/google/ax/ax-runner@sha256:r\nAX_RUNNER_VOLUME_REF=ghcr.io/google/ax/ax-runner-volume@sha256:v\nAX_RUNNER_VOLUME_IMAGE=\n")
 			default:
 				http.NotFound(w, r)
 			}
@@ -393,6 +395,15 @@ func TestInstallShAXVersionUsesReleaseInstaller(t *testing.T) {
 		tmp, out := run(t, "")
 		if _, err := os.Stat(filepath.Join(tmp, "bin", "ax")); err != nil {
 			t.Fatalf("expected ax installed: %v\n%s", err, out)
+		}
+		for _, want := range []string{
+			"ax-server         ghcr.io/google/ax/ax-server@sha256:s",
+			"ax-runner         ghcr.io/google/ax/ax-runner@sha256:r",
+			"ax-runner-volume  ghcr.io/google/ax/ax-runner-volume@sha256:v",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected install.sh output to contain %q, got:\n%s", want, out)
+			}
 		}
 	})
 }

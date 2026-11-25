@@ -20,8 +20,8 @@
 #
 # Uploads the release assets from asset-dir (default bin/release): the
 # ax_<os>_<arch>.tar.gz archives, checksums.txt, ax-server.yaml, postgres.yaml,
-# and install.sh if present. images.env must be there too; it supplies the
-# image digests for the notes.
+# images.env (the image digests, also used for the notes and printed by
+# install.sh), and install.sh if present.
 #
 # Depending on the state of the release for <tag>:
 #
@@ -61,8 +61,8 @@ assets=()
 for p in "${CLI_PLATFORMS[@]}"; do
   assets+=("${ASSETS_DIR}/ax_${p%/*}_${p#*/}.tar.gz")
 done
-assets+=("${ASSETS_DIR}/checksums.txt" "${ASSETS_DIR}/ax-server.yaml" "${ASSETS_DIR}/postgres.yaml")
-for f in "${assets[@]}" "${ASSETS_DIR}/images.env"; do
+assets+=("${ASSETS_DIR}/checksums.txt" "${ASSETS_DIR}/ax-server.yaml" "${ASSETS_DIR}/postgres.yaml" "${ASSETS_DIR}/images.env")
+for f in "${assets[@]}"; do
   if [[ ! -f "${f}" ]]; then
     echo "error: missing release asset ${f}" >&2
     exit 1

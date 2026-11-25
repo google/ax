@@ -163,6 +163,24 @@ run_release_installer() {
     RELEASE_INSTALLER_RC="$_rc"
 }
 
+# print_images prints the images of the release at base URL $1, from its
+# images.env asset. A release without one (v0.4.0-rc.2 and earlier) prints
+# nothing.
+print_images() {
+    _images="$(curl -fsSL "${1}/images.env" 2>/dev/null)" || return 0
+    printf '%s\n' "$_images" | awk -F= '
+        $1 == "AX_SERVER_IMAGE"      { s = $2 }
+        $1 == "AX_RUNNER_IMAGE"      { r = $2 }
+        $1 == "AX_RUNNER_VOLUME_REF" { v = $2 }
+        END {
+            if (s == "" && r == "" && v == "") exit
+            print "==> Images of this release:"
+            if (s != "") print "    ax-server         " s
+            if (r != "") print "    ax-runner         " r "  (base image for spec.profile.image)"
+            if (v != "") print "    ax-runner-volume  " v "  (for --runner-volume-image)"
+        }'
+}
+
 install_main() {
     if run_release_installer "$@"; then
         return "$RELEASE_INSTALLER_RC"
@@ -228,6 +246,9 @@ install_main() {
 
     _ver="$("$_dest" version 2>/dev/null || echo "ax installed")"
     echo "==> Installed ${_ver} at ${_dest}"
+    if [ -z "$AX_INSTALL_LOCAL_BIN" ]; then
+        print_images "$_base"
+    fi
 
     install_studio
 
