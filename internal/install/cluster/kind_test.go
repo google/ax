@@ -17,13 +17,17 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/install/executil"
+	"gopkg.in/yaml.v3"
 )
 
 type recordedRunner struct {
@@ -244,8 +248,197 @@ func TestKindProviderStatusSysctlWarning(t *testing.T) {
 	if st.Name != "ax-local" || st.KubeContext != "ax-local" {
 		t.Fatalf("expected Name=ax-local and KubeContext=ax-local when running, got %+v", st)
 	}
-	if !strings.Contains(st.SubstrateStatus, "0/1 available") || !strings.Contains(st.SubstrateStatus, "degraded: node sysctls reset") {
-		t.Fatalf("expected 0/1 replica ratio and sysctl reset warning in SubstrateStatus, got %q", st.SubstrateStatus)
+	if want := "degraded: ate-api-server (0/1 available); node sysctls reset after restart; run 'ax local start' to restore"; st.SubstrateStatus != want {
+		t.Fatalf("SubstrateStatus = %q, want %q", st.SubstrateStatus, want)
+	}
+}
+
+func TestKindProviderStatusSubstrateWorkloads(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	for _, tc := range []struct {
+		name          string
+		clusterName   string
+		node          string
+		workloadsJSON string
+		proxyARP      string
+		want          string
+	}{
+		{
+			name:        "all workloads healthy",
+			clusterName: "ax-local",
+			node:        "ax-local-control-plane",
+			proxyARP:    "1\n",
+			workloadsJSON: `{"items":[
+				{"kind":"StatefulSet","metadata":{"namespace":"ate-system","name":"postgres"},"spec":{"replicas":1},"status":{"availableReplicas":1}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-router"},"spec":{"replicas":1},"status":{"availableReplicas":1}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-egress"},"spec":{"replicas":1},"status":{"availableReplicas":1}},
+				{"kind":"DaemonSet","metadata":{"namespace":"ate-system","name":"atelet"},"status":{"desiredNumberScheduled":1,"numberAvailable":1}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-workers","name":"ax-workers"},"spec":{"replicas":1},"status":{"availableReplicas":1}}
+			]}`,
+			want: "ate-api-server (1/1 available)",
+		},
+		{
+			name:        "atenet-router unready (#754)",
+			clusterName: "ax-local",
+			node:        "ax-local-control-plane",
+			proxyARP:    "1\n",
+			workloadsJSON: `{"items":[
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-router"},"spec":{"replicas":1},"status":{"availableReplicas":0}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-egress"},"spec":{"replicas":1},"status":{"availableReplicas":1}}
+			]}`,
+			want: "degraded: atenet-router (0/1 available)",
+		},
+		{
+			name:        "both envoy gateways unready",
+			clusterName: "ax-local",
+			node:        "ax-local-control-plane",
+			proxyARP:    "1\n",
+			workloadsJSON: `{"items":[
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-router"},"spec":{"replicas":1},"status":{"availableReplicas":0}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-egress"},"spec":{"replicas":1},"status":{"availableReplicas":0}}
+			]}`,
+			want: "degraded: atenet-router (0/1 available), " +
+				"atenet-egress (0/1 available)",
+		},
+		{
+			name:        "statefulset, daemonset and workers on a custom cluster name",
+			clusterName: "dev",
+			node:        "dev-control-plane",
+			proxyARP:    "1\n",
+			workloadsJSON: `{"items":[
+				{"kind":"StatefulSet","metadata":{"namespace":"ate-system","name":"postgres"},"spec":{"replicas":1},"status":{"availableReplicas":0}},
+				{"kind":"DaemonSet","metadata":{"namespace":"ate-system","name":"atelet"},"status":{"desiredNumberScheduled":1,"numberAvailable":0}},
+				{"kind":"Deployment","metadata":{"namespace":"ate-workers","name":"ax-workers"},"spec":{"replicas":1},"status":{"availableReplicas":0}}
+			]}`,
+			want: "degraded: postgres (0/1 available), " +
+				"atelet (0/1 available), ax-workers (0/1 available)",
+		},
+		{
+			name:        "scaled to zero or absent is not degraded",
+			clusterName: "ax-local",
+			node:        "ax-local-control-plane",
+			proxyARP:    "1\n",
+			workloadsJSON: `{"items":[
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"rustfs"},"spec":{"replicas":0},"status":{}},
+				{"kind":"Deployment","metadata":{"namespace":"other","name":"atenet-router"},"spec":{"replicas":1},"status":{}}
+			]}`,
+			want: "ate-api-server (1/1 available)",
+		},
+		{
+			name:        "atenet-router unready and sysctls reset",
+			clusterName: "ax-local",
+			node:        "ax-local-control-plane",
+			proxyARP:    "0\n",
+			workloadsJSON: `{"items":[
+				{"kind":"Deployment","metadata":{"namespace":"ate-system","name":"atenet-router"},"spec":{"replicas":1},"status":{"availableReplicas":0}}
+			]}`,
+			want: "degraded: atenet-router (0/1 available); " +
+				"node sysctls reset after restart; run 'ax local start' to restore",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := &recordedRunner{
+				runFn: func(spec executil.Spec) (executil.Result, error) {
+					cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+					switch {
+					case strings.HasSuffix(cmd, "kind version"):
+						return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+					case strings.Contains(cmd, "kind get nodes"):
+						return executil.Result{Stdout: tc.node + "\n"}, nil
+					case strings.Contains(cmd, "inspect -f {{.State.Running}} "+tc.node):
+						return executil.Result{Stdout: "true\n"}, nil
+					case strings.Contains(cmd, "get deployment ate-api-server"):
+						return executil.Result{Stdout: "1/1"}, nil
+					case strings.Contains(cmd, "get deployments,statefulsets,daemonsets -A -o json"):
+						return executil.Result{Stdout: tc.workloadsJSON}, nil
+					case strings.Contains(cmd, "sysctl -n net.ipv4.conf.all.proxy_arp"):
+						return executil.Result{Stdout: tc.proxyARP}, nil
+					default:
+						return executil.Result{}, nil
+					}
+				},
+			}
+
+			p := NewKindProvider(rr, &bytes.Buffer{})
+			st, err := p.Status(context.Background(), tc.clusterName)
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if st.SubstrateStatus != tc.want {
+				t.Fatalf("SubstrateStatus =\n  %q\nwant\n  %q", st.SubstrateStatus, tc.want)
+			}
+		})
+	}
+}
+
+// substrateWorkloads must name the workloads of the Agent Substrate manifests
+// that `ax local start` applies, so that `ax local status` reports each of
+// them. The manifests change when Substrate is bumped
+// (hack/sync-substrate-manifests.sh); this test fails until the list follows.
+func TestSubstrateWorkloadsMatchManifests(t *testing.T) {
+	files, err := filepath.Glob("../substrate/manifests/*.yaml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no Substrate manifests found: %v", err)
+	}
+	var want []string
+	sawWorkerPool := false
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec := yaml.NewDecoder(bytes.NewReader(raw))
+		for {
+			var doc struct {
+				Kind     string `yaml:"kind"`
+				Metadata struct {
+					Name      string `yaml:"name"`
+					Namespace string `yaml:"namespace"`
+				} `yaml:"metadata"`
+			}
+			if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				t.Fatalf("decoding %s: %v", file, err)
+			}
+			ns, name := doc.Metadata.Namespace, doc.Metadata.Name
+			switch doc.Kind {
+			case "Deployment", "StatefulSet", "DaemonSet":
+				// Status prints ate-api-server itself, and Substrate runs
+				// without the telemetry stack in otel-system.
+				if ns == "otel-system" || (ns == "ate-system" && name == "ate-api-server") {
+					continue
+				}
+				want = append(want, ns+"/"+strings.ToLower(doc.Kind)+"/"+name)
+			case "WorkerPool":
+				// ate-controller creates a Deployment with the name of the
+				// WorkerPool; the manifests do not contain it.
+				sawWorkerPool = true
+				want = append(want, ns+"/deployment/"+name)
+			}
+		}
+	}
+	if !sawWorkerPool {
+		t.Error("the manifests have no WorkerPool; has the worker pool moved?")
+	}
+
+	var got []string
+	for _, w := range substrateWorkloads {
+		got = append(got, w.namespace+"/"+w.kind+"/"+w.name)
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("the Substrate manifests have %s, which substrateWorkloads (kind.go) does not list: `ax local status` would not report it", w)
+		}
+	}
+	for _, g := range got {
+		if !slices.Contains(want, g) {
+			t.Errorf("substrateWorkloads (kind.go) lists %s, which the Substrate manifests no longer have", g)
+		}
 	}
 }
 

@@ -257,6 +257,15 @@ go build ./... && go test ./...                # unit tests compile against the 
 make test-e2e                                  # hack/setup-e2e-kind.sh installs the go.mod version
 ```
 
+A bump can add, rename, or remove a workload of Substrate. `ax local status`
+reports only the workloads in `substrateWorkloads`
+(`internal/install/cluster/kind.go`), so update that list after
+`sync-substrate-manifests.sh`; `TestSubstrateWorkloadsMatchManifests`
+(`internal/install/cluster/kind_test.go`) fails until it matches the
+manifests. `alreadyHealthy` and the rollout waits of `Bootstrap`
+(`internal/install/substrate/bootstrap.go`) name workloads too and have no
+such test.
+
 `go.ate.dev/substrate` must stay on a release tag: E2E installs that
 release's published images, and a pseudo-version fails E2E setup.
 
