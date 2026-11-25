@@ -66,7 +66,7 @@ func (p *KindProvider) Up(ctx context.Context, opts UpOptions) (Info, error) {
 		nodeImage = DefaultNodeImage
 	}
 
-	rt, kindBin, kubectlBin, err := p.resolveTools(ctx)
+	rt, kindBin, kubectlBin, err := p.resolveTools(ctx, name)
 	if err != nil {
 		return Info{}, err
 	}
@@ -236,7 +236,7 @@ func (p *KindProvider) Stop(ctx context.Context, name string) error {
 	_ = tunnel.StopTunnelByContext(name)
 	_ = tunnel.StopTunnelByContext("kind-" + name)
 
-	rt, kindBin, _, err := p.resolveTools(ctx)
+	rt, kindBin, _, err := p.resolveTools(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -270,17 +270,21 @@ func (p *KindProvider) Status(ctx context.Context, name string) (Status, error) 
 		AXStatus:        "N/A",
 	}
 
-	rt, kindBin, kubectlBin, err := p.resolveTools(ctx)
+	rt, kindBin, kubectlBin, err := p.resolveTools(ctx, name)
 	if err != nil {
 		return st, err
 	}
 	nodes, err := p.listNodes(ctx, rt, kindBin, name)
-	if err != nil || len(nodes) == 0 {
+	if err != nil {
+		return st, fmt.Errorf("listing the nodes of kind cluster %q with %s: %w", name, rt.Binary, err)
+	}
+	if len(nodes) == 0 {
 		return st, nil
 	}
 	st.Name = name
 	st.KubeContext = kubeCtx
 	st.Nodes = nodes
+	st.Runtime = rt
 
 	allRunning := true
 	for _, node := range nodes {
@@ -473,7 +477,7 @@ func (p *KindProvider) Delete(ctx context.Context, name string) error {
 	_ = tunnel.StopTunnelByContext(name)
 	_ = tunnel.StopTunnelByContext("kind-" + name)
 
-	rt, kindBin, kubectlBin, err := p.resolveTools(ctx)
+	rt, kindBin, kubectlBin, err := p.resolveTools(ctx, name)
 	if err != nil {
 		return err
 	}
@@ -532,8 +536,13 @@ kubeadmConfigPatches:
 `
 }
 
-func (p *KindProvider) resolveTools(ctx context.Context) (executil.ContainerRuntime, string, string, error) {
-	rt, err := executil.ResolveContainerRuntime(ctx, p.Runner)
+// resolveTools returns the container runtime of the Kind cluster called name,
+// and the kind and kubectl binaries. With more than one engine running (and no
+// CONTAINER_CLI), the runtime is the first one that has the cluster, so that a
+// cluster created with, say, CONTAINER_CLI=podman is found without it; if none
+// has it, the runtime is the one that ResolveContainerRuntime prefers.
+func (p *KindProvider) resolveTools(ctx context.Context, name string) (executil.ContainerRuntime, string, string, error) {
+	rts, err := executil.RunningContainerRuntimes(ctx, p.Runner)
 	if err != nil {
 		return executil.ContainerRuntime{}, "", "", err
 	}
@@ -544,6 +553,15 @@ func (p *KindProvider) resolveTools(ctx context.Context) (executil.ContainerRunt
 	kubectlBin, err := executil.EnsureKubectl(ctx, p.Runner, p.ToolURLs, p.Out)
 	if err != nil {
 		return executil.ContainerRuntime{}, "", "", err
+	}
+	rt := rts[0]
+	if len(rts) > 1 {
+		for _, candidate := range rts {
+			if nodes, err := p.listNodes(ctx, candidate, kindBin, name); err == nil && len(nodes) > 0 {
+				rt = candidate
+				break
+			}
+		}
 	}
 	return rt, kindBin, kubectlBin, nil
 }

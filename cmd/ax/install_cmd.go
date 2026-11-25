@@ -363,6 +363,11 @@ func inspectLocalHost(ctx context.Context, r executil.Runner, hostOS string) loc
 	if err != nil {
 		return localHostReport{Error: err.Error()}
 	}
+	return inspectContainerHost(ctx, r, rt, hostOS)
+}
+
+// inspectContainerHost is inspectLocalHost for the engine rt.
+func inspectContainerHost(ctx context.Context, r executil.Runner, rt executil.ContainerRuntime, hostOS string) localHostReport {
 	host := localHostReport{Runtime: "docker"}
 	if rt.IsPodman {
 		host.Runtime = "podman"
@@ -399,6 +404,11 @@ func writeLocalStatusJSON(ctx context.Context, out io.Writer, r executil.Runner,
 		var err error
 		if st, err = provider.Status(ctx, name); err != nil {
 			return err
+		}
+		// Report the engine that runs the cluster, which need not be the
+		// preferred one.
+		if st.Runtime.Binary != "" && st.Runtime.IsPodman != (host.Runtime == "podman") {
+			host = inspectContainerHost(ctx, r, st.Runtime, runtime.GOOS)
 		}
 	}
 	nodes := st.Nodes
