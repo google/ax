@@ -40,7 +40,7 @@ pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.g
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
-hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
+hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), tour.sh (a basic tour of features against the current context), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
 hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
 docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote / ax studio
 skills/                Developer skills (SKILL.md format). .agents/skills and .claude/skills symlink here.
