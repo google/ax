@@ -15,7 +15,7 @@
 # AX v1alpha1 Workspace manifest for Step 2 of the hero demo: Warm Workspace Snapshot.
 #
 # spec.setup runs once and is captured in the workspace snapshot, so tasks that
-# bind this workspace start with /workspace/app already in place.
+# bind this workspace start with $AX_WORKSPACE/app already in place.
 apiVersion: ax.io/v1alpha1
 kind: Workspace
 metadata:
@@ -35,6 +35,6 @@ spec:
     # its own, built by running these commands in its image. A plain image has
     # no git, so the repository is optional.
     commands:
-      - git init /workspace/app 2>/dev/null || mkdir -p /workspace/app
-      - printf "def add(a, b):\n    return a + b\n" > /workspace/app/math_utils.py
-      - printf "import unittest\nfrom math_utils import add\n\nclass TestMath(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n" > /workspace/app/test_math.py
+      - git init "${AX_WORKSPACE:?}/app" 2>/dev/null || mkdir -p "$AX_WORKSPACE/app"
+      - printf "def add(a, b):\n    return a + b\n" > "$AX_WORKSPACE/app/math_utils.py"
+      - printf "import unittest\nfrom math_utils import add\n\nclass TestMath(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n" > "$AX_WORKSPACE/app/test_math.py"

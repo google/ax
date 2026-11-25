@@ -53,7 +53,7 @@ spec:
     - sh
     - -c
     - |
-      status_file=/workspace/.ax/hero-demo-exit-code
+      status_file="$AX_WORKSPACE/.ax/hero-demo-exit-code"
       [ -f "$status_file" ] && exit "$(cat "$status_file")"
       launcher=/usr/local/bin/ax-launcher
       [ -x "$launcher" ] || launcher=/usr/local/bin/ax-harness # images before the rename

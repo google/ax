@@ -272,7 +272,7 @@ func runTask(ctx context.Context, cfg Config, metaServer *metadata.Server, task 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = append(commandEnv(task, metadataURL), files.env...)
+	cmd.Env = append(commandEnv(task, metadataURL, wsPath), files.env...)
 	// A dedicated process group lets shutdown signal the command together with
 	// anything it spawned.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -321,6 +321,8 @@ func taskWorkspacePath(task *v1alpha1.Task) string {
 // setupWorkspace runs ws's maiden-run setup at wsPath, which does nothing when
 // it already ran there, and hands the tree to UID 1000 when drop is set.
 func setupWorkspace(ctx context.Context, ws *v1alpha1.Workspace, wsPath string, drop bool) error {
+	// Setup and ax ssh sessions get the runner's own environment.
+	_ = os.Setenv(WorkspaceEnv, wsPath)
 	if _, err := workspace.SetupWorkspace(ctx, ws, wsPath); err != nil {
 		return err
 	}
@@ -374,13 +376,14 @@ func reportExit(cfg Config, cmd *exec.Cmd, err error) {
 }
 
 // commandEnv builds the environment for the task command: the runner's own
-// environment, the metadata URL, and the Task's spec.env entries.
-func commandEnv(task *v1alpha1.Task, metadataURL string) []string {
+// environment, the metadata URL, the Task's spec.env entries, and the
+// workspace path, which spec.env cannot change.
+func commandEnv(task *v1alpha1.Task, metadataURL, wsPath string) []string {
 	env := append(os.Environ(), "AX_METADATA_URL="+metadataURL)
 	for _, e := range task.GetSpec().GetEnv() {
 		env = append(env, fmt.Sprintf("%s=%s", e.GetName(), e.GetValue()))
 	}
-	return env
+	return append(env, WorkspaceEnv+"="+wsPath)
 }
 
 // The user a pushed task's command runs as when the runner runs as root.

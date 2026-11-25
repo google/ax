@@ -49,6 +49,10 @@ const (
 	// as status.outcome.output.
 	OutputFileEnv = "AX_OUTPUT_FILE"
 
+	// WorkspaceEnv names the workspace directory: the binding's path, or
+	// DefaultWorkspacePath. Workspace setup and ax ssh sessions get it too.
+	WorkspaceEnv = "AX_WORKSPACE"
+
 	// DefaultLauncherPath is where the runner looks for the image's launcher
 	// when Config.LauncherPath is empty.
 	DefaultLauncherPath = "/usr/local/bin/ax-launcher"
