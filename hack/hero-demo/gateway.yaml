@@ -30,10 +30,6 @@ metadata:
   atespace: default
 spec:
   egress:
-    - tlsPassthrough:
-        hostnames: ["storage.googleapis.com"] # runtime agy install
-        ports:
-          numbers: [443]
     - https:
         hostnames: ["generativelanguage.googleapis.com"]
         effects:
