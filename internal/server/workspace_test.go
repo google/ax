@@ -350,7 +350,7 @@ func TestWorkspacePrewarm_TransientRetryHeals(t *testing.T) {
 	}
 }
 
-func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
+func TestWorkspacePrewarm_CanceledContextStaysPreparing(t *testing.T) {
 	reqCtx, cancel := context.WithCancel(t.Context())
 	coord := &testSetupRunner{
 		fn: func(ctx context.Context, _, _ string) error {
@@ -381,9 +381,8 @@ func TestWorkspacePrewarm_CanceledContextStillPersistsStatus(t *testing.T) {
 	if stored.GetStatus().GetPhase() != v1alpha1.WorkspacePhasePreparing {
 		t.Fatalf("stored phase = %q, want Preparing", stored.GetStatus().GetPhase())
 	}
-	if len(stored.GetStatus().GetConditions()) != 2 ||
-		stored.GetStatus().GetConditions()[0].GetReason() != v1alpha1.ReasonSubstrateUnavailable {
-		t.Fatalf("stored conditions = %+v, want SubstrateUnavailable conditions persisted", stored.GetStatus().GetConditions())
+	if len(stored.GetStatus().GetConditions()) != 0 {
+		t.Fatalf("stored conditions = %+v, want none", stored.GetStatus().GetConditions())
 	}
 }
 

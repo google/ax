@@ -61,9 +61,8 @@ const (
 	// ReasonWorkspaceInitializing: Ready is False; the actor is running but
 	// the workspace is still being set up.
 	ReasonWorkspaceInitializing = "WorkspaceInitializing"
-	// ReasonSubstrateUnavailable: Agent Substrate could not be reached. Ready
-	// is False with state Queued after a failed resume, or Unknown while reading
-	// the actor.
+	// ReasonSubstrateUnavailable: Ready is Unknown; Agent Substrate could not
+	// be reached to read the task's actor.
 	ReasonSubstrateUnavailable = "SubstrateUnavailable"
 	// ReasonActorNotFound: Ready is False; the task's actor was removed
 	// outside AX.

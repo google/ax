@@ -238,7 +238,7 @@ func (e *stageError) Unwrap() error { return e.underlyingErr }
 // the outcome into the WorkspaceStatus persisted in the store:
 //   - No setup/profile -> Phase=Ready immediately (no setup actor needed).
 //   - Tag created      -> Phase=Ready, SetupComplete=True, SnapshotReady=True.
-//   - Transient error  -> Phase=Preparing, reason=SubstrateUnavailable so re-applying retries.
+//   - Transient error  -> Phase=Preparing so re-applying retries.
 //   - Permanent error  -> Phase=Failed with stage-specific reason (TemplateCreationFailed,
 //     GatewayBindingFailed, SetupFailed, or SnapshotTagFailed) and LastSetupError recorded.
 func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, setupGateway *v1alpha1.Gateway) (*v1alpha1.WorkspaceStatus, error) {
@@ -258,8 +258,6 @@ func (m *WorkspaceManager) Prepare(ctx context.Context, ws *v1alpha1.Workspace, 
 	if err != nil {
 		msg := statusErrorMessage(err)
 		if substrate.IsTransientError(err) || errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
-			setWorkspaceCondition(st, v1alpha1.WorkspaceConditionSetupComplete, "False", v1alpha1.ReasonSubstrateUnavailable, msg, now)
-			setWorkspaceCondition(st, v1alpha1.WorkspaceConditionSnapshotReady, "False", v1alpha1.ReasonSubstrateUnavailable, msg, now)
 			return st, err
 		}
 
