@@ -87,11 +87,16 @@ func TestRunStudioDelegatesToStudioBinary(t *testing.T) {
 
 func buildTestStudioTarGz(t *testing.T, content string) ([]byte, string) {
 	t.Helper()
+	return buildTestTarGz(t, "ax-studio", content)
+}
+
+func buildTestTarGz(t *testing.T, name, content string) ([]byte, string) {
+	t.Helper()
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 	hdr := &tar.Header{
-		Name: "ax-studio",
+		Name: name,
 		Mode: 0o755,
 		Size: int64(len(content)),
 	}
@@ -300,6 +305,94 @@ detect_os && detect_arch && resolve_install_dir && install_studio`
 		}
 		if _, err := os.Stat(filepath.Join(installDir, "ax-studio")); err != nil {
 			t.Fatalf("expected ax-studio binary installed: %v", err)
+		}
+	})
+}
+
+func TestInstallShAXVersionUsesReleaseInstaller(t *testing.T) {
+	for _, tool := range []string{"sh", "curl", "tar"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not available in PATH", tool)
+		}
+	}
+	installScript, err := filepath.Abs(filepath.Join("..", "..", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	realCurl, err := exec.LookPath("curl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, archiveSHA := buildTestTarGz(t, "ax", "#!/bin/sh\necho v0.9.0\n")
+	asset := fmt.Sprintf("ax_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+
+	// run installs AX_VERSION=v0.9.0 with github.com/google/ax redirected to a
+	// server that attaches install.sh to v0.9.0 only if releaseScript is set.
+	run := func(t *testing.T, releaseScript string) (string, string) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/releases/download/v0.9.0/install.sh":
+				if releaseScript == "" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = w.Write([]byte(releaseScript))
+			case "/releases/download/v0.9.0/" + asset:
+				_, _ = w.Write(archive)
+			case "/releases/download/v0.9.0/checksums.txt":
+				_, _ = fmt.Fprintf(w, "%s  %s\n", archiveSHA, asset)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		t.Cleanup(srv.Close)
+
+		tmp := t.TempDir()
+		shimDir := filepath.Join(tmp, "shim")
+		if err := os.MkdirAll(shimDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		rewriteCurl := fmt.Sprintf("#!/bin/sh\nargs=\"\"\nfor a in \"$@\"; do\n  a=$(printf '%%s' \"$a\" | sed 's|https://github.com/google/ax|%s|g')\n  args=\"$args '$a'\"\ndone\neval exec '%s' $args\n", srv.URL, realCurl)
+		if err := os.WriteFile(filepath.Join(shimDir, "curl"), []byte(rewriteCurl), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		installDir := filepath.Join(tmp, "bin")
+		cmd := exec.Command("sh", installScript)
+		cmd.Env = append(os.Environ(),
+			"AX_VERSION=v0.9.0",
+			"AX_INSTALL_DIR="+installDir,
+			"AX_GITHUB_REPO=",
+			"AX_RELEASE_BASE_URL=",
+			"AX_INSTALL_LOCAL_BIN=",
+			"AX_SKIP_STUDIO=1",
+			"MARKER="+filepath.Join(tmp, "marker"),
+			"PATH="+shimDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("install.sh failed: %v\n%s", err, out)
+		}
+		return tmp, string(out)
+	}
+
+	t.Run("runs_the_release_installer", func(t *testing.T) {
+		tmp, out := run(t, "#!/bin/sh\nprintf '%s|%s' \"$AX_VERSION\" \"$__AX_INSTALL_DELEGATED\" > \"$MARKER\"\n")
+		got, err := os.ReadFile(filepath.Join(tmp, "marker"))
+		if err != nil {
+			t.Fatalf("release installer did not run: %v\n%s", err, out)
+		}
+		if string(got) != "v0.9.0|1" {
+			t.Fatalf("release installer saw %q, want %q", got, "v0.9.0|1")
+		}
+		if _, err := os.Stat(filepath.Join(tmp, "bin", "ax")); err == nil {
+			t.Fatal("expected only the release installer to install ax")
+		}
+	})
+
+	t.Run("installs_itself_without_a_release_installer", func(t *testing.T) {
+		tmp, out := run(t, "")
+		if _, err := os.Stat(filepath.Join(tmp, "bin", "ax")); err != nil {
+			t.Fatalf("expected ax installed: %v\n%s", err, out)
 		}
 	})
 }

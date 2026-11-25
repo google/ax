@@ -72,7 +72,8 @@ Everything is expressed as `ax.io/v1alpha1` manifests and applied with a single 
 ### 1. Install AX
 
 ```bash
-curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
+export AX_VERSION=v0.4.0-rc.2
+curl -fsSL "https://github.com/google/ax/releases/download/${AX_VERSION}/install.sh" | sh
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 

@@ -16,12 +16,14 @@
 # AX CLI one-line installer for macOS and Linux.
 #
 # Usage:
-#   curl -fsSL https://github.com/google/ax/releases/latest/download/install.sh | sh
+#   export AX_VERSION=v0.4.0-rc.2
+#   curl -fsSL "https://github.com/google/ax/releases/download/${AX_VERSION}/install.sh" | sh
 #
 # Environment overrides:
 #   AX_INSTALL_DIR          Target directory for `ax` and `ax-studio` (default: ~/.ax/bin)
 #   AX_GITHUB_REPO          GitHub org/repo for AX CLI releases (default: google/ax)
-#   AX_VERSION              AX CLI release tag (e.g. v0.1.0); empty uses latest release
+#   AX_VERSION              AX release tag (e.g. v0.4.0); empty uses latest release. Runs that
+#                           release's own install.sh, so ax-studio and the rest match the version
 #   AX_RELEASE_BASE_URL     Explicit base URL hosting ax_<os>_<arch>.tar.gz and checksums.txt
 #   AX_INSTALL_LOCAL_BIN    Install `ax` from a local prebuilt binary (for CI / offline testing)
 #   AX_STUDIO_GITHUB_REPO   GitHub org/repo for AX Studio releases (default: agentexecutor/studio)
@@ -139,7 +141,33 @@ verify_checksum() {
     fi
 }
 
+# run_release_installer runs the install.sh attached to release AX_VERSION, so
+# that everything installed with it (such as the ax-studio pin) comes from that
+# release rather than from this script. It fails if that release has no
+# install.sh (v0.3.1 and earlier), and the caller then installs with this one.
+run_release_installer() {
+    [ -n "$AX_VERSION" ] || return 1
+    [ -z "$AX_RELEASE_BASE_URL" ] && [ -z "$AX_INSTALL_LOCAL_BIN" ] || return 1
+    [ "${__AX_INSTALL_DELEGATED:-0}" != "1" ] || return 1
+    command -v curl >/dev/null 2>&1 || return 1
+
+    _script="$(mktemp "${TMPDIR:-/tmp}/ax-install-sh.XXXXXX")"
+    if ! curl -fsSL "https://github.com/${AX_GITHUB_REPO}/releases/download/${AX_VERSION}/install.sh" -o "$_script" 2>/dev/null; then
+        rm -f "$_script"
+        return 1
+    fi
+    echo "==> Using the installer of AX ${AX_VERSION}"
+    _rc=0
+    __AX_INSTALL_DELEGATED=1 AX_VERSION="$AX_VERSION" sh "$_script" "$@" || _rc=$?
+    rm -f "$_script"
+    RELEASE_INSTALLER_RC="$_rc"
+}
+
 install_main() {
+    if run_release_installer "$@"; then
+        return "$RELEASE_INSTALLER_RC"
+    fi
+
     detect_os
     detect_arch
     preflight_os
