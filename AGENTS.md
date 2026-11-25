@@ -116,7 +116,6 @@ location is where to look. How-to lives in the skills.
 | Area | Skill | When to load |
 |---|---|---|
 | Substrate | `/substrate` | Touching `internal/substrate`, `internal/install`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
-| Contract sync | `/sync-contract` | After any code change, before declaring done: verify `AGENTS.md` and `skills/` still match the code |
 
 Conventions: one directory per skill, `skills/<name>/SKILL.md`, frontmatter
 `name` + `description` (one sentence what, one sentence when — it is routing
@@ -129,5 +128,3 @@ skill source there. Adding a skill means adding a row above.
 1. The three CI commands above pass locally.
 2. Postgres, E2E or local install tier passes if you touched
    `internal/store/postgres`, the E2E paths, or `internal/install`.
-3. `/sync-contract` has been run against your diff so `AGENTS.md` and `skills/`
-   stay in sync with the code.
