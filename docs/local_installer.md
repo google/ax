@@ -172,6 +172,14 @@ While it waits for a rollout, `ax` reads the status of the rollout's pods every 
 Error: waiting for ax-system/deployment/ax-server rollout: timed out after 3m0s: pod ax-server-..., container ax-server: ImagePullBackOff: Back-off pulling image "...": ... 403 Forbidden
 ```
 
+#### A container that runs but never becomes ready
+
+`ax local start` adds a liveness probe on `/ready` to the Envoy sidecars of `atenet-router` and `atenet-egress` so the kubelet restarts a drained Envoy sidecar automatically ([#697](https://github.com/google/ax/issues/697), [agent-substrate/substrate#3601](https://github.com/agent-substrate/substrate/issues/3601)). If another workload's container keeps running while failing its readiness probe, a rollout timeout names the container and the command to restart it:
+
+```text
+Error: waiting for ate-system/daemonset/atelet rollout: timed out after 4m0s: pod atelet-..., container atelet: running but not ready; to restart it, run: kubectl --context ax-local -n ate-system rollout restart daemonset/atelet
+```
+
 ---
 
 ## Step 2b: Or Use AX Studio (`ax studio`)

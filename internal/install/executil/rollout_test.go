@@ -115,6 +115,31 @@ func TestWaitRolloutTimeoutQuotesPodStatus(t *testing.T) {
 	}
 }
 
+// https://github.com/google/ax/issues/697: the envoy container of
+// atenet-router ran but was not ready for 16 hours, and `ax local start`
+// printed only the kubectl timeout.
+func TestWaitRolloutTimeoutNamesUnreadyContainer(t *testing.T) {
+	c := &rolloutCluster{
+		rolloutErr: timedOut,
+		selector:   `{"app":"ax-server"}`,
+		pods: []string{`{"items":[{"metadata":{"name":"ax-server-abc"},"status":{"containerStatuses":[` +
+			`{"name":"main","ready":false,"state":{"running":{"startedAt":"2026-11-20T14:00:00Z"}}}]}}]}`},
+	}
+	out, err := testRollout(c, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("WaitRollout succeeded, want a timeout")
+	}
+	const status = "pod ax-server-abc, container main: running but not ready"
+	want := "waiting for ax-system/deployment/ax-server rollout: timed out after 20ms: " + status +
+		"; to restart it, run: kubectl --context ax-local -n ax-system rollout restart deployment/ax-server"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+	if want := "    ax-system/deployment/ax-server is not ready: " + status + "\n"; out != want {
+		t.Errorf("output = %q, want %q", out, want)
+	}
+}
+
 func TestWaitRolloutPrintsStatusWhenItChanges(t *testing.T) {
 	c := &rolloutCluster{
 		rolloutErr: timedOut,
@@ -159,14 +184,21 @@ func TestWaitRolloutWithoutSelector(t *testing.T) {
 
 func TestDescribeWaitingPods(t *testing.T) {
 	const pods = `{"items":[
-	  {"metadata":{"name":"running"},"status":{"containerStatuses":[{"name":"main","state":{"running":{}}}]}},
+	  {"metadata":{"name":"running"},"status":{"containerStatuses":[{"name":"main","ready":true,"state":{"running":{}}}]}},
 	  {"metadata":{"name":"unschedulable"},"status":{"conditions":[{"type":"PodScheduled","status":"False","reason":"Unschedulable","message":"0/1 nodes are available"}]}},
 	  {"metadata":{"name":"init"},"status":{"initContainerStatuses":[{"name":"setup","state":{"waiting":{"reason":"ImagePullBackOff","message":"Back-off"}}}],
-	    "containerStatuses":[{"name":"main","state":{"waiting":{"reason":"PodInitializing"}}}]}}
+	    "containerStatuses":[{"name":"main","state":{"waiting":{"reason":"PodInitializing"}}}]}},
+	  {"metadata":{"name":"router"},"status":{"containerStatuses":[
+	    {"name":"atenet-router","ready":true,"state":{"running":{}}},
+	    {"name":"envoy","ready":false,"state":{"running":{}}}]}},
+	  {"metadata":{"name":"sidecar"},"status":{"initContainerStatuses":[{"name":"sdsmint","ready":false,"state":{"running":{}}}],
+	    "containerStatuses":[{"name":"main","ready":true,"state":{"running":{}}}]}},
+	  {"metadata":{"name":"leaving","deletionTimestamp":"2026-11-21T06:35:00Z"},"status":{"containerStatuses":[{"name":"main","ready":false,"state":{"running":{}}}]}}
 	]}`
 	want := "pod unschedulable: Unschedulable: 0/1 nodes are available; " +
 		"pod init, container setup: ImagePullBackOff: Back-off; " +
-		"pod init, container main: PodInitializing"
+		"pod init, container main: PodInitializing; " +
+		"pod router, container envoy: running but not ready"
 	if got := describeWaitingPods([]byte(pods)); got != want {
 		t.Errorf("describeWaitingPods = %q, want %q", got, want)
 	}

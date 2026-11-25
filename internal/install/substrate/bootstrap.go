@@ -56,6 +56,22 @@ var expectedTrustBundles = []string{
 	"postgres.podcert.ate.dev:identity:primary-bundle",
 }
 
+// healthSelectors select the pods that alreadyHealthy requires to be Ready,
+// besides postgres-0: the pods of every workload Bootstrap waits for. A
+// workload that is missing here is not looked at on a cluster that has Agent
+// Substrate already, so an unready pod of it would be reported healthy.
+var healthSelectors = []struct{ ns, sel string }{
+	{NamespacePodCert, "app=podcertificate-controller"},
+	{NamespaceAteSystem, "app=ate-api-server"},
+	{NamespaceAteSystem, "app=ate-idp-server"},
+	{NamespaceAteSystem, "app=ate-controller"},
+	{NamespaceAteSystem, "app=atenet-router"},
+	{NamespaceAteSystem, "app=atenet-egress"},
+	{NamespaceAteSystem, "app=k8s-credential-provider"},
+	{NamespaceAteSystem, "app=atelet"},
+	{NamespaceWorkers, "ate.dev/worker-pool=ax-workers"},
+}
+
 // BootstrapOptions configures local Agent Substrate installation.
 type BootstrapOptions struct {
 	KubeContext    string
@@ -274,11 +290,15 @@ func Bootstrap(ctx context.Context, opts BootstrapOptions) error {
 		return fmt.Errorf("applying k8s-credential-provider: %w", err)
 	}
 
-	egressYAML, err := embeddedManifests.ReadFile("manifests/07-atenet-egress.yaml")
+	rawEgressYAML, err := embeddedManifests.ReadFile("manifests/07-atenet-egress.yaml")
 	if err != nil {
 		return err
 	}
-	if err := k.apply(ctx, egressYAML); err != nil {
+	patchedEgressYAML, err := RenderEgressBundle(rawEgressYAML)
+	if err != nil {
+		return err
+	}
+	if err := k.apply(ctx, patchedEgressYAML); err != nil {
 		return fmt.Errorf("applying atenet-egress: %w", err)
 	}
 
@@ -365,6 +385,9 @@ func RenderSystemBundle(raw []byte, envHash, axNamespace string) ([]byte, error)
 			if err := setContainerFlag(doc, "atenet-router", "--ingress-allowed-spiffe-ids", spiffeID); err != nil {
 				return nil, err
 			}
+			if err := ensureEnvoyLivenessProbe(doc); err != nil {
+				return nil, err
+			}
 			stampedRouter = true
 		}
 
@@ -378,6 +401,91 @@ func RenderSystemBundle(raw []byte, envHash, axNamespace string) ([]byte, error)
 		return nil, fmt.Errorf("ate-system bundle missing Deployment (ate-api-server=%v, atenet-router=%v)", stampedAPI, stampedRouter)
 	}
 	return out.Bytes(), nil
+}
+
+// RenderEgressBundle adds a liveness probe to the envoy sidecar of
+// atenet-egress until https://github.com/agent-substrate/substrate/issues/3601
+// is fixed upstream.
+func RenderEgressBundle(raw []byte) ([]byte, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	var out bytes.Buffer
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+
+	stampedEgress := false
+	for {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decoding atenet-egress manifest: %w", err)
+		}
+		if len(doc) == 0 {
+			continue
+		}
+		kind, _ := doc["kind"].(string)
+		meta, _ := doc["metadata"].(map[string]any)
+		name, _ := meta["name"].(string)
+
+		if kind == "Deployment" && name == "atenet-egress" {
+			if err := ensureEnvoyLivenessProbe(doc); err != nil {
+				return nil, err
+			}
+			stampedEgress = true
+		}
+
+		if err := enc.Encode(doc); err != nil {
+			return nil, fmt.Errorf("encoding atenet-egress manifest: %w", err)
+		}
+	}
+	_ = enc.Close()
+
+	if !stampedEgress {
+		return nil, fmt.Errorf("atenet-egress bundle missing Deployment atenet-egress")
+	}
+	return out.Bytes(), nil
+}
+
+// ensureEnvoyLivenessProbe adds a livenessProbe on /ready (port envoy-metrics)
+// to the envoy container when the manifest does not define one yet.
+//
+// Workaround for https://github.com/agent-substrate/substrate/issues/3601
+// (https://github.com/google/ax/issues/697): when kubelet restarts only the
+// sibling router/ext-proc container on SIGTERM, envoyDrainer.Drain calls
+// POST /healthcheck/fail and POST /drain_listeners?graceful&skip_exit, leaving
+// Envoy's /ready returning 503 forever without a liveness probe.
+//
+// The probe restarts envoy after 60 seconds of failures (6 * 10s). Envoy also
+// answers 503 until it has its configuration, so the window, and the 30
+// seconds before the first probe, leave it time to start. A pod that is being
+// deleted drains Envoy the same way, but the kubelet runs no liveness probe
+// on such a pod.
+func ensureEnvoyLivenessProbe(dep map[string]any) error {
+	spec, _ := dep["spec"].(map[string]any)
+	tmpl, _ := spec["template"].(map[string]any)
+	podSpec, _ := tmpl["spec"].(map[string]any)
+	containers, _ := podSpec["containers"].([]any)
+	for _, c := range containers {
+		cm, ok := c.(map[string]any)
+		if !ok || cm["name"] != "envoy" {
+			continue
+		}
+		if cm["livenessProbe"] == nil {
+			cm["livenessProbe"] = map[string]any{
+				"httpGet": map[string]any{
+					"path": "/ready",
+					"port": "envoy-metrics",
+				},
+				"initialDelaySeconds": 30,
+				"periodSeconds":       10,
+				"failureThreshold":    6,
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("container %q not found in Deployment", "envoy")
 }
 
 func setPodTemplateAnnotation(dep map[string]any, key, val string) {
@@ -764,11 +872,7 @@ func (k *kubeHelper) alreadyHealthy(ctx context.Context, wantVersion string, wan
 	if _, err := k.run(ctx, nil, "-n", NamespaceAteSystem, "wait", "--for=condition=Ready", "pod/postgres-0", "--timeout=90s"); err != nil {
 		return false
 	}
-	for _, selector := range []struct{ ns, sel string }{
-		{NamespaceAteSystem, "app=ate-api-server"},
-		{NamespaceAteSystem, "app=atenet-router"},
-		{NamespaceWorkers, "ate.dev/worker-pool=ax-workers"},
-	} {
+	for _, selector := range healthSelectors {
 		if _, err := k.run(ctx, nil, "-n", selector.ns, "wait", "--for=condition=Ready", "pod", "-l", selector.sel, "--timeout=90s"); err != nil {
 			return false
 		}
