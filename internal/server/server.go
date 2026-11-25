@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/internal/controller"
@@ -188,21 +189,13 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 	}
 	defer unlock()
 
-	// Check the stored record (before overlaying live actor status) so only an
-	// unfinished initial CreateTask (stored State == QUEUED with no provisioned
-	// template yet) can be retried; an already-created task that hit a later
-	// transient ResumeTask error is rejected without touching the actor.
-	existing, err := s.getStoredTask(ctx, atespace, taskName)
+	// A task is stored only once its actor exists, so a stored task is never
+	// left over from a failed create.
+	_, err = s.getStoredTask(ctx, atespace, taskName)
 	if err == nil {
-		if existing.GetStatus().GetState() != v1alpha1.TaskState_TASK_STATE_QUEUED ||
-			existing.GetStatus().GetAteTemplate().GetName() != "" ||
-			existing.GetMetadata().GetDeleteTime() != nil ||
-			!taskSpecMatchesExisting(existing, task.GetSpec()) {
-			return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
-		}
-		task = existing
+		return nil, status.Errorf(codes.FailedPrecondition, "task %s/%s already exists and is immutable", atespace, taskName)
 	}
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	if !errors.Is(err, store.ErrNotFound) {
 		return nil, status.Errorf(codes.Internal, "checking existing task: %v", err)
 	}
 
@@ -242,47 +235,46 @@ func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest
 		}
 	}
 
-	now := timestamppb.Now()
-	if task.Metadata.CreateTime == nil {
-		task.Metadata.CreateTime = now
-	}
-	if task.Metadata.Uid == "" {
-		task.Metadata.Uid = uuid.NewString()
-	}
-	task.Metadata.UpdateTime = now
 	if task.Spec == nil {
 		task.Spec = &v1alpha1.TaskSpec{}
 	}
-	if task.Spec.SessionId == "" {
-		task.Spec.SessionId = task.Metadata.Uid
-	}
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	if task.Status.Attempt == 0 {
-		task.Status.Attempt = 1
-	}
+	task.Status = &v1alpha1.TaskStatus{Attempt: 1}
 	if len(task.Spec.Commands) > 0 {
 		task.Status.ResolvedArgv = slices.Clone(task.Spec.Commands)
-	}
-	// The task is Queued until its actor exists.
-	task.Status.State = v1alpha1.TaskState_TASK_STATE_QUEUED
-
-	if err := s.saveTask(ctx, task); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
 
 	// New tasks start suspended.
 	if err := s.taskManager.Suspend(ctx, task, workspace, gateway); err != nil {
-		return nil, s.recordFailure(ctx, task, "provisioning", err)
+		slog.Error("provisioning task on substrate failed", "atespace", atespace, "task", taskName, "error", err)
+		s.deleteFailedCreate(ctx, task)
+		return nil, substrateError(err, "provisioning task on substrate")
 	}
-	if err := s.clearStoredTaskState(ctx, task); err != nil {
-		return nil, err
+	// The task is stored, and so created, only now that its actor exists.
+	now := timestamppb.Now()
+	task.Metadata.CreateTime = now
+	task.Metadata.Uid = uuid.NewString()
+	task.Metadata.UpdateTime = now
+	if task.Spec.SessionId == "" {
+		task.Spec.SessionId = task.Metadata.Uid
+	}
+	if err := s.saveTask(ctx, task); err != nil {
+		s.deleteFailedCreate(ctx, task)
+		return nil, status.Errorf(codes.Internal, "saving task: %v", err)
 	}
 
 	// Report the actor as it is now, as GetTask would.
 	s.applyActor(ctx, task)
 	return task, nil
+}
+
+// deleteFailedCreate removes the actor of a task whose create failed. The
+// request's context may already be done, so it does not bound the removal.
+func (s *Server) deleteFailedCreate(ctx context.Context, task *v1alpha1.Task) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := s.taskManager.DeleteTask(ctx, task); err != nil {
+		slog.Warn("could not remove the actor of a failed create", "atespace", task.GetMetadata().GetAtespace(), "task", task.GetMetadata().GetName(), "error", err)
+	}
 }
 
 // TODO: Drop this check once task retries are wired.
@@ -294,26 +286,6 @@ func firstUnimplementedTaskField(spec *v1alpha1.TaskSpec) string {
 		return "spec.retry"
 	}
 	return ""
-}
-
-// taskSpecMatchesExisting compares an incoming TaskSpec against an existing
-// Queued task's spec, accounting for session_id defaulting to metadata.uid on
-// the initial CreateTask call.
-func taskSpecMatchesExisting(existing *v1alpha1.Task, incoming *v1alpha1.TaskSpec) bool {
-	want := incoming
-	if want == nil {
-		want = &v1alpha1.TaskSpec{}
-	} else {
-		want = proto.Clone(incoming).(*v1alpha1.TaskSpec)
-	}
-	if want.SessionId == "" && existing.GetMetadata().GetUid() != "" {
-		want.SessionId = existing.GetMetadata().GetUid()
-	}
-	have := existing.GetSpec()
-	if have == nil {
-		have = &v1alpha1.TaskSpec{}
-	}
-	return proto.Equal(have, want)
 }
 
 func (s *Server) DeleteTask(ctx context.Context, req *v1alpha1.DeleteTaskRequest) (*emptypb.Empty, error) {
@@ -415,7 +387,7 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 }
 
 // clearStoredTaskState transitions task back to actor-derived status after a
-// Substrate reconcile (CreateTask, SuspendTask, or ResumeTask) succeeds:
+// Substrate reconcile (SuspendTask or ResumeTask) succeeds:
 //   - Clears metadata.delete_time if set by an earlier failed DeleteTask,
 //     canceling that pending deletion.
 //   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
@@ -443,11 +415,10 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 	return nil
 }
 
-// recordFailure stores the status of a task that could not be provisioned or
-// resumed: state Queued if err is a transient Substrate error, which a retry
-// may fix, and Unspecified otherwise. The Ready condition is stored either way,
-// so that it says why while the task has no actor. It returns the gRPC error
-// for action.
+// recordFailure stores the status of a task that could not be resumed: state
+// Queued, with the Ready condition that says why, if err is a transient
+// Substrate error, which a retry may fix, and no state otherwise. It returns
+// the gRPC error for action.
 func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
 	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
 	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
@@ -459,7 +430,7 @@ func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action 
 		task.Status = &v1alpha1.TaskStatus{}
 	}
 	task.Status.State = state
-	if uerr := s.updateFailedTask(ctx, task); uerr != nil {
+	if uerr := s.updateTask(ctx, atespace, name, task.Status); uerr != nil {
 		slog.Error("recording task failure", "atespace", atespace, "task", name, "state", state, "error", uerr)
 	}
 	return substrateError(err, action+" task on substrate")
@@ -499,9 +470,9 @@ func (s *Server) lockStoredTask(ctx context.Context, atespace, name string) (tas
 // A task's actor on Agent Substrate is the source of truth for whether the task
 // is running and whether it is healthy. The store keeps only what AX itself knows.
 //
-// Handlers never call s.store for tasks; they use the methods below. saveTask,
-// updateTask, and updateFailedTask drop the actor-owned status before writing.
-// getTask and listTasks fill it in from Substrate.
+// Handlers never call s.store for tasks; they use the methods below. saveTask
+// and updateTask drop the actor-owned status before writing. getTask and
+// listTasks fill it in from Substrate.
 
 // getStoredTask returns a task directly from the store without overlaying live
 // actor status from Substrate.
@@ -555,17 +526,6 @@ func (s *Server) saveTask(ctx context.Context, task *v1alpha1.Task) error {
 // not modified.
 func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1alpha1.TaskStatus) error {
 	return s.store.UpdateTaskStatus(ctx, atespace, name, storedStatus(st))
-}
-
-// updateFailedTask stores the status of a task that could not be provisioned
-// or resumed as updateTask does, but keeps its Ready condition, which says why.
-// task is not modified.
-func (s *Server) updateFailedTask(ctx context.Context, task *v1alpha1.Task) error {
-	st := storedStatus(task.Status)
-	if ready := readyCondition(task); ready != nil && !v1alpha1.IsAXTaskState(st.State) {
-		st.Conditions = append(st.Conditions, proto.Clone(ready).(*v1alpha1.Condition))
-	}
-	return s.store.UpdateTaskStatus(ctx, task.GetMetadata().GetAtespace(), task.GetMetadata().GetName(), st)
 }
 
 // storedStatus returns the part of a task's status that AX owns and stores. The
@@ -655,10 +615,9 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
 			return
 		}
-		// A stored Ready condition says why the actor could not be provisioned.
-		// Otherwise the task finished provisioning, so its actor was removed
-		// outside AX.
-		if !v1alpha1.IsAXTaskState(st.State) && readyCondition(task) == nil {
+		// A task is stored only once its actor exists, so a missing actor was
+		// removed outside AX.
+		if !v1alpha1.IsAXTaskState(st.State) {
 			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 			setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
 		}
@@ -729,16 +688,6 @@ func conditionTrue(task *v1alpha1.Task, condType string) bool {
 		}
 	}
 	return false
-}
-
-// readyCondition returns the task's Ready condition, or nil.
-func readyCondition(task *v1alpha1.Task) *v1alpha1.Condition {
-	for _, c := range task.GetStatus().GetConditions() {
-		if c.GetType() == v1alpha1.ConditionReady {
-			return c
-		}
-	}
-	return nil
 }
 
 // setReady sets the task's Ready condition. Its update time changes only when

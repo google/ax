@@ -287,11 +287,11 @@ func TestRunPromote(t *testing.T) {
 		t.Errorf("expected the task still working on the source, got %v", got)
 	}
 	full.sub.SetErrors(substratetest.Errors{ResumeActor: status.Error(codes.ResourceExhausted, "no worker has room for the actor")})
-	out, err = promote("--to", "full", "--suspend-source", "--replace")
+	out, err = promote("--to", "full", "--suspend-source")
 	if err == nil {
 		t.Fatal("expected runPromote to fail when the target cannot resume the task")
 	}
-	wantOutput = "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo replaced\ntask.ax.io/demo suspended on the source\n"
+	wantOutput = "gateway.ax.io/demo-gw reused\nworkspace.ax.io/demo-ws unchanged\ntask.ax.io/demo created\ntask.ax.io/demo suspended on the source\n"
 	if out != wantOutput {
 		t.Fatalf("expected output %q, got %q", wantOutput, out)
 	}

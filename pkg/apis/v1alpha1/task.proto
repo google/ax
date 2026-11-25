@@ -131,8 +131,8 @@ enum TaskState {
   TASK_STATE_CRASHED = 5;
   TASK_STATE_DELETING = 6;
   TASK_STATE_REVERTING = 7;
-  // The task's actor is not provisioned yet: CreateTask is in progress or
-  // failed with a transient Substrate error and can be applied again.
+  // ResumeTask failed with a transient Substrate error and can be called
+  // again.
   TASK_STATE_QUEUED = 200;
 }
 
