@@ -19,7 +19,7 @@ task manager or server.
 
 ```
 client                 Public Go client, alpha: ServerURL, Dial, CurrentContext, ListContexts over internal/tunnel. It never downloads kubectl (ErrKubectlNotFound): internal/tunnel does not import internal/install, and only cmd/ax passes a tunnel.KubectlResolver that downloads
-cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/studio/ctx/tunnel)
+cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete/local/install/uninstall/ctx/tunnel)
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
@@ -42,7 +42,7 @@ install.sh             One-line CLI installer (`releases/latest/download/install
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
 hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), tour.sh (a basic tour of features against the current context), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf and code-generator's validation-gen (`make generate`; validation-gen at the Kubernetes release of k8s.io/apimachinery in go.mod) and golangci-lint (`make verify`); boilerplate/go.txt is the license header of generated Go code
 hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
-docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote / ax studio
+docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote
 skills/                Developer skills (SKILL.md format). .agents/skills and .claude/skills symlink here.
 ```
 

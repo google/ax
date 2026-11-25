@@ -250,7 +250,7 @@ install_main() {
             echo ""
         fi
     fi
-    echo "Next step — launch AX Studio ('ax studio'), connect to a cluster ('ax ctx'), or start a local sandbox:"
+    echo "Next step — launch AX Studio ('ax-studio'), connect to a cluster ('ax ctx'), or start a local sandbox:"
     if [ "$_on_path" -eq 1 ]; then
         echo "  ax local start"
     else

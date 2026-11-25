@@ -26,64 +26,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
-
-func TestBuildStudioChildArgs(t *testing.T) {
-	t.Run("forwards_arbitrary_studio_flags_verbatim", func(t *testing.T) {
-		got := buildStudioChildArgs("custom-ax", "/usr/local/bin/ax", []string{"--port", "18080", "--no-open", "--future-flag", "v"})
-		want := []string{"-n", "custom-ax", "--ax-bin", "/usr/local/bin/ax", "--port", "18080", "--no-open", "--future-flag", "v"}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("buildStudioChildArgs = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("maps_bare_help_to_flag", func(t *testing.T) {
-		got := buildStudioChildArgs("", "/usr/local/bin/ax", []string{"help"})
-		want := []string{"-n", "ax-system", "--ax-bin", "/usr/local/bin/ax", "--help"}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("buildStudioChildArgs(help) = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("respects_explicit_overrides", func(t *testing.T) {
-		got := buildStudioChildArgs("ax-system", "/usr/local/bin/ax", []string{"-n", "other-ns", "--ax-bin=/custom/ax", "--help"})
-		want := []string{"-n", "other-ns", "--ax-bin=/custom/ax", "--help"}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("buildStudioChildArgs(overrides) = %#v, want %#v", got, want)
-		}
-	})
-}
-
-func TestRunStudioDelegatesToStudioBinary(t *testing.T) {
-	tmp := t.TempDir()
-	outFile := filepath.Join(tmp, "recorded_args.txt")
-	fakeStudio := filepath.Join(tmp, "ax-studio")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + outFile + "\n"
-	if err := os.WriteFile(fakeStudio, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("AX_STUDIO_BIN", fakeStudio)
-
-	if err := runStudio("ax-system", []string{"--port", "18088", "--no-open", "--custom-studio-opt"}); err != nil {
-		t.Fatalf("runStudio failed: %v", err)
-	}
-
-	recorded, err := os.ReadFile(outFile)
-	if err != nil {
-		t.Fatalf("reading recorded args: %v", err)
-	}
-	text := string(recorded)
-	for _, expected := range []string{"-n\nax-system", "--port\n18088", "--no-open", "--custom-studio-opt"} {
-		if !strings.Contains(text, expected) {
-			t.Errorf("expected delegated args to contain %q, got:\n%s", expected, text)
-		}
-	}
-}
 
 func buildTestStudioTarGz(t *testing.T, content string) ([]byte, string) {
 	t.Helper()
