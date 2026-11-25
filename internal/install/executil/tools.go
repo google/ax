@@ -118,23 +118,42 @@ type ContainerRuntime struct {
 	IsPodman bool
 }
 
-// ResolveContainerRuntime locates a working docker or podman CLI.
+// ResolveContainerRuntime locates a working docker or podman CLI: the first of
+// RunningContainerRuntimes.
 func ResolveContainerRuntime(ctx context.Context, r Runner) (ContainerRuntime, error) {
+	rts, err := containerRuntimes(ctx, r, false)
+	if err != nil {
+		return ContainerRuntime{}, err
+	}
+	return rts[0], nil
+}
+
+// RunningContainerRuntimes returns the CLI that CONTAINER_CLI names, if it is
+// set, and otherwise every docker or podman CLI whose engine is running, docker
+// first. It returns an error, and no runtimes, if there is none.
+func RunningContainerRuntimes(ctx context.Context, r Runner) ([]ContainerRuntime, error) {
+	return containerRuntimes(ctx, r, true)
+}
+
+// containerRuntimes implements RunningContainerRuntimes, and stops at the
+// first running engine unless all is set.
+func containerRuntimes(ctx context.Context, r Runner, all bool) ([]ContainerRuntime, error) {
 	// Honor an explicit override (matching Makefile's CONTAINER_CLI convention).
 	if explicit := os.Getenv("CONTAINER_CLI"); explicit != "" {
 		p, err := r.LookPath(explicit)
 		if err != nil {
-			return ContainerRuntime{}, fmt.Errorf("CONTAINER_CLI=%q not found: %w", explicit, err)
+			return nil, fmt.Errorf("CONTAINER_CLI=%q not found: %w", explicit, err)
 		}
 		res, _ := r.Run(ctx, Spec{Name: p, Args: []string{"--version"}})
-		return ContainerRuntime{
+		return []ContainerRuntime{{
 			Binary:   p,
 			IsPodman: strings.Contains(strings.ToLower(res.Stdout+filepath.Base(p)), "podman"),
-		}, nil
+		}}, nil
 	}
 
 	// Probe `docker info`, then `podman info`, to verify not only that the CLI is
 	// installed, but that its daemon / Linux VM is actively running.
+	var rts []ContainerRuntime
 	for _, candidate := range []struct {
 		name     string
 		isPodman bool
@@ -147,13 +166,19 @@ func ResolveContainerRuntime(ctx context.Context, r Runner) (ContainerRuntime, e
 			continue
 		}
 		if _, err := r.Run(ctx, Spec{Name: p, Args: []string{"info"}}); err == nil {
-			return ContainerRuntime{Binary: p, IsPodman: candidate.isPodman}, nil
+			rts = append(rts, ContainerRuntime{Binary: p, IsPodman: candidate.isPodman})
+			if !all {
+				break
+			}
 		}
 	}
-	if runtime.GOOS == "darwin" {
-		return ContainerRuntime{}, fmt.Errorf("no running container engine found on macOS: start OrbStack or Docker Desktop (>= 6 GiB RAM), or install and start Colima:\n  brew install docker colima\n  colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs")
+	if len(rts) > 0 {
+		return rts, nil
 	}
-	return ContainerRuntime{}, fmt.Errorf("no running container engine found: install and start Docker or rootful Podman")
+	if runtime.GOOS == "darwin" {
+		return nil, fmt.Errorf("no running container engine found on macOS: start OrbStack or Docker Desktop (>= 6 GiB RAM), or install and start Colima:\n  brew install docker colima\n  colima start --cpu 4 --memory 8 --disk 60 --vm-type vz --mount-type virtiofs")
+	}
+	return nil, fmt.Errorf("no running container engine found: install and start Docker or rootful Podman")
 }
 
 // -----------------------------------------------------------------------------

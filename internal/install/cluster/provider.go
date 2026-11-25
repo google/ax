@@ -16,7 +16,11 @@
 // by `ax local` and provides the MVP Kind implementation.
 package cluster
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/ax/internal/install/executil"
+)
 
 const (
 	// DefaultName is the default local cluster name (`ax local start`).
@@ -57,11 +61,13 @@ type Info struct {
 
 // Status describes the observed state of a local cluster and its layers.
 type Status struct {
-	Name            string
-	Backend         string
-	State           State
-	KubeContext     string
-	Nodes           []string
+	Name        string
+	Backend     string
+	State       State
+	KubeContext string
+	Nodes       []string
+	// Runtime is the container engine that runs the nodes; zero if there are none.
+	Runtime         executil.ContainerRuntime
 	SubstrateStatus string
 	AXStatus        string
 }

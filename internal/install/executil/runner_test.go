@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -42,6 +43,43 @@ func (f *fakeRunner) LookPath(name string) (string, error) {
 
 func (f *fakeRunner) Run(_ context.Context, spec Spec) (Result, error) {
 	return f.runFn(spec)
+}
+
+func TestRunningContainerRuntimes(t *testing.T) {
+	t.Setenv("CONTAINER_CLI", "")
+
+	var probed []string
+	r := &fakeRunner{
+		paths: map[string]string{"docker": "/usr/bin/docker", "podman": "/usr/bin/podman"},
+		runFn: func(spec Spec) (Result, error) {
+			probed = append(probed, spec.Name)
+			return Result{}, nil
+		},
+	}
+	rts, err := RunningContainerRuntimes(context.Background(), r)
+	if err != nil {
+		t.Fatalf("RunningContainerRuntimes: %v", err)
+	}
+	want := []ContainerRuntime{{Binary: "/usr/bin/docker"}, {Binary: "/usr/bin/podman", IsPodman: true}}
+	if !slices.Equal(rts, want) {
+		t.Fatalf("RunningContainerRuntimes = %+v, want %+v", rts, want)
+	}
+
+	// ResolveContainerRuntime stops at the first running engine.
+	probed = nil
+	rt, err := ResolveContainerRuntime(context.Background(), r)
+	if err != nil {
+		t.Fatalf("ResolveContainerRuntime: %v", err)
+	}
+	if rt != want[0] || !slices.Equal(probed, []string{"/usr/bin/docker"}) {
+		t.Fatalf("ResolveContainerRuntime = %+v after probing %v, want %+v after probing only docker", rt, probed, want[0])
+	}
+
+	// CONTAINER_CLI names the only runtime.
+	t.Setenv("CONTAINER_CLI", "podman")
+	if rts, err := RunningContainerRuntimes(context.Background(), r); err != nil || !slices.Equal(rts, want[1:]) {
+		t.Fatalf("RunningContainerRuntimes with CONTAINER_CLI=podman = %+v, %v; want %+v", rts, err, want[1:])
+	}
 }
 
 func TestParseKindMajorMinor(t *testing.T) {

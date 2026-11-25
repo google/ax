@@ -33,11 +33,13 @@ import (
 type recordedRunner struct {
 	calls []executil.Spec
 	runFn func(executil.Spec) (executil.Result, error)
+	// podman puts podman, as well as docker, on PATH.
+	podman bool
 }
 
 func (r *recordedRunner) LookPath(name string) (string, error) {
-	switch name {
-	case "docker", "kind", "kubectl":
+	switch {
+	case name == "docker", name == "kind", name == "kubectl", name == "podman" && r.podman:
 		return "/usr/bin/" + name, nil
 	default:
 		return "", fmt.Errorf("not found: %s", name)
@@ -463,6 +465,64 @@ func TestKindProviderStatusNotFound(t *testing.T) {
 	}
 	if st.State != StateAbsent || st.Name != "N/A" || st.KubeContext != "N/A" {
 		t.Fatalf("expected State=NotFound, Name=N/A, KubeContext=N/A when absent, got %+v", st)
+	}
+}
+
+// With docker and podman both running, Status finds a cluster that podman runs
+// although docker is the preferred engine (#767).
+func TestKindProviderStatusFindsClusterOfOtherEngine(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	rr := &recordedRunner{
+		podman: true,
+		runFn: func(spec executil.Spec) (executil.Result, error) {
+			cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+			podman := slices.Contains(spec.Env, "KIND_EXPERIMENTAL_PROVIDER=podman")
+			switch {
+			case strings.HasSuffix(cmd, "kind version"):
+				return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+			case strings.Contains(cmd, "kind get nodes") && podman:
+				return executil.Result{Stdout: "ax-local-control-plane\n"}, nil
+			case cmd == "/usr/bin/podman inspect -f {{.State.Running}} ax-local-control-plane":
+				return executil.Result{Stdout: "true\n"}, nil
+			default:
+				return executil.Result{}, nil
+			}
+		},
+	}
+
+	p := NewKindProvider(rr, &bytes.Buffer{})
+	st, err := p.Status(context.Background(), "ax-local")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.State != StateRunning || st.Name != "ax-local" || !st.Runtime.IsPodman {
+		t.Fatalf("Status = %+v, want a running ax-local on podman", st)
+	}
+}
+
+// A failing `kind get nodes` is an error, not a cluster that does not exist.
+func TestKindProviderStatusListNodesFails(t *testing.T) {
+	t.Setenv("AX_HOME", t.TempDir())
+	t.Setenv("CONTAINER_CLI", "")
+
+	rr := &recordedRunner{
+		runFn: func(spec executil.Spec) (executil.Result, error) {
+			cmd := spec.Name + " " + strings.Join(spec.Args, " ")
+			if strings.HasSuffix(cmd, "kind version") {
+				return executil.Result{Stdout: "kind v0.32.0\n"}, nil
+			}
+			if strings.Contains(cmd, "get nodes") {
+				return executil.Result{}, errors.New("exit status 1")
+			}
+			return executil.Result{}, nil
+		},
+	}
+
+	p := NewKindProvider(rr, &bytes.Buffer{})
+	if _, err := p.Status(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "listing the nodes") {
+		t.Fatalf("Status error = %v, want one about listing the nodes", err)
 	}
 }
 
