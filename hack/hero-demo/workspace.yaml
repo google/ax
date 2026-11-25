@@ -25,7 +25,7 @@ spec:
   # Same image and limits as task-starter.yaml, so the starter task starts from
   # this workspace's snapshot.
   profile:
-    image: "ghcr.io/agentexecutor/antigravity@sha256:0ccd91d03f996c375d6d391dc20106102187f15210a0016212b6721cd8044078"
+    image: "ghcr.io/agentexecutor/agy-cli@sha256:13c1957d2e790c3a981de08e3996acc268e855f2e6a79b5e931ec62e8b54c2a5"
     resources:
       limits:
         cpu: "2"
