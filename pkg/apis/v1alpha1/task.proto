@@ -26,6 +26,7 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 message Task {
   string api_version = 1;
   string kind = 2;
+  // +k8s:required
   ObjectMeta metadata = 3;
   TaskSpec spec = 4;
   // Set by the server; ignored on input.
@@ -159,6 +160,7 @@ message ListTasksResponse {
 }
 
 message CreateTaskRequest {
+  // +k8s:required
   Task task = 1;
 }
 

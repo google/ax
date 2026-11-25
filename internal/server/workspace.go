@@ -62,11 +62,12 @@ func (s *Server) ListWorkspaces(ctx context.Context, req *v1alpha1.ListWorkspace
 }
 
 func (s *Server) CreateWorkspace(ctx context.Context, req *v1alpha1.CreateWorkspaceRequest) (*v1alpha1.Workspace, error) {
-	if req == nil || req.Workspace == nil {
+	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "workspace required")
 	}
-	if err := apivalidation.ValidateWorkspace(req.Workspace); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	// Validate the request, including the object within it.
+	if errs := apivalidation.ValidateCreateWorkspaceRequest(ctx, req); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, errs.ToAggregate().Error())
 	}
 	prewarmEnabled := s.workspaces.PrewarmEnabled()
 

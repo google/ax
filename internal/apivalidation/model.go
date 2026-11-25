@@ -14,10 +14,19 @@
 
 package apivalidation
 
-import "github.com/google/ax/pkg/apis/v1alpha1"
+import (
+	"context"
 
-// ValidateModel reports the first problem with a model that would make it
-// unusable. It is called by the API server before saving.
-func ValidateModel(m *v1alpha1.Model) error {
-	return ValidateObjectMeta(m.GetMetadata())
+	"github.com/google/ax/pkg/apis/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+)
+
+func ValidateUpdateModelRequest(ctx context.Context, req *v1alpha1.UpdateModelRequest) field.ErrorList {
+	// Call the generated validation.
+	// We model this as a create rather than an update because updates assume
+	// the existence of a "current" value, which we do not have. This is
+	// validating the request itself.
+	op := operation.Operation{Type: operation.Create}
+	return Validate_UpdateModelRequest(ctx, op, nil, req, nil)
 }

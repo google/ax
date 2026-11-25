@@ -36,6 +36,7 @@ message WorkspaceRef {
 message Workspace {
   string api_version = 1;
   string kind = 2;
+  // +k8s:required
   ObjectMeta metadata = 3;
   WorkspaceSpec spec = 4;
   // Set by the server; ignored on input.
@@ -175,6 +176,7 @@ message ListWorkspacesResponse {
 
 // CreateWorkspaceRequest creates an immutable Workspace resource.
 message CreateWorkspaceRequest {
+  // +k8s:required
   Workspace workspace = 1;
 }
 

@@ -15,13 +15,61 @@
 package apivalidation_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
+
+// validateGateway validates gw as the API server does, in a CreateGateway request.
+func validateGateway(gw *v1alpha1.Gateway) error {
+	return apivalidation.ValidateCreateGatewayRequest(context.Background(), &v1alpha1.CreateGatewayRequest{Gateway: gw}).ToAggregate()
+}
+
+func TestValidateCreateGatewayRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *v1alpha1.CreateGatewayRequest
+		want field.ErrorList
+	}{
+		{name: "valid", req: &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "gw"}}}},
+		{name: "missing gateway", req: &v1alpha1.CreateGatewayRequest{}, want: field.ErrorList{field.Required(field.NewPath("gateway"), "")}},
+		{name: "missing gateway.metadata", req: &v1alpha1.CreateGatewayRequest{Gateway: &v1alpha1.Gateway{}}, want: field.ErrorList{field.Required(field.NewPath("gateway", "metadata"), "")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValidateErr(t, apivalidation.ValidateCreateGatewayRequest(context.Background(), tt.req), tt.want)
+		})
+	}
+}
+
+func TestValidateUpdateGatewayRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *v1alpha1.UpdateGatewayRequest
+		want field.ErrorList
+	}{
+		{name: "valid", req: &v1alpha1.UpdateGatewayRequest{Gateway: &v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "gw"}}}},
+		{name: "missing gateway", req: &v1alpha1.UpdateGatewayRequest{}, want: field.ErrorList{field.Required(field.NewPath("gateway"), "")}},
+		{
+			name: "rule for every host",
+			req: &v1alpha1.UpdateGatewayRequest{Gateway: &v1alpha1.Gateway{
+				Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
+				Spec:     &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{{Https: &ateapipb.HttpsRule{Hostnames: []string{"*"}}}}},
+			}},
+			want: field.ErrorList{field.Invalid(field.NewPath("gateway"), nil, "")},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValidateErr(t, apivalidation.ValidateUpdateGatewayRequest(context.Background(), tt.req), tt.want)
+		})
+	}
+}
 
 func TestValidateGateway(t *testing.T) {
 	http := func(effects *ateapipb.HttpRuleEffects, hostnames ...string) *ateapipb.EgressRule {
@@ -73,7 +121,7 @@ func TestValidateGateway(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := apivalidation.ValidateGateway(&v1alpha1.Gateway{
+			err := validateGateway(&v1alpha1.Gateway{
 				Metadata: &v1alpha1.ObjectMeta{Name: "gw"},
 				Spec:     &v1alpha1.GatewaySpec{Egress: []*ateapipb.EgressRule{tt.rule}},
 			})

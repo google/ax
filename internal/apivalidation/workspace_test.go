@@ -15,12 +15,36 @@
 package apivalidation_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
+
+// validateWorkspace validates ws as the API server does, in a CreateWorkspace request.
+func validateWorkspace(ws *v1alpha1.Workspace) error {
+	return apivalidation.ValidateCreateWorkspaceRequest(context.Background(), &v1alpha1.CreateWorkspaceRequest{Workspace: ws}).ToAggregate()
+}
+
+func TestValidateCreateWorkspaceRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		req  *v1alpha1.CreateWorkspaceRequest
+		want field.ErrorList
+	}{
+		{name: "valid", req: &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws"}}}},
+		{name: "missing workspace", req: &v1alpha1.CreateWorkspaceRequest{}, want: field.ErrorList{field.Required(field.NewPath("workspace"), "")}},
+		{name: "missing workspace.metadata", req: &v1alpha1.CreateWorkspaceRequest{Workspace: &v1alpha1.Workspace{}}, want: field.ErrorList{field.Required(field.NewPath("workspace", "metadata"), "")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValidateErr(t, apivalidation.ValidateCreateWorkspaceRequest(context.Background(), tt.req), tt.want)
+		})
+	}
+}
 
 func TestValidateWorkspace_Valid(t *testing.T) {
 	tests := []struct {
@@ -60,7 +84,7 @@ func TestValidateWorkspace_Valid(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{
+			err := validateWorkspace(&v1alpha1.Workspace{
 				Metadata: &v1alpha1.ObjectMeta{Name: "valid-ws"},
 				Spec:     tc.spec,
 			})
@@ -292,7 +316,7 @@ func TestValidateWorkspace_Errors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{
+			err := validateWorkspace(&v1alpha1.Workspace{
 				Metadata: &v1alpha1.ObjectMeta{Name: "valid-ws"},
 				Spec:     tc.spec,
 			})
@@ -322,7 +346,7 @@ func TestValidateWorkspace_ProfileImage(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws"}, Spec: tc.spec})
+			err := validateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "ws"}, Spec: tc.spec})
 			if tc.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "spec.profile: image or ateTemplate.name is required") {
 					t.Fatalf("ValidateWorkspace() = %v, want image required", err)

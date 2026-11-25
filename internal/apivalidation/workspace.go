@@ -15,19 +15,29 @@
 package apivalidation
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-// ValidateWorkspace reports the first problem with a workspace that would make
-// it unusable. It is called by the API server before saving.
-func ValidateWorkspace(w *v1alpha1.Workspace) error {
-	if err := ValidateObjectMeta(w.GetMetadata()); err != nil {
-		return err
-	}
+func ValidateCreateWorkspaceRequest(ctx context.Context, req *v1alpha1.CreateWorkspaceRequest) field.ErrorList {
+	// Call the generated validation.
+	op := operation.Operation{Type: operation.Create}
+	errs := Validate_CreateWorkspaceRequest(ctx, op, nil, req, nil)
+	errs = append(errs, toErrorList(field.NewPath("workspace"), validateWorkspace(req.Workspace))...)
+	return errs
+}
+
+// validateWorkspace reports the first problem with a workspace that would make
+// it unusable.
+//
+// TODO(#726): Move these rules to declarative validation.
+func validateWorkspace(w *v1alpha1.Workspace) error {
 	spec := w.GetSpec()
 	if spec == nil {
 		return nil

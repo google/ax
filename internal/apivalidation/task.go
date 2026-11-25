@@ -15,6 +15,7 @@
 package apivalidation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,6 +24,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 // SetupActorPrefix prefixes temporary Workspace setup actor names so the
@@ -31,11 +34,21 @@ import (
 // this prefix because a Task's Substrate actor is named after metadata.name.
 const SetupActorPrefix = "ax-ws-setup-"
 
-// ValidateTask reports the first problem with a task that would make it
-// impossible to run correctly. It is called by the API server before saving.
-func ValidateTask(t *v1alpha1.Task) error {
-	if err := ValidateObjectMeta(t.GetMetadata()); err != nil {
-		return err
+func ValidateCreateTaskRequest(ctx context.Context, req *v1alpha1.CreateTaskRequest) field.ErrorList {
+	// Call the generated validation.
+	op := operation.Operation{Type: operation.Create}
+	errs := Validate_CreateTaskRequest(ctx, op, nil, req, nil)
+	errs = append(errs, toErrorList(field.NewPath("task"), validateTask(req.Task))...)
+	return errs
+}
+
+// validateTask reports the first problem with a task that would make it
+// impossible to run correctly.
+//
+// TODO(#726): Move these rules to declarative validation.
+func validateTask(t *v1alpha1.Task) error {
+	if t == nil {
+		return nil // the generated validation flags it
 	}
 	if strings.HasPrefix(t.GetMetadata().GetName(), SetupActorPrefix) {
 		return fmt.Errorf("metadata.name: prefix %q is reserved for workspace setup actors", SetupActorPrefix)

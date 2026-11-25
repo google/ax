@@ -37,6 +37,7 @@ CONTAINER_CLI ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/d
 
 BUF := go tool -modfile=hack/tools/buf/go.mod buf
 GOLANGCI_LINT := go tool -modfile=hack/tools/golangci-lint/go.mod golangci-lint
+VALIDATION_GEN := go tool -modfile=hack/tools/code-generator/go.mod validation-gen
 
 .PHONY: build install images push-runner-volume check-image-repo generate deploy deploy-server deploy-postgres apply-example verify test test-e2e test-local-install build-local-cluster e2e-setup e2e-run e2e-cleanup clean
 
@@ -154,8 +155,9 @@ apply-example:
 ## API Targets
 ## --------------------------------------
 
-# Format and lint .proto files, and regenerate the Go code. buf reads imported
-# Agent Substrate protos from the Go module cache.
+# Format and lint .proto files, and regenerate the Go code: the types, then the
+# validation that their +k8s: tags declare. buf reads imported Agent Substrate
+# protos from the Go module cache.
 generate:
 	go mod download go.ate.dev/substrate
 	mkdir -p .tmp/buf
@@ -163,6 +165,13 @@ generate:
 	$(BUF) format -w --path pkg/apis
 	$(BUF) lint --path pkg/apis
 	$(BUF) generate --path pkg/apis
+	$(VALIDATION_GEN) \
+		--go-header-file=hack/boilerplate/go.txt \
+		--output-file=zz_generated.validation.go \
+		--readonly-pkg=google.golang.org/protobuf/types/known/durationpb \
+		--readonly-pkg=google.golang.org/protobuf/types/known/structpb \
+		--readonly-pkg=google.golang.org/protobuf/types/known/timestamppb \
+		./internal/apivalidation
 
 ## --------------------------------------
 ## Test & Verification Targets

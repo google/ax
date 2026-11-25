@@ -37,11 +37,12 @@ const (
 )
 
 type Model struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec          *ModelSpec             `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// +k8s:required
+	Metadata      *ObjectMeta `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec          *ModelSpec  `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -397,8 +398,9 @@ func (x *ListModelsResponse) GetNextPageToken() string {
 }
 
 type UpdateModelRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Model         *Model                 `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// +k8s:required
+	Model         *Model `protobuf:"bytes,1,opt,name=model,proto3" json:"model,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

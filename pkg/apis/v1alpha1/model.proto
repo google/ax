@@ -24,6 +24,7 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 message Model {
   string api_version = 1;
   string kind = 2;
+  // +k8s:required
   ObjectMeta metadata = 3;
   ModelSpec spec = 4;
 }
@@ -67,6 +68,7 @@ message ListModelsResponse {
 }
 
 message UpdateModelRequest {
+  // +k8s:required
   Model model = 1;
 }
 

@@ -272,7 +272,7 @@ release's published images, and a pseudo-version fails E2E setup.
 `Gateway.spec.egress` is Substrate's `EgressRule`, so a bump can change what
 users may write in a Gateway. Diff the egress messages in
 `api/ateapi/v1/ateapi.proto` between the two versions. If the new version adds
-a rule kind besides `http`, `https`, and `tlsPassthrough`, `ValidateGateway`
+a rule kind besides `http`, `https`, and `tlsPassthrough`, `validateGateway`
 (`internal/apivalidation/gateway.go`) rejects rules of that kind until its
 checks cover it. `docs/manifests.md` links to Substrate's egress credential
 injection guide at the pinned version.

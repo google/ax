@@ -15,12 +15,14 @@
 package apivalidation_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	"google.golang.org/protobuf/types/known/structpb"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
@@ -30,6 +32,29 @@ func mustStruct(t *testing.T, m map[string]any) *structpb.Struct {
 		t.Fatal(err)
 	}
 	return s
+}
+
+// validateTask validates task as the API server does, in a CreateTask request.
+func validateTask(task *v1alpha1.Task) error {
+	return apivalidation.ValidateCreateTaskRequest(context.Background(), &v1alpha1.CreateTaskRequest{Task: task}).ToAggregate()
+}
+
+func TestValidateCreateTaskRequest(t *testing.T) {
+	spec := &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"}}
+	tests := []struct {
+		name string
+		req  *v1alpha1.CreateTaskRequest
+		want field.ErrorList
+	}{
+		{name: "valid", req: &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "task"}, Spec: spec}}},
+		{name: "missing task", req: &v1alpha1.CreateTaskRequest{}, want: field.ErrorList{field.Required(field.NewPath("task"), "")}},
+		{name: "missing task.metadata", req: &v1alpha1.CreateTaskRequest{Task: &v1alpha1.Task{Spec: spec}}, want: field.ErrorList{field.Required(field.NewPath("task", "metadata"), "")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertValidateErr(t, apivalidation.ValidateCreateTaskRequest(context.Background(), tt.req), tt.want)
+		})
+	}
 }
 
 func TestValidateTask(t *testing.T) {
@@ -167,7 +192,7 @@ func TestValidateTask(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "task"}, Spec: tt.spec})
+			err := validateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "task"}, Spec: tt.spec})
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -182,12 +207,12 @@ func TestValidateTask(t *testing.T) {
 }
 
 func TestValidateTask_ReservedSetupActorPrefix(t *testing.T) {
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{
+	if err := validateTask(&v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: apivalidation.SetupActorPrefix + "foo"},
 	}); err == nil || !strings.Contains(err.Error(), "reserved for workspace setup actors") {
 		t.Fatalf("ValidateTask(reserved prefix) = %v, want reserved prefix error", err)
 	}
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{
+	if err := validateTask(&v1alpha1.Task{
 		Metadata: &v1alpha1.ObjectMeta{Name: "my-" + apivalidation.SetupActorPrefix + "task"},
 		Spec:     &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "us-docker.pkg.dev/p/img@sha256:abc"}},
 	}); err != nil {

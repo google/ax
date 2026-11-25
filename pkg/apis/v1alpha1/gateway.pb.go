@@ -86,11 +86,12 @@ func (x *GatewayRef) GetName() string {
 // across Tasks while reserving GatewaySpec for future AX-level ergonomics
 // (e.g. opt-in auto_expand over Model/Workspace endpoints or shorthands).
 type Gateway struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
-	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata      *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec          *GatewaySpec           `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// +k8s:required
+	Metadata      *ObjectMeta  `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec          *GatewaySpec `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,6 +166,8 @@ type GatewaySpec struct {
 	// per-atespace; see agent-substrate/substrate#431) and AX evaluates its
 	// ingress model. Once settled, GatewaySpec will import Substrate's ingress
 	// proto directly.
+	//
+	// +k8s:eachVal=+k8s:opaqueType # a Substrate type, validated by hand
 	Egress        []*v1.EgressRule `protobuf:"bytes,1,rep,name=egress,proto3" json:"egress,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -377,8 +380,9 @@ func (x *ListGatewaysResponse) GetNextPageToken() string {
 }
 
 type CreateGatewayRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Gateway       *Gateway               `protobuf:"bytes,1,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// +k8s:required
+	Gateway       *Gateway `protobuf:"bytes,1,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -421,8 +425,9 @@ func (x *CreateGatewayRequest) GetGateway() *Gateway {
 }
 
 type UpdateGatewayRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Gateway       *Gateway               `protobuf:"bytes,1,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// +k8s:required
+	Gateway       *Gateway `protobuf:"bytes,1,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -157,13 +157,14 @@ func (s *Server) ListTasks(ctx context.Context, req *v1alpha1.ListTasksRequest) 
 }
 
 func (s *Server) CreateTask(ctx context.Context, req *v1alpha1.CreateTaskRequest) (*v1alpha1.Task, error) {
-	if req == nil || req.Task == nil {
+	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "task required")
 	}
-	task := req.Task
-	if err := apivalidation.ValidateTask(task); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	// Validate the request, including the object within it.
+	if errs := apivalidation.ValidateCreateTaskRequest(ctx, req); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, errs.ToAggregate().Error())
 	}
+	task := req.Task
 	if task.Metadata == nil {
 		task.Metadata = &v1alpha1.ObjectMeta{}
 	}
@@ -761,11 +762,12 @@ func (s *Server) ListModels(ctx context.Context, req *v1alpha1.ListModelsRequest
 }
 
 func (s *Server) UpdateModel(ctx context.Context, req *v1alpha1.UpdateModelRequest) (*v1alpha1.Model, error) {
-	if req == nil || req.Model == nil {
+	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "model required")
 	}
-	if err := apivalidation.ValidateModel(req.Model); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	// Validate the request, including the object within it.
+	if errs := apivalidation.ValidateUpdateModelRequest(ctx, req); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, errs.ToAggregate().Error())
 	}
 	atespace := atespaceOrDefault(req.Model.GetMetadata().GetAtespace())
 	existing, err := s.store.GetModel(ctx, atespace, req.Model.GetMetadata().GetName())

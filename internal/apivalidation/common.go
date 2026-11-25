@@ -17,11 +17,37 @@ package apivalidation
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 
 	"github.com/google/ax/internal/resources"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
+
+// axDeepEqual is the deep-equal function declarative validation's generated
+// code calls by name. It uses proto.Equal if both values are proto messages,
+// and reflect.DeepEqual otherwise.
+func axDeepEqual[T any](a, b T) bool {
+	am, aok := any(a).(proto.Message)
+	bm, bok := any(b).(proto.Message)
+	if aok && bok {
+		return proto.Equal(am, bm)
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// toErrorList turns the error of a check that is still written by hand into a
+// field error on fldPath.
+//
+// TODO(#726): Drop it once those checks return field errors.
+func toErrorList(fldPath *field.Path, err error) field.ErrorList {
+	if err == nil {
+		return nil
+	}
+	return field.ErrorList{field.Invalid(fldPath, field.OmitValueType{}, err.Error())}
+}
 
 // Resource names.
 //
@@ -43,20 +69,6 @@ func ValidateName(s string) error {
 	}
 	if len(s) > MaxNameLength || !nameRegexp.MatchString(s) {
 		return fmt.Errorf("must be a lowercase RFC 1123 label: at most %d lowercase alphanumeric characters or '-', starting and ending with an alphanumeric character", MaxNameLength)
-	}
-	return nil
-}
-
-// ValidateObjectMeta checks a resource's name and, when set, its atespace. An
-// empty atespace is fine here; the API server defaults it.
-func ValidateObjectMeta(meta *v1alpha1.ObjectMeta) error {
-	if err := ValidateName(meta.GetName()); err != nil {
-		return fmt.Errorf("metadata.name: invalid value %q: %w", meta.GetName(), err)
-	}
-	if atespace := meta.GetAtespace(); atespace != "" {
-		if err := ValidateName(atespace); err != nil {
-			return fmt.Errorf("metadata.atespace: invalid value %q: %w", atespace, err)
-		}
 	}
 	return nil
 }
