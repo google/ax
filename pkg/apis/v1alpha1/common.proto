@@ -22,7 +22,11 @@ option go_package = "github.com/google/ax/pkg/apis/v1alpha1";
 
 // ObjectMeta is metadata for AX resources.
 message ObjectMeta {
+  // +k8s:required
+  // +k8s:format=k8s-short-name
   string name = 1;
+  // +k8s:optional
+  // +k8s:format=k8s-short-name
   string atespace = 2;
   // Set by the server; ignored on input.
   google.protobuf.Timestamp create_time = 3;

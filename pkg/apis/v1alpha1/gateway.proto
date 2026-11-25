@@ -35,6 +35,7 @@ message GatewayRef {
 message Gateway {
   string api_version = 1;
   string kind = 2;
+  // +k8s:required
   ObjectMeta metadata = 3;
   GatewaySpec spec = 4;
 }
@@ -50,6 +51,8 @@ message GatewaySpec {
   // per-atespace; see agent-substrate/substrate#431) and AX evaluates its
   // ingress model. Once settled, GatewaySpec will import Substrate's ingress
   // proto directly.
+  //
+  // +k8s:eachVal=+k8s:opaqueType # a Substrate type, validated by hand
   repeated substrate.ateapi.v1.EgressRule egress = 1;
 }
 
@@ -77,10 +80,12 @@ message ListGatewaysResponse {
 }
 
 message CreateGatewayRequest {
+  // +k8s:required
   Gateway gateway = 1;
 }
 
 message UpdateGatewayRequest {
+  // +k8s:required
   Gateway gateway = 1;
 }
 

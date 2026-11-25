@@ -115,8 +115,9 @@ type Task struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata   *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec       *TaskSpec              `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	// +k8s:required
+	Metadata *ObjectMeta `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec     *TaskSpec   `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
 	// Set by the server; ignored on input.
 	Status        *TaskStatus `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -688,8 +689,9 @@ func (x *ListTasksResponse) GetNextPageToken() string {
 }
 
 type CreateTaskRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Task          *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// +k8s:required
+	Task          *Task `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -15,24 +15,42 @@
 package apivalidation
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 	"strings"
 
 	"github.com/google/ax/pkg/apis/v1alpha1"
 	ateapipb "go.ate.dev/substrate/api/ateapi/v1"
+	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-// ValidateGateway reports the first problem with a gateway that would make it
-// unusable. It is called by the API server before saving. Agent Substrate
-// checks the rest of each egress rule later, when a task that binds the
-// gateway is created.
+func ValidateCreateGatewayRequest(ctx context.Context, req *v1alpha1.CreateGatewayRequest) field.ErrorList {
+	// Call the generated validation.
+	op := operation.Operation{Type: operation.Create}
+	errs := Validate_CreateGatewayRequest(ctx, op, nil, req, nil)
+	errs = append(errs, toErrorList(field.NewPath("gateway"), validateGateway(req.Gateway))...)
+	return errs
+}
+
+func ValidateUpdateGatewayRequest(ctx context.Context, req *v1alpha1.UpdateGatewayRequest) field.ErrorList {
+	// Call the generated validation.
+	// We model this as a create rather than an update because updates assume
+	// the existence of a "current" value, which we do not have. This is
+	// validating the request itself.
+	op := operation.Operation{Type: operation.Create}
+	errs := Validate_UpdateGatewayRequest(ctx, op, nil, req, nil)
+	errs = append(errs, toErrorList(field.NewPath("gateway"), validateGateway(req.Gateway))...)
+	return errs
+}
+
+// validateGateway reports the first problem with a gateway that would make it
+// unusable. Agent Substrate checks the rest of each egress rule later, when a
+// task that binds the gateway is created.
 //
 // TODO: Validate everything that Substrate validates.
-func ValidateGateway(g *v1alpha1.Gateway) error {
-	if err := ValidateObjectMeta(g.GetMetadata()); err != nil {
-		return err
-	}
+func validateGateway(g *v1alpha1.Gateway) error {
 	for i, rule := range g.GetSpec().GetEgress() {
 		kind, hostnames, effects, ports := egressRuleFields(rule)
 		// A rule kind added by a newer Substrate would skip the checks below.

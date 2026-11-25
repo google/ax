@@ -15,11 +15,14 @@
 package apivalidation_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/ax/internal/apivalidation"
 	"github.com/google/ax/pkg/apis/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
 func TestValidateName(t *testing.T) {
@@ -59,48 +62,28 @@ func TestValidateName(t *testing.T) {
 }
 
 func TestValidateObjectMeta(t *testing.T) {
+	invalid := func(name string) field.ErrorList {
+		return field.ErrorList{field.Invalid(field.NewPath(name), nil, "").WithOrigin("format=k8s-short-name")}
+	}
 	tests := []struct {
-		name    string
-		meta    *v1alpha1.ObjectMeta
-		wantErr string
+		name string
+		meta *v1alpha1.ObjectMeta
+		want field.ErrorList
 	}{
-		{name: "nil metadata", wantErr: "metadata.name"},
-		{name: "missing name", meta: &v1alpha1.ObjectMeta{Atespace: "default"}, wantErr: `metadata.name: invalid value ""`},
+		{name: "missing name", meta: &v1alpha1.ObjectMeta{Atespace: "default"}, want: field.ErrorList{field.Required(field.NewPath("name"), "")}},
 		{name: "name only", meta: &v1alpha1.ObjectMeta{Name: "task123"}},
 		{name: "name and atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team-a"}},
-		{name: "uppercase name", meta: &v1alpha1.ObjectMeta{Name: "Task-With-Caps"}, wantErr: `metadata.name: invalid value "Task-With-Caps"`},
-		{name: "underscore in name", meta: &v1alpha1.ObjectMeta{Name: "my_task"}, wantErr: "metadata.name"},
-		{name: "name too long", meta: &v1alpha1.ObjectMeta{Name: strings.Repeat("x", 64)}, wantErr: "metadata.name"},
-		{name: "uppercase atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "Default"}, wantErr: `metadata.atespace: invalid value "Default"`},
-		{name: "dotted atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team.a"}, wantErr: "metadata.atespace"},
+		{name: "uppercase name", meta: &v1alpha1.ObjectMeta{Name: "Task-With-Caps"}, want: invalid("name")},
+		{name: "underscore in name", meta: &v1alpha1.ObjectMeta{Name: "my_task"}, want: invalid("name")},
+		{name: "name too long", meta: &v1alpha1.ObjectMeta{Name: strings.Repeat("x", 64)}, want: invalid("name")},
+		{name: "uppercase atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "Default"}, want: invalid("atespace")},
+		{name: "dotted atespace", meta: &v1alpha1.ObjectMeta{Name: "task123", Atespace: "team.a"}, want: invalid("atespace")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := apivalidation.ValidateObjectMeta(tt.meta)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
-			}
+			op := operation.Operation{Type: operation.Create}
+			assertValidateErr(t, apivalidation.Validate_ObjectMeta(context.Background(), op, nil, tt.meta, nil), tt.want)
 		})
-	}
-
-	// Every kind is validated the same way.
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
-		t.Error("ValidateTask accepted an invalid name")
-	}
-	if err := apivalidation.ValidateWorkspace(&v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
-		t.Error("ValidateWorkspace accepted an invalid name")
-	}
-	if err := apivalidation.ValidateModel(&v1alpha1.Model{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
-		t.Error("ValidateModel accepted an invalid name")
-	}
-	if err := apivalidation.ValidateGateway(&v1alpha1.Gateway{Metadata: &v1alpha1.ObjectMeta{Name: "Bad"}}); err == nil {
-		t.Error("ValidateGateway accepted an invalid name")
 	}
 }
 
@@ -157,13 +140,18 @@ func TestValidateResources(t *testing.T) {
 		})
 	}
 
-	// ValidateTask runs the same check, so ax apply rejects bad limits up front.
+	// ValidateCreateTaskRequest runs the same check, so ax apply rejects bad limits up front.
 	meta := &v1alpha1.ObjectMeta{Name: "task", Atespace: "default"}
-	err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Resources: limits("abc", "")}}})
+	err := validateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Resources: limits("abc", "")}}})
 	if err == nil || !strings.Contains(err.Error(), "spec.profile.resources.limits.cpu") {
 		t.Fatalf("ValidateTask error = %v, want cpu limit error", err)
 	}
-	if err := apivalidation.ValidateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "img@sha256:abc", Resources: limits("2", "4Gi")}}}); err != nil {
+	if err := validateTask(&v1alpha1.Task{Metadata: meta, Spec: &v1alpha1.TaskSpec{Profile: &v1alpha1.Profile{Image: "img@sha256:abc", Resources: limits("2", "4Gi")}}}); err != nil {
 		t.Fatalf("ValidateTask rejected valid limits: %v", err)
 	}
+}
+
+func assertValidateErr(t *testing.T, got field.ErrorList, want field.ErrorList) {
+	t.Helper()
+	field.ErrorMatcher{}.ByType().ByField().ByOrigin().Test(t, want, got)
 }

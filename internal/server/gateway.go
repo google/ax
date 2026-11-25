@@ -57,25 +57,30 @@ func (s *Server) ListGateways(ctx context.Context, req *v1alpha1.ListGatewaysReq
 }
 
 func (s *Server) CreateGateway(ctx context.Context, req *v1alpha1.CreateGatewayRequest) (*v1alpha1.Gateway, error) {
-	if req == nil || req.Gateway == nil {
+	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "gateway required")
+	}
+	// Validate the request, including the object within it.
+	if errs := apivalidation.ValidateCreateGatewayRequest(ctx, req); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, errs.ToAggregate().Error())
 	}
 	return s.saveGateway(ctx, req.Gateway, true)
 }
 
 func (s *Server) UpdateGateway(ctx context.Context, req *v1alpha1.UpdateGatewayRequest) (*v1alpha1.Gateway, error) {
-	if req == nil || req.Gateway == nil {
+	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "gateway required")
+	}
+	// Validate the request, including the object within it.
+	if errs := apivalidation.ValidateUpdateGatewayRequest(ctx, req); len(errs) > 0 {
+		return nil, status.Error(codes.InvalidArgument, errs.ToAggregate().Error())
 	}
 	return s.saveGateway(ctx, req.Gateway, false)
 }
 
-// saveGateway validates and saves gw. The gateway must be new when create is
-// set, and must exist otherwise.
+// saveGateway saves gw. The gateway must be new when create is set, and must
+// exist otherwise.
 func (s *Server) saveGateway(ctx context.Context, gw *v1alpha1.Gateway, create bool) (*v1alpha1.Gateway, error) {
-	if err := apivalidation.ValidateGateway(gw); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	atespace := atespaceOrDefault(gw.Metadata.Atespace)
 	gwName := gw.Metadata.Name
 

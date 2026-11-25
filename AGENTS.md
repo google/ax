@@ -23,7 +23,7 @@ cmd/ax                 CLI (apply/get/describe/ssh/suspend/resume/promote/delete
 cmd/ax-server          Control plane: gRPC API; provisions, suspends, resumes and deletes task actors directly
 cmd/ax-runner          PID 1 inside the sandbox; materializes the Workspace, runs the agent
 deploy/                Canonical postgres.yaml + ax-server.yaml manifests and //go:embed renderers
-internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); server-side only
+internal/apivalidation Manifest admission validation (common, task, workspace, model, gateway); zz_generated.validation.go holds the rules declared as +k8s: tags in the .proto files (generator settings in doc.go); server-side only
 internal/controller    TaskManager + WorkspaceManager: Substrate side of task lifecycle and workspace snapshot tags; task_test.go is the test template
 internal/install/      Self-contained local cluster (Kind), Substrate bootstrap, and AX installer/uninstaller
 internal/resources     Kubernetes CPU/memory resource quantity parsing
@@ -40,7 +40,7 @@ pkg/apis/v1alpha1      *.proto (source of truth) -> *.pb.go (generated), types.g
 test/e2e               Kind-based; compiled by `go test ./...` but self-skips without AX_E2E=true
 install.sh             One-line CLI installer (`releases/latest/download/install.sh`)
 .github/rulesets/      GitHub rulesets as code (source of truth); applied by an admin with hack/apply-rulesets.sh (docs/rulesets.md)
-hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), tour.sh (a basic tour of features against the current context), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf (`make generate`) and golangci-lint (`make verify`)
+hack/                  E2E provisioning, the local install smoke test (test-local-install.sh), `make build-local-cluster` (build-local-cluster.sh: images from the checkout into the localhost registry, then `ax local start`, keeping the cluster), tour.sh (a basic tour of features against the current context), Substrate manifest sync, and multi-arch image scripts; apply-rulesets.sh; tools/<name>/go.mod pins buf and code-generator's validation-gen (`make generate`; validation-gen at the Kubernetes release of k8s.io/apimachinery in go.mod) and golangci-lint (`make verify`); boilerplate/go.txt is the license header of generated Go code
 hack/release/          Release scripts run by .github/workflows/release.yml on a vX.Y.Z tag (docs/releasing.md)
 docs/                  manifests.md is the user-facing API reference; local_installer.md walks through ax local / ax install / ax promote / ax studio
 skills/                Developer skills (SKILL.md format). .agents/skills and .claude/skills symlink here.
@@ -68,7 +68,8 @@ location is where to look. How-to lives in the skills.
 **A. Correctness**
 - `pkg/apis/v1alpha1/*.proto` are the source of truth: `ax.proto` is the `AX`
   service, and the messages are in `common.proto`, `task.proto`,
-  `workspace.proto`, `model.proto`, and `gateway.proto`. `*.pb.go` are
+  `workspace.proto`, `model.proto`, and `gateway.proto`. `*.pb.go` and
+  `internal/apivalidation/zz_generated.validation.go` are
   generated (`DO NOT EDIT` headers); run `make generate` after editing a
   `.proto`. Imports are repo-root-relative, except Agent Substrate's
   `api/ateapi/v1/ateapi.proto` (`make generate` links that module from the Go
@@ -94,7 +95,8 @@ location is where to look. How-to lives in the skills.
 **C. API surface**
 - A `Task`/`Workspace`/`Model`/`Gateway` field is defined in that kind's
   `.proto` file (shared messages in `common.proto`), mapped in `types.go`,
-  validated in `internal/apivalidation`, and documented in `docs/manifests.md`.
+  validated by `+k8s:` tags in its `.proto` comment or in
+  `internal/apivalidation`, and documented in `docs/manifests.md`.
 
 **D. Hygiene**
 - CI runs `make verify` and fails if it changes a file (stale generated code,

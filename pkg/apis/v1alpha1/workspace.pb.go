@@ -96,8 +96,9 @@ type Workspace struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	Kind       string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Metadata   *ObjectMeta            `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Spec       *WorkspaceSpec         `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
+	// +k8s:required
+	Metadata *ObjectMeta    `protobuf:"bytes,3,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Spec     *WorkspaceSpec `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
 	// Set by the server; ignored on input.
 	Status        *WorkspaceStatus `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1001,8 +1002,9 @@ func (x *ListWorkspacesResponse) GetNextPageToken() string {
 
 // CreateWorkspaceRequest creates an immutable Workspace resource.
 type CreateWorkspaceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Workspace     *Workspace             `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// +k8s:required
+	Workspace     *Workspace `protobuf:"bytes,1,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
