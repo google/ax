@@ -115,6 +115,7 @@ location is where to look. How-to lives in the skills.
 
 | Area | Skill | When to load |
 |---|---|---|
+| CLI usage | `/ax` | Running tasks on a cluster; writing Task/Workspace/Gateway/Model YAML; debugging a task that will not start |
 | Substrate | `/substrate` | Touching `internal/substrate`, `internal/install`, `internal/guest`, `internal/metadata`; bumping Substrate; any `ate-system` address; triaging E2E |
 
 Conventions: one directory per skill, `skills/<name>/SKILL.md`, frontmatter
