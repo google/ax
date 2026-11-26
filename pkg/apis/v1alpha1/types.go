@@ -48,10 +48,9 @@ const (
 	ConditionWorkspaceReady = "WorkspaceReady"
 )
 
-// TODO(jbd): ReasonAtespaceCreationFailed, ReasonSubstrateUnavailable,
-// ReasonActorNotFound, ReasonActorCreationFailed, ReasonActorResumeFailed
-// are invalid states. These should be returned as errors, shouldn't be
-// leaking as state.
+// TODO(jbd): ReasonAtespaceCreationFailed, ReasonActorNotFound,
+// ReasonActorCreationFailed, ReasonActorResumeFailed are invalid states.
+// These should be returned as errors, shouldn't be leaking as state.
 
 // Condition reasons reported on Ready and WorkspaceReady conditions.
 const (
@@ -61,28 +60,17 @@ const (
 	// ReasonWorkspaceInitializing: Ready is False; the actor is running but
 	// the workspace is still being set up.
 	ReasonWorkspaceInitializing = "WorkspaceInitializing"
-	// ReasonSubstrateUnavailable: Ready is Unknown; Agent Substrate could not
-	// be reached to read the task's actor.
-	ReasonSubstrateUnavailable = "SubstrateUnavailable"
 	// ReasonActorNotFound: Ready is False; the task's actor was removed
 	// outside AX.
 	ReasonActorNotFound = "ActorNotFound"
-	// ReasonAtespaceCreationFailed: Ready is False; the atespace could not be
-	// created on Agent Substrate.
+
+	// Reasons reported on a Workspace's SetupComplete and SnapshotReady
+	// conditions: the step of preparing the Workspace that failed.
 	ReasonAtespaceCreationFailed = "AtespaceCreationFailed"
-	// ReasonInvalidResources: Ready is False; spec.profile.resources is invalid.
-	ReasonInvalidResources = "InvalidResources"
-	// ReasonTemplateCreationFailed: Ready is False; Agent Substrate rejected
-	// the task's ActorTemplate, for example because of its image.
 	ReasonTemplateCreationFailed = "TemplateCreationFailed"
-	// ReasonActorCreationFailed: Ready is False; the actor could not be
-	// created.
-	ReasonActorCreationFailed = "ActorCreationFailed"
-	// ReasonGatewayBindingFailed: Ready is False; the task could not get its
-	// gateway's rules, for example because Agent Substrate rejected one.
-	ReasonGatewayBindingFailed = "GatewayBindingFailed"
-	// ReasonActorResumeFailed: Ready is False; the actor could not be resumed.
-	ReasonActorResumeFailed = "ActorResumeFailed"
+	ReasonActorCreationFailed    = "ActorCreationFailed"
+	ReasonGatewayBindingFailed   = "GatewayBindingFailed"
+	ReasonActorResumeFailed      = "ActorResumeFailed"
 
 	// Actor lifecycle reasons reported on Ready when the actor is not running.
 	ReasonResuming       = "Resuming"

@@ -118,8 +118,8 @@ instead. No mocking library is in `go.mod`.
   Substrate deletes the policy with the actor. A task without a Gateway gets
   no policy. `bindGateway` runs after the actor is suspended (`CreateTask`,
   `SuspendTask`) and before it is resumed (`ResumeTask`). Substrate validates
-  the rules when they are copied. `bindGateway` fails with reason
-  `GatewayBindingFailed` when Substrate refuses them, or when the actor has no
+  the rules when they are copied. `bindGateway` fails when Substrate refuses
+  them, or when the actor has no
   policy and the Gateway no longer exists. `SuspendTask` and `ResumeTask`
   treat a deleted Workspace or Gateway as none, and fail before they touch the
   actor when the store cannot read one (`fetchWorkspace`, `fetchGateway` in
@@ -135,8 +135,8 @@ instead. No mocking library is in `go.mod`.
   on every resume. The requests go through `atenet-router`, the only way into
   an actor (`--router-url`, `ate-target-actor` header). The runner never
   calls ax-server. `Resume` fails with a transient error when the runner does
-  not accept the push within `WorkspaceReadyTimeout`, and with
-  `ActorResumeFailed` when the runner refuses the task or reports a failure
+  not accept the push within `WorkspaceReadyTimeout`, and with a permanent
+  one when the runner refuses the task or reports a failure
   for a task whose workspace is already set up.
 - `status.actorUid` is read live by `setActorStatus` in
   `internal/server/server.go` and cleared by `storedStatus` (same file) before writes.
