@@ -34,7 +34,7 @@ ax local status
 - Prebuilt agent images (such as Antigravity) have no runner baked in: pass `--runner-volume-image` (or `$AX_RUNNER_VOLUME_IMAGE`) with the `ax-runner-volume` digest from the release notes.
 - Images must be public; the local cluster has no registry credentials.
 
-Or run `ax studio` to do this, and create tasks, from a web page on `http://127.0.0.1:8080`. See the [AX Studio README](https://github.com/agentexecutor/studio#readme).
+Or run `ax studio` to do this, and create tasks, from a web page on `http://127.0.0.1:8080`. See the [AX Studio README](https://github.com/agentexecutor/studio).
 
 ### Using Locally Built Images
 

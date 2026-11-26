@@ -76,34 +76,29 @@ curl -fsSL https://raw.githubusercontent.com/google/ax/main/install.sh | AX_VERS
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
-This installs both `ax` and [AX Studio](https://github.com/agentexecutor/studio#readme) (`ax-studio`) into `~/.ax/bin`.
-
 > [!TIP]
 > Prefer a UI? Run `ax studio` to set up AX on your computer and start tasks from a local web app instead of using the CLI below.
 
 ### 2. Start AX
 
-**Locally**, on a new Kind cluster with Substrate and a WorkerPool:
+Locally:
 
 ```bash
 ax local start
 ```
 
-**On an existing cluster** with Kubernetes 1.37+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
+Or on an existing cluster with [Agent Substrate](https://github.com/agent-substrate/substrate):
 
 ```bash
 ax install
+kubectl apply -f examples/workerpool.yaml
 ```
 
-Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
-
-Official release binaries deploy the matching release `ax-server` image by default. Prebuilt agent images from [agentexecutor/images](https://github.com/agentexecutor/images) have no runner baked in, so pass `--runner-volume-image` with the `ax-runner-volume` digest from the [AX release notes](https://github.com/google/ax/releases):
+To run [prebuilt agent images](https://github.com/agentexecutor/images), add the runner volume from the [release notes](https://github.com/google/ax/releases):
 
 ```bash
 ax local start --runner-volume-image ghcr.io/google/ax/ax-runner-volume@sha256:<digest>
 ```
-
-Building from source or pushing custom images? See [Build and push images](docs/development.md#build-and-push-images) and the [Local Installer guide](docs/local_installer.md).
 
 ### Run your first task
 
@@ -138,7 +133,7 @@ Want a tour of AX end to end? Run [`./hack/tour.sh`](hack/tour.sh) against the c
 | Guide | Read it to... |
 |---|---|
 | [Local Installer](docs/local_installer.md) | Walk through `ax local`, `ax studio`, `ax ctx`, `ax install`, and promoting tasks unchanged from local Kind to a remote GKE cluster. |
-| [AX Studio](https://github.com/agentexecutor/studio#readme) | Set up AX on your computer and start, watch, and shell into tasks from a local web app (`ax studio`). |
+| [AX Studio](https://github.com/agentexecutor/studio) | Set up AX on your computer and start, watch, and shell into tasks from a local web app (`ax studio`). |
 | [Concepts](docs/concepts.md) | Learn what a `Task`, `Workspace`, and `Model` each do, and how a task moves through phases and conditions. |
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
