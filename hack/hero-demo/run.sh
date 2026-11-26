@@ -63,8 +63,9 @@ GATEWAY_SECRET="hero-demo-gemini"
 # Files in a task's sandbox that finish_task reads. OUTPUT_FILE is the task's
 # $AX_OUTPUT_FILE. The commands in task-starter.yaml and task-custom.yaml
 # write their exit status to EXIT_CODE_FILE when they finish.
-OUTPUT_FILE="/workspace/.ax/output"
-EXIT_CODE_FILE="/workspace/.ax/hero-demo-exit-code"
+# The sandbox expands $AX_WORKSPACE, not this shell.
+OUTPUT_FILE='${AX_WORKSPACE}/.ax/output'
+EXIT_CODE_FILE='${AX_WORKSPACE}/.ax/hero-demo-exit-code'
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -187,7 +188,7 @@ wait_for_file() {
   shift 2
   local deadline=$((SECONDS + AX_TIMEOUT))
   while ((SECONDS < deadline)); do
-    if sandbox "${task_name}" "$@" -- test -f "${file}" >/dev/null; then
+    if sandbox "${task_name}" "$@" -- sh -c "test -f \"${file}\"" >/dev/null; then
       return 0
     fi
     sleep 2
@@ -238,7 +239,7 @@ start_task() {
 
 # finish_task waits until the task's command has finished and checks that it
 # exited with status zero and wrote output to $AX_OUTPUT_FILE
-# (/workspace/.ax/output). AX leaves command completion and output on the data
+# ($AX_WORKSPACE/.ax/output). AX leaves command completion and output on the data
 # plane (#756): the task stays Running. So the hero demo's commands write their
 # exit status to EXIT_CODE_FILE, and finish_task reads it over ax ssh. Arguments
 # after the task name are global ax flags, such as --context. On failure
@@ -252,12 +253,12 @@ finish_task() {
     return 1
   fi
   local output code
-  output="$(sandbox "${task_name}" "$@" -- cat "${OUTPUT_FILE}")"
-  code="$(sandbox "${task_name}" "$@" -- cat "${EXIT_CODE_FILE}")"
+  output="$(sandbox "${task_name}" "$@" -- sh -c "cat \"${OUTPUT_FILE}\"")"
+  code="$(sandbox "${task_name}" "$@" -- sh -c "cat \"${EXIT_CODE_FILE}\"")"
   if [[ "${code}" != 0 ]]; then
     # Show the end of its output, as ax_quiet does for a command that fails.
     printf '%s\n' "${output}" | grep -v '^$' | tail -n 12 | sed 's/^/    /' >&2
-    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see 'ax${ax_flags} ssh ${task_name} -- cat ${OUTPUT_FILE}'"
+    mark_fail "${step}" "${task_name} exited with status ${code:-unknown}; see ${OUTPUT_FILE} in 'ax${ax_flags} ssh ${task_name}'"
     return 1
   fi
   if [[ -z "${output//[[:space:]]/}" ]]; then
@@ -371,7 +372,7 @@ step4_custom_image_task() {
   # The command waits on its first run, so the task can be suspended while it
   # runs. After the resume it starts again, runs the workspace's unit tests and
   # records their exit status, and the step fails unless they pass.
-  if ! wait_for_file "${CUSTOM_TASK}" /workspace/first-run; then
+  if ! wait_for_file "${CUSTOM_TASK}" '${AX_WORKSPACE}/first-run'; then
     mark_fail "${step}" "${CUSTOM_TASK} did not start its command within ${AX_TIMEOUT}s"
     return
   fi

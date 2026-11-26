@@ -55,11 +55,11 @@ The `/workspace` volume is what survives suspend and resume. Agent Substrate sna
 | `/metadata/v1alpha1/ax/task` | Return the `Task` as `application/yaml`. Optional, but your command and `ax` tooling may expect it. |
 | `/metadata/v1alpha1/ax/workspace` | Return the bound `Workspace` as `application/yaml`, or `404` when there is none. Optional, as above. |
 
-**Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, materialize `spec.setup` (clone Git repos from `spec.setup.git` at their `ref`, write `spec.setup.files`, create `spec.setup.skills.path`, and run `spec.setup.commands`). A task with no binding gets an empty `/workspace`. Record that setup happened on the durable volume, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `<workspace>/.ax/initialized` (or `<workspace>/.git/.ax/initialized` for root Git checkouts).
+**Prepare the workspace once.** A task binds at most one workspace through `spec.workspace`. At the binding's path, `/workspace` unless it sets one, materialize `spec.setup` (clone Git repos from `spec.setup.git` at their `ref`, write `spec.setup.files`, create `spec.setup.skills.path`, and run `spec.setup.commands` with that path in `AX_WORKSPACE`). A task with no binding gets an empty `/workspace`. Record that setup happened on the durable volume, then skip the work on later boots. Resume restarts the container, and re-cloning into a restored workspace would destroy the agent's state. The default runner writes a marker file under `<workspace>/.ax/initialized` (or `<workspace>/.git/.ax/initialized` for root Git checkouts).
 
 **Make outbound TLS and credentials work.** The egress gateway intercepts HTTPS that a `Gateway` rule allows, so point the CA variables your tools read (`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, `GIT_SSL_CAINFO`) at the CA bundle when it exists. It replaces a credential header only on requests that already carry it. Tasks set placeholders for their tools in `spec.env`; the default runner adds one for git (see [Outbound TLS and credentials](sandbox.md#outbound-tls-and-credentials)).
 
-**Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
+**Run the command and supervise it.** Start `spec.commands` as a child process with the workspace path as its working directory. Give it `AX_METADATA_URL` pointing at your loopback metadata server, `AX_WORKSPACE` holding the workspace path, plus every `spec.env` entry. Put it in its own process group so you can signal everything it spawns.
 
 **Stay up after the command exits.** The runner is PID 1, and the container lives as long as it does. If the runner exits when the command does, the metadata server goes with it and `ax ssh` stops working. Log the exit status and keep serving until you are told to stop. The control plane does not currently read the command's exit status back from the container.
 
@@ -177,7 +177,7 @@ Once the image is built, the fastest end-to-end check is a task with `debug: tru
 - Serves `/healthz` and `/readyz` on port 80, with `/readyz` returning `503` until the workspace is ready
 - Serves the metadata endpoints on loopback only, at `AX_METADATA_URL`
 - Prepares the workspace exactly once across restarts and resumes, at its path
-- Starts `spec.commands` in the workspace with `AX_METADATA_URL` and `spec.env`
+- Starts `spec.commands` in the workspace with `AX_METADATA_URL`, `AX_WORKSPACE` and `spec.env`
 - Keeps running after the command exits
 - Forwards `SIGTERM` to the command's process group and exits after a grace period
 - Serves guest gRPC services on port 80 only when `spec.debug` is true

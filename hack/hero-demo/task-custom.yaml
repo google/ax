@@ -42,13 +42,13 @@ spec:
     - sh
     - -c
     - |
-      if [ ! -f /workspace/first-run ]; then
-        touch /workspace/first-run
+      if [ ! -f "$AX_WORKSPACE/first-run" ]; then
+        touch "$AX_WORKSPACE/first-run"
         sleep 300
       fi
-      python3 -m unittest discover -s /workspace/app -p "test_*.py" > "$AX_OUTPUT_FILE" 2>&1
+      python3 -m unittest discover -s "$AX_WORKSPACE/app" -p "test_*.py" > "$AX_OUTPUT_FILE" 2>&1
       status=$?
       cat "$AX_OUTPUT_FILE"
-      echo "$status" > /workspace/.ax/hero-demo-exit-code.tmp
-      mv /workspace/.ax/hero-demo-exit-code.tmp /workspace/.ax/hero-demo-exit-code
+      echo "$status" > "$AX_WORKSPACE/.ax/hero-demo-exit-code.tmp"
+      mv "$AX_WORKSPACE/.ax/hero-demo-exit-code.tmp" "$AX_WORKSPACE/.ax/hero-demo-exit-code"
       exit "$status"

@@ -78,7 +78,7 @@ Substrate requires `spec.profile.image` (and a Workspace's `spec.profile.image`)
 
 ### Binding a workspace
 
-A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.commands`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`.
+A task binds at most one `Workspace` through `spec.workspace`. The binding needs a `name`; without a `path` the workspace is mounted at `/workspace`. That path is the working directory of `spec.commands`, and the task reports `WorkspaceReady` once the workspace is prepared. A task with no `workspace` gets an empty working directory at `/workspace`. `spec.commands`, the workspace's `spec.setup` commands and `ax ssh` sessions find the path in `AX_WORKSPACE`.
 
 The bound `Workspace` must already exist in the task's atespace. Creating a task that binds a missing workspace fails with `FailedPrecondition` and stores nothing. `ax apply` creates documents in file order, so list a `Workspace` before the `Task` that binds it.
 
@@ -183,7 +183,7 @@ spec:
   - `git`: HTTPS repositories cloned under the workspace directory (`dir` must stay within the workspace root; `ref` accepts a branch, tag, or commit SHA and defaults to `"main"`; `depth` optionally configures `--depth`).
   - `files`: inline files written under the workspace directory (relative paths that traverse outside the workspace root are rejected).
   - `skills`: skill registries (`provider`, `project`, `query`) and optional destination `path` (defaults to `<workspace>/.ax/skills`).
-  - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace after git/files/skills complete (5m timeout per command). A non-zero exit or timeout aborts workspace setup without recording the initialization marker.
+  - `commands`: deterministic shell commands executed sequentially (`sh -c`) inside the workspace, whose path is in `AX_WORKSPACE`, after git/files/skills complete (5m timeout per command). A non-zero exit or timeout aborts workspace setup without recording the initialization marker.
   - `gateway`: optional `Gateway` binding for setup-time network egress (applies to the setup actor only; tasks do not inherit it).
 - **`spec.mcp`** declares static `servers` (remote `endpoint` or local `command`/`args`) and `registries` (`provider`, `project`, `query`) read by agents through the in-sandbox metadata server.
 

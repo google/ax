@@ -331,10 +331,12 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 	root := t.TempDir()
 	codePath := filepath.Join(root, "code")
 	outFile := filepath.Join(root, "out.txt")
+	envFile := filepath.Join(root, "env.txt")
 
 	h.task.Spec.Workspace = &v1alpha1.WorkspaceRef{Name: "code", Path: codePath}
+	h.task.Spec.Env = []*v1alpha1.EnvVar{{Name: "AX_WORKSPACE", Value: "/set/by/the/task"}}
 	h.cfg.Workspace = &v1alpha1.Workspace{Metadata: &v1alpha1.ObjectMeta{Name: "code"}, Spec: &v1alpha1.WorkspaceSpec{}}
-	h.task.Spec.Commands = []string{"sh", "-c", "pwd > " + outFile}
+	h.task.Spec.Commands = []string{"sh", "-c", "pwd > " + outFile + ` && echo "$AX_WORKSPACE" > ` + envFile}
 
 	exit := h.runUntilCommandExits(t)
 	if exit.Err != nil || exit.ExitCode != 0 {
@@ -355,6 +357,15 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 	wantDir, _ := filepath.EvalSymlinks(codePath)
 	if gotDir, _ := filepath.EvalSymlinks(strings.TrimSpace(string(out))); gotDir != wantDir {
 		t.Errorf("command cwd = %q, want workspace %q", strings.TrimSpace(string(out)), codePath)
+	}
+
+	// AX_WORKSPACE names the workspace, whatever the task's spec.env says.
+	if got, _ := os.ReadFile(envFile); strings.TrimSpace(string(got)) != codePath {
+		t.Errorf("command's AX_WORKSPACE = %q, want %q", strings.TrimSpace(string(got)), codePath)
+	}
+	// Setup and ax ssh sessions get the runner's own environment.
+	if got := os.Getenv("AX_WORKSPACE"); got != codePath {
+		t.Errorf("runner's AX_WORKSPACE = %q, want %q", got, codePath)
 	}
 
 	// Readiness reflects the workspace, and the metadata server serves it.
@@ -507,7 +518,7 @@ func TestRun_AwaitPushSetsUpPushedWorkspace(t *testing.T) {
 	h.start(t)
 	waitHealthy(t, h.cfg.Port)
 
-	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    files: [{path: hello.txt, content: hi}]\n    commands: ['echo \"$GIT_SSL_CAINFO|$GIT_ASKPASS\" > env.txt']\n"
+	body := "metadata: {atespace: default, name: code, uid: w1}\nspec:\n  setup:\n    files: [{path: hello.txt, content: hi}]\n    commands: ['echo \"$GIT_SSL_CAINFO|$GIT_ASKPASS|$AX_WORKSPACE\" > env.txt']\n"
 	if code := pushYAML(t, h.cfg.Port, v1alpha1.RunnerSetupPath, body); code != http.StatusAccepted {
 		t.Fatalf("setup push = %d, want 202", code)
 	}
@@ -517,8 +528,8 @@ func TestRun_AwaitPushSetsUpPushedWorkspace(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "hello.txt")); string(got) != "hi" {
 		t.Errorf("hello.txt = %q, want the pushed workspace's file", got)
 	}
-	// Setup gets the same default environment as a task.
-	want := h.cfg.CABundle + "|" + filepath.Join(workspace.AXDir, "git-askpass")
+	// Setup gets the same default environment as a task, and the workspace path.
+	want := h.cfg.CABundle + "|" + filepath.Join(workspace.AXDir, "git-askpass") + "|" + h.wsPath
 	if got, _ := os.ReadFile(filepath.Join(h.wsPath, "env.txt")); strings.TrimSpace(string(got)) != want {
 		t.Errorf("setup's environment = %q, want %q", strings.TrimSpace(string(got)), want)
 	}

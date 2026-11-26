@@ -341,7 +341,7 @@ run ax resume task "${AGENT}"
 wait_state "${AGENT}" Running
 say "The task starts warm from the workspace snapshot."
 run ax describe task "${AGENT}"
-run ax ssh "${AGENT}" -- sh -c 'cd /workspace && ls -A && cat setup.txt'
+run ax ssh "${AGENT}" -- sh -c 'cd "$AX_WORKSPACE" && ls -A && cat setup.txt'
 wait_ssh "${AGENT}" test -s /workspace/.ax/heartbeat
 say "The agent's report, from \$AX_OUTPUT_FILE:"
 run ax ssh "${AGENT}" -- cat /workspace/.ax/output
