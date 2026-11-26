@@ -76,8 +76,6 @@ curl -fsSL https://raw.githubusercontent.com/google/ax/main/install.sh | AX_VERS
 export PATH="$HOME/.ax/bin:$PATH"
 ```
 
-This installs both `ax` and [AX Studio](https://github.com/agentexecutor/studio#readme) (`ax-studio`) into `~/.ax/bin`.
-
 > [!TIP]
 > Prefer a UI? Run `ax studio` to set up AX on your computer and start tasks from a local web app instead of using the CLI below.
 
@@ -96,7 +94,7 @@ ax install
 kubectl apply -f examples/workerpool.yaml
 ```
 
-Prebuilt agent images from [agentexecutor/images](https://github.com/agentexecutor/images) have no runner baked in, so pass `--runner-volume-image` with the `ax-runner-volume` digest from the [AX release notes](https://github.com/google/ax/releases) to `ax local start` or `ax install`:
+To run [prebuilt agent images](https://github.com/agentexecutor/images), add the runner volume from the [release notes](https://github.com/google/ax/releases):
 
 ```bash
 ax local start --runner-volume-image ghcr.io/google/ax/ax-runner-volume@sha256:<digest>
