@@ -8,7 +8,8 @@ description: >
 # Using AX
 
 Reference: `docs/manifests.md` (every field), `docs/concepts.md` (lifecycle),
-`docs/sandbox.md` (what runs inside), `examples/simple.yaml` (smallest Task).
+`docs/sandbox.md` (what runs inside), `examples/simple.yaml` (smallest Task),
+[`references/examples.md`](references/examples.md) (Workspace, Gateway, Model).
 
 ## Loop
 
@@ -24,8 +25,30 @@ ax delete task simple-task              # blocks until the sandbox is gone
 On an existing cluster: `ax install`, then
 `kubectl apply -f examples/workerpool.yaml`.
 
+## Commands
+
+`<kind>` is `task`, `workspace`, `gateway`, or `model`.
+
+| Command | Does |
+|---|---|
+| `ax apply -f <file\|->` | Create resources from a multi-document file or stdin |
+| `ax get <kind>s` | List |
+| `ax get <kind> <name>` | Print as YAML; the output can be applied again |
+| `ax describe <kind> <name>` | Readable summary: state, conditions, errors |
+| `ax delete <kind> <name>` | Delete; for a task, waits for the sandbox to go |
+| `ax resume task <name>` | Start or restore; waits for `Ready=True` |
+| `ax suspend task <name>` | Checkpoint and free the worker |
+| `ax ssh <task> [-- cmd]` | Shell or command in the sandbox; `Ctrl-\` exits |
+| `ax promote task <name> --to <ctx>` | Copy a task with its Workspace and Gateway to another cluster (`--suspend-source`, `--replace`, `--no-resume`, `--preflight-only`, `--to-atespace`) |
+| `ax local start\|stop\|status\|delete` | Local Kind cluster (`--name`, `--workers`, `--runner-volume-image`, `-o json`) |
+| `ax install` / `ax uninstall` | AX on an existing Substrate cluster; uninstall keeps the Postgres PVCs |
+| `ax studio` | Local web UI on 127.0.0.1:8080 (`--port`, `--no-open`) |
+| `ax ctx [name]` | List or switch Kubernetes contexts |
+| `ax tunnel list\|stop [ctx]` | Background port-forwards in `~/.ax/tunnels` |
+| `ax version` | CLI version |
+
 Global flags: `-a <atespace>` (default `default`), `--context <kubectx>`,
-`--server <addr>`, `--trace`. `ax ctx` lists and switches contexts.
+`-n <namespace>` (default `ax-system`), `--server <addr>`, `--trace`.
 
 ## Rules that bite
 
