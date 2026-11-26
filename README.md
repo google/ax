@@ -138,6 +138,7 @@ Want a tour of AX end to end? Run [`./hack/tour.sh`](hack/tour.sh) against the c
 | [Manifests](docs/manifests.md) | Write your own YAML, with an annotated example of every kind. |
 | [Sandbox](docs/sandbox.md) | See what the runner does on boot and what your command can rely on: metadata server, guest services, environment. |
 | [Runners](docs/runner.md) | Understand the contract between the control plane and the task container, and build your own runner image to replace the default. |
+| [Sessions](docs/session.md) | Associate multi-turn tasks with one `sessionId`, bring your own session storage. |
 | [Networking](docs/networking.md) | Reach a running task through the atenet router from the cluster, your laptop, or a gRPC client. |
 | [Observability](docs/observability.md) | Collect ax-server's logs, metrics, traces, and events, and configure where they go. |
 | [Architecture](DESIGN.md) | Understand how the control plane fits together, plus the [API reference](DESIGN.md#api-reference). |
