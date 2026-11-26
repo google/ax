@@ -96,6 +96,12 @@ ax install
 kubectl apply -f examples/workerpool.yaml
 ```
 
+Prebuilt agent images from [agentexecutor/images](https://github.com/agentexecutor/images) have no runner baked in, so pass `--runner-volume-image` with the `ax-runner-volume` digest from the [AX release notes](https://github.com/google/ax/releases) to `ax local start` or `ax install`:
+
+```bash
+ax local start --runner-volume-image ghcr.io/google/ax/ax-runner-volume@sha256:<digest>
+```
+
 ### Run your first task
 
 From your ax checkout:
