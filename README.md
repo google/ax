@@ -83,27 +83,18 @@ This installs both `ax` and [AX Studio](https://github.com/agentexecutor/studio#
 
 ### 2. Start AX
 
-**Locally**, on a new Kind cluster with Substrate and a WorkerPool:
+Locally:
 
 ```bash
 ax local start
 ```
 
-**On an existing cluster** with Kubernetes 1.37+ and [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
+Or on an existing cluster with [Agent Substrate](https://github.com/agent-substrate/substrate#readme):
 
 ```bash
 ax install
+kubectl apply -f examples/workerpool.yaml
 ```
-
-Then create a WorkerPool from [`examples/workerpool.yaml`](examples/workerpool.yaml). Without one, tasks fail to resume with `no free workers available`.
-
-Official release binaries deploy the matching release `ax-server` image by default. Prebuilt agent images from [agentexecutor/images](https://github.com/agentexecutor/images) have no runner baked in, so pass `--runner-volume-image` with the `ax-runner-volume` digest from the [AX release notes](https://github.com/google/ax/releases):
-
-```bash
-ax local start --runner-volume-image ghcr.io/google/ax/ax-runner-volume@sha256:<digest>
-```
-
-Building from source or pushing custom images? See [Build and push images](docs/development.md#build-and-push-images) and the [Local Installer guide](docs/local_installer.md).
 
 ### Run your first task
 
