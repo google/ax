@@ -29,10 +29,3 @@ The session ID travels with the task wherever the task goes:
 |---|---|
 | `ax describe task <name>` | A `Session ID:` line |
 | The task pushed to the runner, `AX_TASK_YAML`, and `$AX_METADATA_URL/metadata/v1alpha1/ax/task` | `spec.sessionId` in the task YAML |
-| `AX_SESSION_FILE` | The path of a file holding just the session ID, `/run/ax/session-id` by default, next to the goal, config, and MCP files of the [launcher](runner.md) |
-
-The default runner writes `AX_SESSION_FILE` for every task, whether it runs the image's launcher or `spec.commands`, and rewrites it on every resume. Reading that file is the simplest way for an agent to find its session:
-
-```sh
-session_id="$(cat "$AX_SESSION_FILE")"
-```
