@@ -101,7 +101,7 @@ Substrate sizes sandboxes by limits alone, so `spec.profile.resources.requests` 
 ### Goal and session ID
 
 - **`spec.goal.text`** is an optional natural-language description of the task's objective, delivered as part of the task metadata.
-- **`spec.sessionId`** groups related tasks or multi-turn runs under one correlation ID. When omitted, `CreateTask` defaults it to the server-assigned `metadata.uid`.
+- **`spec.sessionId`** associates related tasks or multi-turn runs with one correlation ID. When omitted, `CreateTask` defaults it to the server-assigned `metadata.uid`. AX does not store session state; see [Sessions](session.md).
 
 ### Runner configuration
 
