@@ -32,20 +32,14 @@ func testActor(name string, state ateapipb.ActorState) *ateapipb.Actor {
 }
 
 // TestActorTaskStateMirrorsActorState checks that every Substrate ActorState
-// maps to the TaskState with the same name and number below 200, and that AX's
-// own TaskStates start at 200.
+// maps to the TaskState with the same name and number.
 func TestActorTaskStateMirrorsActorState(t *testing.T) {
 	for num, name := range ateapipb.ActorState_name {
 		actorState := ateapipb.ActorState(num)
 		got, _ := actorTaskState(actorState)
 		wantName := "TASK_STATE_" + strings.TrimPrefix(name, "ACTOR_STATE_")
-		if num >= 200 || int32(got) != num || got.String() != wantName {
-			t.Errorf("actorTaskState(%v) = %v (%d), want %s (%d < 200)", actorState, got, got, wantName, num)
-		}
-	}
-	for _, state := range []v1alpha1.TaskState{v1alpha1.TaskState_TASK_STATE_QUEUED} {
-		if state < 200 {
-			t.Errorf("AX-only %v has number %d, want >= 200", state, state)
+		if int32(got) != num || got.String() != wantName {
+			t.Errorf("actorTaskState(%v) = %v (%d), want %s (%d)", actorState, got, got, wantName, num)
 		}
 	}
 }
@@ -88,8 +82,6 @@ func TestSetActorStatus(t *testing.T) {
 		{storedTask("odd", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), testActor("odd", ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED), v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "odd", "Unknown", v1alpha1.ReasonUnknown},
 		// The actor was removed outside AX.
 		{storedTask("gone", v1alpha1.TaskState_TASK_STATE_UNSPECIFIED), nil, v1alpha1.TaskState_TASK_STATE_UNSPECIFIED, "", "False", v1alpha1.ReasonActorNotFound},
-		// States that describe AX's own work are kept.
-		{storedTask("not-yet", v1alpha1.TaskState_TASK_STATE_QUEUED), nil, v1alpha1.TaskState_TASK_STATE_QUEUED, "", "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.task.GetMetadata().GetName(), func(t *testing.T) {

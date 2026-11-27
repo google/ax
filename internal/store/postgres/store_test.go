@@ -106,7 +106,7 @@ func TestListNewestFirst(t *testing.T) {
 	save("a", "a3")
 	save("b", "b1")
 	save("a", "a1")
-	if err := s.UpdateTaskStatus(ctx, "a", "a2", &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED}); err != nil {
+	if err := s.UpdateTaskStatus(ctx, "a", "a2", &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_SUSPENDED}); err != nil {
 		t.Fatalf("UpdateTaskStatus: %v", err)
 	}
 

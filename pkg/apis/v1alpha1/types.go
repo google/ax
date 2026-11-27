@@ -114,13 +114,6 @@ const (
 	WorkspaceReasonSnapshotTagFailed = "SnapshotTagFailed"
 )
 
-// IsAXTaskState reports whether state describes the control plane's own stored
-// state on a task (QUEUED) rather than a live state read from the task's actor
-// on Agent Substrate.
-func IsAXTaskState(state TaskState) bool {
-	return state == TaskState_TASK_STATE_QUEUED
-}
-
 // FormatTaskState returns a human-readable state label for CLI display. A task
 // with metadata.delete_time set is reported as "Terminating".
 func FormatTaskState(task *Task) string {
@@ -142,8 +135,6 @@ func FormatTaskState(task *Task) string {
 		return "Deleting"
 	case TaskState_TASK_STATE_REVERTING:
 		return "Reverting"
-	case TaskState_TASK_STATE_QUEUED:
-		return "Queued"
 	default:
 		return ReasonUnknown
 	}

@@ -44,22 +44,8 @@ func TestStoredStatus(t *testing.T) {
 		t.Errorf("storedStatus modified its input: %v", in)
 	}
 
-	in = &v1alpha1.TaskStatus{State: v1alpha1.TaskState_TASK_STATE_QUEUED, Conditions: []*v1alpha1.Condition{{Type: "Ready"}}}
-	if got := storedStatus(in); got.State != v1alpha1.TaskState_TASK_STATE_QUEUED || len(got.Conditions) != 1 {
-		t.Errorf("storedStatus(%v) = %v, want AX state and its conditions kept", in, got)
-	}
 	if got := storedStatus(nil); got == nil {
 		t.Error("storedStatus(nil) = nil, want empty status")
-	}
-	for _, state := range []v1alpha1.TaskState{
-		v1alpha1.TaskState_TASK_STATE_UNSPECIFIED,
-		v1alpha1.TaskState_TASK_STATE_QUEUED,
-	} {
-		t.Run(state.String(), func(t *testing.T) {
-			if got := storedStatus(&v1alpha1.TaskStatus{State: state, ActorUid: "uid-1"}); got.ActorUid != "" {
-				t.Errorf("stored actor UID = %q, want empty", got.ActorUid)
-			}
-		})
 	}
 }
 

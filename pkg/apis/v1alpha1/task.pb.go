@@ -36,12 +36,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// TaskState is where a task is in its lifecycle.
-//
-// Values below 200 are the state of the task's actor on Agent Substrate, with
-// the same names and numbers as Substrate's ActorState; they are read from the
-// actor and never stored. Values from 200 are AX's own states, stored by
-// ax-server.
+// TaskState is where a task is in its lifecycle. It is the state of the task's
+// actor on Agent Substrate, with the same names and numbers as Substrate's
+// ActorState; it is read from the actor and never stored.
 type TaskState int32
 
 const (
@@ -53,23 +50,19 @@ const (
 	TaskState_TASK_STATE_CRASHED     TaskState = 5
 	TaskState_TASK_STATE_DELETING    TaskState = 6
 	TaskState_TASK_STATE_REVERTING   TaskState = 7
-	// ResumeTask failed with a transient Substrate error and can be called
-	// again.
-	TaskState_TASK_STATE_QUEUED TaskState = 200
 )
 
 // Enum value maps for TaskState.
 var (
 	TaskState_name = map[int32]string{
-		0:   "TASK_STATE_UNSPECIFIED",
-		1:   "TASK_STATE_RESUMING",
-		2:   "TASK_STATE_RUNNING",
-		3:   "TASK_STATE_SUSPENDING",
-		4:   "TASK_STATE_SUSPENDED",
-		5:   "TASK_STATE_CRASHED",
-		6:   "TASK_STATE_DELETING",
-		7:   "TASK_STATE_REVERTING",
-		200: "TASK_STATE_QUEUED",
+		0: "TASK_STATE_UNSPECIFIED",
+		1: "TASK_STATE_RESUMING",
+		2: "TASK_STATE_RUNNING",
+		3: "TASK_STATE_SUSPENDING",
+		4: "TASK_STATE_SUSPENDED",
+		5: "TASK_STATE_CRASHED",
+		6: "TASK_STATE_DELETING",
+		7: "TASK_STATE_REVERTING",
 	}
 	TaskState_value = map[string]int32{
 		"TASK_STATE_UNSPECIFIED": 0,
@@ -80,7 +73,6 @@ var (
 		"TASK_STATE_CRASHED":     5,
 		"TASK_STATE_DELETING":    6,
 		"TASK_STATE_REVERTING":   7,
-		"TASK_STATE_QUEUED":      200,
 	}
 )
 
@@ -948,7 +940,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
 	"\x11ResumeTaskRequest\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name*\xf7\x01\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name*\xdf\x01\n" +
 	"\tTaskState\x12\x1a\n" +
 	"\x16TASK_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13TASK_STATE_RESUMING\x10\x01\x12\x16\n" +
@@ -957,8 +949,7 @@ const file_pkg_apis_v1alpha1_task_proto_rawDesc = "" +
 	"\x14TASK_STATE_SUSPENDED\x10\x04\x12\x16\n" +
 	"\x12TASK_STATE_CRASHED\x10\x05\x12\x17\n" +
 	"\x13TASK_STATE_DELETING\x10\x06\x12\x18\n" +
-	"\x14TASK_STATE_REVERTING\x10\a\x12\x16\n" +
-	"\x11TASK_STATE_QUEUED\x10\xc8\x01\"\x05\b\b\x10\xc7\x01B(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
+	"\x14TASK_STATE_REVERTING\x10\a\"\x05\b\b\x10\xc7\x01B(Z&github.com/google/ax/pkg/apis/v1alpha1b\x06proto3"
 
 var (
 	file_pkg_apis_v1alpha1_task_proto_rawDescOnce sync.Once

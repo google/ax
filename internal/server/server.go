@@ -358,7 +358,8 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 		return nil, err
 	}
 	if err := s.taskManager.Resume(ctx, task, ws, gw); err != nil {
-		return nil, s.recordFailure(ctx, task, "resuming", err)
+		slog.Error("resuming task on substrate failed", "atespace", atespace, "task", req.Name, "error", err)
+		return nil, substrateError(err, "resuming task on substrate")
 	}
 	if err := s.clearStoredTaskState(ctx, task); err != nil {
 		return nil, err
@@ -373,17 +374,10 @@ func (s *Server) ResumeTask(ctx context.Context, req *v1alpha1.ResumeTaskRequest
 // Substrate reconcile (SuspendTask or ResumeTask) succeeds:
 //   - Clears metadata.delete_time if set by an earlier failed DeleteTask,
 //     canceling that pending deletion.
-//   - Resets status.state to UNSPECIFIED so subsequent reads derive the task's
-//     state from its live Substrate actor rather than keeping a stored Queued
-//     state.
 //   - Persists the updated task or status, returning a gRPC Internal status
 //     error if the store write fails.
 func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) error {
 	atespace, taskName := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 	task.Status = storedStatus(task.Status)
 	if task.GetMetadata().GetDeleteTime() != nil {
 		task.Metadata.DeleteTime = nil
@@ -396,26 +390,6 @@ func (s *Server) clearStoredTaskState(ctx context.Context, task *v1alpha1.Task) 
 		return status.Errorf(codes.Internal, "updating task status: %v", err)
 	}
 	return nil
-}
-
-// recordFailure stores the status of a task that could not be resumed: state
-// Queued if err is a transient Substrate error, which a retry may fix, and no
-// state otherwise. It returns the gRPC error for action.
-func (s *Server) recordFailure(ctx context.Context, task *v1alpha1.Task, action string, err error) error {
-	atespace, name := task.GetMetadata().GetAtespace(), task.GetMetadata().GetName()
-	slog.Error(action+" task on substrate failed", "atespace", atespace, "task", name, "error", err)
-	state := v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-	if substrate.IsTransientError(err) {
-		state = v1alpha1.TaskState_TASK_STATE_QUEUED
-	}
-	if task.Status == nil {
-		task.Status = &v1alpha1.TaskStatus{}
-	}
-	task.Status.State = state
-	if uerr := s.updateTask(ctx, atespace, name, task.Status); uerr != nil {
-		slog.Error("recording task failure", "atespace", atespace, "task", name, "state", state, "error", uerr)
-	}
-	return substrateError(err, action+" task on substrate")
 }
 
 // substrateError returns err from Substrate as a gRPC status error prefixed
@@ -511,10 +485,9 @@ func (s *Server) updateTask(ctx context.Context, atespace, name string, st *v1al
 }
 
 // storedStatus returns the part of a task's status that AX owns and stores. The
-// actor name, actor UID, and (for states outside [v1alpha1.IsAXTaskState]) the
-// state and Ready condition that follow from the actor's live state on Agent
-// Substrate are dropped. st is not modified; a nil st returns an empty non-nil
-// TaskStatus.
+// actor name, actor UID, state, and Ready condition, which follow from the
+// actor's live state on Agent Substrate, are dropped. st is not modified; a nil
+// st returns an empty non-nil TaskStatus.
 func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	out := &v1alpha1.TaskStatus{}
 	if st != nil {
@@ -522,16 +495,14 @@ func storedStatus(st *v1alpha1.TaskStatus) *v1alpha1.TaskStatus {
 	}
 	out.Actor = ""
 	out.ActorUid = ""
-	if !v1alpha1.IsAXTaskState(out.State) {
-		out.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-		conds := out.Conditions[:0]
-		for _, c := range out.Conditions {
-			if c.GetType() != v1alpha1.ConditionReady {
-				conds = append(conds, c)
-			}
+	out.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+	conds := out.Conditions[:0]
+	for _, c := range out.Conditions {
+		if c.GetType() != v1alpha1.ConditionReady {
+			conds = append(conds, c)
 		}
-		out.Conditions = conds
 	}
+	out.Conditions = conds
 	return out
 }
 
@@ -568,10 +539,9 @@ func (s *Server) applyActor(ctx context.Context, task *v1alpha1.Task) {
 }
 
 // setActorStatus overlays the actor's state on the task's status: actor name,
-// actorUID, and, unless the state is one of AX's own or deletion is in progress,
-// the state and Ready condition. actor is nil when the task has no actor; err is
-// set when the actor could not be looked up, in which case the state and Ready
-// condition are left empty.
+// actorUID, state, and, unless deletion is in progress, the Ready condition.
+// actor is nil when the task has no actor; err is set when the actor could not
+// be looked up, in which case the state and Ready condition are left empty.
 func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 	if task.Status == nil {
 		task.Status = &v1alpha1.TaskStatus{}
@@ -588,9 +558,7 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
 			return
 		}
-		if !v1alpha1.IsAXTaskState(st.State) {
-			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-		}
+		st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
 	case actor == nil:
 		if terminating {
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
@@ -598,21 +566,14 @@ func setActorStatus(task *v1alpha1.Task, actor *ateapipb.Actor, err error) {
 		}
 		// A task is stored only once its actor exists, so a missing actor was
 		// removed outside AX.
-		if !v1alpha1.IsAXTaskState(st.State) {
-			st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
-			setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
-		}
+		st.State = v1alpha1.TaskState_TASK_STATE_UNSPECIFIED
+		setReady(task, "False", v1alpha1.ReasonActorNotFound, "The task's actor no longer exists on Substrate")
 	default:
 		st.Actor = actor.GetMetadata().GetName()
 		st.ActorUid = actor.GetMetadata().GetUid()
 		if terminating {
-			if !v1alpha1.IsAXTaskState(st.State) {
-				st.State, _ = actorTaskState(actor.GetStatus().GetState())
-			}
+			st.State, _ = actorTaskState(actor.GetStatus().GetState())
 			setReady(task, "False", v1alpha1.ReasonTerminating, "Task is being deleted")
-			return
-		}
-		if v1alpha1.IsAXTaskState(st.State) {
 			return
 		}
 		actorState := actor.GetStatus().GetState()
