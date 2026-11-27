@@ -66,9 +66,6 @@ func validateGateway(g *v1alpha1.Gateway) error {
 			if reason := deniedEgressHostname(name); reason != "" {
 				return fmt.Errorf("%s.hostnames[%d]: %q is not allowed: %s", field, j, name, reason)
 			}
-			if credential && strings.HasPrefix(name, "*.") {
-				return fmt.Errorf("%s.effects.replaceHeaders: not allowed with wildcard hostname %q: name each host that gets the credential", field, name)
-			}
 		}
 		// Unlike http and https, passthrough has no default port.
 		if kind == "tlsPassthrough" && ports.GetAll() == nil && len(ports.GetNumbers()) == 0 {
