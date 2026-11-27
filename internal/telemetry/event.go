@@ -65,7 +65,12 @@ var console atomic.Bool
 // the caller. A record still queued when the process dies is lost, unless
 // console also wrote it to stdout.
 func Emit(ctx context.Context, ev Event, attrs ...slog.Attr) {
-	t := time.Now()
+	EmitAt(ctx, ev, time.Now(), attrs...)
+}
+
+// EmitAt is Emit with the event's timestamp t, for an emitter that must stamp
+// the moment a change was written rather than the moment it reports it.
+func EmitAt(ctx context.Context, ev Event, t time.Time, attrs ...slog.Attr) {
 	if emitOTLP(ctx, ev, t, attrs) && !console.Load() {
 		return
 	}
