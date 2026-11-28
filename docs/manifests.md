@@ -235,7 +235,7 @@ Each entry of `spec.egress` is an Agent Substrate `EgressRule` and sets exactly 
 
 ### Injecting credentials
 
-`effects.replaceHeaders` adds a credential to matching requests outside the sandbox, so the task never holds it. The task sends the header with any placeholder value, and the egress gateway replaces that value with `prefix` followed by the credential that `credentialUri` names. A request that does not send the header is forwarded unchanged. Only an `https` rule whose hostnames have no wildcard can inject a credential.
+`effects.replaceHeaders` adds a credential to matching requests outside the sandbox, so the task never holds it. The task sends the header with any placeholder value, and the egress gateway replaces that value with `prefix` followed by the credential that `credentialUri` names. A request that does not send the header is forwarded unchanged. Only an `https` rule can inject a credential. Every host the rule matches gets it, including each host a wildcard hostname matches, so use a wildcard only where every host under it should receive the credential.
 
 A tool sends the header only when it has a key, so give it a placeholder: set the variable it reads its key from to any value, in the task's `spec.env` or in the image. For the gateway above:
 
@@ -257,7 +257,7 @@ spec:
 - uses `*` alone as a hostname, which would match every host, including hosts inside the cluster;
 - names an IP address;
 - names `localhost` or a name under it, which would be the egress gateway's own: a task reaches its own localhost without a rule;
-- replaces headers in an `http` rule, where the credential would travel in cleartext, or for a wildcard hostname: name each host that gets the credential;
+- replaces headers in an `http` rule, where the credential would travel in cleartext;
 - is a `tlsPassthrough` rule without `ports`.
 
 A hostname can name a service inside the cluster, such as `git-mcp.default.svc.cluster.local`: the egress gateway resolves it and connects from inside the cluster. Name only the hosts the task should reach.

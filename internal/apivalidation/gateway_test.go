@@ -93,15 +93,11 @@ func TestValidateGateway(t *testing.T) {
 	}{
 		{name: "host with a credential", rule: https(credential, "api.example.com")},
 		{name: "subdomain wildcard", rule: https(nil, "*.example.com")},
+		{name: "subdomain wildcard with a credential", rule: https(credential, "*.example.com")},
 		{name: "passthrough with port numbers", rule: passthrough(port443, "db.example.com")},
 		{name: "passthrough with every port", rule: passthrough(&ateapipb.Ports{All: &ateapipb.AllPorts{}}, "db.example.com")},
 		{name: "names that resemble denied ones", rule: https(nil, "notlocalhost", "1.example.com")},
 		{name: "every host", rule: https(nil, "*"), wantErr: `spec.egress[0].https.hostnames[0]: "*" is not allowed: it matches every host`},
-		{
-			name:    "subdomain wildcard with a credential",
-			rule:    https(credential, "*.example.com"),
-			wantErr: `spec.egress[0].https.effects.replaceHeaders: not allowed with wildcard hostname "*.example.com"`,
-		},
 		{name: "credential over http", rule: http(credential, "api.example.com"), wantErr: "spec.egress[0].http.effects.replaceHeaders: not allowed on an http rule"},
 		{name: "rule without a kind", rule: &ateapipb.EgressRule{}, wantErr: "spec.egress[0]: exactly one of http, https, or tlsPassthrough is required"},
 		{
